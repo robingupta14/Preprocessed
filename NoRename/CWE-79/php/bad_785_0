@@ -1,0 +1,1901 @@
+<?php
+
+
+
+function wp_statistics_useronline( $options = array() ) {
+	global $wpdb, $WP_Statistics;
+
+	
+	$defaults = array(
+		
+		'type'         => 'all',
+		
+		'ID'           => 0,
+		
+		'logged_users' => false,
+		
+		'location'     => 'all',
+		
+		'agent'        => 'all',
+		
+		'platform'     => 'all'
+	);
+
+	
+	$arg = wp_parse_args( $options, $defaults );
+
+	
+	$sql = "SELECT COUNT(*) FROM " . wp_statistics_db_table( 'useronline' );
+
+	
+	$where = false;
+
+	
+	if ( $arg['type'] != "all" ) {
+		$where[] = "`type`='" . $arg['type'] . "' AND `page_id` = " . $arg['ID'];
+	}
+
+	
+	if ( $arg['logged_users'] === true ) {
+		$where[] = "`user_id` > 0";
+	}
+
+	
+	if ( $arg['location'] != "all" ) {
+		$ISOCountryCode = $WP_Statistics->get_country_codes();
+		if ( array_key_exists( $arg['location'], $ISOCountryCode ) ) {
+			$where[] = "`location` = '" . $arg['location'] . "'";
+		}
+	}
+
+	
+	if ( $arg['agent'] != "all" ) {
+		$where[] = "`agent` = '" . $arg['agent'] . "'";
+	}
+
+	
+	if ( $arg['platform'] != "all" ) {
+		$where[] = "`platform` = '" . $arg['platform'] . "'";
+	}
+
+	
+	if ( ! empty( $where ) ) {
+		$sql .= ' WHERE ' . implode( ' AND ', $where );
+	}
+
+	
+	return $wpdb->get_var( $sql );
+}
+
+
+function wp_statistics_mysql_time_conditions( $field = 'date', $time = 'total', $range = array() ) {
+	global $WP_Statistics;
+
+	
+	$current_date = $WP_Statistics->Current_Date( 'Y-m-d' );
+
+	
+	$field_sql = function ( $time ) use ( $current_date, $field, $WP_Statistics, $range ) {
+		$is_current = array_key_exists( 'current_date', $range );
+		return "`$field` " . ( $is_current === true ? '=' : 'BETWEEN' ) . " '{$WP_Statistics->Current_Date( 'Y-m-d', (int) $time )}'" . ( $is_current === false ? " AND '{$current_date}'" : "" );
+	};
+
+	
+	switch ( $time ) {
+		case 'today':
+			$where = "`$field` = '{$current_date}'";
+			break;
+		case 'yesterday':
+			$where = "`$field` = '{$WP_Statistics->Current_Date( 'Y-m-d', -1 )}'";
+			break;
+		case 'week':
+			$where = $field_sql( - 7 );
+			break;
+		case 'month':
+			$where = $field_sql( - 30 );
+			break;
+		case 'year':
+			$where = $field_sql( - 365 );
+			break;
+		case 'total':
+			$where = "";
+			break;
+		default:
+			if ( array_key_exists( 'is_day', $range ) ) {
+				
+				$where = "`$field` = '{$WP_Statistics->Current_Date( 'Y-m-d',  $time )}'";
+			} elseif ( array_key_exists( 'start', $range ) and array_key_exists( 'end', $range ) ) {
+				
+				$where = "`$field` BETWEEN '{$WP_Statistics->Current_Date( 'Y-m-d', '-0', strtotime( $range['start'] ) )}' AND '{$WP_Statistics->Current_Date( 'Y-m-d', '-0', strtotime( $range['end'] ) )}'";
+			} else {
+				
+				$where = $field_sql( $time );
+			}
+	}
+
+	return $where;
+}
+
+
+function wp_statistics_visit( $time, $daily = null ) {
+	global $wpdb, $WP_Statistics;
+
+	
+	$table_name  = wp_statistics_db_table( 'visit' );
+	$date_column = 'last_counter';
+
+	
+	$selector = 'SUM(visit)';
+	if ( $daily == true ) {
+		$selector = '*';
+	}
+
+	
+	$sql = "SELECT {$selector} FROM {$table_name}";
+
+	
+	$sum = 0;
+
+	
+	if ( $daily == true ) {
+
+		$result = $wpdb->get_row( $sql . " WHERE `$date_column` = '{$WP_Statistics->Current_Date( 'Y-m-d', $time )}'" );
+		if ( null !== $result ) {
+			$sum = $result->visit;
+		}
+
+	} else {
+
+		
+		$mysql_time_sql = wp_statistics_mysql_time_conditions( $date_column, $time );
+		if ( ! empty( $mysql_time_sql ) ) {
+			$sql = $sql . ' WHERE ' . $mysql_time_sql;
+		}
+
+		
+		$result = $wpdb->get_var( $sql );
+
+		
+		if ( $time == "total" ) {
+			$result += $WP_Statistics->Get_Historical_Data( 'visits' );
+		}
+
+		$sum = $result;
+	}
+
+	return $sum;
+}
+
+
+function wp_statistics_visitor( $time, $daily = null, $count_only = false, $options = array() ) {
+	global $wpdb, $WP_Statistics;
+
+	
+	$defaults = array(
+		
+		'type'     => 'all',
+		
+		'ID'       => 0,
+		
+		'location' => 'all',
+		
+		'agent'    => 'all',
+		
+		'platform' => 'all'
+	);
+
+	
+	$arg = wp_parse_args( $options, $defaults );
+
+	
+	$history = 0;
+
+	
+	$date_column = 'last_counter';
+	$selector    = '*';
+	if ( $count_only == true ) {
+		$selector = 'count(last_counter)';
+	}
+
+	
+	if ( $arg['type'] != "all" and $WP_Statistics->get_option( 'visitors_log' ) == true ) {
+		$sql = "SELECT {$selector} FROM `" . wp_statistics_db_table( 'visitor' ) . "` INNER JOIN `" . wp_statistics_db_table( "visitor_relationships" ) . "` ON `" . wp_statistics_db_table( "visitor_relationships" ) . "`.`visitor_id` = `" . wp_statistics_db_table( 'visitor' ) . "`.`ID`  INNER JOIN `" . wp_statistics_db_table( 'pages' ) . "` ON `" . wp_statistics_db_table( 'pages' ) . "`.`page_id` = `" . wp_statistics_db_table( "visitor_relationships" ) . "` . `page_id`";
+	} else {
+		$sql = "SELECT {$selector} FROM `" . wp_statistics_db_table( 'visitor' ) . "`";
+	}
+
+	
+	$where = false;
+
+	
+	if ( $arg['type'] != "all" and $WP_Statistics->get_option( 'visitors_log' ) == true ) {
+		$where[] = "`" . wp_statistics_db_table( 'pages' ) . "`.`type`='" . $arg['type'] . "' AND `" . wp_statistics_db_table( 'pages' ) . "`.`page_id` = " . $arg['ID'];
+	}
+
+	
+	if ( $arg['location'] != "all" ) {
+		$ISOCountryCode = $WP_Statistics->get_country_codes();
+		if ( array_key_exists( $arg['location'], $ISOCountryCode ) ) {
+			$where[] = "`" . wp_statistics_db_table( 'visitor' ) . "`.`location` = '" . $arg['location'] . "'";
+		}
+	}
+
+	
+	if ( $arg['agent'] != "all" ) {
+		$where[] = "`" . wp_statistics_db_table( 'visitor' ) . "`.`agent` = '" . $arg['agent'] . "'";
+	}
+
+	
+	if ( $arg['platform'] != "all" ) {
+		$where[] = "`" . wp_statistics_db_table( 'visitor' ) . "`.`platform` = '" . $arg['platform'] . "'";
+	}
+
+	
+	if ( $daily == true ) {
+
+		
+		$where[] = "`" . wp_statistics_db_table( 'visitor' ) . "`.`last_counter` = '" . $WP_Statistics->Current_Date( 'Y-m-d', $time ) . "'";
+	} else {
+
+		
+		$mysql_time_sql = wp_statistics_mysql_time_conditions( $date_column, $time );
+		if ( ! empty( $mysql_time_sql ) ) {
+			$where[] = $mysql_time_sql;
+		}
+	}
+
+	
+	if ( ! empty( $where ) ) {
+		$sql .= ' WHERE ' . implode( ' AND ', $where );
+	}
+
+	
+	if ( $time == "total" and $arg['type'] == "all" ) {
+		$history = $WP_Statistics->Get_Historical_Data( 'visitors' );
+	}
+
+	
+	if ( $count_only == true ) {
+		$sum = $wpdb->get_var( $sql );
+		$sum += $history;
+	} else {
+		$sum = $wpdb->query( $sql );
+	}
+
+	return $sum;
+}
+
+
+function wp_statistics_pages( $time, $page_uri = '', $id = - 1, $rangestartdate = null, $rangeenddate = null, $type = false ) {
+	global $wpdb, $WP_Statistics;
+
+	
+	$table_name  = wp_statistics_db_table( 'pages' );
+	$date_column = 'date';
+	$history     = 0;
+
+	
+	$where = false;
+
+	
+	if ( $type != false and $id != - 1 ) {
+		$where[] = "`type`='" . $type . "' AND `page_id` = " . $id;
+	} else {
+
+		
+		if ( $page_uri == '' ) {
+			$page_uri = wp_statistics_get_uri();
+		}
+		$page_uri_sql = esc_sql( $page_uri );
+
+		
+		if ( $id != - 1 ) {
+			$where[]     = "`id`= " . absint( $id );
+			$history_key = 'page';
+			$history_id  = absint( $id );
+		} else {
+			$where[]     = "`URI` = '{$page_uri_sql}'";
+			$history_key = 'uri';
+			$history_id  = $page_uri;
+		}
+
+		
+		if ( $time == "total" ) {
+			$history = $WP_Statistics->Get_Historical_Data( $history_key, $history_id );
+		}
+	}
+
+	
+	$time_array = array();
+	if ( is_numeric( $time ) ) {
+		$time_array['is_day'] = true;
+	}
+	if ( ! is_null( $rangestartdate ) and ! is_null( $rangeenddate ) ) {
+		$time_array = array( 'start' => $rangestartdate, 'end' => $rangeenddate );
+	}
+
+	
+	$mysql_time_sql = wp_statistics_mysql_time_conditions( $date_column, $time, $time_array );
+	if ( ! empty( $mysql_time_sql ) ) {
+		$where[] = $mysql_time_sql;
+	}
+
+	
+	$sql = "SELECT SUM(count) FROM {$table_name}";
+
+	
+	if ( ! empty( $where ) ) {
+		$sql .= ' WHERE ' . implode( ' AND ', $where );
+	}
+
+	
+	$sum = $wpdb->get_var( $sql );
+	$sum += $history;
+
+	
+	return ( $sum == '' ? 0 : $sum );
+}
+
+
+
+function wp_statistics_uri_to_id( $uri ) {
+	global $wpdb;
+
+	
+	$sqlstatement = $wpdb->prepare( "SELECT id FROM {$wpdb->prefix}statistics_pages WHERE `URI` = %s AND id > 0 ORDER BY date DESC", $uri );
+
+	
+	$result = $wpdb->get_var( $sqlstatement );
+
+	
+	if ( $result == 0 ) {
+		$result = 0;
+	}
+
+	return $result;
+}
+
+
+function wp_stats_compare_uri_hits( $a, $b ) {
+	return $a[1] < $b[1];
+}
+
+
+function wp_statistics_get_top_pages( $rangestartdate = null, $rangeenddate = null ) {
+	global $wpdb;
+
+	
+	if ( $rangestartdate != null && $rangeenddate != null ) {
+		$result = $wpdb->get_results( $wpdb->prepare( "SELECT `uri`,`id`,`type` FROM {$wpdb->prefix}statistics_pages WHERE `date` BETWEEN %s AND %s GROUP BY `uri`", $rangestartdate, $rangeenddate ), ARRAY_N );
+	} else {
+		$result = $wpdb->get_results( "SELECT `uri`,`id`,`type` FROM {$wpdb->prefix}statistics_pages GROUP BY `uri`", ARRAY_N );
+	}
+
+	$total = 0;
+	$uris  = array();
+
+	
+	foreach ( $result as $out ) {
+		
+		$total ++;
+
+		
+		list( $url, $page_id, $page_type ) = $out;
+
+		
+		$page_info = wp_statistics_get_page_info( $page_id, $page_type );
+		$title     = mb_substr( $page_info['title'], 0, 200, "utf-8" );
+		$page_url  = $page_info['link'];
+
+		
+		if ( $page_info['link'] == "" ) {
+			$page_url = htmlentities( path_join( get_site_url(), $url ), ENT_QUOTES );
+			$id       = wp_statistics_uri_to_id( $out[0] );
+			$post     = get_post( $id );
+			if ( is_object( $post ) ) {
+				$title = $post->post_title;
+			} else {
+				if ( $out[0] == '/' ) {
+					$title = get_bloginfo();
+				} else {
+					$title = '';
+				}
+			}
+		}
+
+		
+		if ( empty( $title ) ) {
+			$title = '-';
+		}
+
+		
+		if ( $rangestartdate != null && $rangeenddate != null ) {
+			$uris[] = array(
+				$out[0],
+				wp_statistics_pages( 'range', $out[0], - 1, $rangestartdate, $rangeenddate ),
+				$page_id,
+				$title,
+				$page_url,
+			);
+		} else {
+			$uris[] = array( $out[0], wp_statistics_pages( 'total', $out[0] ), $page_id, $title, $page_url );
+		}
+	}
+
+	
+	if ( count( $uris ) > 1 ) {
+		
+		usort( $uris, 'wp_stats_compare_uri_hits' );
+	}
+
+	return array( $total, $uris );
+}
+
+
+function wp_statistics_get_uri() {
+	
+	$site_uri     = parse_url( site_url(), PHP_URL_PATH );
+	$site_uri_len = strlen( $site_uri );
+
+	
+	$home_uri     = parse_url( home_url(), PHP_URL_PATH );
+	$home_uri_len = strlen( $home_uri );
+
+	
+	$page_uri = $_SERVER["REQUEST_URI"];
+
+	
+	if ( $site_uri_len > $home_uri_len ) {
+		if ( substr( $page_uri, 0, $site_uri_len ) == $site_uri ) {
+			$page_uri = substr( $page_uri, $site_uri_len );
+		}
+
+		if ( substr( $page_uri, 0, $home_uri_len ) == $home_uri ) {
+			$page_uri = substr( $page_uri, $home_uri_len );
+		}
+	} else {
+		if ( substr( $page_uri, 0, $home_uri_len ) == $home_uri ) {
+			$page_uri = substr( $page_uri, $home_uri_len );
+		}
+
+		if ( substr( $page_uri, 0, $site_uri_len ) == $site_uri ) {
+			$page_uri = substr( $page_uri, $site_uri_len );
+		}
+	}
+
+	
+	$page_uri = filter_var( $page_uri, FILTER_SANITIZE_STRING );
+
+	
+	if ( $page_uri == '' ) {
+		$page_uri = '/';
+	}
+
+	return $page_uri;
+}
+
+
+function wp_statistics_ua_list( $rangestartdate = null, $rangeenddate = null ) {
+
+	global $wpdb;
+
+	if ( $rangestartdate != null && $rangeenddate != null ) {
+		if ( $rangeenddate == 'CURDATE()' ) {
+			$result = $wpdb->get_results( $wpdb->prepare( "SELECT DISTINCT agent FROM {$wpdb->prefix}statistics_visitor WHERE `last_counter` BETWEEN %s AND CURDATE()", $rangestartdate ), ARRAY_N );
+		} else {
+			$result = $wpdb->get_results( $wpdb->prepare( "SELECT DISTINCT agent FROM {$wpdb->prefix}statistics_visitor WHERE `last_counter` BETWEEN %s AND %s", $rangestartdate, $rangeenddate ), ARRAY_N );
+		}
+
+	} else {
+		$result = $wpdb->get_results( "SELECT DISTINCT agent FROM {$wpdb->prefix}statistics_visitor", ARRAY_N );
+	}
+
+	$Browsers        = array();
+	$default_browser = wp_statistics_get_browser_list();
+
+	foreach ( $result as $out ) {
+		
+		if ( array_key_exists( strtolower( $out[0] ), $default_browser ) ) {
+			$Browsers[] = $out[0];
+		}
+	}
+
+	return $Browsers;
+}
+
+
+function wp_statistics_useragent( $agent, $rangestartdate = null, $rangeenddate = null ) {
+	global $wpdb;
+
+	if ( $rangestartdate != null && $rangeenddate != null ) {
+		$result = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(agent) FROM {$wpdb->prefix}statistics_visitor WHERE `agent` = %s AND `last_counter` BETWEEN %s AND %s",
+				$agent,
+				$rangestartdate,
+				$rangeenddate
+			)
+		);
+	} else {
+		$result = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(agent) FROM {$wpdb->prefix}statistics_visitor WHERE `agent` = %s", $agent ) );
+	}
+
+	return $result;
+}
+
+
+function wp_statistics_platform_list( $rangestartdate = null, $rangeenddate = null ) {
+
+	global $wpdb;
+
+	if ( $rangestartdate != null && $rangeenddate != null ) {
+		$result = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT DISTINCT platform FROM {$wpdb->prefix}statistics_visitor WHERE `last_counter` BETWEEN %s AND %s",
+				$rangestartdate,
+				$rangeenddate
+			),
+			ARRAY_N
+		);
+	} else {
+		$result = $wpdb->get_results( "SELECT DISTINCT platform FROM {$wpdb->prefix}statistics_visitor", ARRAY_N );
+	}
+
+	$Platforms = array();
+
+	foreach ( $result as $out ) {
+		$Platforms[] = $out[0];
+	}
+
+	return $Platforms;
+}
+
+
+function wp_statistics_platform( $platform, $rangestartdate = null, $rangeenddate = null ) {
+	global $wpdb;
+
+	if ( $rangestartdate != null && $rangeenddate != null ) {
+		$result = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(platform) FROM {$wpdb->prefix}statistics_visitor WHERE `platform` = %s AND `last_counter` BETWEEN %s AND %s",
+				$platform,
+				$rangestartdate,
+				$rangeenddate
+			)
+		);
+	} else {
+		$result = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(platform) FROM {$wpdb->prefix}statistics_visitor WHERE `platform` = %s",
+				$platform
+			)
+		);
+	}
+
+	return $result;
+}
+
+
+function wp_statistics_agent_version_list( $agent, $rangestartdate = null, $rangeenddate = null ) {
+	global $wpdb;
+
+	if ( $rangestartdate != null && $rangeenddate != null ) {
+		$result = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT DISTINCT version FROM {$wpdb->prefix}statistics_visitor WHERE agent = %s AND `last_counter` BETWEEN %s AND %s",
+				$agent,
+				$rangestartdate,
+				$rangeenddate
+			),
+			ARRAY_N
+		);
+	} else {
+		$result = $wpdb->get_results(
+			$wpdb->prepare( "SELECT DISTINCT version FROM {$wpdb->prefix}statistics_visitor WHERE agent = %s", $agent ),
+			ARRAY_N
+		);
+	}
+
+	$Versions = array();
+
+	foreach ( $result as $out ) {
+		$Versions[] = $out[0];
+	}
+
+	return $Versions;
+}
+
+
+function wp_statistics_agent_version( $agent, $version, $rangestartdate = null, $rangeenddate = null ) {
+	global $wpdb;
+
+	if ( $rangestartdate != null && $rangeenddate != null ) {
+		$result = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(version) FROM {$wpdb->prefix}statistics_visitor WHERE agent = %s AND version = %s AND `last_counter` BETWEEN %s AND %s",
+				$agent,
+				$version,
+				$rangestartdate,
+				$rangeenddate
+			)
+		);
+	} else {
+		$result = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(version) FROM {$wpdb->prefix}statistics_visitor WHERE agent = %s AND version = %s",
+				$agent,
+				$version
+			)
+		);
+	}
+
+	return $result;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function wp_statistics_searchengine_list( $all = false ) {
+	global $WP_Statistics;
+
+	$default = $engines = array(
+		'ask'        => array(
+			'name'         => 'Ask.com',
+			'translated'   => __( 'Ask.com', 'wp-statistics' ),
+			'tag'          => 'ask',
+			'sqlpattern'   => '%ask.com%',
+			'regexpattern' => 'ask\.com',
+			'querykey'     => 'q',
+			'image'        => 'ask.png',
+		),
+		'baidu'      => array(
+			'name'         => 'Baidu',
+			'translated'   => __( 'Baidu', 'wp-statistics' ),
+			'tag'          => 'baidu',
+			'sqlpattern'   => '%baidu.com%',
+			'regexpattern' => 'baidu\.com',
+			'querykey'     => 'wd',
+			'image'        => 'baidu.png',
+		),
+		'bing'       => array(
+			'name'         => 'Bing',
+			'translated'   => __( 'Bing', 'wp-statistics' ),
+			'tag'          => 'bing',
+			'sqlpattern'   => '%bing.com%',
+			'regexpattern' => 'bing\.com',
+			'querykey'     => 'q',
+			'image'        => 'bing.png',
+		),
+		'clearch'    => array(
+			'name'         => 'clearch.org',
+			'translated'   => __( 'clearch.org', 'wp-statistics' ),
+			'tag'          => 'clearch',
+			'sqlpattern'   => '%clearch.org%',
+			'regexpattern' => 'clearch\.org',
+			'querykey'     => 'q',
+			'image'        => 'clearch.png',
+		),
+		'duckduckgo' => array(
+			'name'         => 'DuckDuckGo',
+			'translated'   => __( 'DuckDuckGo', 'wp-statistics' ),
+			'tag'          => 'duckduckgo',
+			'sqlpattern'   => array( '%duckduckgo.com%', '%ddg.gg%' ),
+			'regexpattern' => array( 'duckduckgo\.com', 'ddg\.gg' ),
+			'querykey'     => 'q',
+			'image'        => 'duckduckgo.png',
+		),
+		'google'     => array(
+			'name'         => 'Google',
+			'translated'   => __( 'Google', 'wp-statistics' ),
+			'tag'          => 'google',
+			'sqlpattern'   => '%google.%',
+			'regexpattern' => 'google\.',
+			'querykey'     => 'q',
+			'image'        => 'google.png',
+		),
+		'yahoo'      => array(
+			'name'         => 'Yahoo!',
+			'translated'   => __( 'Yahoo!', 'wp-statistics' ),
+			'tag'          => 'yahoo',
+			'sqlpattern'   => '%yahoo.com%',
+			'regexpattern' => 'yahoo\.com',
+			'querykey'     => 'p',
+			'image'        => 'yahoo.png',
+		),
+		'yandex'     => array(
+			'name'         => 'Yandex',
+			'translated'   => __( 'Yandex', 'wp-statistics' ),
+			'tag'          => 'yandex',
+			'sqlpattern'   => '%yandex.ru%',
+			'regexpattern' => 'yandex\.ru',
+			'querykey'     => 'text',
+			'image'        => 'yandex.png',
+		),
+		'qwant'      => array(
+			'name'         => 'Qwant',
+			'translated'   => __( 'Qwant', 'wp-statistics' ),
+			'tag'          => 'qwant',
+			'sqlpattern'   => '%qwant.com%',
+			'regexpattern' => 'qwant\.com',
+			'querykey'     => 'q',
+			'image'        => 'qwant.png',
+		)
+	);
+
+	if ( $all == false ) {
+		foreach ( $engines as $key => $engine ) {
+			if ( $WP_Statistics->get_option( 'disable_se_' . $engine['tag'] ) ) {
+				unset( $engines[ $key ] );
+			}
+		}
+
+		
+		if ( count( $engines ) == 0 ) {
+			$engines = $default;
+		}
+	}
+
+	return $engines;
+}
+
+
+function wp_statistics_searchword_query( $search_engine = 'all' ) {
+	GLOBAL $WP_Statistics;
+
+	
+	$searchengine_list = wp_statistics_searchengine_list();
+	$search_query      = '';
+
+	if ( $WP_Statistics->get_option( 'search_converted' ) ) {
+		
+		if ( strtolower( $search_engine ) == 'all' ) {
+			
+			foreach ( $searchengine_list as $key => $se ) {
+				$search_query .= "( `engine` = '{$key}' AND `words` <> '' ) OR ";
+			}
+
+			
+			$search_query = substr( $search_query, 0, strlen( $search_query ) - 4 );
+		} else {
+			$search_query .= "`engine` = '{$search_engine}' AND `words` <> ''";
+		}
+	} else {
+		
+		if ( strtolower( $search_engine ) == 'all' ) {
+			
+			
+			foreach ( $searchengine_list as $se ) {
+				
+				if ( is_array( $se['sqlpattern'] ) ) {
+					foreach ( $se['sqlpattern'] as $subse ) {
+						$search_query .= "(`referred` LIKE '{$subse}{$se['querykey']}=%' AND `referred` NOT LIKE '{$subse}{$se['querykey']}=&%' AND `referred` NOT LIKE '{$subse}{$se['querykey']}=') OR ";
+					}
+				} else {
+					$search_query .= "(`referred` LIKE '{$se['sqlpattern']}{$se['querykey']}=%' AND `referred` NOT LIKE '{$se['sqlpattern']}{$se['querykey']}=&%' AND `referred` NOT LIKE '{$se['sqlpattern']}{$se['querykey']}=')  OR ";
+				}
+			}
+
+			
+			$search_query = substr( $search_query, 0, strlen( $search_query ) - 4 );
+		} else {
+			
+			if ( is_array( $searchengine_list[ $search_engine ]['sqlpattern'] ) ) {
+				foreach ( $searchengine_list[ $search_engine ]['sqlpattern'] as $se ) {
+					$search_query .= "(`referred` LIKE '{$se}{$searchengine_list[$search_engine]['querykey']}=%' AND `referred` NOT LIKE '{$se}{$searchengine_list[$search_engine]['querykey']}=&%' AND `referred` NOT LIKE '{$se}{$searchengine_list[$search_engine]['querykey']}=') OR ";
+				}
+
+				
+				$search_query = substr( $search_query, 0, strlen( $search_query ) - 4 );
+			} else {
+				$search_query .= "(`referred` LIKE '{$searchengine_list[$search_engine]['sqlpattern']}{$searchengine_list[$search_engine]['querykey']}=%' AND `referred` NOT LIKE '{$searchengine_list[$search_engine]['sqlpattern']}{$searchengine_list[$search_engine]['querykey']}=&%' AND `referred` NOT LIKE '{$searchengine_list[$search_engine]['sqlpattern']}{$searchengine_list[$search_engine]['querykey']}=')";
+			}
+		}
+	}
+
+	return $search_query;
+}
+
+
+function wp_statistics_searchengine_query( $search_engine = 'all' ) {
+	GLOBAL $WP_Statistics;
+
+	
+	$searchengine_list = wp_statistics_searchengine_list();
+	$search_query      = '';
+
+	if ( $WP_Statistics->get_option( 'search_converted' ) ) {
+		
+		if ( strtolower( $search_engine ) == 'all' ) {
+			
+			foreach ( $searchengine_list as $key => $se ) {
+				$key          = esc_sql( $key );
+				$search_query .= "`engine` = '{$key}' OR ";
+			}
+
+			
+			$search_query = substr( $search_query, 0, strlen( $search_query ) - 4 );
+		} else {
+			$search_engine = esc_sql( $search_engine );
+			$search_query  .= "`engine` = '{$search_engine}'";
+		}
+	} else {
+		
+		if ( strtolower( $search_engine ) == 'all' ) {
+			
+			
+			foreach ( $searchengine_list as $se ) {
+				
+				if ( is_array( $se['sqlpattern'] ) ) {
+					foreach ( $se['sqlpattern'] as $subse ) {
+						$subse        = esc_sql( $subse );
+						$search_query .= "`referred` LIKE '{$subse}' OR ";
+					}
+				} else {
+					$se['sqlpattern'] = esc_sql( $se['sqlpattern'] );
+					$search_query     .= "`referred` LIKE '{$se['sqlpattern']}' OR ";
+				}
+			}
+
+			
+			$search_query = substr( $search_query, 0, strlen( $search_query ) - 4 );
+		} else {
+			
+			if ( is_array( $searchengine_list[ $search_engine ]['sqlpattern'] ) ) {
+				foreach ( $searchengine_list[ $search_engine ]['sqlpattern'] as $se ) {
+					$se           = esc_sql( $se );
+					$search_query .= "`referred` LIKE '{$se}' OR ";
+				}
+
+				
+				$search_query = substr( $search_query, 0, strlen( $search_query ) - 4 );
+			} else {
+				$searchengine_list[ $search_engine ]['sqlpattern'] = esc_sql( $searchengine_list[ $search_engine ]['sqlpattern'] );
+				$search_query                                      .= "`referred` LIKE '{$searchengine_list[$search_engine]['sqlpattern']}'";
+			}
+		}
+	}
+
+	return $search_query;
+}
+
+
+function wp_statistics_searchengine_regex( $search_engine = 'all' ) {
+
+	
+	$searchengine_list = wp_statistics_searchengine_list();
+	$search_query      = '';
+
+	
+	if ( strtolower( $search_engine ) == 'all' ) {
+		foreach ( $searchengine_list as $se ) {
+			
+			if ( is_array( $se['regexpattern'] ) ) {
+				foreach ( $se['regexpattern'] as $subse ) {
+					$search_query .= "{$subse}|";
+				}
+			} else {
+				$search_query .= "{$se['regexpattern']}|";
+			}
+		}
+
+		
+		$search_query = substr( $search_query, 0, strlen( $search_query ) - 1 );
+	} else {
+		
+		if ( is_array( $searchengine_list[ $search_engine ]['regexpattern'] ) ) {
+			foreach ( $searchengine_list[ $search_engine ]['regexpattern'] as $se ) {
+				$search_query .= "{$se}|";
+			}
+
+			
+			$search_query = substr( $search_query, 0, strlen( $search_query ) - 1 );
+		} else {
+			$search_query .= $searchengine_list[ $search_engine ]['regexpattern'];
+		}
+	}
+
+	
+	return "({$search_query})";
+}
+
+
+function wp_statistics_get_search_engine_query( $search_engine = 'all', $time = 'total', $search_by = 'query' ) {
+	global $wpdb, $WP_Statistics;
+
+	
+	$table_name = $wpdb->prefix . 'statistics_';
+	if ( $WP_Statistics->get_option( 'search_converted' ) ) {
+		$table_name .= 'search';
+	} else {
+		$table_name .= 'visitor';
+	}
+
+	
+	$date_column = 'last_counter';
+
+	
+	if ( $search_by == "query" ) {
+		$search_query = wp_statistics_searchengine_query( $search_engine );
+	} else {
+		$search_query = wp_statistics_searchword_query( $search_engine );
+	}
+
+	
+	$sql = "SELECT * FROM {$table_name} WHERE ({$search_query})";
+
+	
+	$mysql_time_sql = wp_statistics_mysql_time_conditions( $date_column, $time, array( 'current_date' => true ) );
+	if ( ! empty( $mysql_time_sql ) ) {
+		$sql = $sql . ' AND (' . $mysql_time_sql . ')';
+	}
+
+	
+	$result = $wpdb->query( $sql );
+	return $result;
+}
+
+
+function wp_statistics_searchengine( $search_engine = 'all', $time = 'total' ) {
+	return wp_statistics_get_search_engine_query( $search_engine, $time, $search_by = 'query' );
+}
+
+
+function wp_statistics_referrer( $time = null ) {
+	global $wpdb, $WP_Statistics;
+
+	$timezone = array(
+		'today'     => 0,
+		'yesterday' => - 1,
+		'week'      => - 7,
+		'month'     => - 30,
+		'year'      => - 365,
+		'total'     => 'ALL',
+	);
+	$sql      = "SELECT `referred` FROM `" . $wpdb->prefix . "statistics_visitor` WHERE referred <> ''";
+	if ( array_key_exists( $time, $timezone ) ) {
+		if ( $time != "total" ) {
+			$sql .= " AND (`last_counter` = '{$WP_Statistics->Current_Date( 'Y-m-d', $timezone[$time] )}')";
+		}
+	} else {
+		
+		$sql .= " AND (`last_counter` = '{$WP_Statistics->Current_Date( 'Y-m-d', $time )}')";
+	}
+	$result = $wpdb->get_results( $sql );
+
+	$urls = array();
+	foreach ( $result as $item ) {
+		$url = parse_url( $item->referred );
+		if ( empty( $url['host'] ) || stristr( get_bloginfo( 'url' ), $url['host'] ) ) {
+			continue;
+		}
+		$urls[] = $url['scheme'] . ':
+	}
+	$get_urls = array_count_values( $urls );
+
+	return count( $get_urls );
+}
+
+
+function wp_statistics_searchword( $search_engine = 'all', $time = 'total' ) {
+	return wp_statistics_get_search_engine_query( $search_engine, $time, $search_by = 'word' );
+}
+
+
+function wp_statistics_countposts() {
+	$count_posts = wp_count_posts( 'post' );
+
+	$ret = 0;
+	if ( is_object( $count_posts ) ) {
+		$ret = $count_posts->publish;
+	}
+	return $ret;
+}
+
+
+function wp_statistics_countpages() {
+	$count_pages = wp_count_posts( 'page' );
+
+	$ret = 0;
+	if ( is_object( $count_pages ) ) {
+		$ret = $count_pages->publish;
+	}
+	return $ret;
+}
+
+
+function wp_statistics_countcomment() {
+	global $wpdb;
+
+	$countcomms = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = '1'" );
+	return $countcomms;
+}
+
+
+function wp_statistics_countspam() {
+
+	return number_format_i18n( get_option( 'akismet_spam_count' ) );
+}
+
+
+function wp_statistics_countusers() {
+
+	$result = count_users();
+
+	return $result['total_users'];
+}
+
+
+function wp_statistics_lastpostdate() {
+
+	global $wpdb, $WP_Statistics;
+
+	$db_date = $wpdb->get_var(
+		"SELECT post_date FROM {$wpdb->posts} WHERE post_type='post' AND post_status='publish' ORDER BY post_date DESC LIMIT 1"
+	);
+
+	$date_format = get_option( 'date_format' );
+
+	return $WP_Statistics->Current_Date_i18n( $date_format, $db_date, false );
+}
+
+
+
+function wp_statistics_average_post( $days = false ) {
+
+	global $wpdb;
+
+	$get_first_post = $wpdb->get_var(
+		"SELECT post_date FROM {$wpdb->posts} WHERE post_status = 'publish' ORDER BY post_date LIMIT 1"
+	);
+	$get_total_post = $wpdb->get_var(
+		"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post'"
+	);
+
+	$days_spend = intval(
+		( time() - strtotime( $get_first_post ) ) / 86400
+	); 
+
+	if ( $days == true ) {
+		if ( $get_total_post == 0 ) {
+			$get_total_post = 1;
+		} 
+
+		return round( $days_spend / $get_total_post, 0 );
+	} else {
+		if ( $days_spend == 0 ) {
+			$days_spend = 1;
+		} 
+
+		return round( $get_total_post / $days_spend, 2 );
+	}
+}
+
+
+
+function wp_statistics_average_comment( $days = false ) {
+
+	global $wpdb;
+
+	$get_first_comment = $wpdb->get_var( "SELECT comment_date FROM {$wpdb->comments} ORDER BY comment_date LIMIT 1" );
+	$get_total_comment = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = '1'" );
+
+	$days_spend = intval(
+		( time() - strtotime( $get_first_comment ) ) / 86400
+	); 
+
+	if ( $days == true ) {
+		if ( $get_total_comment == 0 ) {
+			$get_total_comment = 1;
+		} 
+
+		return round( $days_spend / $get_total_comment, 0 );
+	} else {
+		if ( $days_spend == 0 ) {
+			$days_spend = 1;
+		} 
+
+		return round( $get_total_comment / $days_spend, 2 );
+	}
+}
+
+
+
+function wp_statistics_average_registeruser( $days = false ) {
+
+	global $wpdb;
+
+	$get_first_user = $wpdb->get_var( "SELECT user_registered FROM {$wpdb->users} ORDER BY user_registered LIMIT 1" );
+	$get_total_user = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->users}" );
+
+	$days_spend = intval(
+		( time() - strtotime( $get_first_user ) ) / 86400
+	); 
+
+	if ( $days == true ) {
+		if ( $get_total_user == 0 ) {
+			$get_total_user = 1;
+		} 
+
+		return round( $days_spend / $get_total_user, 0 );
+	} else {
+		if ( $days_spend == 0 ) {
+			$days_spend = 1;
+		} 
+
+		return round( $get_total_user / $days_spend, 2 );
+	}
+}
+
+
+function wp_statistics_icons( $dashicons, $icon_name = null ) {
+	if ( null == $icon_name ) {
+		$icon_name = $dashicons;
+	}
+
+	return '<span class="dashicons ' . $dashicons . '"></span>';
+}
+
+
+function wp_statistics_geoip_supported() {
+	
+	$enabled = true;
+
+	
+	if ( ! function_exists( 'curl_init' ) ) {
+		$enabled = false;
+	}
+
+	
+	if ( ini_get( 'safe_mode' ) ) {
+		
+		if ( ! version_compare( phpversion(), '5.4', '<' ) ) {
+			$enabled = false;
+		}
+	}
+
+	return $enabled;
+}
+
+
+function wp_statistics_date_range_selector( $page, $current, $range = array(), $desc = array(), $extrafields = '', $pre_extra = '', $post_extra = '' ) {
+	GLOBAL $WP_Statistics;
+
+	
+	wp_enqueue_script( 'jquery-ui-datepicker' );
+	wp_register_style( 'jquery-ui-smoothness-css', WP_Statistics::$reg['plugin-url'] . 'assets/css/jquery-ui-smoothness.min.css' );
+	wp_enqueue_style( 'jquery-ui-smoothness-css' );
+
+	
+	if ( $range == null or count( $range ) == 0 ) {
+
+		
+		$range = array( 10, 20, 30, 60, 90, 180, 270, 365 );
+
+		
+		$installed_date = WP_Statistics::get_number_days_install_plugin();
+		array_push( $range, $installed_date['days'] );
+
+		
+		$desc = array(
+			__( '10 Days', 'wp-statistics' ),
+			__( '20 Days', 'wp-statistics' ),
+			__( '30 Days', 'wp-statistics' ),
+			__( '2 Months', 'wp-statistics' ),
+			__( '3 Months', 'wp-statistics' ),
+			__( '6 Months', 'wp-statistics' ),
+			__( '9 Months', 'wp-statistics' ),
+			__( '1 Year', 'wp-statistics' ),
+			__( 'All', 'wp-statistics' ),
+		);
+	}
+	if ( count( $desc ) == 0 ) {
+		$desc = $range;
+	}
+	$rcount = count( $range );
+	$bold   = true;
+
+	
+	if ( isset( $_GET['rangestart'] ) and strtotime( $_GET['rangestart'] ) != false ) {
+		$rangestart = $_GET['rangestart'];
+	} else {
+		$rangestart = $WP_Statistics->Current_Date( 'm/d/Y', '-' . $current );
+	}
+	if ( isset( $_GET['rangeend'] ) and strtotime( $_GET['rangeend'] ) != false ) {
+		$rangeend = $_GET['rangeend'];
+	} else {
+		$rangeend = $WP_Statistics->Current_Date( 'm/d/Y' );
+	}
+
+	
+	$rangestart_utime = $WP_Statistics->strtotimetz( $rangestart );
+	if ( false === $rangestart_utime ) {
+		$rangestart_utime = time();
+	}
+	$rangeend_utime = $WP_Statistics->strtotimetz( $rangeend );
+	if ( false === $rangeend_utime || $rangeend_utime < $rangestart_utime ) {
+		$rangeend_utime = time();
+	}
+
+	
+	$daysToDisplay = (int) ( ( $rangeend_utime - $rangestart_utime ) / 24 / 60 / 60 );
+	$today         = $WP_Statistics->Current_Date( 'm/d/Y' );
+
+	
+	$rangestart = $WP_Statistics->Local_Date( get_option( "date_format" ), $rangestart_utime );
+	$rangeend   = $WP_Statistics->Local_Date( get_option( "date_format" ), $rangeend_utime );
+
+	
+	if ( isset( $_GET['rangeend'] ) and isset( $_GET['rangestart'] ) and strtotime( $_GET['rangestart'] ) != false and strtotime( $_GET['rangeend'] ) != false ) {
+		$earlier = new DateTime( $_GET['rangestart'] );
+		$later   = new DateTime( $_GET['rangeend'] );
+		$current = $daysToDisplay = $later->diff( $earlier )->format( "%a" );
+	}
+
+	
+	
+	
+
+	for ( $i = 0; $i < $rcount; $i ++ ) {
+		
+		if ( $current == $range[ $i ] ) {
+			
+			$bold = false;
+		}
+
+		
+		
+		if ( $i < $rcount - 1 ) {
+			
+		}
+		
+	}
+	
+	
+
+	parse_str( $extrafields, $parse );
+	foreach ( $parse as $key => $value ) {
+		
+	}
+
+	if ( $bold ) {
+		
+	} else {
+		
+	}
+
+	
+	
+
+	
+	
+	
+
+	
+	
+
+	
+	
+            var t = new Date(k * 1000);
+            return t.getFullYear() + "-" + ("0" + (t.getMonth() + 1)).slice(-2) + "-" + ("0" + t.getDate()).slice(-2);
+        }
+        
+        jQuery( "
+        
+        jQuery( "
+        });
+        </script>' . "\r\n";
+}
+
+
+function wp_statistics_prepare_range_time_picker() {
+
+	
+	$installed_date = WP_Statistics::get_number_days_install_plugin();
+	$daysToDisplay  = $installed_date['days'];
+
+	
+	$list_of_pages = array( 'hits', 'searches', 'pages', 'countries', 'categories', 'tags', 'authors', 'browser', 'exclusions' );
+	foreach ( $list_of_pages as $page ) {
+		if ( isset( $_GET['page'] ) and $_GET['page'] == WP_Statistics::$page[ $page ] ) {
+			$daysToDisplay = 30;
+		}
+	}
+
+	
+	$rangestart = '';
+	$rangeend   = '';
+
+	
+	if ( isset( $_GET['hitdays'] ) and $_GET['hitdays'] > 0 ) {
+		$daysToDisplay = intval( $_GET['hitdays'] );
+	}
+	if ( isset( $_GET['rangeend'] ) and isset( $_GET['rangestart'] ) and strtotime( $_GET['rangestart'] ) != false and strtotime( $_GET['rangeend'] ) != false ) {
+		$rangestart = $_GET['rangestart'];
+		$rangeend   = $_GET['rangeend'];
+
+		
+		$earlier       = new DateTime( $_GET['rangestart'] );
+		$later         = new DateTime( $_GET['rangeend'] );
+		$daysToDisplay = $later->diff( $earlier )->format( "%a" );
+	}
+
+	return array( $daysToDisplay, $rangestart, $rangeend );
+}
+
+
+function wp_statistics_dateformat_php_to_jqueryui( $php_format ) {
+	$SYMBOLS_MATCHING = array(
+		
+		'd' => 'dd',
+		'D' => 'D',
+		'j' => 'd',
+		'l' => 'DD',
+		'N' => '',
+		'S' => '',
+		'w' => '',
+		'z' => 'o',
+		
+		'W' => '',
+		
+		'F' => 'MM',
+		'm' => 'mm',
+		'M' => 'M',
+		'n' => 'm',
+		't' => '',
+		
+		'L' => '',
+		'o' => '',
+		'Y' => 'yy',
+		'y' => 'y',
+		
+		'a' => '',
+		'A' => '',
+		'B' => '',
+		'g' => '',
+		'G' => '',
+		'h' => '',
+		'H' => '',
+		'i' => '',
+		's' => '',
+		'u' => ''
+	);
+	$jqueryui_format  = "";
+	$escaping         = false;
+	for ( $i = 0; $i < strlen( $php_format ); $i ++ ) {
+		$char = $php_format[ $i ];
+		if ( $char === '\\' ) {
+			$i ++;
+			if ( $escaping ) {
+				$jqueryui_format .= $php_format[ $i ];
+			} else {
+				$jqueryui_format .= '\'' . $php_format[ $i ];
+			}
+			$escaping = true;
+		} else {
+			if ( $escaping ) {
+				$jqueryui_format .= "'";
+				$escaping        = false;
+			}
+			if ( isset( $SYMBOLS_MATCHING[ $char ] ) ) {
+				$jqueryui_format .= $SYMBOLS_MATCHING[ $char ];
+			} else {
+				$jqueryui_format .= $char;
+			}
+		}
+	}
+
+	return $jqueryui_format;
+}
+
+
+function wp_statistics_date_range_calculator( $days, $start, $end ) {
+	global $WP_Statistics;
+
+	$daysToDisplay = $days;
+	$rangestart    = $start;
+	$rangeend      = $end;
+
+	
+	if ( ! empty( $daysToDisplay ) and ! empty( $rangestart ) and ! empty( $rangeend ) ) {
+		return array( $daysToDisplay, strtotime( $rangestart ), strtotime( $rangeend ) );
+	}
+
+	
+	if ( $daysToDisplay == - 1 ) {
+		$rangestart_utime = $WP_Statistics->strtotimetz( $rangestart );
+		$rangeend_utime   = $WP_Statistics->strtotimetz( $rangeend );
+		$daysToDisplay    = (int) ( ( $rangeend_utime - $rangestart_utime ) / 24 / 60 / 60 );
+
+		if ( $rangestart_utime == false || $rangeend_utime == false ) {
+			$daysToDisplay    = 20;
+			$rangeend_utime   = $WP_Statistics->timetz();
+			$rangestart_utime = $rangeend_utime - ( $daysToDisplay * 24 * 60 * 60 );
+		}
+	} else {
+		$rangeend_utime   = $WP_Statistics->timetz();
+		$rangestart_utime = $rangeend_utime - ( $daysToDisplay * 24 * 60 * 60 );
+	}
+
+	return array( $daysToDisplay, $rangestart_utime, $rangeend_utime );
+}
+
+
+
+function wp_statitiscs_empty_table( $table_name = false ) {
+	global $wpdb;
+
+	if ( $table_name ) {
+		$result = $wpdb->query( 'DELETE FROM ' . $table_name );
+
+		if ( $result ) {
+			return sprintf( __( '%s table data deleted successfully.', 'wp-statistics' ), '<code>' . $table_name . '</code>' );
+		}
+	}
+
+	return sprintf( __( 'Error, %s not emptied!', 'wp-statistics' ), $table_name );
+}
+
+
+
+function wp_statistics_generate_widget_load_javascript( $widget, $container_id = null ) {
+	if ( null == $container_id ) {
+		$container_id = str_replace( '.', '_', $widget . '_postbox' );
+	}
+	?>
+    <script type="text/javascript">
+        jQuery(document).ready(function () {
+            wp_statistics_get_widget_contents('<?php  ?>', '<?php  ?>');
+        });
+    </script>
+	<?php
+}
+
+
+function wp_statistics_generate_rgba_color( $num, $opacity = '1' ) {
+	$hash = md5( 'color' . $num );
+
+	return sprintf(
+		"'rgba(%s, %s, %s, %s)'",
+		hexdec( substr( $hash, 0, 2 ) ),
+		hexdec( substr( $hash, 2, 2 ) ),
+		hexdec( substr( $hash, 4, 2 ) ),
+		$opacity
+	);
+}
+
+
+function wp_statistics_validate_capability( $capability ) {
+	global $wp_roles;
+
+	if ( ! is_object( $wp_roles ) || ! is_array( $wp_roles->roles ) ) {
+		return 'manage_options';
+	}
+
+	foreach ( $wp_roles->roles as $role ) {
+		$cap_list = $role['capabilities'];
+
+		foreach ( $cap_list as $key => $cap ) {
+			if ( $capability == $key ) {
+				return $capability;
+			}
+		}
+	}
+
+	return 'manage_options';
+}
+
+
+function wp_statistics_check_access_user( $type = 'both', $export = false ) {
+	global $WP_Statistics;
+
+	
+	$list = array(
+		'manage' => array( 'manage_capability', 'manage_options' ),
+		'read'   => array( 'read_capability', 'manage_options' )
+	);
+
+	
+	$cap = 'both';
+	if ( ! empty( $type ) and array_key_exists( $type, $list ) ) {
+		$cap = $type;
+	}
+
+	
+	if ( $export == "cap" ) {
+		return wp_statistics_validate_capability( $WP_Statistics->get_option( $list[ $cap ][0], $list[ $cap ][1] ) );
+	}
+
+	
+	switch ( $type ) {
+		case "manage":
+		case "read":
+			return current_user_can( wp_statistics_validate_capability( $WP_Statistics->get_option( $list[ $cap ][0], $list[ $cap ][1] ) ) );
+			break;
+		case "both":
+			foreach ( array( 'manage', 'read' ) as $c ) {
+				if ( wp_statistics_check_access_user( $c ) === true ) {
+					return true;
+				}
+			}
+			break;
+	}
+
+	return false;
+}
+
+
+function wp_statistics_admin_notice_result( $type, $message ) {
+
+	switch ( $type ) {
+		case 'error':
+			$class = 'notice notice-error';
+			break;
+
+		case 'warning':
+			$class = 'notice notice-warning';
+			break;
+
+		case 'success':
+			$class = 'notice notice-success';
+			break;
+	}
+
+	printf( '<div class="%1$s"><p>%2$s</p></div>', esc_attr( $class ), esc_html( $message ) );
+}
+
+
+function wp_statistics_get_browser_list( $all = true ) {
+
+	
+	$list        = array(
+		"chrome"  => __( "Chrome", 'wp-statistics' ),
+		"firefox" => __( "Firefox", 'wp-statistics' ),
+		"msie"    => __( "Internet Explorer", 'wp-statistics' ),
+		"edge"    => __( "Edge", 'wp-statistics' ),
+		"opera"   => __( "Opera", 'wp-statistics' ),
+		"safari"  => __( "Safari", 'wp-statistics' )
+	);
+	$browser_key = array_keys( $list );
+
+	
+	if ( $all === true ) {
+		return $list;
+		
+	} elseif ( $all == "key" ) {
+		return $browser_key;
+	} else {
+		
+		if ( array_search( strtolower( $all ), $browser_key ) !== false ) {
+			return $list[ strtolower( $all ) ];
+		} else {
+			return __( "Unknown", 'wp-statistics' );
+		}
+	}
+}
+
+
+function wp_statistics_paginate_links( $args = array() ) {
+
+	
+	$defaults   = array(
+		'item_per_page' => 10,
+		'container'     => 'pagination-wrap',
+		'query_var'     => 'pagination-page',
+		'total'         => 0,
+		'current'       => 0,
+		'show_now_page' => true
+	);
+	$args       = wp_parse_args( $args, $defaults );
+	$total_page = ceil( $args['total'] / $args['item_per_page'] );
+
+	
+	if ( $total_page > 1 ) {
+		
+		' ),
+			'next_text' => __( '&raquo;' ),
+			'total'     => $total_page,
+			'current'   => $args['current']
+		) );
+
+		if ( $args['show_now_page'] ) {
+			
+		}
+
+		
+	}
+}
+
+
+function wp_statistics_get_post_list( $args = array() ) {
+
+	
+	$defaults = array(
+		'post_type'      => 'page',
+		'post_status'    => 'publish',
+		'posts_per_page' => '-1',
+		'order'          => 'ASC',
+		'fields'         => 'ids'
+	);
+	$args     = wp_parse_args( $args, $defaults );
+
+	
+	$query = new WP_Query( $args );
+	$list  = array();
+	foreach ( $query->posts as $ID ) {
+		$list[ $ID ] = get_the_title( $ID );
+	}
+
+	return $list;
+}
+
+
+function wp_statistics_get_page_info( $page_id, $type = 'post' ) {
+
+	
+	$arg      = array();
+	$defaults = array(
+		'link'      => '',
+		'edit_link' => '',
+		'object_id' => $page_id,
+		'title'     => '-',
+		'meta'      => array()
+	);
+
+	if ( ! empty( $type ) ) {
+		switch ( $type ) {
+			case "product":
+			case "attachment":
+			case "post":
+			case "page":
+				$arg = array(
+					'title'     => get_the_title( $page_id ),
+					'link'      => get_the_permalink( $page_id ),
+					'edit_link' => get_edit_post_link( $page_id ),
+					'meta'      => array(
+						'post_type' => get_post_type( $page_id )
+					)
+				);
+				break;
+			case "category":
+			case "post_tag":
+			case "tax":
+				$term = get_term( $page_id );
+				$arg  = array(
+					'title'     => $term->name,
+					'link'      => ( is_wp_error( get_term_link( $page_id ) ) === true ? '' : get_term_link( $page_id ) ),
+					'edit_link' => get_edit_term_link( $page_id ),
+					'meta'      => array(
+						'taxonomy'         => $term->taxonomy,
+						'term_taxonomy_id' => $term->term_taxonomy_id,
+						'count'            => $term->count,
+					)
+				);
+				break;
+			case "home":
+				$arg = array(
+					'title' => __( 'Home Page', 'wp-statistics' ),
+					'link'  => get_site_url()
+				);
+				break;
+			case "author":
+				$user_info = get_userdata( $page_id );
+				$arg       = array(
+					'title'     => ( $user_info->display_name != "" ? $user_info->display_name : $user_info->first_name . ' ' . $user_info->last_name ),
+					'link'      => get_author_posts_url( $page_id ),
+					'edit_link' => get_edit_user_link( $page_id ),
+				);
+				break;
+			case "search":
+				$result['title'] = __( 'Search Page', 'wp-statistics' );
+				break;
+			case "404":
+				$result['title'] = __( '404 not found', 'wp-statistics' );
+				break;
+			case "archive":
+				$result['title'] = __( 'Post Archive', 'wp-statistics' );
+				break;
+		}
+	}
+
+	return wp_parse_args( $arg, $defaults );
+}
+
+
+function wp_statistics_db_table( $export = 'all', $except = array() ) {
+	global $wpdb;
+
+	
+	$list = array();
+
+	
+	if ( is_string( $except ) ) {
+		$except = array( $except );
+	}
+	$mysql_list_table = array_diff( WP_Statistics_Install::$db_table, $except );
+	foreach ( $mysql_list_table as $tbl ) {
+		$table_name = $wpdb->prefix . 'statistics_' . $tbl;
+		if ( $export == "all" ) {
+			if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) == $table_name ) {
+				$list[ $tbl ] = $table_name;
+			}
+		} else {
+			$list[ $tbl ] = $table_name;
+		}
+	}
+
+	
+	if ( $export == 'all' ) {
+		return $list;
+	} else {
+		if ( array_key_exists( $export, $list ) ) {
+			return $list[ $export ];
+		}
+	}
+
+	return null;
+}
+
+
+function wp_statistics_check_option_require( $item = array(), $condition_key = 'require' ) {
+	global $WP_Statistics;
+
+	$condition = true;
+	if ( array_key_exists( 'require', $item ) ) {
+		foreach ( $item[ $condition_key ] as $if ) {
+			if ( ! $WP_Statistics->get_option( $if ) ) {
+				$condition = false;
+				break;
+			}
+		}
+	}
+
+	return $condition;
+}
+
+
+function wp_statistics_ignore_insert( $query ) {
+	$count = 0;
+	$query = preg_replace( '/^(INSERT INTO)/i', 'INSERT IGNORE INTO', $query, 1, $count );
+	return $query;
+}
+
+
+function wp_statistics_get_html_page( $url ) {
+
+	
+	$parse_url = wp_parse_url( $url );
+	$urls[]    = esc_url_raw( $url );
+
+	
+	if ( ! array_key_exists( 'scheme', $parse_url ) ) {
+		$urls      = array();
+		$url_parse = wp_parse_url( $url );
+		foreach ( array( 'http:
+			$urls[] = preg_replace( '/([^:])(\/{2,})/', '$1/', $scheme . path_join( ( isset( $url_parse['host'] ) ? $url_parse['host'] : '' ), ( isset( $url_parse['path'] ) ? $url_parse['path'] : '' ) ) );
+		}
+	}
+
+	
+	foreach ( $urls as $page ) {
+		$response = wp_remote_get( $page, array(
+			'timeout'    => 30,
+			'user-agent' => "Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/28.0.1500.71 Safari/537.36"
+		) );
+		if ( is_wp_error( $response ) ) {
+			continue;
+		}
+		$data = wp_remote_retrieve_body( $response );
+		if ( is_wp_error( $data ) ) {
+			continue;
+		}
+		return ( wp_strip_all_tags( $data ) == "" ? false : $data );
+	}
+
+	return false;
+}
+
+
+function wp_statistics_get_site_title( $url ) {
+
+	
+	$html = wp_statistics_get_html_page( $url );
+	if ( $html === false ) {
+		return false;
+	}
+
+	
+	if ( class_exists( 'DOMDocument' ) ) {
+		$dom = new DOMDocument;
+		@$dom->loadHTML( $html );
+		$title = '';
+		if ( isset( $dom ) and $dom->getElementsByTagName( 'title' )->length > 0 ) {
+			$title = $dom->getElementsByTagName( 'title' )->item( '0' )->nodeValue;
+		}
+		return ( wp_strip_all_tags( $title ) == "" ? false : $title );
+	}
+
+	return false;
+}
+
+
+
+function wp_statistics_get_domain_server( $url ) {
+	global $WP_Statistics;
+
+	
+	$result = array(
+		'ip'      => '',
+		'country' => ''
+	);
+
+	
+	if ( function_exists( 'gethostbyname' ) ) {
+		$ip = gethostbyname( $url );
+		if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+			$result['ip'] = $ip;
+			
+			if ( $WP_Statistics->get_option( 'geoip' ) ) {
+				$geoip_reader = $WP_Statistics::geoip_loader( 'country' );
+				if ( $geoip_reader != false ) {
+					try {
+						$record            = $geoip_reader->country( $ip );
+						$result['country'] = $record->country->isoCode;
+					} catch ( Exception $e ) {}
+				}
+			}
+		}
+	}
+
+	return $result;
+}
+
+
+function wp_statistics_show_site_icon( $url, $size = 16, $style = '' ) {
+	$url = preg_replace( '/^https?:\/\
+	if ( $url != "" ) {
+		$imgurl = "https:
+		return '<img src="' . $imgurl . '" width="' . $size . '" height="' . $size . '" style="' . ( $style == "" ? 'vertical-align: -3px;' : '' ) . '" />';
+	}
+
+	return false;
+}
+
+
+function wp_statistics_get_number_referer_from_domain( $url, $time_rang = array() ) {
+	global $wpdb;
+
+	
+	$search_url = wp_statistics_get_domain_name( esc_url_raw( $url ) );
+
+	
+	$time_sql = '';
+	if ( count( $time_rang ) > 0 and ! empty( $time_rang ) ) {
+		$time_sql = sprintf( "AND `last_counter` BETWEEN '%s' AND '%s'", $time_rang[0], $time_rang[1] );
+	}
+	$sql = $wpdb->prepare( "SELECT COUNT(*) FROM `{$wpdb->prefix}statistics_visitor` WHERE `referred` REGEXP \"^(https?:
+
+	
+	return $wpdb->get_var( $sql );
+}
+
+
+function wp_statistics_get_domain_name( $url ) {
+	
+	$url = preg_replace( "(^https?:
+	
+	$url = preg_replace( '
+	
+	$url = explode( "/", $url );
+
+	return $url[0];
+}

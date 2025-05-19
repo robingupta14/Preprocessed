@@ -1,0 +1,881 @@
+<?php
+
+
+
+
+
+
+
+
+global $blog;
+
+$blog = NULL;
+
+param( 'action', 'string', '' );
+
+
+if( $action != 'test_api' && ( empty($current_User) || ! $current_User->check_perm( 'admin', 'restricted' ) ) )
+{	
+}
+
+
+evo_sendcookies();
+
+
+header_nocache();
+header_content_type( 'text/html', $io_charset );
+
+
+$current_debug = $debug;
+$current_debug_jslog = $debug_jslog;
+
+
+$debug = false;
+
+
+$debug_jslog = false;
+
+
+$Ajaxlog = new Log();
+
+$Ajaxlog->add( sprintf( T_('action: %s'), $action ), 'note' );
+
+$incorrect_action = false;
+
+$add_response_end_comment = true;
+
+
+
+
+
+
+
+switch( $action )
+{
+	case 'get_whois_info':
+		param( 'query', 'string' );
+		param( 'window_height', 'integer' );
+
+		load_class('_ext/phpwhois/whois.main.php', 'whois' );
+
+		$whois = new Whois();
+
+		
+		$allowproxy = false;
+
+		
+		$whois->deep_whois = empty( $_GET['fast'] );
+
+		
+		
+		
+
+		
+		$whois->non_icann = true;
+
+		$result = $whois->Lookup( $query );
+
+		$winfo = '<pre style="height: '.( $window_height - 200 ).'px; overflow: auto;">';
+		if( ! empty( $result['rawdata'] ) )
+		{
+			
+			for( $i = 0; $i < count( $result['rawdata'] ); $i++ )
+			{
+				if( preg_match( '/^(orgname:|org-name:)/i', $result['rawdata'][$i] ) )
+				{
+					$result['rawdata'][$i] = '<span style="font-weight: bold; background-color: yellow;">'.$result['rawdata'][$i].'</span>';
+				}
+			}
+			$winfo .= format_to_output( implode( $result['rawdata'], "\n" ) );
+		}
+		else
+		{
+			$winfo = format_to_output( implode( $whois->Query['errstr'], "\n" ) )."<br></br>";
+		}
+		$winfo .= '</pre>';
+
+		
+		break;
+
+	case 'add_plugin_sett_set':
+		
+
+		
+
+		
+		$current_User->check_perm( 'options', 'view', true );
+
+		
+		$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+		$AdminUI = new AdminUI();
+
+		param( 'plugin_ID', 'integer', true );
+
+		$admin_Plugins = & get_Plugins_admin(); 
+		$Plugin = & $admin_Plugins->get_by_ID($plugin_ID);
+		if( ! $Plugin )
+		{
+			bad_request_die('Invalid Plugin.');
+		}
+		param( 'set_type', 'string', '' ); 
+		if( $set_type != 'Settings'  )
+		{
+			bad_request_die('Invalid set_type param!');
+		}
+		param( 'set_path', '/^\w+(?:\[\w+\])+$/', '' );
+
+		load_funcs('plugins/_plugin.funcs.php');
+
+		
+		_set_setting_by_path( $Plugin, $set_type, $set_path, array() );
+
+		
+		$r = get_plugin_settings_node_by_path( $Plugin, $set_type, $set_path,  false );
+
+		$Form = new Form(); 
+		autoform_display_field( $set_path, $r['set_meta'], $Form, $set_type, $Plugin, NULL, $r['set_node'] );
+		break;
+
+	case 'set_object_link_position':
+		
+
+		
+		$Session->assert_received_crumb( 'link' );
+
+		
+
+		param('link_ID', 'integer', true);
+		param('link_position', 'string', true);
+
+		
+		if( $link_position == 'inline' )
+		{
+			$Session->set( 'display_inline_reminder', 'false' );
+		}
+
+		$LinkCache = & get_LinkCache();
+		if( ( $Link = & $LinkCache->get_by_ID( $link_ID ) ) === false )
+		{	
+			
+			exit(0);
+		}
+		$LinkOwner = & $Link->get_LinkOwner();
+
+		
+		$LinkOwner->check_perm( 'edit', true );
+
+		if( $Link->set( 'position', $link_position ) && $Link->dbupdate() )
+		{ 
+			
+
+			
+			$LinkOwner->update_last_touched_date();
+
+			if( $link_position == 'cover' && $LinkOwner->type == 'item' )
+			{ 
+			  
+				$DB->query( 'UPDATE T_links
+						SET link_position = "aftermore"
+					WHERE link_ID != '.$DB->quote( $link_ID ).'
+						AND link_itm_ID = '.$DB->quote( $LinkOwner->Item->ID ).'
+						AND link_position = "cover"' );
+			}
+		}
+		else
+		{ 
+			
+		}
+		break;
+
+	case 'update_links_order':
+		
+
+		
+		$Session->assert_received_crumb( 'link' );
+
+		$link_IDs = param( 'links', 'string' );
+
+		if( empty( $link_IDs ) )
+		{ 
+			break;
+		}
+
+		$link_IDs = explode( ',', $link_IDs );
+
+		
+		$LinkCache = & get_LinkCache();
+		if( ( $Link = & $LinkCache->get_by_ID( $link_IDs[0] ) ) === false )
+		{ 
+			exit(0);
+		}
+		$LinkOwner = & $Link->get_LinkOwner();
+		
+		$LinkOwner->check_perm( 'edit', true );
+
+		$DB->begin( 'SERIALIZABLE' );
+
+		
+		$max_link_order = intval( $DB->get_var( 'SELECT MAX( link_order )
+			 FROM T_links
+			WHERE link_ID IN ( '.$DB->quote( $link_IDs ).' )' ) );
+
+		
+		$fake_sql_update_strings = '';
+		$real_sql_update_strings = '';
+		$real_link_order = 0;
+		foreach( $link_IDs as $link_ID )
+		{
+			$max_link_order++;
+			$fake_sql_update_strings .= ' WHEN link_ID = '.$DB->quote( $link_ID ).' THEN '.$max_link_order;
+			$real_link_order++;
+			$real_sql_update_strings .= ' WHEN link_ID = '.$DB->quote( $link_ID ).' THEN '.$real_link_order;
+		}
+
+		
+		$DB->query( 'UPDATE T_links
+			  SET link_order = CASE '.$fake_sql_update_strings.' ELSE link_order END
+			WHERE link_ID IN ( '.$DB->quote( $link_IDs ).' )' );
+		
+		$DB->query( 'UPDATE T_links
+			  SET link_order = CASE '.$real_sql_update_strings.' ELSE link_order END
+			WHERE link_ID IN ( '.$DB->quote( $link_IDs ).' )' );
+
+		$DB->commit();
+		break;
+
+	case 'edit_comment':
+		
+
+		
+		$Session->assert_received_crumb( 'comment' );
+
+		$comment_ID = param( 'commentid', 'integer' );
+
+		
+		$CommentCache = & get_CommentCache();
+		$edited_Comment = & $CommentCache->get_by_ID( $comment_ID );
+		
+		$edited_Comment_Item = & $edited_Comment->get_Item();
+
+		
+		$current_User->check_perm( 'meta_comment', 'edit', true, $edited_Comment );
+
+		
+		$Collection = $Blog = & $edited_Comment_Item->get_Blog();
+
+		$comment_action = param( 'comment_action', 'string' );
+
+		switch( $comment_action )
+		{
+			case 'form':
+				
+				$comment_title = '';
+				$comment_content = htmlspecialchars_decode( $edited_Comment->content );
+
+				
+				$Plugins_admin = & get_Plugins_admin();
+				$params = array( 'object_type' => 'Comment', 'object_Blog' => & $Blog );
+				$Plugins_admin->unfilter_contents( $comment_title , $comment_content , $edited_Comment_Item->get_renderers_validated(), $params );
+
+				
+				$rows_approx = round( strlen( $comment_content ) / 200 );
+				$rows_number = substr_count( $comment_content, "\n" );
+				$rows_number = ( ( $rows_number > 3 && $rows_number > $rows_approx ) ? $rows_number : $rows_approx ) + 2;
+				
+				
+				
+				
+				
+				break;
+
+			case 'update':
+				
+				if( $Blog->get_setting( 'allow_html_comment' ) )
+				{ 
+					$text_format = 'html';
+				}
+				else
+				{ 
+					$text_format = 'htmlspecialchars';
+				}
+
+				$comment_content = param( 'comment_content', $text_format );
+
+				
+				
+				
+				$Plugins->trigger_event( 'CommentFormSent', array(
+						'dont_remove_pre' => true,
+						'comment_item_ID' => $edited_Comment_Item->ID,
+						'comment' => & $comment_content,
+						'renderers' => $edited_Comment->get_renderers_validated(),
+					) );
+
+				
+				$edited_Comment->set( 'content', $comment_content );
+				$edited_Comment->dbupdate();
+
+				
+				$edited_Comment->content( 'htmlbody', 'true' );
+				break;
+
+			case 'cancel':
+				
+				$edited_Comment->content( 'htmlbody', 'true' );
+				break;
+		}
+
+		break;
+
+	case 'get_opentrash_link':
+		
+
+		
+		$Session->assert_received_crumb( 'comment' );
+
+		
+		$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+		$AdminUI = new AdminUI();
+
+		param( 'blog', 'integer', 0 );
+
+		
+		break;
+
+	case 'delete_comment':
+		
+
+		
+		$Session->assert_received_crumb( 'comment' );
+
+		$result_success = false;
+
+		
+		$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+		$AdminUI = new AdminUI();
+
+		
+
+		$is_admin_page = true;
+		$blog = param( 'blogid', 'integer' );
+		$comment_ID = param( 'commentid', 'integer' );
+		$statuses = param( 'statuses', 'string', NULL );
+		$expiry_status = param( 'expiry_status', 'string', 'active' );
+		$item_ID = param( 'itemid', 'integer' );
+		$currentpage = param( 'currentpage', 'integer', 1 );
+		$limit = param( 'limit', 'integer', 0 );
+		$request_from = param( 'request_from', 'string', NULL );
+		$comment_type = param( 'comment_type', 'string', 'feedback' );
+
+		$edited_Comment = & Comment_get_by_ID( $comment_ID, false );
+		if( $edited_Comment !== false )
+		{ 
+			
+			$current_User->check_perm( 'comment!CURSTATUS', 'delete', true, $edited_Comment );
+
+			$result_success = $edited_Comment->dbdelete();
+		}
+
+		if( $result_success === false )
+		{ 
+			header_http_response( '500 '.T_('Comment cannot be deleted!'), 500 );
+			exit(0);
+		}
+
+		if( in_array( $request_from, array( 'items', 'comments' ) ) )
+		{	
+
+			
+			
+			
+			$filterset_name = ( $item_ID > 0 ) ? '' : 'fullview';
+
+			echo_item_comments( $blog, $item_ID, $statuses, $currentpage, $limit, array(), $filterset_name, $expiry_status, $comment_type );
+		}
+		break;
+
+	case 'delete_comment_url':
+		
+
+		
+		$Session->assert_received_crumb( 'comment' );
+
+		
+
+		$blog = param( 'blogid', 'integer' );
+		$edited_Comment = & Comment_get_by_ID( param( 'commentid', 'integer' ), false );
+		if( $edited_Comment !== false && $edited_Comment->author_url != NULL )
+		{	
+			
+			$current_User->check_perm( 'comment!CURSTATUS', 'edit', true, $edited_Comment );
+
+			$edited_Comment->set( 'author_url', NULL );
+			$edited_Comment->dbupdate();
+		}
+
+		break;
+
+	case 'refresh_comments':
+		
+		
+		
+		
+		
+		
+
+		$is_admin_page = true;
+		$blog = param( 'blogid', 'integer' );
+		$item_ID = param( 'itemid', 'integer', NULL );
+		$statuses = param( 'statuses', 'string', NULL );
+		$expiry_status = param( 'expiry_status', 'string', 'active' );
+		$currentpage = param( 'currentpage', 'string', 1 );
+		$request_from = param( 'request_from', 'string', 'items' );
+		$comment_type = param( 'comment_type', 'string', 'feedback' );
+
+		
+		$current_User->check_perm( 'blog_ismember', 'view', true, $blog );
+
+		
+		$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+		$AdminUI = new AdminUI();
+
+		if( in_array( $request_from, array( 'items', 'comments' ) ) )
+		{	
+			echo_item_comments( $blog, $item_ID, $statuses, $currentpage, NULL, array(), '', $expiry_status, $comment_type );
+		}
+		elseif( $request_from == 'dashboard' || $request_from == 'coll_settings' )
+		{ 
+			load_funcs( 'dashboard/model/_dashboard.funcs.php' );
+			show_comments_awaiting_moderation( $blog, NULL, 10, array(), false );
+		}
+		break;
+
+	case 'dom_type_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'domtype' );
+
+		
+		$current_User->check_perm( 'stats', 'edit', true );
+
+		load_funcs('sessions/model/_hitlog.funcs.php');
+
+		$dom_type = param( 'new_dom_type', 'string' );
+		$dom_name = param( 'dom_name', 'string' );
+
+		$DB->query( 'UPDATE T_basedomains
+						SET dom_type = '.$DB->quote($dom_type).'
+						WHERE dom_name =' . $DB->quote($dom_name));
+		
+
+	case 'dom_status_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'domstatus' );
+
+		
+		$current_User->check_perm( 'stats', 'edit', true );
+
+		load_funcs('sessions/model/_hitlog.funcs.php');
+
+		$dom_status = param( 'new_dom_status', 'string' );
+		$dom_name = param( 'dom_name', 'string' );
+
+		$DB->query( 'UPDATE T_basedomains
+						SET dom_status = '.$DB->quote($dom_status).'
+						WHERE dom_name =' . $DB->quote($dom_name));
+		
+
+	case 'iprange_status_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'iprange' );
+
+		
+		$current_User->check_perm( 'spamblacklist', 'edit', true );
+
+		$new_status = param( 'new_status', 'string' );
+		$iprange_ID = param( 'iprange_ID', 'integer', true );
+
+		$DB->query( 'UPDATE T_antispam__iprange
+						SET aipr_status = '.( empty( $new_status ) ? 'NULL' : $DB->quote( $new_status ) ).'
+						WHERE aipr_ID =' . $DB->quote( $iprange_ID ) );
+		
+
+	case 'emadr_status_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'emadrstatus' );
+
+		
+		$current_User->check_perm( 'emails', 'edit', true );
+
+		$new_status = param( 'new_status', 'string' );
+		$emadr_ID = param( 'emadr_ID', 'integer', true );
+
+		load_funcs('tools/model/_email.funcs.php');
+
+		$DB->query( 'UPDATE T_email__address
+						SET emadr_status = '.( empty( $new_status ) ? 'NULL' : $DB->quote( $new_status ) ).'
+						WHERE emadr_ID =' . $DB->quote( $emadr_ID ) );
+		
+
+	case 'user_level_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'userlevel' );
+
+		$user_level = param( 'new_user_level', 'integer' );
+		$user_ID = param( 'user_ID', 'integer' );
+
+		
+		$current_User->can_moderate_user( $user_ID, true );
+
+		$UserCache = & get_UserCache();
+		if( $User = & $UserCache->get_by_ID( $user_ID, false ) )
+		{
+			$User->set( 'level', $user_level );
+			$User->dbupdate();
+			
+
+	case 'group_level_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'grouplevel' );
+
+		
+		$current_User->check_perm( 'users', 'edit', true );
+
+		$group_level = param( 'new_group_level', 'integer' );
+		$group_ID = param( 'group_ID', 'integer' );
+
+		$GroupCache = & get_GroupCache();
+		if( $Group = & $GroupCache->get_by_ID( $group_ID, false, false ) )
+		{
+			$Group->set( 'level', $group_level );
+			$Group->dbupdate();
+			
+
+	case 'country_status_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'country' );
+
+		
+		$current_User->check_perm( 'options', 'edit', true );
+
+		load_funcs( 'regional/model/_regional.funcs.php' );
+
+		$new_status = param( 'new_status', 'string' );
+		$ctry_ID = param( 'ctry_ID', 'integer', true );
+
+		$DB->query( 'UPDATE T_regional__country
+						SET ctry_status = '.( empty( $new_status ) ? 'NULL' : $DB->quote( $new_status ) ).'
+						WHERE ctry_ID =' . $DB->quote( $ctry_ID ) );
+		
+
+	case 'item_task_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'itemtask' );
+
+		$field = param( 'field', 'string' );
+		if( ! in_array( $field, array( 'priority', 'status', 'assigned' ) ) )
+		{ 
+			$Ajaxlog->add( sprintf( 'Invalid field: %s', $field ), 'error' );
+			break;
+		}
+
+		$post_ID = param( 'post_ID', 'integer', true );
+
+		$ItemCache = & get_ItemCache();
+		$Item = & $ItemCache->get_by_ID( $post_ID );
+
+		
+		$current_User->check_perm( 'item_post!CURSTATUS', 'edit', true, $Item );
+
+		$new_attrs = '';
+		switch( $field )
+		{
+			case 'priority':
+				
+				$new_value = param( 'new_priority', 'integer', NULL );
+				$new_attrs = ' color="'.item_priority_color( $new_priority ).'"';
+				$new_title = item_priority_title( $new_priority );
+				$Item->set_from_Request( 'priority', 'new_priority', true );
+				$Item->dbupdate();
+				break;
+
+			case 'assigned':
+				
+				$new_assigned_ID = param( 'new_assigned_ID', 'integer', NULL );
+				$new_assigned_login = param( 'new_assigned_login', 'string', NULL );
+				if( $Item->assign_to( $new_assigned_ID, $new_assigned_login ) )
+				{ 
+					$Item->dbupdate();
+				}
+				else
+				{ 
+					load_funcs('_core/_template.funcs.php');
+					headers_content_mightcache( 'text/html', 0, '
+					header_http_response('400 Bad Request');
+					
+					
+					die(2); 
+					
+				}
+
+				if( empty( $Item->assigned_user_ID ) )
+				{
+					$new_title = T_('No user');
+				}
+				else
+				{
+					$is_admin_page = true;
+					$UserCache = & get_UserCache();
+					$User = & $UserCache->get_by_ID( $Item->assigned_user_ID );
+					$new_title = $User->get_colored_login( array( 'mask' => '$avatar$ $login$' ) );
+				}
+				$new_value = $Item->assigned_user_ID;
+				break;
+
+			case 'status':
+				
+				$new_value = param( 'new_status', 'string', NULL );
+				
+				$new_value = intval( str_replace( '_', '', $new_value ) );
+				set_param( 'new_status', $new_value );
+
+				$Item->set_from_Request( 'pst_ID', 'new_status', true );
+				$Item->dbupdate();
+
+				$new_title = empty( $Item->pst_ID ) ? T_('No status') : $Item->get( 't_extra_status' );
+				if( ! empty( $new_value ) )
+				{	
+					$new_value = '_'.$new_value;
+				}
+				break;
+		}
+
+		
+		
+
+	case 'item_order_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'itemorder' );
+
+		$item_order = param( 'new_item_order', 'string' );
+		$post_ID = param( 'post_ID', 'integer' );
+
+		$ItemCache = & get_ItemCache();
+		$Item = & $ItemCache->get_by_ID( $post_ID );
+
+		
+		$current_User->check_perm( 'item_post!CURSTATUS', 'edit', true, $Item );
+
+		if( $item_order === '-' || $item_order === '' )
+		{	
+			$item_order = NULL;
+		}
+		else
+		{	
+			$item_order = intval( $item_order );
+		}
+
+		$Item->set( 'order', $item_order, true );
+		$Item->dbupdate();
+
+		
+		
+
+	case 'cat_order_edit':
+		
+
+		
+		$Session->assert_received_crumb( 'catorder' );
+
+		$blog = param( 'blogid', 'integer' );
+		$cat_order = param( 'new_cat_order', 'string' );
+		$cat_ID = param( 'cat_ID', 'integer' );
+
+		
+		$current_User->check_perm( 'blog_cats', 'edit', true, $blog );
+
+		if( $cat_order === '-' || $cat_order === '' || intval( $cat_order ) == '' )
+		{ 
+			$cat_order = NULL;
+		}
+
+		$ChapterCache = & get_ChapterCache();
+		if( $Chapter = & $ChapterCache->get_by_ID( $cat_ID, false ) )
+		{ 
+			$Chapter->set( 'order', ( $cat_order === '' ? NULL : $cat_order ), true );
+			$Chapter->dbupdate();
+			
+
+	case 'get_goals':
+		
+		$blog = param( 'blogid', 'integer' );
+
+		
+		$Session->assert_received_crumb( 'itemgoal' );
+
+		
+		$current_User->check_perm( 'blog_post_statuses', 'edit', true, $blog );
+
+		$cat_ID = param( 'cat_id', 'integer', 0 );
+
+		$SQL = new SQL();
+		$SQL->SELECT( 'goal_ID, goal_name' );
+		$SQL->FROM( 'T_track__goal' );
+		$SQL->WHERE( 'goal_redir_url IS NULL' );
+		if( empty( $cat_ID ) )
+		{ 
+			$SQL->WHERE_and( 'goal_gcat_ID IS NULL' );
+		}
+		else
+		{ 
+			$SQL->WHERE_and( 'goal_gcat_ID = '.$DB->quote( $cat_ID ) );
+		}
+		$goals = $DB->get_assoc( $SQL->get() );
+
+		
+
+		foreach( $goals as $goal_ID => $goal_name )
+		{
+			
+		}
+
+		break;
+
+	case 'conflict_files':
+		
+
+		
+		$Session->assert_received_crumb( 'conflictfiles' );
+
+		param( 'fileroot_ID', 'string' );
+
+		
+		$current_User->check_perm( 'files', 'add', true, $fileroot_ID );
+
+		param( 'path', 'string' );
+		param( 'oldfile', 'string' );
+		param( 'newfile', 'string' );
+		param( 'format', 'string' );
+
+		$fileroot = explode( '_', $fileroot_ID );
+		$fileroot_type = $fileroot[0];
+		$fileroot_type_ID = empty( $fileroot[1] ) ? 0 : $fileroot[1];
+
+		$result = replace_old_file_with_new( $fileroot_type, $fileroot_type_ID, $path, $newfile, $oldfile, false );
+
+		$data = array();
+		if( $format == 'full_path_link' )
+		{ 
+			$FileCache = & get_FileCache();
+			$new_File = & $FileCache->get_by_root_and_path( $fileroot_type, $fileroot_type_ID, trailing_slash( $path ).$newfile, true );
+			$old_File = & $FileCache->get_by_root_and_path( $fileroot_type, $fileroot_type_ID, trailing_slash( $path ).$oldfile, true );
+			$data['new'] = $new_File->get_view_link();
+			$data['old'] = $old_File->get_view_link();
+		}
+		else
+		{ 
+			$data['new'] = $newfile;
+			$data['old'] = $oldfile;
+		}
+		if( $result !== true )
+		{ 
+			$data['error'] = $result;
+		}
+
+		
+		exit(0);
+
+	case 'link_attachment':
+		
+
+		
+		$Session->assert_received_crumb( 'link' );
+
+		
+		$current_User->check_perm( 'files', 'view' );
+
+		param( 'iframe_name', 'string', '' );
+		param( 'link_owner_type', 'string', true );
+		param( 'link_owner_ID', 'integer', true );
+		
+		param( 'root', 'string', '' );
+		param( 'path', 'string', '' );
+		param( 'fm_highlight', 'string', '' );
+
+		$additional_params = empty( $root ) ? '' : '&amp;root='.$root;
+		$additional_params .= empty( $path ) ? '' : '&amp;path='.$path;
+		$additional_params .= empty( $fm_highlight ) ? '' : '&amp;fm_highlight='.$fm_highlight;
+
+		mode=upload&amp;ajax_request=1&amp;iframe_name='.$iframe_name.'&amp;fm_mode=link_object&amp;link_type='.$link_owner_type.'&amp;link_object_ID='.$link_owner_ID.$additional_params.'"'
+					.' width="100%" height="100%" marginwidth="0" marginheight="0" align="top" scrolling="auto" frameborder="0"'
+					.' onload="document.getElementById(\'link_attachment_loader\').style.display=\'none\'">loading</iframe>'
+			.'</div>';
+
+		break;
+
+	case 'import_files':
+		
+
+		
+		$Session->assert_received_crumb( 'import' );
+
+		$FileRootCache = & get_FileRootCache();
+		$FileRoot = & $FileRootCache->get_by_type_and_ID( 'import', '0', true );
+
+		
+		$current_User->check_perm( 'files', 'view', true, $FileRoot );
+
+		mode=import&amp;ajax_request=1&amp;root=import_0"'
+					.' width="100%" height="100%" marginwidth="0" marginheight="0" align="top" scrolling="auto" frameborder="0"'
+					.' onload="document.getElementById(\'import_files_loader\').style.display=\'none\'">loading</iframe>'
+			.'</div>';
+
+		break;
+
+	case 'test_api':
+		
+		
+		break;
+
+	default:
+		$incorrect_action = true;
+		break;
+}
+
+if( !$incorrect_action )
+{
+	if( $current_debug || $current_debug_jslog )
+	{	
+		$Ajaxlog->display( NULL, NULL, true, 'all',
+						array(
+								'error' => array( 'class' => 'jslog_error', 'divClass' => false ),
+								'note'  => array( 'class' => 'jslog_note',  'divClass' => false ),
+							), 'ul', 'jslog' );
+	}
+
+	if( $add_response_end_comment )
+	{ 
+		
+	}
+
+	exit(0);
+}
+
+?>

@@ -1,0 +1,1670 @@
+<?php
+
+
+
+class class_0 extends \var_0\var_1\var_2\var_3\var_4
+{
+
+    
+    protected $var_5;
+
+    public function fn_0()
+    {
+        parent::fn_0();
+
+        
+        $var_6 = array("get-image-thumbnail", "get-video-thumbnail", "get-document-thumbnail");
+        if (!in_array($var_7->getParam("action"), $var_6)) {
+            $var_7->checkPermission("assets");
+        }
+
+        $var_7->var_5 = new var_10\var_11($var_7->getUser());
+    }
+
+    public function fn_1()
+    {
+
+        
+        if (var_4\var_13::isLocked($var_7->getParam("id"), "asset")) {
+            $var_7->var_14->json(array(
+                "editlock" => var_4\var_13::getByElement($var_7->getParam("id"), "asset")
+            ));
+        }
+        var_4\var_13::lock($var_7->getParam("id"), "asset");
+
+        $var_16 = var_0\var_17\var_10::getById(intval($var_7->getParam("id")));
+
+        if (!$var_16 instanceof var_10) {
+            $var_7->var_14->json(array("success" => false, "message" => "asset doesn't exist"));
+        }
+
+        $var_16->setMetadata(var_10\var_11::expandMetadataForEditmode($var_16->getMetadata()));
+        $var_16->setProperties(var_4\var_11::minimizePropertiesForEditmode($var_16->getProperties()));
+        
+        $var_16->getScheduledTasks();
+        $var_16->var_23 = var_4\var_11::getIdPath($var_16);
+        $var_16->var_24 = $var_16->getUserPermissions();
+        $var_16->setLocked($var_16->isLocked());
+        $var_16->setParent(null);
+
+        if ($var_16 instanceof var_10\var_29) {
+            $var_16->var_30 = $var_16->getData();
+        }
+
+        if ($var_16 instanceof var_10\var_32) {
+            $var_33 = array();
+
+            if ($var_16->getWidth() && $var_16->getHeight()) {
+                $var_33["dimensions"] = array();
+                $var_33["dimensions"]["width"] = $var_16->getWidth();
+                $var_33["dimensions"]["height"] = $var_16->getHeight();
+            }
+
+            if (function_exists("exif_read_data") && is_file($var_16->getFileSystemPath())) {
+                $var_37 = array(var_38, var_39, var_40);
+
+                if (in_array(exif_imagetype($var_16->getFileSystemPath()), $var_37)) {
+                    $var_41 = @exif_read_data($var_16->getFileSystemPath());
+                    if (is_array($var_41)) {
+                        $var_33["exif"] = array();
+                        foreach ($var_41 as $var_42 => $var_43) {
+                            if ((is_string($var_43) && strlen($var_43) < 50) || is_numeric($var_43)) {
+                                
+                                if (mb_check_encoding($var_43, "UTF-8")) {
+                                    $var_33["exif"][$var_42] = $var_43;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            $var_16->var_33 = $var_33;
+        }
+
+        $var_16->setStream(null);
+        if ($var_16->isAllowed("view")) {
+            $var_7->var_14->json($var_16);
+        }
+
+        $var_7->var_14->json(array("success" => false, "message" => "missing_permission"));
+    }
+
+    public function fn_2()
+    {
+
+        $var_46 = array();
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("node"));
+
+        if ($var_16->hasChilds()) {
+
+            $var_48 = intval($var_7->getParam("limit"));
+            if (!$var_7->getParam("limit")) {
+                $var_48 = 100000000;
+            }
+            $var_49 = intval($var_7->getParam("start"));
+
+
+            
+            $var_50 = new var_10\var_51();
+            if ($var_7->getUser()->isAdmin()) {
+                $var_50->setCondition("parentId = ? ", $var_16->getId());
+            } else {
+                $var_55 = $var_7->getUser()->getRoles();
+                $var_55[] = $var_7->getUser()->getId();
+                $var_50->setCondition("parentId = ? and
+                    (
+                    (select list from users_workspaces_asset where userId in (" . implode(',', $var_55) . ") and LOCATE(CONCAT(path,filename),cpath)=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
+                    or
+                    (select list from users_workspaces_asset where userId in (" . implode(',', $var_55) . ") and LOCATE(cpath,CONCAT(path,filename))=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
+                    )", $var_16->getId());
+            }
+            $var_50->setLimit($var_48);
+            $var_50->setOffset($var_49);
+            $var_50->setOrderKey("FIELD(type, 'folder') DESC, filename ASC", false);
+
+            $var_60 = $var_50->load();
+
+            foreach ($var_60 as $var_62) {
+                if ($var_62->isAllowed("list")) {
+                    $var_46[] = $var_7->fn_3($var_62);
+                }
+            }
+        }
+
+
+        if ($var_7->getParam("limit")) {
+            $var_7->var_14->json(array(
+                "offset" => $var_49,
+                "limit" => $var_48,
+                "total" => $var_16->getChildAmount($var_7->getUser()),
+                "nodes" => $var_46
+            ));
+        } else {
+            $var_7->var_14->json($var_46);
+        }
+
+        $var_7->var_14->json(false);
+    }
+
+    public function fn_4()
+    {
+        $var_65 = $var_7->fn_5();
+        $var_7->var_14->json(array("success" => $var_65["success"], "msg" => "Success"));
+    }
+
+    public function fn_6()
+    {
+        
+        $var_65 = $var_7->fn_5();
+
+        
+        
+        
+        $var_7->disableViewAutoRender();
+        
+    }
+
+    protected function fn_5()
+    {
+        $var_68 = false;
+
+        if (array_key_exists("Filedata", $var_69)) {
+            $var_70 = $var_69["Filedata"]["name"];
+            $var_71 = $var_69["Filedata"]["tmp_name"];
+        } else if ($var_7->getParam("type") == "base64") {
+            $var_70 = $var_7->getParam("filename");
+            $var_71 = var_72 . "/upload-base64" . uniqid() . ".tmp";
+            $var_30 = preg_replace("@^data:[^,]+;base64,@", "", $var_7->getParam("data"));
+            var_0\var_73::put($var_71, base64_decode($var_30));
+        }
+
+        if($var_7->getParam("dir") && $var_7->getParam("parentId")) {
+            
+            
+            $var_74 = var_0\var_17\var_10::getById($var_7->getParam("parentId"));
+            $var_75 = $var_74->getFullPath() . "/" . trim($var_7->getParam("dir"), "/ ");
+
+            $var_77 = 5;
+            for ($var_78=0; $var_78<$var_77; $var_78++) {
+                try {
+                    $var_79 = var_10\var_11::createFolderByPath($var_75);
+                    break;
+                } catch (\var_80 $var_81) {
+                    if($var_78 < ($var_77-1)) {
+                        $var_82 = rand(100000, 900000); 
+                        usleep($var_82); 
+                    } else {
+                        
+                        throw $var_81;
+                    }
+                }
+            }
+
+            $var_7->setParam("parentId", $var_79->getId());
+        } else if (!$var_7->getParam("parentId") && $var_7->getParam("parentPath")) {
+            $var_74 = var_0\var_17\var_10::getByPath($var_7->getParam("parentPath"));
+            if ($var_74 instanceof var_10\var_84) {
+                $var_7->setParam("parentId", $var_74->getId());
+            } else {
+                $var_7->setParam("parentId", 1);
+            }
+        } else if (!$var_7->getParam("parentId")) {
+            
+            $var_7->setParam("parentId", 1);
+        }
+
+        $var_70 = var_0\var_73::getValidFilename($var_70);
+        if (empty($var_70)) {
+            throw new \var_80("The filename of the asset is empty");
+        }
+
+        $var_85 = var_0\var_17\var_10::getById(intval($var_7->getParam("parentId")));
+
+        
+        $var_70 = $var_7->fn_7($var_85->getFullPath(), $var_70);
+
+        if ($var_85->isAllowed("create")) {
+
+            if(!is_file($var_71) || filesize($var_71) < 1) {
+                throw new \var_80("Something went wrong, please check upload_max_filesize and post_max_size in your php.ini and write permissions of /website/var/");
+            }
+
+            $var_16 = var_0\var_17\var_10::create($var_7->getParam("parentId"), array(
+                "filename" => $var_70,
+                "sourcePath" => $var_71,
+                "userOwner" => $var_7->var_87->getId(),
+                "userModification" => $var_7->var_87->getId()
+            ));
+            $var_68 = true;
+
+            @unlink($var_71);
+        } else {
+            \var_88::debug("prevented creating asset because of missing permissions, parent asset is " . $var_85->getFullPath());
+        }
+
+        return array(
+            "success" => $var_68,
+            "asset" => $var_16
+        );
+    }
+
+    protected function fn_7($var_89, $var_70)
+    {
+
+        $var_90 = $var_70;
+        $var_91 = 1;
+
+        if ($var_89 == "/") {
+            $var_89 = "";
+        }
+
+        while (true) {
+            if (var_10\var_11::pathExists($var_89 . "/" . $var_70)) {
+                $var_70 = str_replace("." . var_0\var_73::getFileExtension($var_90), "_" . $var_91 . "." . var_0\var_73::getFileExtension($var_90), $var_90);
+                $var_91++;
+            } else {
+                return $var_70;
+            }
+        }
+    }
+
+    public function fn_8()
+    {
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+
+        $var_92 = fopen($var_69["Filedata"]["tmp_name"], "r+");
+        $var_16->setStream($var_92);
+        $var_16->setCustomSetting("thumbnails", null);
+        $var_16->setUserModification($var_7->getUser()->getId());
+
+        if ($var_16->isAllowed("publish")) {
+            $var_16->save();
+
+            $var_7->var_14->json(array(
+                "id" => $var_16->getId(),
+                "path" => $var_16->getPath() . $var_16->getFilename(),
+                "success" => true
+            ), false);
+
+            
+            
+            $var_7->getResponse()->setHeader("Content-Type", "text/html");
+
+        } else {
+            throw new \var_80("missing permission");
+        }
+    }
+
+    public function fn_9()
+    {
+
+        $var_68 = false;
+        $var_85 = var_0\var_17\var_10::getById(intval($var_7->getParam("parentId")));
+        $var_100 = var_0\var_17\var_10::getByPath($var_85->getFullPath() . "/" . $var_7->getParam("name"));
+
+        if ($var_85->isAllowed("create")) {
+
+            if (!$var_100) {
+                $var_16 = var_0\var_17\var_10::create($var_7->getParam("parentId"), array(
+                    "filename" => $var_7->getParam("name"),
+                    "type" => "folder",
+                    "userOwner" => $var_7->var_87->getId(),
+                    "userModification" => $var_7->var_87->getId()
+                ));
+                $var_68 = true;
+            }
+        } else {
+            \var_88::debug("prevented creating asset because of missing permissions");
+        }
+
+        $var_7->var_14->json(array("success" => $var_68));
+    }
+
+    public function fn_10()
+    {
+        if ($var_7->getParam("type") == "childs") {
+
+            $var_85 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+
+            $var_101 = new var_10\var_51();
+            $var_101->setCondition("path LIKE '" . $var_85->getFullPath() . "/%'");
+            $var_101->setLimit(intval($var_7->getParam("amount")));
+            $var_101->setOrderKey("LENGTH(path)", false);
+            $var_101->setOrder("DESC");
+
+            $var_46 = $var_101->load();
+
+            $var_103 = array();
+            foreach ($var_46 as $var_16) {
+                $var_103[] = $var_16->getFullPath();
+                if ($var_16->isAllowed("delete")) {
+                    $var_16->delete();
+                }
+            }
+
+            $var_7->var_14->json(array("success" => true, "deleted" => $var_103));
+
+        } else if ($var_7->getParam("id")) {
+            $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+
+            if ($var_16->isAllowed("delete")) {
+                $var_16->delete();
+
+                $var_7->var_14->json(array("success" => true));
+            }
+        }
+
+        $var_7->var_14->json(array("success" => false, "message" => "missing_permission"));
+    }
+
+    public function fn_11()
+    {
+        $var_105 = false;
+        $var_106 = array();
+        $var_107 = array();
+
+        $var_108 = 0;
+
+        $var_109 = $var_7->getParam("id");
+        $var_109 = explode(',', $var_109);
+
+        foreach ($var_109 as $var_110) {
+            try {
+                $var_16 = var_0\var_17\var_10::getById($var_110);
+                if (!$var_16) {
+                    continue;
+                }
+                $var_105 = $var_16->getDependencies()->isRequired();
+            } catch (\var_80 $var_81) {
+                \var_88::err("failed to access asset with id: " . $var_110);
+                continue;
+            }
+
+
+            
+            if ($var_16 instanceof var_10) {
+
+                $var_107[] = array(array(
+                    "url" => "/admin/recyclebin/add",
+                    "params" => array(
+                        "type" => "asset",
+                        "id" => $var_16->getId()
+                    )
+                ));
+
+
+                $var_47 = $var_16->hasChilds();
+                if (!$var_105) {
+                    $var_105 = $var_47;
+                }
+
+                $var_60 = 0;
+                if ($var_47) {
+                    
+                    $var_101 = new var_10\var_51();
+                    $var_101->setCondition("path LIKE '" . $var_16->getFullPath() . "/%'");
+                    $var_60 = $var_101->getTotalCount();
+                    $var_108 += $var_60;
+
+                    if ($var_60 > 0) {
+                        $var_114 = 5;
+                        for ($var_115 = 0; $var_115 < ceil($var_60 / $var_114); $var_115++) {
+                            $var_106[] = array(array(
+                                "url" => "/admin/asset/delete",
+                                "params" => array(
+                                    "step" => $var_115,
+                                    "amount" => $var_114,
+                                    "type" => "childs",
+                                    "id" => $var_16->getId()
+                                )
+                            ));
+                        }
+                    }
+                }
+
+                
+                $var_106[] = array(array(
+                    "url" => "/admin/asset/delete",
+                    "params" => array(
+                        "id" => $var_16->getId()
+                    )
+                ));
+            }
+        }
+
+        $var_106 = array_merge($var_107, $var_106);
+        $var_7->var_14->json(array(
+            "hasDependencies" => $var_105,
+            "childs" => $var_108,
+            "deletejobs" => $var_106,
+            "batchDelete" => count($var_109) > 1
+        ));
+    }
+
+    
+    protected function fn_3($var_16)
+    {
+        $var_116 = array(
+            "id" => $var_16->getId(),
+            "text" => $var_16->getFilename(),
+            "type" => $var_16->getType(),
+            "path" => $var_16->getFullPath(),
+            "basePath" => $var_16->getPath(),
+            "locked" => $var_16->isLocked(),
+            "lockOwner" => $var_16->getLocked() ? true : false,
+            "elementType" => "asset",
+            "permissions" => array(
+                "remove" => $var_16->isAllowed("delete"),
+                "settings" => $var_16->isAllowed("settings"),
+                "rename" => $var_16->isAllowed("rename"),
+                "publish" => $var_16->isAllowed("publish"),
+                "view" => $var_16->isAllowed("view")
+            )
+        );
+
+        
+        if ($var_16->getType() == "folder") {
+            $var_116["leaf"] = false;
+            $var_116["expanded"] = $var_16->hasNoChilds();
+            $var_116["iconCls"] = "pimcore_icon_folder";
+            $var_116["permissions"]["create"] = $var_16->isAllowed("create");
+
+            $var_120 = array();
+            $var_121 = new var_10\var_51();
+            $var_121->setCondition("path LIKE ?", [$var_16->getFullPath() . "/%"]);
+            $var_121->setLimit(35);
+
+            foreach ($var_121 as $var_122) {
+                if ($var_123 = $var_7->fn_12($var_122)) {
+                    $var_120[] = $var_123;
+                }
+            }
+
+            if (!empty($var_120)) {
+                $var_116["thumbnails"] = $var_120;
+            }
+        } else {
+            $var_116["leaf"] = true;
+            $var_116["iconCls"] = "pimcore_icon_" . var_0\var_73::getFileExtension($var_16->getFilename());
+        }
+
+        $var_116["qtipCfg"] = array(
+            "title" => "ID: " . $var_16->getId()
+        );
+
+        if ($var_16->getType() == "image") {
+            try {
+                $var_116["thumbnail"] = $var_7->fn_12($var_16);
+
+                
+                if (!$var_16->getCustomSetting("imageDimensionsCalculated")) {
+                    $var_16->save();
+                }
+
+                
+                if ($var_16->getCustomSetting("imageWidth") && $var_16->getCustomSetting("imageHeight")) {
+                    $var_116["imageWidth"] = $var_16->getCustomSetting("imageWidth");
+                    $var_116["imageHeight"] = $var_16->getCustomSetting("imageHeight");
+                }
+
+            } catch (\var_80 $var_81) {
+                \var_88::debug("Cannot get dimensions of image, seems to be broken.");
+            }
+        } else if ($var_16->getType() == "video") {
+            try {
+                if (\var_0\var_126::isAvailable()) {
+                    $var_116["thumbnail"] = $var_7->fn_12($var_16);
+                }
+            } catch (\var_80 $var_81) {
+                \var_88::debug("Cannot get dimensions of video, seems to be broken.");
+            }
+        } else if ($var_16->getType() == "document") {
+            try {
+                
+                if (\var_0\var_127::isAvailable() && \var_0\var_127::isFileTypeSupported($var_16->getFilename())) {
+                    $var_116["thumbnail"] = $var_7->fn_12($var_16);
+                }
+            } catch (\var_80 $var_81) {
+                \var_88::debug("Cannot get dimensions of video, seems to be broken.");
+            }
+        }
+
+        $var_116["cls"] = "";
+        if ($var_16->isLocked()) {
+            $var_116["cls"] .= "pimcore_treenode_locked ";
+        }
+        if ($var_16->getLocked()) {
+            $var_116["cls"] .= "pimcore_treenode_lockOwner ";
+        }
+
+        return $var_116;
+    }
+
+    protected function fn_12($var_16)
+    {
+        if ($var_16 instanceof var_10\var_32) {
+            return "/admin/asset/get-image-thumbnail/id/" . $var_16->getId() . "/treepreview/true";
+        } else if ($var_16 instanceof var_10\var_126 && \var_0\var_126::isAvailable()) {
+            return "/admin/asset/get-video-thumbnail/id/" . $var_16->getId() . "/treepreview/true";
+        } else if ($var_16 instanceof var_10\var_127 && \var_0\var_127::isAvailable()) {
+            return "/admin/asset/get-document-thumbnail/id/" . $var_16->getId() . "/treepreview/true";
+        }
+        return null;
+    }
+
+    public function fn_13()
+    {
+
+        $var_68 = false;
+        $var_128 = true;
+
+        $var_129 = $var_7->getAllParams();
+
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+        if ($var_16->isAllowed("settings")) {
+
+            $var_16->setUserModification($var_7->getUser()->getId());
+
+            
+            if ($var_7->getParam("parentId")) {
+                $var_85 = var_0\var_17\var_10::getById($var_7->getParam("parentId"));
+
+                
+                if ($var_16->getParentId() != $var_85->getId()) {
+
+                    if (!$var_85->isAllowed("create")) {
+                        throw new \var_80("Prevented moving asset - no create permission on new parent ");
+                    }
+
+                    $var_132 = $var_85->getPath();
+                    $var_133 = $var_85->getKey();
+                    if (!empty($var_133)) {
+                        $var_132 .= $var_85->getKey() . "/";
+                    }
+
+                    $var_135 = var_0\var_17\var_10::getByPath($var_132 . $var_16->getKey());
+
+                    if ($var_135 != null) {
+                        $var_128 = false;
+                    }
+
+                    if($var_16->isLocked()) {
+                        $var_128 = false;
+                    }
+                }
+            }
+
+            if ($var_128) {
+                if ($var_7->getParam("filename") || $var_7->getParam("parentId")) {
+                    $var_16->getData();
+                }
+
+                if ($var_7->getParam("filename") != $var_16->getFilename() and !$var_16->isAllowed("rename")) {
+                    unset($var_129["filename"]);
+                    \var_88::debug("prevented renaming asset because of missing permissions ");
+                }
+
+                $var_16->setValues($var_129);
+
+
+                try {
+                    $var_16->save();
+                    $var_68 = true;
+                } catch (\var_80 $var_81) {
+                    $var_7->var_14->json(array("success" => false, "message" => $var_81->getMessage()));
+                }
+
+
+            } else {
+                $var_138 = "prevented moving asset, asset with same path+key already exists at target location or the asset is locked. ID: " . $var_16->getId();
+                \var_88::debug($var_138);
+                $var_7->var_14->json(array("success" => $var_68, "message" => $var_138));
+            }
+        } else if ($var_16->isAllowed("rename") && $var_7->getParam("filename")) {
+            
+            try {
+                $var_16->setFilename($var_7->getParam("filename"));
+                $var_16->save();
+                $var_68 = true;
+            } catch (\var_80 $var_81) {
+                $var_7->var_14->json(array("success" => false, "message" => $var_81->getMessage()));
+            }
+        } else {
+            \var_88::debug("prevented update asset because of missing permissions ");
+        }
+
+        $var_7->var_14->json(array("success" => $var_68));
+    }
+
+
+    public function fn_14()
+    {
+        $var_140 = var_0\var_17\var_10::getById(1);
+
+        try {
+            $var_141 = new var_10\var_142\var_84($var_140);
+            $var_143 = new var_10\var_142\var_144($var_141);
+            $var_145 = new \var_146\var_147\var_148($var_143);
+
+            $var_149 = new \var_146\var_147\var_150\var_151\var_73(var_152 . '/locks.dat');
+            $var_153 = new \var_146\var_147\var_150\var_154($var_149);
+            $var_145->addPlugin($var_153);
+
+            $var_145->exec();
+        } catch (\var_80 $var_81) {
+            \var_88::error($var_81);
+        }
+
+        var_157;
+    }
+
+
+    public function fn_15()
+    {
+        $var_68 = false;
+        if ($var_7->getParam("id")) {
+            $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+            if ($var_16->isAllowed("publish")) {
+
+
+                
+                if($var_7->getParam("metadata")) {
+                    $var_158 = \var_159::decode($var_7->getParam("metadata"));
+                    $var_158 = var_10\var_11::minimizeMetadata($var_158);
+                    $var_16->setMetadata($var_158);
+                }
+
+                
+                if ($var_7->getParam("properties")) {
+                    $var_160 = array();
+                    $var_161 = \var_159::decode($var_7->getParam("properties"));
+
+                    if (is_array($var_161)) {
+                        foreach ($var_161 as $var_162 => $var_163) {
+
+                            $var_43 = $var_163["data"];
+
+                            try {
+                                $var_164 = new var_17\var_165();
+                                $var_164->setType($var_163["type"]);
+                                $var_164->setName($var_162);
+                                $var_164->setCtype("asset");
+                                $var_164->setDataFromEditmode($var_43);
+                                $var_164->setInheritable($var_163["inheritable"]);
+
+                                $var_160[$var_162] = $var_164;
+                            } catch (\var_80 $var_81) {
+                                \var_88::err("Can't add " . $var_162 . " to asset " . $var_16->getFullPath());
+                            }
+                        }
+
+                        $var_16->setProperties($var_160);
+                    }
+                }
+
+                
+                if ($var_7->getParam("scheduler")) {
+                    $var_171 = array();
+                    $var_172 = \var_159::decode($var_7->getParam("scheduler"));
+
+                    if (!empty($var_172)) {
+                        foreach ($var_172 as $var_173) {
+                            $var_173["date"] = strtotime($var_173["date"] . " " . $var_173["time"]);
+
+                            $var_174 = new var_17\var_175\var_176($var_173);
+                            $var_171[] = $var_174;
+                        }
+                    }
+
+                    $var_16->setScheduledTasks($var_171);
+                }
+
+                if ($var_7->hasParam("data")) {
+                    $var_16->setData($var_7->getParam("data"));
+                }
+
+                $var_16->setUserModification($var_7->getUser()->getId());
+
+
+                try {
+                    $var_16->save();
+                    $var_16->getData();
+                    $var_68 = true;
+                } catch (\var_80 $var_81) {
+                    $var_7->var_14->json(array("success" => false, "message" => $var_81->getMessage()));
+                }
+            } else {
+                \var_88::debug("prevented save asset because of missing permissions ");
+            }
+
+            $var_7->var_14->json(array("success" => $var_68));
+        }
+
+        $var_7->var_14->json(false);
+    }
+
+    public function fn_16()
+    {
+
+        $var_180 = var_17\var_181::getById($var_7->getParam("id"));
+        $var_16 = $var_180->loadData();
+
+        $var_183 = var_0\var_17\var_10::getById($var_16->getId());
+        if ($var_183->isAllowed("publish")) {
+            try {
+                $var_16->setUserModification($var_7->getUser()->getId());
+                $var_16->save();
+                $var_7->var_14->json(array("success" => true));
+            } catch (\var_80 $var_81) {
+                $var_7->var_14->json(array("success" => false, "message" => $var_81->getMessage()));
+            }
+
+
+        }
+
+        $var_7->var_14->json(false);
+    }
+
+    public function fn_17()
+    {
+        $var_110 = intval($var_7->getParam("id"));
+        $var_180 = var_17\var_181::getById($var_110);
+        $var_16 = $var_180->loadData();
+
+        if($var_16->isAllowed("versions")) {
+            $var_7->var_184->var_16 = $var_16;
+            $var_7->render("show-version-" . $var_16->getType());
+        } else {
+            throw new \var_80("Permission denied, version id [" . $var_110 . "]");
+        }
+    }
+
+    public function fn_18()
+    {
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+
+        if ($var_16->isAllowed("view")) {
+            header("Content-Type: " . $var_16->getMimetype(), true);
+            header('Content-Disposition: attachment; filename="' . $var_16->getFilename() . '"');
+            header("Content-Length: " . filesize($var_16->getFileSystemPath()), true);
+
+            while (@ob_end_flush()) ;
+            flush();
+
+            readfile($var_16->getFileSystemPath());
+            var_157;
+        }
+
+        $var_7->removeViewRenderer();
+    }
+
+    public function fn_19() {
+
+        $var_188 = $var_7->getParam("fileinfo");
+        $var_189 = var_10\var_32::getById(intval($var_7->getParam("id")));
+        $var_190 = null;
+
+        if ($var_7->getParam("thumbnail")) {
+            $var_190 = $var_189->getThumbnailConfig($var_7->getParam("thumbnail"));
+        }
+        if (!$var_190) {
+            if($var_7->getParam("config")) {
+                $var_190 = $var_189->getThumbnailConfig(\var_159::decode($var_7->getParam("config")));
+            } else {
+                $var_190 = $var_189->getThumbnailConfig($var_7->getAllParams());
+            }
+        } else {
+            
+            
+            
+            $var_190->setHighResolution(1);
+        }
+
+        $var_193 = strtolower($var_190->getFormat());
+        if ($var_193 == "source" || $var_193 == "print") {
+            $var_190->setFormat("PNG");
+            $var_193 = "png";
+        }
+
+        if($var_7->getParam("treepreview")) {
+            $var_190 = var_10\var_32\var_196\var_197::getPreviewConfig();
+        }
+
+        if ($var_7->getParam("cropPercent")) {
+            $var_190->addItemAt(0,"cropPercent", array(
+                "width" => $var_7->getParam("cropWidth"),
+                "height" => $var_7->getParam("cropHeight"),
+                "y" => $var_7->getParam("cropTop"),
+                "x" => $var_7->getParam("cropLeft")
+            ));
+
+            $var_199 = md5(var_200\var_201::serialize($var_7->getAllParams()));
+            $var_190->setName($var_190->getName() . "_auto_" . $var_199);
+        }
+
+        if($var_7->getParam("download")) {
+            $var_203 = str_replace("." . var_0\var_73::getFileExtension($var_189->getFilename()), "." . $var_190->getFormat(), $var_189->getFilename());
+            $var_203 = strtolower($var_203);
+            header('Content-Disposition: attachment; filename="' . $var_203 . '"');
+        }
+
+        $var_190 = $var_189->getThumbnail($var_190);
+
+        if ($var_188) {
+            $var_7->var_14->json(array(
+                "width" => $var_190->getWidth(),
+                "height" => $var_190->getHeight()));
+        }
+
+        $var_205 = var_206 . $var_190;
+        $var_207 = var_0\var_73::getFileExtension($var_205);
+        if(in_array($var_207, array("gif","jpeg","jpeg","png","pjpeg"))) {
+            header("Content-Type: image/".$var_207, true);
+        } else {
+            header("Content-Type: " . $var_189->getMimetype(), true);
+        }
+
+        header("Content-Length: " . filesize($var_205), true);
+        $var_7->fn_20();
+
+        while(@ob_end_flush());
+        flush();
+
+        readfile($var_205);
+        var_157;
+    }
+
+    public function fn_21()
+    {
+
+        if ($var_7->getParam("id")) {
+            $var_209 = var_0\var_17\var_10::getById(intval($var_7->getParam("id")));
+        } else if ($var_7->getParam("path")) {
+            $var_209 = var_0\var_17\var_10::getByPath($var_7->getParam("path"));
+        }
+        $var_190 = $var_209->getImageThumbnailConfig($var_7->getAllParams());
+
+        $var_193 = strtolower($var_190->getFormat());
+        if ($var_193 == "source") {
+            $var_190->setFormat("PNG");
+            $var_193 = "png";
+        }
+
+        if ($var_7->getParam("treepreview")) {
+            $var_190 = var_10\var_32\var_196\var_197::getPreviewConfig();
+        }
+
+        $var_211 = null;
+        if ($var_7->getParam("time")) {
+            $var_211 = intval($var_7->getParam("time"));
+        }
+
+        if ($var_7->getParam("settime")) {
+            $var_209->removeCustomSetting("image_thumbnail_asset");
+            $var_209->setCustomSetting("image_thumbnail_time", $var_211);
+            $var_209->save();
+        }
+
+        $var_189 = null;
+        if ($var_7->getParam("image")) {
+            $var_189 = var_0\var_17\var_10::getById(intval($var_7->getParam("image")));
+        }
+
+        if ($var_7->getParam("setimage") && $var_189) {
+            $var_209->removeCustomSetting("image_thumbnail_time");
+            $var_209->setCustomSetting("image_thumbnail_asset", $var_189->getId());
+            $var_209->save();
+        }
+
+        $var_205 = var_206 . $var_209->getImageThumbnail($var_190, $var_211, $var_189);
+
+        header("Content-type: image/" . $var_193, true);
+        header("Content-Length: " . filesize($var_205), true);
+        $var_7->fn_20();
+
+        while (@ob_end_flush()) ;
+        flush();
+
+        readfile($var_205);
+        var_157;
+    }
+
+    public function fn_22()
+    {
+
+        $var_214 = var_0\var_17\var_10::getById(intval($var_7->getParam("id")));
+        $var_190 = var_10\var_32\var_196\var_197::getByAutoDetect($var_7->getAllParams());
+
+        $var_193 = strtolower($var_190->getFormat());
+        if ($var_193 == "source") {
+            $var_190->setFormat("jpeg"); 
+        }
+
+        if ($var_7->getParam("treepreview")) {
+            $var_190 = var_10\var_32\var_196\var_197::getPreviewConfig();
+        }
+
+        $var_215 = 1;
+        if (is_numeric($var_7->getParam("page"))) {
+            $var_215 = (int)$var_7->getParam("page");
+        }
+
+
+        $var_205 = var_206 . $var_214->getImageThumbnail($var_190, $var_215);
+
+        $var_193 = "png";
+        header("Content-type: image/" . $var_193, true);
+        header("Content-Length: " . filesize($var_205), true);
+        $var_7->fn_20();
+
+        while (@ob_end_flush()) ;
+        flush();
+
+        readfile($var_205);
+        var_157;
+    }
+
+    protected function fn_20()
+    {
+        $var_7->getResponse()->clearAllHeaders();
+
+        $var_217 = 300;
+        header("Cache-Control: public, max-age=" . $var_217, true);
+        header("Expires: " . \var_218::now()->add($var_217)->get(\var_218::var_221), true);
+        header("Pragma: ");
+    }
+
+    public function fn_23()
+    {
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+        $var_7->var_184->var_16 = $var_16;
+    }
+
+
+    public function fn_24()
+    {
+
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+
+        $var_7->var_184->var_16 = $var_16;
+
+        $var_222 = var_10\var_126\var_196\var_197::getPreviewConfig();
+
+        $var_190 = $var_16->getThumbnail($var_222, array("mp4"));
+
+        if ($var_190) {
+            $var_7->var_184->var_16 = $var_16;
+            $var_7->var_184->var_190 = $var_190;
+
+            if ($var_190["status"] == "finished") {
+                $var_7->render("get-preview-video-display");
+            } else {
+                $var_7->render("get-preview-video-error");
+            }
+        } else {
+            $var_7->render("get-preview-video-error");
+        }
+    }
+
+
+    public function fn_25()
+    {
+
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+        $var_16->setData(var_0\var_200::getHttpData($var_7->getParam("image")));
+        $var_16->setUserModification($var_7->getUser()->getId());
+        $var_16->save();
+
+        $var_7->var_184->var_16 = $var_16;
+    }
+
+    public function fn_26()
+    {
+
+        $var_223 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+
+        $var_224 = 0;
+        $var_48 = 10;
+
+        if ($var_7->getParam("limit")) {
+            $var_48 = $var_7->getParam("limit");
+        }
+        if ($var_7->getParam("start")) {
+            $var_224 = $var_7->getParam("start");
+        }
+
+        $var_101 = var_0\var_17\var_10::getList(array(
+            "condition" => "path LIKE '" . $var_223->getFullPath() . "/%' AND type != 'folder'",
+            "limit" => $var_48,
+            "offset" => $var_224,
+            "orderKey" => "filename",
+            "order" => "asc"
+        ));
+
+        $var_46 = array();
+
+        foreach ($var_101 as $var_16) {
+
+            $var_225 = "";
+            if ($var_16 instanceof var_10\var_32) {
+                $var_225 = "getThumbnail";
+            } else if ($var_16 instanceof var_10\var_126 && \var_0\var_126::isAvailable()) {
+                $var_225 = "getImageThumbnail";
+            } else if ($var_16 instanceof var_10\var_127 && \var_0\var_127::isAvailable()) {
+                $var_225 = "getImageThumbnail";
+            }
+
+            if (!empty($var_225)) {
+                $var_46[] = array(
+                    "id" => $var_16->getId(),
+                    "type" => $var_16->getType(),
+                    "filename" => $var_16->getFilename(),
+                    "url" => "/admin/asset/get-" . $var_16->getType() . "-thumbnail/id/" . $var_16->getId() . "/treepreview/true",
+                    "idPath" => $var_30["idPath"] = var_4\var_11::getIdPath($var_16)
+                );
+            }
+        }
+
+
+        $var_7->var_14->json(array(
+            "assets" => $var_46,
+            "success" => true,
+            "total" => $var_101->getTotalCount()
+        ));
+    }
+
+    public function fn_27()
+    {
+
+        $var_226 = time();
+        $var_227 = array();
+
+        var_200\var_228::useSession(function ($var_229) use ($var_226) {
+            $var_229->$var_226 = array();
+        }, "pimcore_copy");
+
+
+        if ($var_7->getParam("type") == "recursive") {
+
+            $var_16 = var_0\var_17\var_10::getById($var_7->getParam("sourceId"));
+
+            
+            $var_227[] = array(array(
+                "url" => "/admin/asset/copy",
+                "params" => array(
+                    "sourceId" => $var_7->getParam("sourceId"),
+                    "targetId" => $var_7->getParam("targetId"),
+                    "type" => "child",
+                    "transactionId" => $var_226,
+                    "saveParentId" => true
+                )
+            ));
+
+            if ($var_16->hasChilds()) {
+                
+                $var_101 = new var_10\var_51();
+                $var_101->setCondition("path LIKE '" . $var_16->getFullPath() . "/%'");
+                $var_101->setOrderKey("LENGTH(path)", false);
+                $var_101->setOrder("ASC");
+                $var_230 = $var_101->loadIdList();
+
+                if (count($var_230) > 0) {
+                    foreach ($var_230 as $var_110) {
+                        $var_227[] = array(array(
+                            "url" => "/admin/asset/copy",
+                            "params" => array(
+                                "sourceId" => $var_110,
+                                "targetParentId" => $var_7->getParam("targetId"),
+                                "sourceParentId" => $var_7->getParam("sourceId"),
+                                "type" => "child",
+                                "transactionId" => $var_226
+                            )
+                        ));
+                    }
+                }
+            }
+        } else if ($var_7->getParam("type") == "child" || $var_7->getParam("type") == "replace") {
+            
+            $var_227[] = array(array(
+                "url" => "/admin/asset/copy",
+                "params" => array(
+                    "sourceId" => $var_7->getParam("sourceId"),
+                    "targetId" => $var_7->getParam("targetId"),
+                    "type" => $var_7->getParam("type"),
+                    "transactionId" => $var_226
+                )
+            ));
+        }
+
+
+        $var_7->var_14->json(array(
+            "pastejobs" => $var_227
+        ));
+    }
+
+
+    public function fn_28()
+    {
+        $var_68 = false;
+        $var_232 = intval($var_7->getParam("sourceId"));
+        $var_233 = var_0\var_17\var_10::getById($var_232);
+        $var_229 = var_200\var_228::get("pimcore_copy");
+
+        $var_234 = intval($var_7->getParam("targetId"));
+        if ($var_7->getParam("targetParentId")) {
+            $var_235 = var_0\var_17\var_10::getById($var_7->getParam("sourceParentId"));
+
+            
+            if ($var_229->{$var_7->getParam("transactionId")}["parentId"]) {
+                $var_236 = var_0\var_17\var_10::getById($var_229->{$var_7->getParam("transactionId")}["parentId"]);
+            } else {
+                $var_236 = var_0\var_17\var_10::getById($var_7->getParam("targetParentId"));
+            }
+
+            $var_89 = preg_replace("@^" . $var_235->getFullPath() . "@", $var_236 . "/", $var_233->getPath());
+            $var_237 = var_0\var_17\var_10::getByPath($var_89);
+        } else {
+            $var_237 = var_0\var_17\var_10::getById($var_234);
+        }
+
+        if ($var_237->isAllowed("create")) {
+            $var_233 = var_0\var_17\var_10::getById($var_232);
+            if ($var_233 != null) {
+                if ($var_7->getParam("type") == "child") {
+                    $var_238 = $var_7->var_5->copyAsChild($var_237, $var_233);
+
+                    
+                    if ($var_7->getParam("saveParentId")) {
+                        $var_229->{$var_7->getParam("transactionId")}["parentId"] = $var_238->getId();
+                    }
+                } else if ($var_7->getParam("type") == "replace") {
+                    $var_7->var_5->copyContents($var_237, $var_233);
+                }
+
+                $var_68 = true;
+            } else {
+                \var_88::debug("prevended copy/paste because asset with same path+key already exists in this location");
+            }
+        } else {
+            \var_88::error("could not execute copy/paste because of missing permissions on target [ " . $var_234 . " ]");
+            $var_7->var_14->json(array("error" => false, "message" => "missing_permission"));
+        }
+
+        var_200\var_228::writeClose();
+
+        $var_7->var_14->json(array("success" => $var_68));
+    }
+
+
+    public function fn_29()
+    {
+
+        $var_241 = uniqid();
+        $var_242 = 5;
+        $var_243 = array();
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+
+        if ($var_16->isAllowed("view")) {
+            $var_244 = $var_16->getFullPath();
+            if ($var_16->getId() == 1) {
+                $var_244 = "";
+            }
+
+            $var_245 = new var_10\var_51();
+            $var_245->setCondition("path LIKE ? AND type != ?", array($var_244 . "/%", "folder"));
+            $var_245->setOrderKey("LENGTH(path)", false);
+            $var_245->setOrder("ASC");
+
+            for ($var_115 = 0; $var_115 < ceil($var_245->getTotalCount() / $var_242); $var_115++) {
+                $var_243[] = array(array(
+                    "url" => "/admin/asset/download-as-zip-add-files",
+                    "params" => array(
+                        "id" => $var_16->getId(),
+                        "offset" => $var_115 * $var_242,
+                        "limit" => $var_242,
+                        "jobId" => $var_241
+                    )
+                ));
+            }
+        }
+
+        $var_7->var_14->json(array(
+            "success" => true,
+            "jobs" => $var_243,
+            "jobId" => $var_241
+        ));
+    }
+
+
+    public function fn_30()
+    {
+
+        $var_246 = var_72 . "/download-zip-" . $var_7->getParam("jobId") . ".zip";
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+        $var_68 = false;
+
+        if ($var_16->isAllowed("view")) {
+
+            $var_247 = new \var_248();
+            if (!is_file($var_246)) {
+                $var_249 = $var_247->open($var_246, \var_248::var_251);
+            } else {
+                $var_249 = $var_247->open($var_246);
+            }
+
+            if ($var_249 === TRUE) {
+
+                $var_244 = $var_16->getFullPath();
+                if ($var_16->getId() == 1) {
+                    $var_244 = "";
+                }
+
+                $var_245 = new var_10\var_51();
+                $var_245->setCondition("type != 'folder' AND path LIKE ?", $var_244 . "/%");
+                $var_245->setOrderKey("LENGTH(path) ASC, id ASC", false);
+                $var_245->setOffset((int)$var_7->getParam("offset"));
+                $var_245->setLimit((int)$var_7->getParam("limit"));
+
+                foreach ($var_245->load() as $var_252) {
+                    if ($var_252->isAllowed("view")) {
+                        if (!$var_252 instanceof var_10\var_84) {
+                            
+                            $var_247->addFile($var_252->getFileSystemPath(), preg_replace("@^" . preg_quote($var_16->getPath(), "@") . "@i", "", $var_252->getFullPath()));
+                        }
+                    }
+                }
+
+                $var_247->close();
+                $var_68 = true;
+            }
+
+        }
+
+        $var_7->var_14->json(array(
+            "success" => $var_68
+        ));
+    }
+
+    
+    public function fn_31()
+    {
+
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"));
+        $var_246 = var_72 . "/download-zip-" . $var_7->getParam("jobId") . ".zip";
+        $var_255 = $var_16->getFilename();
+        if (empty($var_255)) {
+            $var_255 = "assets";
+        }
+
+        header("Content-Type: application/zip");
+        header("Content-Length: " . filesize($var_246));
+        header('Content-Disposition: attachment; filename="' . $var_255 . '.zip"');
+
+        while (@ob_end_flush()) ;
+        flush();
+
+        readfile($var_246);
+        unlink($var_246);
+
+        var_157;
+    }
+
+    public function fn_32()
+    {
+
+        $var_241 = uniqid();
+        $var_242 = 5;
+        $var_243 = array();
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam("parentId"));
+        $var_246 = var_72 . "/" . $var_241 . ".zip";
+
+        copy($var_69["Filedata"]["tmp_name"], $var_246);
+
+        $var_247 = new \var_248;
+        if ($var_247->open($var_246) === true) {
+            $var_256 = ceil($var_247->var_257 / $var_242);
+            for ($var_115 = 0; $var_115 < $var_256; $var_115++) {
+                $var_243[] = array(array(
+                    "url" => "/admin/asset/import-zip-files",
+                    "params" => array(
+                        "parentId" => $var_16->getId(),
+                        "offset" => $var_115 * $var_242,
+                        "limit" => $var_242,
+                        "jobId" => $var_241,
+                        "last" => (($var_115 + 1) >= $var_256) ? "true" : ""
+                    )
+                ));
+            }
+            $var_247->close();
+        }
+
+        
+        
+        
+        $var_7->disableViewAutoRender();
+        
+    }
+
+    public function fn_33()
+    {
+        $var_241 = $var_7->getParam("jobId");
+        $var_48 = (int)$var_7->getParam("limit");
+        $var_49 = (int)$var_7->getParam("offset");
+        $var_258 = var_0\var_17\var_10::getById($var_7->getParam("parentId"));
+        $var_246 = var_72 . "/" . $var_241 . ".zip";
+        $var_259 = var_72 . "/zip-import";
+
+        if (!is_dir($var_259)) {
+            var_0\var_73::mkdir($var_259, 777, true);
+        }
+
+        $var_247 = new \var_248;
+        if ($var_247->open($var_246) === true) {
+            for ($var_115 = $var_49; $var_115 < ($var_49 + $var_48); $var_115++) {
+                $var_260 = $var_247->getNameIndex($var_115);
+
+                if ($var_260 !== false) {
+                    if ($var_247->extractTo($var_259 . "/", $var_260)) {
+
+                        $var_263 = $var_259 . "/" . preg_replace("@^/@", "", $var_260);
+
+                        $var_70 = var_0\var_73::getValidFilename(basename($var_260));
+
+                        $var_264 = "";
+                        if (dirname($var_260) != ".") {
+                            $var_264 = dirname($var_260);
+                        }
+
+                        $var_244 = $var_258->getFullPath() . "/" . preg_replace("@^/@", "", $var_264);
+                        $var_74 = var_10\var_11::createFolderByPath($var_244);
+
+                        
+                        $var_70 = $var_7->fn_7($var_74->getFullPath(), $var_70);
+
+                        if ($var_74->isAllowed("create")) {
+
+                            $var_16 = var_0\var_17\var_10::create($var_74->getId(), array(
+                                "filename" => $var_70,
+                                "sourcePath" => $var_263,
+                                "userOwner" => $var_7->var_87->getId(),
+                                "userModification" => $var_7->var_87->getId()
+                            ));
+
+                            @unlink($var_263);
+                        } else {
+                            \var_88::debug("prevented creating asset because of missing permissions");
+                        }
+                    }
+                }
+            }
+            $var_247->close();
+        }
+
+        if ($var_7->getParam("last")) {
+            unlink($var_246);
+        }
+
+        $var_7->var_14->json(array(
+            "success" => true
+        ));
+    }
+
+    public function fn_34()
+    {
+
+        $var_68 = true;
+        $var_242 = 5;
+        $var_243 = array();
+        $var_265 = str_replace("/fileexplorer", var_206, $var_7->getParam("serverPath"));
+        if (is_dir($var_265)) {
+
+            $var_266 = rscandir($var_265 . "/");
+            $var_91 = count($var_266);
+            $var_267 = array();
+
+            for ($var_115 = 0; $var_115 < $var_91; $var_115++) {
+
+                if (is_dir($var_266[$var_115])) continue;
+
+                $var_267[] = preg_replace("@^" . preg_quote($var_265, "@") . "@", "", $var_266[$var_115]);
+
+                if (count($var_267) >= $var_242 || $var_115 >= ($var_91 - 1)) {
+                    $var_243[] = array(array(
+                        "url" => "/admin/asset/import-server-files",
+                        "params" => array(
+                            "parentId" => $var_7->getParam("parentId"),
+                            "serverPath" => $var_265,
+                            "files" => implode("::", $var_267)
+                        )
+                    ));
+                    $var_267 = array();
+                }
+            }
+        }
+
+        $var_7->var_14->json(array(
+            "success" => $var_68,
+            "jobs" => $var_243
+        ));
+    }
+
+    public function fn_35()
+    {
+        $var_268 = var_0\var_17\var_10::getById($var_7->getParam("parentId"));
+        $var_269 = $var_7->getParam("serverPath");
+        $var_266 = explode("::", $var_7->getParam("files"));
+
+        foreach ($var_266 as $var_270) {
+            $var_271 = $var_269 . $var_270;
+            if (is_file($var_271)) {
+                $var_272 = str_replace('\\', '/', dirname($var_270));
+                $var_223 = var_10\var_11::createFolderByPath($var_268->getFullPath() . $var_272);
+                $var_70 = basename($var_270);
+
+                
+                $var_70 = var_0\var_73::getValidFilename($var_70);
+                $var_70 = $var_7->fn_7($var_223->getFullPath(), $var_70);
+
+                if ($var_268->isAllowed("create")) {
+                    $var_16 = var_0\var_17\var_10::create($var_223->getId(), array(
+                        "filename" => $var_70,
+                        "sourcePath" => $var_271,
+                        "userOwner" => $var_7->getUser()->getId(),
+                        "userModification" => $var_7->getUser()->getId()
+                    ));
+                } else {
+                    \var_88::debug("prevented creating asset because of missing permissions ");
+                }
+            }
+        }
+
+        $var_7->var_14->json(array(
+            "success" => true
+        ));
+    }
+
+    public function fn_36()
+    {
+        $var_68 = true;
+
+        $var_30 = var_0\var_200::getHttpData($var_7->getParam("url"));
+        $var_70 = basename($var_7->getParam("url"));
+        $var_273 = $var_7->getParam("id");
+        $var_85 = var_0\var_17\var_10::getById(intval($var_273));
+
+        $var_70 = var_0\var_73::getValidFilename($var_70);
+        $var_70 = $var_7->fn_7($var_85->getFullPath(), $var_70);
+
+        if (empty($var_70)) {
+            throw new \var_80("The filename of the asset is empty");
+        }
+
+        
+        $var_70 = $var_7->fn_7($var_85->getFullPath(), $var_70);
+
+        if ($var_85->isAllowed("create")) {
+            $var_16 = var_0\var_17\var_10::create($var_273, array(
+                "filename" => $var_70,
+                "data" => $var_30,
+                "userOwner" => $var_7->var_87->getId(),
+                "userModification" => $var_7->var_87->getId()
+            ));
+            $var_68 = true;
+        } else {
+            \var_88::debug("prevented creating asset because of missing permissions");
+        }
+
+        $var_7->var_14->json(array("success" => $var_68));
+    }
+
+    public function fn_37()
+    {
+
+        $var_68 = false;
+
+        if ($var_16 = var_0\var_17\var_10::getById($var_7->getParam("id"))) {
+            if (method_exists($var_16, "clearThumbnails")) {
+                $var_16->clearThumbnails(true); 
+                $var_16->save();
+
+                $var_68 = true;
+            }
+        }
+
+        $var_7->var_14->json(array("success" => $var_68));
+    }
+
+    public function fn_38() {
+
+        if ($var_7->getParam("data")) {
+            if ($var_7->getParam("xaction") == "update") {
+                
+            }
+        } else {
+            
+            $var_223 = var_0\var_17\var_10::getById($var_7->getParam("folderId"));
+
+
+            $var_224 = 0;
+            $var_48 = 20;
+            $var_275 = "id";
+            $var_276 = "ASC";
+
+
+            if ($var_7->getParam("limit")) {
+                $var_48 = $var_7->getParam("limit");
+            }
+            if ($var_7->getParam("start")) {
+                $var_224 = $var_7->getParam("start");
+            }
+
+            if ($var_7->getParam("dir")) {
+                $var_276 = $var_7->getParam("dir");
+            }
+
+            if ($var_7->getParam("sort")) {
+                $var_275 = $var_7->getParam("sort");
+                if ($var_275 == "fullpath") {
+                    $var_275 = array("path" , "filename");
+                }
+            }
+
+            $var_277 = array();
+            if($var_7->getParam("only_direct_children") == "true") {
+                $var_277[] = "parentId = " . $var_223->getId();
+            } else {
+                $var_277[] = "path LIKE '" . $var_223->getFullPath() . "/%'";
+            }
+
+            $var_277[] = "type != 'folder'";
+            $var_278 = $var_7->getParam("filter");
+            if ($var_278) {
+
+
+                $var_279 = \var_159::decode($var_278);
+                foreach ($var_279 as $var_280) {
+
+                    $var_281 = "=";
+
+                    if($var_280["type"] == "string") {
+                        $var_281 = "LIKE";
+                    } else if ($var_280["type"] == "numeric") {
+                        if($var_280["comparison"] == "lt") {
+                            $var_281 = "<";
+                        } else if($var_280["comparison"] == "gt") {
+                            $var_281 = ">";
+                        } else if($var_280["comparison"] == "eq") {
+                            $var_281 = "=";
+                        }
+                    } else if ($var_280["type"] == "date") {
+                        if($var_280["comparison"] == "lt") {
+                            $var_281 = "<";
+                        } else if($var_280["comparison"] == "gt") {
+                            $var_281 = ">";
+                        } else if($var_280["comparison"] == "eq") {
+                            $var_281 = "=";
+                        }
+                        $var_280["value"] = strtotime($var_280["value"]);
+                    } else if ($var_280["type"] == "list") {
+                        $var_281 = "=";
+                    } else if ($var_280["type"] == "boolean") {
+                        $var_281 = "=";
+                        $var_280["value"] = (int) $var_280["value"];
+                    }
+                    
+                    $var_43 = $var_280["value"];
+                    if ($var_281 == "LIKE") {
+                        $var_43 = "%" . $var_43 . "%";
+                    }
+
+                    $var_282 = "`" . $var_280["field"] . "` ";
+                    if($var_280["field"] == "fullpath") {
+                        $var_282 = "CONCAT(path,filename)";
+                    }
+
+                    $var_277[] =  $var_282 . $var_281 . " '" . $var_43 . "' ";
+                }
+            }
+
+            $var_101 = new var_10\var_51();
+            $var_283 = implode(" AND ", $var_277);
+            $var_101->setCondition($var_283);
+            $var_101->setLimit($var_48);
+            $var_101->setOffset($var_224);
+            $var_101->setOrder($var_276);
+            $var_101->setOrderKey($var_275);
+
+            $var_101->load();
+
+            $var_46 = array();
+            foreach ($var_101->getAssets() as $var_16) {
+
+                
+                $var_70 = var_285 . "/" . $var_16->getFullPath();
+                $var_286 = filesize($var_70);
+
+                $var_46[] = array(
+                    "id" => $var_16->getid(),
+                    "type" => $var_16->getType(),
+                    "fullpath" => $var_16->getFullPath(),
+                    "creationDate" => $var_16->getCreationDate(),
+                    "modificationDate" => $var_16->getModificationDate(),
+                    "size" => formatBytes($var_286),
+                    "idPath" => $var_30["idPath"] = var_4\var_11::getIdPath($var_16)
+                );
+            }
+
+            $var_7->var_14->json(array("data" => $var_46, "success" => true, "total" => $var_101->getTotalCount()));
+        }
+    }
+
+    public function fn_39(){
+        $var_16 = var_0\var_17\var_10::getById($var_7->getParam('id'));
+        $var_215 = $var_7->getParam('page');
+        if($var_16 instanceof var_10\var_127){
+            $var_290 = $var_16->getText($var_215);
+        }
+        $var_7->var_14->json(array('success' => 'true','text' => $var_290));
+    }
+}

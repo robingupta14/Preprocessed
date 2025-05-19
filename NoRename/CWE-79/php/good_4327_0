@@ -1,0 +1,180 @@
+<?php namespace BookStack\Http\Controllers;
+
+
+class AttachmentController extends Controller
+{
+    protected $attachmentService;
+    protected $attachment;
+    protected $pageRepo;
+
+    
+    public function __construct(AttachmentService $attachmentService, Attachment $attachment, PageRepo $pageRepo)
+    {
+        $this->attachmentService = $attachmentService;
+        $this->attachment = $attachment;
+        $this->pageRepo = $pageRepo;
+        parent::__construct();
+    }
+
+
+    
+    public function upload(Request $request)
+    {
+        $this->validate($request, [
+            'uploaded_to' => 'required|integer|exists:pages,id',
+            'file' => 'required|file'
+        ]);
+
+        $pageId = $request->get('uploaded_to');
+        $page = $this->pageRepo->getById($pageId);
+
+        $this->checkPermission('attachment-create-all');
+        $this->checkOwnablePermission('page-update', $page);
+
+        $uploadedFile = $request->file('file');
+
+        try {
+            $attachment = $this->attachmentService->saveNewUpload($uploadedFile, $pageId);
+        } catch (FileUploadException $e) {}
+
+        return response()->json($attachment);
+    }
+
+    
+    public function uploadUpdate(Request $request, $attachmentId)
+    {
+        $this->validate($request, [
+            'file' => 'required|file'
+        ]);
+
+        $attachment = $this->attachment->newQuery()->findOrFail($attachmentId);
+        $this->checkOwnablePermission('view', $attachment->page);
+        $this->checkOwnablePermission('page-update', $attachment->page);
+        $this->checkOwnablePermission('attachment-create', $attachment);
+
+        $uploadedFile = $request->file('file');
+
+        try {
+            $attachment = $this->attachmentService->saveUpdatedUpload($uploadedFile, $attachment);
+        } catch (FileUploadException $e) {}
+
+        return response()->json($attachment);
+    }
+
+    
+    public function getUpdateForm(string $attachmentId)
+    {
+        $attachment = $this->attachment->findOrFail($attachmentId);
+
+        $this->checkOwnablePermission('page-update', $attachment->page);
+        $this->checkOwnablePermission('attachment-create', $attachment);
+
+        return view('attachments.manager-edit-form', [
+            'attachment' => $attachment,
+        ]);
+    }
+
+    
+    public function update(Request $request, string $attachmentId)
+    {
+        $attachment = $this->attachment->newQuery()->findOrFail($attachmentId);
+
+        try {
+            $this->validate($request, [
+                'attachment_edit_name' => 'required|string|min:1|max:255',
+                'attachment_edit_url' =>  'string|min:1|max:255|safe_url'
+            ]);
+        } catch (ValidationException $exception) {}
+
+        $this->checkOwnablePermission('view', $attachment->page);
+        $this->checkOwnablePermission('page-update', $attachment->page);
+        $this->checkOwnablePermission('attachment-create', $attachment);
+
+        $attachment = $this->attachmentService->updateFile($attachment, [
+            'name' => $request->get('attachment_edit_name'),
+            'link' => $request->get('attachment_edit_url'),
+        ]);
+
+        return view('attachments.manager-edit-form', [
+            'attachment' => $attachment,
+        ]);
+    }
+
+    
+    public function attachLink(Request $request)
+    {
+        $pageId = $request->get('attachment_link_uploaded_to');
+
+        try {
+            $this->validate($request, [
+                'attachment_link_uploaded_to' => 'required|integer|exists:pages,id',
+                'attachment_link_name' => 'required|string|min:1|max:255',
+                'attachment_link_url' =>  'required|string|min:1|max:255|safe_url'
+            ]);
+        } catch (ValidationException $exception) {}
+
+        $page = $this->pageRepo->getById($pageId);
+
+        $this->checkPermission('attachment-create-all');
+        $this->checkOwnablePermission('page-update', $page);
+
+        $attachmentName = $request->get('attachment_link_name');
+        $link = $request->get('attachment_link_url');
+        $attachment = $this->attachmentService->saveNewFromLink($attachmentName, $link, intval($pageId));
+
+        return view('attachments.manager-link-form', [
+            'pageId' => $pageId,
+        ]);
+    }
+
+    
+    public function listForPage(int $pageId)
+    {
+        $page = $this->pageRepo->getById($pageId);
+        $this->checkOwnablePermission('page-view', $page);
+        return view('attachments.manager-list', [
+            'attachments' => $page->attachments->all(),
+        ]);
+    }
+
+    
+    public function sortForPage(Request $request, int $pageId)
+    {
+        $this->validate($request, [
+            'order' => 'required|array',
+        ]);
+        $page = $this->pageRepo->getById($pageId);
+        $this->checkOwnablePermission('page-update', $page);
+
+        $attachmentOrder = $request->get('order');
+        $this->attachmentService->updateFileOrderWithinPage($attachmentOrder, $pageId);
+        return response()->json(['message' => trans('entities.attachments_order_updated')]);
+    }
+
+    
+    public function get(string $attachmentId)
+    {
+        $attachment = $this->attachment->findOrFail($attachmentId);
+        try {
+            $page = $this->pageRepo->getById($attachment->uploaded_to);
+        } catch (NotFoundException $exception) {}
+
+        $this->checkOwnablePermission('page-view', $page);
+
+        if ($attachment->external) {
+            return redirect($attachment->path);
+        }
+
+        $attachmentContents = $this->attachmentService->getAttachmentFromStorage($attachment);
+        return $this->downloadResponse($attachmentContents, $attachment->getFileName());
+    }
+
+    
+    public function delete(string $attachmentId)
+    {
+        $attachment = $this->attachment->findOrFail($attachmentId);
+        $this->checkOwnablePermission('attachment-delete', $attachment);
+        $this->attachmentService->deleteFile($attachment);
+        return response()->json(['message' => trans('entities.attachments_deleted')]);
+    }
+}

@@ -1,0 +1,1593 @@
+<?php
+
+
+
+
+if ($conf->ldap->enabled) require_once(DOL_DOCUMENT_ROOT."/lib/ldap.class.php");
+if ($conf->adherent->enabled) require_once(DOL_DOCUMENT_ROOT."/adherents/class/adherent.class.php");
+
+
+$canadduser=($user->admin || $user->rights->user->user->creer);
+$canreaduser=($user->admin || $user->rights->user->user->lire);
+$canedituser=($user->admin || $user->rights->user->user->creer);
+$candisableuser=($user->admin || $user->rights->user->user->supprimer);
+$canreadgroup=$canreaduser;
+$caneditgroup=$canedituser;
+if (! empty($conf->global->MAIN_USE_ADVANCED_PERMS))
+{
+    $canreadgroup=($user->admin || $user->rights->user->group_advance->read);
+    $caneditgroup=($user->admin || $user->rights->user->group_advance->write);
+}
+
+if ($_GET["id"])
+{
+    
+    $caneditfield=( (($user->id == $_GET["id"]) && $user->rights->user->self->creer)
+    || (($user->id != $_GET["id"]) && $user->rights->user->user->creer) );
+    $caneditpassword=( (($user->id == $_GET["id"]) && $user->rights->user->self->password)
+    || (($user->id != $_GET["id"]) && $user->rights->user->user->password) );
+}
+
+$action=GETPOST("action");
+$group=GETPOST("group","int",3);
+$confirm=GETPOST("confirm");
+
+
+$socid=0;
+if ($user->societe_id > 0) $socid = $user->societe_id;
+$feature2='user';
+if ($user->id == $_GET["id"]) { $feature2=''; $canreaduser=1; } 
+$result = restrictedArea($user, 'user', $_GET["id"], '', $feature2);
+if ($user->id <> $_GET["id"] && ! $canreaduser) accessforbidden();
+
+$langs->load("users");
+$langs->load("companies");
+$langs->load("ldap");
+
+$form = new Form($db);
+
+
+
+if ($_GET["subaction"] == 'addrights' && $canedituser)
+{
+    $edituser = new User($db);
+    $edituser->fetch($_GET["id"]);
+    $edituser->addrights($_GET["rights"]);
+}
+
+if ($_GET["subaction"] == 'delrights' && $canedituser)
+{
+    $edituser = new User($db);
+    $edituser->fetch($_GET["id"]);
+    $edituser->delrights($_GET["rights"]);
+}
+
+if ($action == 'confirm_disable' && $confirm == "yes" && $candisableuser)
+{
+    if ($_GET["id"] <> $user->id)
+    {
+        $edituser = new User($db);
+        $edituser->fetch($_GET["id"]);
+        $edituser->setstatus(0);
+        Header("Location: ".DOL_URL_ROOT.'/user/fiche.php?id='.$_GET["id"]);
+        exit;
+    }
+}
+if ($action == 'confirm_enable' && $confirm == "yes" && $candisableuser)
+{
+    if ($_GET["id"] <> $user->id)
+    {
+        $message='';
+
+        $edituser = new User($db);
+        $edituser->fetch($_GET["id"]);
+
+        if (!empty($conf->file->main_limit_users))
+        {
+            $nb = $edituser->getNbOfUsers("active");
+            if ($nb >= $conf->file->main_limit_users)
+            {
+                $message='<div class="error">'.$langs->trans("YourQuotaOfUsersIsReached").'</div>';
+            }
+        }
+
+        if (! $message)
+        {
+            $edituser->setstatus(1);
+            Header("Location: ".DOL_URL_ROOT.'/user/fiche.php?id='.$_GET["id"]);
+            exit;
+        }
+    }
+}
+
+if ($action == 'confirm_delete' && $confirm == "yes" && $candisableuser)
+{
+    if ($_GET["id"] <> $user->id)
+    {
+        $edituser = new User($db);
+        $edituser->id=$_GET["id"];
+        $result = $edituser->delete();
+        if ($result < 0)
+        {
+            $langs->load("errors");
+            $message='<div class="error">'.$langs->trans("ErrorUserCannotBeDelete").'</div>';
+        }
+        else
+        {
+            Header("Location: index.php");
+            exit;
+        }
+    }
+}
+
+
+if ($_POST["action"] == 'add' && $canadduser)
+{
+    $message="";
+    if (! $_POST["nom"]) {
+        $message='<div class="error">'.$langs->trans("NameNotDefined").'</div>';
+        $action="create";       
+    }
+    if (! $_POST["login"]) {
+        $message='<div class="error">'.$langs->trans("LoginNotDefined").'</div>';
+        $action="create";       
+    }
+
+    $edituser = new User($db);
+
+    if (!empty($conf->file->main_limit_users)) 
+    {
+        $nb = $edituser->getNbOfUsers("active");
+        if ($nb >= $conf->file->main_limit_users)
+        {
+            $message='<div class="error">'.$langs->trans("YourQuotaOfUsersIsReached").'</div>';
+            $action="create";       
+        }
+    }
+
+    if (! $message)
+    {
+        $edituser->nom           = $_POST["nom"];
+        $edituser->prenom        = $_POST["prenom"];
+        $edituser->login         = $_POST["login"];
+        $edituser->admin         = $_POST["admin"];
+        $edituser->office_phone  = $_POST["office_phone"];
+        $edituser->office_fax    = $_POST["office_fax"];
+        $edituser->user_mobile   = $_POST["user_mobile"];
+        $edituser->email         = $_POST["email"];
+        $edituser->webcal_login  = $_POST["webcal_login"];
+        $edituser->signature     = $_POST["signature"];
+        $edituser->phenix_login  = $_POST["phenix_login"];
+        $edituser->phenix_pass   = $_POST["phenix_pass"];
+        $edituser->note          = $_POST["note"];
+        $edituser->ldap_sid      = $_POST["ldap_sid"];
+        
+        $edituser->entity        = ( ! empty($_POST["admin"]) && (! empty($_POST["superadmin"]) || empty($conf->multicompany->enabled)) ? 0 : $_POST["entity"]);
+
+        $db->begin();
+
+        $id = $edituser->create($user);
+        if ($id > 0)
+        {
+            if (isset($_POST['password']) && trim($_POST['password']))
+            {
+                $edituser->setPassword($user,trim($_POST['password']));
+            }
+
+            $db->commit();
+
+            Header("Location: fiche.php?id=$id");
+            exit;
+        }
+        else
+        {
+            $langs->load("errors");
+            $db->rollback();
+            if (is_array($edituser->errors) && count($edituser->errors)) $message='<div class="error">'.join('<br>',$langs->trans($edituser->errors)).'</div>';
+            else $message='<div class="error">'.$langs->trans($edituser->error).'</div>';
+            $action="create";       
+        }
+
+    }
+}
+
+
+if (($action == 'addgroup' || $action == 'removegroup') && $caneditfield)
+{
+    if ($group)
+    {
+        $editgroup = new UserGroup($db);
+        $editgroup->fetch($group);
+        $editgroup->oldcopy=dol_clone($editgroup);
+
+        $edituser = new User($db);
+        $edituser->fetch($_GET["id"]);
+        if ($action == 'addgroup')    $edituser->SetInGroup($group,GETPOST('entity'));
+        if ($action == 'removegroup') $edituser->RemoveFromGroup($group,GETPOST('entity'));
+
+        if ($result > 0)
+        {
+            header("Location: fiche.php?id=".$_GET["id"]);
+            exit;
+        }
+        else
+        {
+            $message.=$edituser->error;
+        }
+    }
+}
+
+if ($action == 'update' && ! $_POST["cancel"])
+{
+
+    if ($caneditfield)	
+    {
+        $message="";
+
+        if (! $_POST["nom"])
+        {
+            $message='<div class="error">'.$langs->trans("NameNotDefined").'</div>';
+            $action="edit";       
+        }
+        if (! $_POST["login"])
+        {
+            $message='<div class="error">'.$langs->trans("LoginNotDefined").'</div>';
+            $action="edit";       
+        }
+
+        if (! $message)
+        {
+            $db->begin();
+            $edituser = new User($db);
+            $edituser->fetch($_GET["id"]);
+
+            $edituser->oldcopy=dol_clone($edituser);
+
+            $edituser->nom           = $_POST["nom"];
+            $edituser->prenom        = $_POST["prenom"];
+            $edituser->login         = $_POST["login"];
+            $edituser->pass          = $_POST["password"];
+            $edituser->admin         = $_POST["admin"];
+            $edituser->office_phone  = $_POST["office_phone"];
+            $edituser->office_fax    = $_POST["office_fax"];
+            $edituser->user_mobile   = $_POST["user_mobile"];
+            $edituser->email         = $_POST["email"];
+            $edituser->signature     = $_POST["signature"];
+            $edituser->openid        = $_POST["openid"];
+            $edituser->webcal_login  = $_POST["webcal_login"];
+            $edituser->phenix_login  = $_POST["phenix_login"];
+            $edituser->phenix_pass   = $_POST["phenix_pass"];
+            $edituser->entity        = ( (! empty($_POST["superadmin"]) && ! empty($_POST["admin"])) ? 0 : $_POST["entity"]);
+            if (GETPOST('deletephoto')) $edituser->photo='';
+            if (! empty($_FILES['photo']['name'])) $edituser->photo = dol_sanitizeFileName($_FILES['photo']['name']);
+
+            $ret=$edituser->update($user);
+            if ($ret < 0)
+            {
+                if ($db->errno() == 'DB_ERROR_RECORD_ALREADY_EXISTS')
+                {
+                    $langs->load("errors");
+                    $message.='<div class="error">'.$langs->trans("ErrorLoginAlreadyExists",$edituser->login).'</div>';
+                }
+                else
+                {
+                    $message.='<div class="error">'.$edituser->error.'</div>';
+                }
+            }
+
+            if ($ret >=0 && ! count($edituser->errors))
+            {
+                if (GETPOST('deletephoto') && $edituser->photo)
+                {
+                    $fileimg=$conf->user->dir_output.'/'.get_exdir($edituser->id,2,0,1).'/logos/'.$edituser->photo;
+                    $dirthumbs=$conf->user->dir_output.'/'.get_exdir($edituser->id,2,0,1).'/logos/thumbs';
+                    dol_delete_file($fileimg);
+                    dol_delete_dir_recursive($dirthumbs);
+                }
+
+                if (isset($_FILES['photo']['tmp_name']) && trim($_FILES['photo']['tmp_name']))
+                {
+                    $dir= $conf->user->dir_output . '/' . get_exdir($edituser->id,2,0,1);
+
+                    create_exdir($dir);
+
+                    if (@is_dir($dir))
+                    {
+                        $newfile=$dir.'/'.dol_sanitizeFileName($_FILES['photo']['name']);
+                        $result=dol_move_uploaded_file($_FILES['photo']['tmp_name'],$newfile,1,0,$_FILES['photo']['error']);
+
+                        if (! $result > 0)
+                        {
+                            $message .= '<div class="error">'.$langs->trans("ErrorFailedToSaveFile").'</div>';
+                        }
+                        else
+                        {
+                            
+                            
+                            $imgThumbSmall = vignette($newfile, $maxwidthsmall, $maxheightsmall, '_small', $quality);
+
+                            
+                            
+                            $imgThumbMini = vignette($newfile, $maxwidthmini, $maxheightmini, '_mini', $quality);
+                        }
+                    }
+                }
+            }
+
+            if ($ret >= 0 && ! count($edituser->errors))
+            {
+                $message.='<div class="ok">'.$langs->trans("UserModified").'</div>';
+                $db->commit();
+            }
+            else
+            {
+                $db->rollback();
+            }
+        }
+    }
+    else if ($caneditpassword)	
+    {
+        $edituser = new User($db);
+        $edituser->fetch($_GET["id"]);
+
+        $edituser->oldcopy=dol_clone($edituser);
+
+        $ret=$edituser->setPassword($user,$_POST["password"]);
+        if ($ret < 0)
+        {
+            $message.='<div class="error">'.$edituser->error.'</div>';
+        }
+    }
+}
+
+
+if ((($action == 'confirm_password' && $confirm == 'yes')
+|| ($action == 'confirm_passwordsend' && $confirm == 'yes')) && $caneditpassword)
+{
+    $edituser = new User($db);
+    $edituser->fetch($_GET["id"]);
+
+    $newpassword=$edituser->setPassword($user,'');
+    if ($newpassword < 0)
+    {
+        
+        $message = '<div class="error">'.$langs->trans("ErrorFailedToSetNewPassword").'</div>';
+    }
+    else
+    {
+        
+        if ($action == 'confirm_passwordsend' && $confirm == 'yes')
+        {
+            if ($edituser->send_password($user,$newpassword) > 0)
+            {
+                $message = '<div class="ok">'.$langs->trans("PasswordChangedAndSentTo",$edituser->email).'</div>';
+                
+            }
+            else
+            {
+                $message = '<div class="ok">'.$langs->trans("PasswordChangedTo",$newpassword).'</div>';
+                $message.= '<div class="error">'.$edituser->error.'</div>';
+            }
+        }
+        else
+        {
+            $message = '<div class="ok">'.$langs->trans("PasswordChangedTo",$newpassword).'</div>';
+        }
+    }
+}
+
+
+if ($_POST["action"] == 'adduserldap')
+{
+    $selecteduser = $_POST['users'];
+
+    $required_fields = array(
+    $conf->global->LDAP_FIELD_NAME,
+    $conf->global->LDAP_FIELD_FIRSTNAME,
+    $conf->global->LDAP_FIELD_LOGIN,
+    $conf->global->LDAP_FIELD_LOGIN_SAMBA,
+    $conf->global->LDAP_FIELD_PASSWORD,
+    $conf->global->LDAP_FIELD_PASSWORD_CRYPTED,
+    $conf->global->LDAP_FIELD_PHONE,
+    $conf->global->LDAP_FIELD_FAX,
+    $conf->global->LDAP_FIELD_MOBILE,
+    $conf->global->LDAP_FIELD_MAIL,
+    $conf->global->LDAP_FIELD_SID);
+
+    $ldap = new Ldap();
+    $result = $ldap->connect_bind();
+    if ($result >= 0)
+    {
+        
+        $required_fields=array_unique(array_values(array_filter($required_fields, "dolValidElement")));
+
+        $ldapusers = $ldap->getRecords($selecteduser, $conf->global->LDAP_USER_DN, $conf->global->LDAP_KEY_USERS, $required_fields);
+        
+
+        if (is_array($ldapusers))
+        {
+            foreach ($ldapusers as $key => $attribute)
+            {
+                $ldap_nom    = $attribute[$conf->global->LDAP_FIELD_NAME];
+                $ldap_prenom = $attribute[$conf->global->LDAP_FIELD_FIRSTNAME];
+                $ldap_login  = $attribute[$conf->global->LDAP_FIELD_LOGIN];
+                $ldap_loginsmb = $attribute[$conf->global->LDAP_FIELD_LOGIN_SAMBA];
+                $ldap_pass         = $attribute[$conf->global->LDAP_FIELD_PASSWORD];
+                $ldap_pass_crypted = $attribute[$conf->global->LDAP_FIELD_PASSWORD_CRYPTED];
+                $ldap_phone  = $attribute[$conf->global->LDAP_FIELD_PHONE];
+                $ldap_fax    = $attribute[$conf->global->LDAP_FIELD_FAX];
+                $ldap_mobile = $attribute[$conf->global->LDAP_FIELD_MOBILE];
+                $ldap_mail   = $attribute[$conf->global->LDAP_FIELD_MAIL];
+                $ldap_sid    = $attribute[$conf->global->LDAP_FIELD_SID];
+            }
+        }
+    }
+    else
+    {
+        $message='<div class="error">'.$ldap->error.'</div>';
+    }
+}
+
+
+
+
+
+llxHeader('',$langs->trans("UserCard"));
+
+$html = new Form($db);
+
+if (($action == 'create') || ($action == 'adduserldap'))
+{
+    
+    
+    
+    
+    
+
+    print_fiche_titre($langs->trans("NewUser"));
+
+    
+    
+    
+
+    if ($conf->ldap->enabled && $conf->global->LDAP_SYNCHRO_ACTIVE == 'ldap2dolibarr')
+    {
+        
+
+        $ldap = new Ldap();
+        $result = $ldap->connect_bind();
+        if ($result >= 0)
+        {
+            $required_fields=array($conf->global->LDAP_KEY_USERS,
+            $conf->global->LDAP_FIELD_FULLNAME,
+            $conf->global->LDAP_FIELD_NAME,
+            $conf->global->LDAP_FIELD_FIRSTNAME,
+            $conf->global->LDAP_FIELD_LOGIN,
+            $conf->global->LDAP_FIELD_LOGIN_SAMBA);
+
+            
+            $required_fields=array_unique(array_values(array_filter($required_fields, "dolValidElement")));
+
+            
+            $ldapusers = $ldap->getRecords('*', $conf->global->LDAP_USER_DN, $conf->global->LDAP_KEY_USERS, $required_fields, 1);
+            if (is_array($ldapusers))
+            {
+                $liste=array();
+                foreach ($ldapusers as $key => $ldapuser)
+                {
+                    
+                    $label='';
+                    foreach ($required_fields as $value)
+                    {
+                        if ($value)
+                        {
+                            $label.=$value."=".$ldapuser[$value]." ";
+                        }
+                    }
+                    $liste[$key] = $label;
+                }
+
+            }
+            else
+            {
+                $message='<div class="error">'.$ldap->error.'</div>';
+            }
+        }
+        else
+        {
+            $message='<div class="error">'.$ldap->error.'</div>';
+        }
+    }
+
+    dol_htmloutput_errors($message);
+
+    if ($conf->ldap->enabled && $conf->global->LDAP_SYNCHRO_ACTIVE == 'ldap2dolibarr')
+    {
+        
+        if (is_array($liste))
+        {
+            
+
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+
+            
+            
+        }
+    }
+
+    
+    
+    
+    if ($ldap_sid) 
+    
+
+    
+
+    
+
+    
+    
+    
+    if ($ldap_nom)
+    {
+        
+        
+    }
+    else
+    {
+        
+    }
+    
+
+    
+    
+    
+    if ($ldap_prenom)
+    {
+        
+        
+    }
+    else
+    {
+        
+    }
+    
+
+    
+    
+    
+    if ($ldap_login)
+    {
+        
+        
+    }
+    elseif ($ldap_loginsmb)
+    {
+        
+        
+    }
+    else
+    {
+        
+    }
+    
+
+    $generated_password='';
+    if (! $ldap_sid)
+    {
+        $generated_password=getRandomPassword('');
+    }
+    $password=$generated_password;
+
+    
+    
+    
+    if ($ldap_sid)
+    {
+        
+    }
+    else
+    {
+        if ($ldap_pass)
+        {
+            
+            
+        }
+        else
+        {
+            
+            
+        }
+    }
+    
+
+    
+    if ($user->admin)
+    {
+        
+        
+        
+
+        if (! empty($conf->multicompany->enabled) && ! $user->entity)
+        {
+            if ($conf->use_javascript_ajax)
+            {
+                
+									 } else {
+									 	$("input[name=superadmin]")
+									 		.attr("disabled", false);
+									 }
+								});
+							});
+					</script>';
+            }
+            $checked=($_POST["superadmin"]?' checked':'');
+            $disabled=($_POST["superadmin"]?'':' disabled');
+            
+        }
+        
+    }
+
+    
+    
+    
+    
+    
+
+    
+    
+    
+    if ($ldap_phone)
+    {
+        
+        
+    }
+    else
+    {
+        
+    }
+    
+
+    
+    
+    
+    if ($ldap_mobile)
+    {
+        
+        
+    }
+    else
+    {
+        
+    }
+    
+
+    
+    
+    
+    if ($ldap_fax)
+    {
+        
+        
+    }
+    else
+    {
+        
+    }
+    
+
+    
+    
+    
+    if ($ldap_mail)
+    {
+        
+        
+    }
+    else
+    {
+        
+    }
+    
+
+    
+    
+    
+    
+    
+
+    
+    
+    
+    
+    if ($conf->fckeditor->enabled && $conf->global->FCKEDITOR_ENABLE_USER)
+    {
+        $doleditor=new DolEditor('note','','',180,'dolibarr_notes','',false);
+        $doleditor->Create();
+    }
+    else
+    {
+        
+        
+        
+    }
+    
+
+    
+
+    
+    if ($conf->webcalendar->enabled)
+    {
+        
+        
+    }
+
+    
+    if ($conf->phenix->enabled)
+    {
+        
+        
+        
+        
+    }
+
+    
+    
+    
+}
+else
+{
+    
+    
+    
+    
+    
+
+    if ($_GET["id"])
+    {
+        $fuser = new User($db);
+        $fuser->fetch($_GET["id"]);
+
+        
+        
+        if ($conf->ldap->enabled && $fuser->ldap_sid)
+        {
+            $ldap = new Ldap();
+            $result=$ldap->connect_bind();
+            if ($result > 0)
+            {
+                $userSearchFilter = '('.$conf->global->LDAP_FILTER_CONNECTION.'('.$this->getUserIdentifier().'='.$fuser->login.'))';
+                $entries = $ldap->fetch($fuser->login,$userSearchFilter);
+                if (! $entries)
+                {
+                    $message .= $ldap->error;
+                }
+
+                $passDoNotExpire = 0;
+                $userChangePassNextLogon = 0;
+                $userDisabled = 0;
+                $statutUACF = '';
+
+                
+                if (count($ldap->uacf) > 0)
+                {
+                    foreach ($ldap->uacf as $key => $statut)
+                    {
+                        if ($key == 65536)
+                        {
+                            $passDoNotExpire = 1;
+                            $statutUACF = $statut;
+                        }
+                    }
+                }
+                else
+                {
+                    $userDisabled = 1;
+                    $statutUACF = "ACCOUNTDISABLE";
+                }
+
+                if ($ldap->pwdlastset == 0)
+                {
+                    $userChangePassNextLogon = 1;
+                }
+            }
+        }
+
+        
+        $head = user_prepare_head($fuser);
+
+        $title = $langs->trans("User");
+        dol_fiche_head($head, 'user', $title, 0, 'user');
+
+        
+        if ($action == 'password')
+        {
+            $ret=$html->form_confirm("fiche.php?id=$fuser->id",$langs->trans("ReinitPassword"),$langs->trans("ConfirmReinitPassword",$fuser->login),"confirm_password", '', 0, 1);
+            if ($ret == 'html') 
+        }
+
+        
+        if ($action == 'passwordsend')
+        {
+            $ret=$html->form_confirm("fiche.php?id=$fuser->id",$langs->trans("SendNewPassword"),$langs->trans("ConfirmSendNewPassword",$fuser->login),"confirm_passwordsend", '', 0, 1);
+            if ($ret == 'html') 
+        }
+
+        
+        if ($action == 'disable')
+        {
+            $ret=$html->form_confirm("fiche.php?id=$fuser->id",$langs->trans("DisableAUser"),$langs->trans("ConfirmDisableUser",$fuser->login),"confirm_disable", '', 0, 1);
+            if ($ret == 'html') 
+        }
+
+        
+        if ($action == 'enable')
+        {
+            $ret=$html->form_confirm("fiche.php?id=$fuser->id",$langs->trans("EnableAUser"),$langs->trans("ConfirmEnableUser",$fuser->login),"confirm_enable", '', 0, 1);
+            if ($ret == 'html') 
+        }
+
+        
+        if ($action == 'delete')
+        {
+            $ret=$html->form_confirm("fiche.php?id=$fuser->id",$langs->trans("DeleteAUser"),$langs->trans("ConfirmDeleteUser",$fuser->login),"confirm_delete", '', 0, 1);
+            if ($ret == 'html') 
+        }
+
+        dol_htmloutput_mesg($message);
+
+        
+        if ($_GET["action"] != 'edit')
+        {
+            
+
+            
+            
+            
+            
+            
+            
+
+            $rowspan=14;
+            if ($conf->societe->enabled) $rowspan++;
+            if ($conf->adherent->enabled) $rowspan++;
+            if ($conf->webcalendar->enabled) $rowspan++;
+            if ($conf->phenix->enabled) $rowspan+=2;
+
+            
+            
+            
+
+            
+            
+            
+            
+
+            
+
+            
+            
+            
+            
+
+            
+            
+            if ($fuser->ldap_sid && $fuser->statut==0)
+            {
+                
+            }
+            else
+            {
+                
+            }
+            
+
+            
+            
+            if ($fuser->ldap_sid)
+            {
+                if ($passDoNotExpire)
+                {
+                    
+                }
+                else if($userChangePassNextLogon)
+                {
+                    
+                }
+                else if($userDisabled)
+                {
+                    
+                }
+                else
+                {
+                    
+                }
+            }
+            else
+            {
+                
+                if ($fuser->pass) 
+                else
+                {
+                    if ($user->admin) 
+                    else 
+                }
+                
+            }
+            
+
+            
+            
+            if (! empty($conf->multicompany->enabled) && $fuser->admin && ! $fuser->entity)
+            {
+                
+            }
+            else if ($fuser->admin)
+            {
+                
+            }
+            else
+            {
+                
+            }
+            
+
+            
+            
+            if ($fuser->societe_id)
+            {
+                
+            }
+            else if ($fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+            }
+            
+
+            
+            
+            
+            
+
+            
+            
+            
+            
+
+            
+            
+            
+            
+
+            
+            
+            
+            
+
+            
+            
+            
+            
+
+            
+            
+            
+            
+            
+            
+
+            
+            
+            
+
+            
+            
+            
+
+
+            if (preg_match('/myopenid/',$conf->authmode))
+            {
+                
+                
+                
+            }
+            
+
+            
+            if ($conf->webcalendar->enabled)
+            {
+                $langs->load("other");
+                
+                </td>';
+                
+            }
+
+            
+            if ($conf->phenix->enabled)
+            {
+                $langs->load("other");
+                
+                </td>';
+                
+                
+                </td>';
+                
+            }
+
+            
+            if ($conf->societe->enabled)
+            {
+                
+                
+                if ($fuser->societe_id > 0)
+                {
+                    $societe = new Societe($db);
+                    $societe->fetch($fuser->societe_id);
+                    
+                }
+                else
+                {
+                    
+                }
+                if ($fuser->contact_id)
+                {
+                    $contact = new Contact($db);
+                    $contact->fetch($fuser->contact_id);
+                    if ($fuser->societe_id > 0) 
+                    else 
+                    
+                }
+                
+                
+            }
+
+            
+            if ($conf->adherent->enabled)
+            {
+                $langs->load("members");
+                
+                
+                if ($fuser->fk_member)
+                {
+                    $adh=new Adherent($db);
+                    $adh->fetch($fuser->fk_member);
+                    $adh->ref=$adh->getFullname($langs);	
+                    
+                }
+                else
+                {
+                    
+                }
+                
+                
+            }
+
+            
+
+            
+
+
+            
+
+            
+
+            if ($caneditfield &&
+            (empty($conf->multicompany->enabled) || (($fuser->entity == $conf->entity) || $fuser->entity == $user->entity)) )
+            {
+                if (! empty($conf->global->MAIN_ONLY_LOGIN_ALLOWED))
+                {
+                    action=edit">'.$langs->trans("Modify").'</a>';
+                }
+            }
+            elseif ($caneditpassword && ! $fuser->ldap_sid &&
+            (empty($conf->multicompany->enabled) || ($fuser->entity == $conf->entity)) )
+            {
+                action=edit">'.$langs->trans("EditPassword").'</a>';
+            }
+
+            
+            if ($conf->global->USER_PASSWORD_GENERATED != 'none')
+            {
+                if (($user->id != $_GET["id"] && $caneditpassword) && $fuser->login && !$fuser->ldap_sid &&
+                (empty($conf->multicompany->enabled) || ($fuser->entity == $conf->entity)))
+                {
+                    action=password">'.$langs->trans("ReinitPassword").'</a>';
+                }
+
+                if (($user->id != $_GET["id"] && $caneditpassword) && $fuser->login && !$fuser->ldap_sid &&
+                (empty($conf->multicompany->enabled) || ($fuser->entity == $conf->entity)) )
+                {
+                    if ($fuser->email) action=passwordsend">'.$langs->trans("SendNewPassword").'</a>';
+                    else action=enable">'.$langs->trans("Reactivate").'</a>';
+            }
+            
+            if ($user->id <> $_GET["id"] && $candisableuser && $fuser->statut == 1 &&
+            (empty($conf->multicompany->enabled) || ($fuser->entity == $conf->entity)) )
+            {
+                id='.$fuser->id.'">'.$langs->trans("DisableUser").'</a>';
+            }
+            
+            if ($user->id <> $_GET["id"] && $candisableuser &&
+            (empty($conf->multicompany->enabled) || ($fuser->entity == $conf->entity)) )
+            {
+                id='.$fuser->id.'">'.$langs->trans("DeleteUser").'</a>';
+            }
+
+            
+            
+
+
+
+            
+
+            if ($canreadgroup)
+            {
+                print_fiche_titre($langs->trans("ListOfGroupsForUser"),'','');
+
+                
+                $exclude = array();
+
+                $usergroup=new UserGroup($db);
+                $groupslist = $usergroup->listGroupsForUser($fuser->id);
+
+                if (! empty($groupslist))
+                {
+                    foreach($groupslist as $groupforuser)
+                    {
+                        $exclude[]=$groupforuser->id;
+                    }
+                }
+
+                if ($caneditgroup)
+                {
+                    $form = new Form($db);
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                     ';
+                    
+                    
+                    
+
+                    
+                }
+
+                
+                
+                
+                
+                </td></tr>\n";
+
+                if (! empty($groupslist))
+                {
+                    $var=true;
+
+                    foreach($groupslist as $group)
+                    {
+                        $var=!$var;
+
+                        
+                        
+                        if ($caneditgroup)
+                        {
+                            
+                        }
+                        else
+                        {
+                            
+                        }
+                        
+                        
+
+                        if ($caneditgroup)
+                        {
+                            action=removegroup&amp;group='.$group->id.'&amp;entity='.$group->usergroup_entity.'">';
+                            
+                        }
+                        else
+                        {
+                            ";
+                        }
+                        
+                    }
+                }
+                else
+                {
+                    
+                }
+
+                
+                
+            }
+        }
+
+
+        
+
+        if ($_GET["action"] == 'edit' && ($canedituser || ($user->id == $fuser->id)))
+        {
+
+            
+            
+            
+            
+            
+
+            $rowspan=12;
+            if ($conf->societe->enabled) $rowspan++;
+            if ($conf->adherent->enabled) $rowspan++;
+            if ($conf->webcalendar->enabled) $rowspan++;
+            if ($conf->phenix->enabled) $rowspan+=2;
+
+            
+            
+            
+            
+            
+
+            
+            
+            
+            
+            if ($caneditfield && !$fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+                
+            }
+            
+            
+            
+            
+            if ($caneditfield)
+            {
+                if ($fuser->photo) 
+                
+                if ($fuser->photo) 
+                
+                
+                
+            }
+            
+            
+
+            
+            
+            
+            if ($caneditfield && !$fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+                
+            }
+            
+
+            
+            
+            
+            if ($user->admin  && !$fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+                
+            }
+            
+            
+
+            
+            
+            
+            if ($fuser->ldap_sid)
+            {
+                $text=$langs->trans("DomainPassword");
+            }
+            else if ($caneditpassword)
+            {
+                $text='<input size="12" maxlength="32" type="password" class="flat" name="password" value="'.$fuser->pass.'">';
+                if ($dolibarr_main_authentication && $dolibarr_main_authentication == 'http')
+                {
+                    $text=$html->textwithpicto($text,$langs->trans("DolibarrInHttpAuthenticationSoPasswordUseless",$dolibarr_main_authentication),1,'warning');
+                }
+            }
+            else
+            {
+                $text=preg_replace('/./i','*',$fuser->pass);
+            }
+            
+            
+
+            
+            
+            if ($fuser->societe_id > 0)
+            {
+                
+                
+                
+                
+            }
+            else
+            {
+                
+                $nbSuperAdmin = $user->getNbOfUsers('superadmin');
+                if ($user->admin
+                && ($user->id != $fuser->id)                    
+                && ($fuser->entity > 0 || $nbSuperAdmin > 1)    
+                )
+                {
+                    
+
+                    if (! empty($conf->multicompany->enabled) && ! $user->entity)
+                    {
+                        if ($conf->use_javascript_ajax)
+                        {
+                            
+										if (admin.val() == 0) {
+											$("input[name=superadmin]")
+													.attr("disabled", true)
+													.attr("checked", false);
+										}
+										$("select[name=admin]").change(function() {
+											 if ( $(this).val() == 0 ) {
+											 	$("input[name=superadmin]")
+											 		.attr("disabled", true)
+											 		.attr("checked", false);
+											 } else {
+											 	$("input[name=superadmin]")
+											 		.attr("disabled", false);
+											 }
+										});
+									});
+								</script>';
+                        }
+
+                        $checked=(($fuser->admin && ! $fuser->entity) ? ' checked' : '');
+                        
+                    }
+                }
+                else
+                {
+                    $yn = yn($fuser->admin);
+                    
+                    if (! empty($conf->multicompany->enabled) && ! $fuser->entity) 
+                    else 
+                }
+                
+            }
+
+            
+            
+            
+            if ($fuser->societe_id)
+            {
+                
+            }
+            else if ($fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+            }
+            
+
+            
+            
+            
+            if ($caneditfield  && !$fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+                
+            }
+            
+
+            
+            
+            
+            if ($caneditfield && !$fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+                
+            }
+            
+
+            
+            
+            
+            if ($caneditfield  && !$fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+                
+            }
+            
+
+            
+            
+            
+            if ($caneditfield  && !$fuser->ldap_sid)
+            {
+                
+            }
+            else
+            {
+                
+                
+            }
+            
+
+            
+            
+            
+            
+            
+
+            
+            if (preg_match('/myopenid/',$conf->authmode))
+            {
+                
+                
+                if ($caneditfield  && !$fuser->ldap_sid)
+                {
+                    
+                }
+                else
+                {
+                    
+                    
+                }
+                
+            }
+
+            
+            
+            
+            
+            
+
+            
+
+            
+            if ($conf->webcalendar->enabled)
+            {
+                $langs->load("other");
+                
+                
+                if ($caneditfield) 
+                else 
+                
+            }
+
+            
+            if ($conf->phenix->enabled)
+            {
+                $langs->load("other");
+                
+                
+                if ($caneditfield) 
+                else 
+                
+                
+                
+                if ($caneditfield) 
+                else 
+                
+            }
+
+            
+            if ($conf->societe->enabled)
+            {
+                
+                
+                if ($fuser->societe_id > 0)
+                {
+                    $societe = new Societe($db);
+                    $societe->fetch($fuser->societe_id);
+                    
+                    if ($fuser->contact_id)
+                    {
+                        $contact = new Contact($db);
+                        $contact->fetch($fuser->contact_id);
+                        
+                    }
+                }
+                else
+                {
+                    
+                }
+                
+                
+            }
+
+            
+            if ($conf->adherent->enabled)
+            {
+                $langs->load("members");
+                
+                
+                if ($fuser->fk_member)
+                {
+                    $adh=new Adherent($db);
+                    $adh->fetch($fuser->fk_member);
+                    $adh->ref=$adh->login;	
+                    
+                }
+                else
+                {
+                    
+                }
+                
+                
+            }
+
+            
+
+            
+            
+             ';
+            
+            
+
+            
+
+            
+        }
+
+        $ldap->close;
+    }
+}
+
+$db->close();
+
+llxFooter('$Date: 9 23:19:43 $ - $Revision: 1.275 $');
+
+
+
+
+function dolValidElement($element)
+{
+    return (trim($element) != '');
+}
+
+?>

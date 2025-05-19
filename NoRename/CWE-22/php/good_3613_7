@@ -1,0 +1,487 @@
+<?php
+
+
+
+
+define("NOLOGIN",1);		
+define("NOCSRFCHECK",1);	
+
+
+
+$errmsg='';
+$num=0;
+$error=0;
+$backtopage=GETPOST('backtopage','alpha');
+$action=GETPOST('action','alpha');
+
+
+$langs->load("main");
+$langs->load("members");
+$langs->load("companies");
+$langs->load("install");
+$langs->load("other");
+
+
+if (empty($conf->adherent->enabled)) accessforbidden('',1,1,1);
+
+if (empty($conf->global->MEMBER_ENABLE_PUBLIC))
+{
+    
+    exit;
+}
+
+
+
+function llxHeaderVierge($title, $head="", $disablejs=0, $disablehead=0, $arrayofjs='', $arrayofcss='')
+{
+    global $user, $conf, $langs, $mysoc;
+    top_htmlhead($head, $title, $disablejs, $disablehead, $arrayofjs, $arrayofcss); 
+    
+
+    
+    $urllogo=DOL_URL_ROOT.'/theme/login_logo.png';
+
+    if (! empty($mysoc->logo_small) && is_readable($conf->mycompany->dir_output.'/logos/thumbs/'.$mysoc->logo_small))
+    {
+        $urllogo=DOL_URL_ROOT.'/viewimage.php?cache=1&amp;modulepart=companylogo&amp;file='.urlencode('thumbs/'.$mysoc->logo_small);
+    }
+    elseif (! empty($mysoc->logo) && is_readable($conf->mycompany->dir_output.'/logos/'.$mysoc->logo))
+    {
+        $urllogo=DOL_URL_ROOT.'/viewimage.php?cache=1&amp;modulepart=companylogo&amp;file='.urlencode($mysoc->logo);
+        $width=128;
+    }
+    elseif (is_readable(DOL_DOCUMENT_ROOT.'/theme/dolibarr_logo.png'))
+    {
+        $urllogo=DOL_URL_ROOT.'/theme/dolibarr_logo.png';
+    }
+    
+    
+    
+
+     margin-right: 50px;">';
+}
+
+
+function llxFooterVierge()
+{
+    
+
+    printCommonFooter('public');
+
+    
+    
+}
+
+
+
+
+
+
+if ($action == 'add')
+{
+    
+    if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+    {
+        if(! GETPOST('login'))
+        {
+            $error+=1;
+            $errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("Login"))."<br>\n";
+        }
+        $sql = "SELECT login FROM ".MAIN_DB_PREFIX."adherent WHERE login='".$db->escape(GETPOST('login'))."'";
+        $result = $db->query($sql);
+        if ($result)
+        {
+            $num = $db->num_rows($result);
+        }
+        if ($num !=0)
+        {
+            $error+=1;
+            $langs->load("errors");
+            $errmsg .= $langs->trans("ErrorLoginAlreadyExists")."<br>\n";
+        }
+        if (!isset($_POST["pass1"]) || !isset($_POST["pass2"]) || $_POST["pass1"] == '' || $_POST["pass2"] == '' || $_POST["pass1"]!=$_POST["pass2"])
+        {
+            $error+=1;
+            $langs->load("errors");
+            $errmsg .= $langs->trans("ErrorPasswordsMustMatch")."<br>\n";
+        }
+        if (! GETPOST("email"))
+        {
+            $error+=1;
+            $errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("EMail"))."<br>\n";
+        }
+    }
+    if (GETPOST('type') <= 0)
+    {
+        $error+=1;
+        $errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("Type"))."<br>\n";
+    }
+    if (! in_array(GETPOST('morphy'),array('mor','phy')))
+    {
+        $error+=1;
+        $errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("MorPhy"))."<br>\n";
+    }
+    if (empty($_POST["nom"]))
+    {
+        $error+=1;
+        $errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("Lastname"))."<br>\n";
+    }
+    if (empty($_POST["prenom"]))
+    {
+        $error+=1;
+        $errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("Firstname"))."<br>\n";
+    }
+    if (GETPOST("email") && ! isValidEmail(GETPOST("email")))
+    {
+        $error+=1;
+        $langs->load("errors");
+        $errmsg .= $langs->trans("ErrorBadEMail",GETPOST("email"))."<br>\n";
+    }
+    $birthday=dol_mktime($_POST["birthhour"],$_POST["birthmin"],$_POST["birthsec"],$_POST["birthmonth"],$_POST["birthday"],$_POST["birthyear"]);
+    if ($_POST["birthmonth"] && empty($birthday))
+    {
+        $error+=1;
+        $langs->load("errors");
+        $errmsg .= $langs->trans("ErrorBadDateFormat")."<br>\n";
+    }
+    if (! empty($conf->global->MEMBER_NEWFORM_DOLIBARRTURNOVER))
+    {
+        if (GETPOST("morphy") == 'mor' && GETPOST('budget') <= 0)
+        {
+            $error+=1;
+            $errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("TurnoverOrBudget"))."<br>\n";
+        }
+    }
+
+    if (isset($public)) $public=1;
+    else $public=0;
+
+    if (! $error)
+    {
+        
+        $adh = new Adherent($db);
+        $adh->statut      = -1;
+        $adh->public      = $_POST["public"];
+        $adh->prenom      = $_POST["prenom"];
+        $adh->nom         = $_POST["nom"];
+        $adh->civilite_id = $_POST["civilite_id"];
+        $adh->societe     = $_POST["societe"];
+        $adh->address     = $_POST["address"];
+        $adh->zip         = $_POST["zipcode"];
+        $adh->town        = $_POST["town"];
+        $adh->adresse     = $_POST["address"];    
+        $adh->cp          = $_POST["zipcode"];    
+        $adh->ville       = $_POST["town"];    
+        $adh->email       = $_POST["email"];
+        if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+        {
+            $adh->login       = $_POST["login"];
+            $adh->pass        = $_POST["pass1"];
+        }
+        $adh->photo       = $_POST["photo"];
+        $adh->note        = $_POST["note"];
+        $adh->country_id  = $_POST["country_id"];
+        $adh->pays_id     = $_POST["country_id"];    
+        $adh->state_id    = $_POST["state_id"];
+        $adh->typeid      = $_POST["type"];
+        $adh->note        = $_POST["comment"];
+        $adh->morphy      = $_POST["morphy"];
+        $adh->naiss       = $birthday;
+
+        foreach($_POST as $key => $value){
+            if (preg_match("/^options_/",$key)){
+                $adh->array_options[$key]=$_POST[$key];
+            }
+        }
+
+        $result=$adh->create($user->id);
+        if ($result > 0)
+        {
+            
+            if (! empty($conf->global->ADHERENT_AUTOREGISTER_MAIL) && ! empty($conf->global->ADHERENT_AUTOREGISTER_MAIL_SUBJECT))
+            {
+                $result=$adh->send_an_email($conf->global->ADHERENT_AUTOREGISTER_MAIL,$conf->global->ADHERENT_AUTOREGISTER_MAIL_SUBJECT,array(),array(),array(),"","",0,-1);
+            }
+
+            if (! empty($backtopage)) $urlback=$backtopage;
+            else if ($conf->global->MEMBER_URL_REDIRECT_SUBSCRIPTION)
+            {
+                $urlback=$conf->global->MEMBER_URL_REDIRECT_SUBSCRIPTION;
+                
+            }
+            else $urlback=$_SERVER["PHP_SELF"]."?action=added";
+
+            if (! empty($conf->global->MEMBER_NEWFORM_PAYONLINE))
+            {
+                if ($conf->global->MEMBER_NEWFORM_PAYONLINE == 'paybox')
+                {
+                    $urlback=DOL_MAIN_URL_ROOT.'/public/paybox/newpayment.php?from=membernewform&source=membersubscription&ref='.$adh->ref;
+                    if (price2num(GETPOST('amount'))) $urlback.='&amount='.price2num(GETPOST('amount'));
+                    if (GETPOST('email')) $urlback.='&email='.urlencode(GETPOST('email'));
+                }
+                else if ($conf->global->MEMBER_NEWFORM_PAYONLINE == 'paypal')
+                {
+                    $urlback=DOL_MAIN_URL_ROOT.'/public/paypal/newpayment.php?from=membernewform&source=membersubscription&ref='.$adh->ref;
+                    if (price2num(GETPOST('amount'))) $urlback.='&amount='.price2num(GETPOST('amount'));
+                    if (GETPOST('email')) $urlback.='&email='.urlencode(GETPOST('email'));
+                }
+                else
+                {
+                    dol_print_error('',"Autosubscribe form is setup to ask an online payment for a not managed online payment");
+                    exit;
+                }
+            }
+
+            dol_syslog("member ".$adh->ref." was created, we redirect to ".$urlback);
+            Header("Location: ".$urlback);
+            exit;
+        }
+        else
+        {
+            $errmsg .= join('<br>',$adh->errors);
+        }
+    }
+}
+
+
+
+
+if ($action == 'added')
+{
+    llxHeaderVierge($langs->trans("NewMemberForm"));
+
+    
+    
+    
+    
+    
+
+    llxFooterVierge();
+    exit;
+}
+
+
+
+
+
+$form = new Form($db);
+$formcompany = new FormCompany($db);
+$adht = new AdherentType($db);
+$extrafields = new ExtraFields($db);
+$extrafields->fetch_name_optionals_label('member');    
+
+
+llxHeaderVierge($langs->trans("NewSubscription"));
+
+print_titre($langs->trans("NewSubscription"));
+
+if (! empty($conf->global->MEMBER_NEWFORM_TEXT)) 
+else 
+
+dol_htmloutput_errors($errmsg);
+
+
+
+
+
+        initmorphy();
+        jQuery("
+            initmorphy();
+        });
+        jQuery("
+           document.newmember.action.value="create";
+           document.newmember.submit();
+        });
+    });
+});
+</script>';
+
+
+
+
+
+
+
+
+
+if (empty($conf->global->MEMBER_NEWFORM_FORCETYPE))
+{
+    $listoftype=$adht->liste_array();
+    $tmp=array_keys($listoftype);
+    $defaulttype='';
+    $isempty=1;
+    if (count($listoftype)==1) { $defaulttype=$tmp[0]; $isempty=0; }
+    
+    
+    
+}
+else
+{
+    $adht->fetch($conf->global->MEMBER_NEWFORM_FORCETYPE);
+    
+    
+}
+
+$morphys["phy"] = $langs->trans("Physical");
+$morphys["mor"] = $langs->trans("Moral");
+if (empty($conf->global->MEMBER_NEWFORM_FORCEMORPHY))
+{
+    
+    
+    
+}
+else
+{
+    
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$country_id=GETPOST('country_id');
+if (! $country_id && ! empty($conf->global->MEMBER_NEWFORM_FORCECOUNTRYCODE)) $country_id=getCountry($conf->global->MEMBER_NEWFORM_FORCECOUNTRYCODE,2,$db,$langs);
+if (! $country_id && ! empty($conf->geoipmaxmind->enabled))
+{
+    $country_code=dol_user_country();
+    
+    if ($country_code)
+    {
+        $new_country_id=getCountry($country_code,3,$db,$langs);
+        
+        if ($new_country_id) $country_id=$new_country_id;
+    }
+}
+$country_code=getCountry($country_id,2,$db,$langs);
+
+
+
+if (empty($conf->global->SOCIETE_DISABLE_STATE))
+{
+    
+    if ($country_code) 
+    else 
+    
+}
+
+
+
+if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+{
+    
+    
+    
+}
+
+
+
+
+
+
+
+
+
+foreach($extrafields->attribute_label as $key=>$value)
+{
+    
+    
+    
+}
+
+
+
+
+
+
+
+if (! empty($conf->global->MEMBER_NEWFORM_DOLIBARRTURNOVER))
+{
+    $arraybudget=array('50'=>'<= 100 000','100'=>'<= 200 000','200'=>'<= 500 000','400'=>'<= 1 500 000','750'=>'<= 3 000 000','1500'=>'<= 5 000 000','2000'=>'5 000 000+');
+    
+    
+    
+
+    
+        jQuery("
+            initturnover();
+        });
+        jQuery("
+                if (jQuery("
+                else { jQuery("
+        });
+        
+        function initturnover() {
+            if (jQuery("
+                jQuery(".amount").val(20);
+                jQuery("
+                jQuery("
+            }
+            if (jQuery("
+                jQuery(".amount").val(\'\');
+                jQuery("
+                jQuery("
+                if (jQuery("
+                else { jQuery("
+            }
+        }
+    });
+    </script>';
+    
+}
+if (! empty($conf->global->MEMBER_NEWFORM_AMOUNT)
+|| ! empty($conf->global->MEMBER_NEWFORM_PAYONLINE))
+{
+    
+    $amount=0;
+    if (! empty($conf->global->MEMBER_NEWFORM_PAYONLINE))
+    {
+        $amount=GETPOST('amount')?GETPOST('amount'):$conf->global->MEMBER_NEWFORM_AMOUNT;
+    }
+    
+    
+    if (! empty($conf->global->MEMBER_NEWFORM_EDITAMOUNT))
+    {
+        
+    }
+    else
+    {
+        
+        
+    }
+    
+    
+}
+
+
+
+
+
+if (! empty($backtopage))
+{
+     &nbsp; <input type="submit" value="'.$langs->trans("Cancel").'" id="submitcancel" class="button">';
+}
+
+
+
+
+
+llxFooterVierge();
+
+$db->close();
+?>

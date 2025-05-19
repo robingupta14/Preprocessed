@@ -1,0 +1,217 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+define('PHPWG_ROOT_PATH','../');
+define('IN_ADMIN', true);
+
+
+check_status(var_0);
+	
+
+	
+
+$var_1 = array(
+  $conf['user_fields']['id'],
+  $conf['user_fields']['username'],
+  'status',
+  $conf['user_fields']['email'],
+  'recent_period',
+  'level',
+  'registration_date'
+  );
+
+$var_1 = trigger_change('user_list_columns', $var_1);
+	
+
+$var_2 = 'user_id';
+	
+
+$var_3 = var_4.' INNER JOIN '.var_5.' AS ui ON '.$conf['user_fields']['id'].' = ui.user_id';
+
+
+
+
+$var_6 = "";
+if ( isset( $_REQUEST['iDisplayStart'] ) && $_REQUEST['iDisplayLength'] != '-1' )
+{
+  $var_6 = "LIMIT ".pwg_db_real_escape_string( $_REQUEST['iDisplayStart'] ).", ".
+    pwg_db_real_escape_string( $_REQUEST['iDisplayLength'] );
+}
+	
+	
+
+if ( isset( $_REQUEST['iSortCol_0'] ) )
+{
+  $var_7 = "ORDER BY  ";
+  for ( $var_8=0 ; $var_8<intval( $_REQUEST['iSortingCols'] ) ; $var_8++ )
+  {
+    if ( $_REQUEST[ 'bSortable_'.intval($_REQUEST['iSortCol_'.$var_8]) ] == "true" )
+    {
+      $var_7 .= $var_1[ intval( $_REQUEST['iSortCol_'.$var_8] ) ]."
+				 	".pwg_db_real_escape_string( $_REQUEST['sSortDir_'.$var_8] ) .", ";
+    }
+  }
+		
+  $var_7 = substr_replace( $var_7, "", -2 );
+  if ( $var_7 == "ORDER BY" )
+  {
+    $var_7 = "";
+  }
+}
+	
+	
+
+$var_9 = "";
+if ( $_REQUEST['sSearch'] != "" )
+{
+  $var_9 = "WHERE (";
+  for ( $var_8=0 ; $var_8<count($var_1) ; $var_8++ )
+  {
+    $var_9 .= $var_1[$var_8]." LIKE '%".pwg_db_real_escape_string( $_REQUEST['sSearch'] )."%' OR ";
+  }
+  $var_9 = substr_replace( $var_9, "", -3 );
+  $var_9 .= ')';
+}
+	
+
+for ( $var_8=0 ; $var_8<count($var_1) ; $var_8++ )
+{
+  if (isset($_REQUEST['bSearchable_'.$var_8]) && isset($_REQUEST['sSearch_'.$var_8])
+      &&$_REQUEST['bSearchable_'.$var_8] == "true" && $_REQUEST['sSearch_'.$var_8] != ''
+    )
+  {
+    if ( $var_9 == "" )
+    {
+      $var_9 = "WHERE ";
+    }
+    else
+    {
+      $var_9 .= " AND ";
+    }
+    $var_9 .= $var_1[$var_8]." LIKE '%".pwg_db_real_escape_string($_REQUEST['sSearch_'.$var_8])."%' ";
+  }
+}
+	
+	
+
+$var_10 = "
+		SELECT SQL_CALC_FOUND_ROWS ".str_replace(" , ", " ", implode(", ", $var_1))."
+		FROM   $var_3
+		$var_9
+		$var_7
+		$var_6
+	";
+$var_11 = pwg_query($var_10);
+	
+
+$var_12 = pwg_query('SELECT FOUND_ROWS();');
+list($var_13) = pwg_db_fetch_row($var_12);
+	
+
+$var_10 = "
+		SELECT COUNT(".$var_2.")
+		FROM   $var_3
+	";
+$var_14 = pwg_query($var_10);
+$var_15 = pwg_db_fetch_array($var_14);
+$var_16 = $var_15[0];
+	
+	
+
+$var_17 = array(
+  "sEcho" => intval($_REQUEST['sEcho']),
+  "iTotalRecords" => $var_16,
+  "iTotalDisplayRecords" => $var_13,
+  "aaData" => array()
+	);
+
+$var_18 = array();
+
+while ( $var_19 = pwg_db_fetch_array( $var_11 ) )
+{
+  $var_18[] = $var_19[ $conf['user_fields']['id'] ];
+  
+  $var_20 = array();
+  for ( $var_8=0 ; $var_8<count($var_1) ; $var_8++ )
+  {
+    if ( $var_1[$var_8] == "status" )
+    {
+      $var_20[] = l10n('user_status_'.$var_19[ $var_1[$var_8] ]);
+    }
+    else if ( $var_1[$var_8] == "level" )
+    {
+      $var_20[] = $var_19[ $var_1[$var_8] ] == 0 ? '' : l10n(sprintf('Level %d', $var_19[ $var_1[$var_8] ]));
+    }
+    else if ( $var_1[$var_8] != ' ' )
+    {
+      
+      $var_21 = $var_1[$var_8];
+      foreach ($conf['user_fields'] as $var_22 => $var_23)
+      {
+        if ($var_1[$var_8] == $var_22)
+        {
+          $var_21 = $var_23;
+        }
+      }
+      
+      $var_20[] = $var_19[$var_21];
+    }
+
+  }
+  $var_17['aaData'][] = $var_20;
+}
+
+
+if (count($var_18) > 0)
+{
+  $var_24 = array();
+  
+  $var_25 = '
+SELECT
+    user_id,
+    GROUP_CONCAT(name ORDER BY name SEPARATOR ", ") AS groups
+  FROM '.var_26.'
+    JOIN '.var_27.' ON id = group_id
+  WHERE user_id IN ('.implode(',', $var_18).')
+  GROUP BY user_id
+;';
+  $var_28 = pwg_query($var_25);
+  while ($var_20 = pwg_db_fetch_assoc($var_28))
+  {
+    $var_24[ $var_20['user_id'] ] = $var_20['groups'];
+  }
+
+  $var_29 = array_search('recent_period', $var_1);
+  
+  
+  foreach (array_keys($var_17['aaData']) as $var_30)
+  {
+    $var_31 = $var_17['aaData'][$var_30][0];
+    $var_17['aaData'][$var_30][$var_29] = isset($var_24[$var_31]) ? $var_24[$var_31] : '';
+  }
+}
+
+$var_17 = trigger_change('after_render_user_list', $var_17);
+	
+
+?>

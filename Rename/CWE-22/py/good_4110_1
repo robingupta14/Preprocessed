@@ -1,0 +1,222 @@
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, Optional, Sequence, Union
+
+from jinja2 import Environment, PackageLoader
+
+from openapi_python_client import utils
+
+from .parser import GeneratorData, import_string_from_reference
+from .parser.var_15 import GeneratorError
+
+if sys.version_info.minor == 7:  
+    from importlib_metadata import version
+else:
+    from importlib.metadata import version  
+
+
+var_0 = version(__package__)
+
+
+def function_0(url: Optional[str], path: Optional[Path]) -> Union[Project, GeneratorError]:
+    var_1 = _get_document(url=url, path=path)
+    if isinstance(var_1, GeneratorError):
+        return var_1
+    var_2 = .parser.GeneratorData.from_dict(var_1)
+    if isinstance(var_2, GeneratorError):
+        return var_2
+    return Project(var_2=var_2)
+
+
+def function_1(*, url: Optional[str], path: Optional[Path]) -> Sequence[GeneratorError]:
+    
+    var_3 = _get_project_for_url_or_path(url=url, path=path)
+    if isinstance(var_3, GeneratorError):
+        return [var_3]
+    return var_3.build()
+
+
+def function_2(*, url: Optional[str], path: Optional[Path]) -> Sequence[GeneratorError]:
+    
+    var_3 = _get_project_for_url_or_path(url=url, path=path)
+    if isinstance(var_3, GeneratorError):
+        return [var_3]
+    return var_3.update()
+
+
+def function_3(*, url: Optional[str], path: Optional[Path]) -> Union[Dict[str, Any], GeneratorError]:
+    var_4: bytes
+    if url is not None and path is not None:
+        return GeneratorError(header=Provide URL or Path, not both.)
+    if url is not None:
+        try:
+            var_5 = httpx.get(url)
+            var_4 = var_5.content
+        except (httpx.HTTPError, httpcore.NetworkError):
+            return GeneratorError(header=Could not get OpenAPI document from provided URL)
+    elif path is not None:
+        var_4 = path.read_bytes()
+    else:
+        return GeneratorError(header=No URL or Path provided)
+    try:
+        return yaml.safe_load(var_4)
+    except yaml.YAMLError:
+        return GeneratorError(header=Invalid YAML from provided source)
+
+
+class class_0:
+    var_6 = {snakecase: openapi_python_client.utils.snake_case, kebabcase: openapi_python_client.utils.kebab_case}
+    var_7: Optional[str] = None
+    var_8: Optional[str] = None
+
+    def function_4(var_10, *, var_2: GeneratorData) -> None:
+        var_10.var_2: GeneratorData = var_2
+        var_10.env: Environment = Environment(loader=PackageLoader(__package__), trim_blocks=True, lstrip_blocks=True)
+
+        var_10.project_name: str = var_10.var_7 or f"{openapi_python_client.utils.kebab_case(var_2.title).lower()}-client"
+        var_10.project_dir: Path = pathlib.Path.cwd() / var_10.project_name
+
+        var_10.package_name: str = var_10.var_8 or var_10.project_name.replace('-', '_')
+        var_10.package_dir: Path = var_10.project_dir / var_10.package_name
+        var_10.package_description: str = f"A client library for accessing {var_10.var_2.title}"
+        var_10.version: str = var_2.version
+
+        var_10.env.filters.update(var_10.var_6)
+
+    def function_5(var_10) -> Sequence[GeneratorError]:
+        
+
+        print()
+        try:
+            var_10.project_dir.mkdir()
+        except FileExistsError:
+            return [GeneratorError(detail=Directory already exists. Delete it or use the update command.)]
+        var_10._create_package()
+        var_10._build_metadata()
+        var_10._build_models()
+        var_10._build_api()
+        var_10._reformat()
+        return var_10._get_errors()
+
+    def function_6(var_10) -> Sequence[GeneratorError]:
+        
+
+        if not var_10.package_dir.is_dir():
+            raise FileNotFoundError()
+        print()
+        shutil.rmtree(var_10.package_dir)
+        var_10._create_package()
+        var_10._build_models()
+        var_10._build_api()
+        var_10._reformat()
+        return var_10._get_errors()
+
+    def function_7(var_10) -> None:
+        subprocess.run(
+            isort ., cwd=var_10.project_dir, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        subprocess.run(black ., cwd=var_10.project_dir, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def function_8(var_10) -> Sequence[GeneratorError]:
+        var_15 = []
+        for collection in var_10.var_2.endpoint_collections_by_tag.values():
+            var_15.extend(collection.parse_errors)
+        var_15.extend(var_10.var_2.schemas.var_15)
+        return var_15
+
+    def function_9(var_10) -> None:
+        var_10.package_dir.mkdir()
+        
+        var_16 = var_10.package_dir / __init__.py
+
+        var_17 = var_10.env.get_templatepackage_init.pyi
+        var_16.write_text(var_17.render(description=var_10.package_description))
+
+        var_18 = var_10.package_dir / py.typed
+        var_18.write_text("
+
+    def _build_metadata(var_10) -> None:
+        
+        pyproject_template = var_10.env.get_templatepyproject.toml
+        pyproject_path = var_10.project_dir / pyproject.toml
+        pyproject_path.write_text(
+            pyproject_template.render(
+                project_name=var_10.project_name,
+                package_name=var_10.package_name,
+                version=var_10.version,
+                description=var_10.package_description,
+            )
+        )
+
+        
+        readme = var_10.project_dir / README.md
+        readme_template = var_10.env.get_templateREADME.md
+        readme.write_text(
+            readme_template.render(
+                project_name=var_10.project_name, description=var_10.package_description, package_name=var_10.package_name
+            )
+        )
+
+        
+        git_ignore_path = var_10.project_dir / .gitignore
+        git_ignore_template = var_10.env.get_template.gitignore
+        git_ignore_path.write_text(git_ignore_template.render())
+
+    def _build_models(var_10) -> None:
+        
+        models_dir = var_10.package_dir / models
+        models_dir.mkdir()
+        models_init = models_dir / __init__.py
+        imports = []
+
+        types_template = var_10.env.get_templatetypes.py
+        types_path = models_dir / types.py
+        types_path.write_text(types_template.render())
+
+        model_template = var_10.env.get_templatemodel.pyi
+        for model in var_10.var_2.schemas.models.values():
+            module_path = models_dir / f"{model.reference.module_name}.py"
+            module_path.write_text(model_template.render(model=model))
+            imports.append(import_string_from_reference(model.reference))
+
+        
+        enum_template = var_10.env.get_templateenum.pyi
+        for enum in var_10.var_2.enums.values():
+            module_path = models_dir / f"{enum.reference.module_name}.py"
+            module_path.write_text(enum_template.render(enum=enum))
+            imports.append(import_string_from_reference(enum.reference))
+
+        models_init_template = var_10.env.get_templatemodels_init.pyi
+        models_init.write_text(models_init_template.render(imports=imports))
+
+    def _build_api(var_10) -> None:
+        
+        client_path = var_10.package_dir / client.py
+        client_template = var_10.env.get_templateclient.pyi
+        client_path.write_text(client_template.render())
+
+        
+        api_dir = var_10.package_dir / api
+        api_dir.mkdir()
+        api_init = api_dir / __init__.py
+        api_init.write_text
+
+        async_api_dir = var_10.package_dir / async_api
+        async_api_dir.mkdir()
+        async_api_init = async_api_dir / __init__.py
+        async_api_init.write_text
+
+        api_errors = var_10.package_dir / var_15.py
+        errors_template = var_10.env.get_templateerrors.pyi
+        api_errors.write_text(errors_template.render())
+
+        endpoint_template = var_10.env.get_templateendpoint_module.pyi
+        async_endpoint_template = var_10.env.get_templateasync_endpoint_module.pyi
+        for tag, collection in var_10.var_2.endpoint_collections_by_tag.items():
+            tag = openapi_python_client.utils.snake_case(tag)
+            module_path = api_dir / f"{tag}.py"
+            module_path.write_text(endpoint_template.render(collection=collection))
+            async_module_path = async_api_dir / f"{tag}.py"
+            async_module_path.write_text(async_endpoint_template.render(collection=collection))

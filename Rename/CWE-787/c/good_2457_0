@@ -1,0 +1,2054 @@
+
+
+
+
+
+
+
+
+static struct struct_1 *policy_cache;
+static struct struct_1 *sn_cache;
+
+
+
+enum enumtype_97 var_89 = 0;
+
+
+
+
+static struct struct_145 var_146 = {
+ .refcnt = ATOMIC_INIT(1),
+ .mode = MPOL_PREFERRED,
+ .flags = MPOL_F_LOCAL,
+};
+
+static struct struct_145 preferred_node_policy[MAX_NUMNODES];
+
+struct struct_145 *fn_5(struct struct_128 *p)
+{
+ struct struct_145 *pol = p->mempolicy;
+ int var_130;
+
+ if (pol)
+  return pol;
+
+ var_130 = numa_node_id();
+ if (var_130 != var_135) {
+  pol = &preferred_node_policy[var_130];
+
+  if (pol->mode)
+   return pol;
+ }
+
+ return &var_146;
+}
+
+static const struct struct_32 {
+ int (*create)(struct struct_145 *pol, const nodemask_t *var_146);
+ void (*rebind)(struct struct_145 *pol, const nodemask_t *var_146);
+} mpol_ops[MPOL_MAX];
+
+static inline int fn_11(const struct struct_145 *pol)
+{
+ return pol->flags & MPOL_MODE_FLAGS;
+}
+
+static void fn_12(nodemask_t *var_133, const nodemask_t *orig,
+       const nodemask_t *rel)
+{
+ nodemask_t tmp;
+ nodes_fold(tmp, *orig, nodes_weight(*rel));
+ nodes_onto(*var_133, tmp, *rel);
+}
+
+static int fn_14(struct struct_145 *pol, const nodemask_t *var_146)
+{
+ if (nodes_empty(*var_146))
+  return -EINVAL;
+ pol->v.nodes = *var_146;
+ return 0;
+}
+
+static int fn_15(struct struct_145 *pol, const nodemask_t *var_146)
+{
+ if (!var_146)
+  pol->flags |= MPOL_F_LOCAL;
+ else if (nodes_empty(*var_146))
+  return -EINVAL;
+ else
+  pol->v.preferred_node = first_node(*var_146);
+ return 0;
+}
+
+static int fn_16(struct struct_145 *pol, const nodemask_t *var_146)
+{
+ if (nodes_empty(*var_146))
+  return -EINVAL;
+ pol->v.nodes = *var_146;
+ return 0;
+}
+
+static int fn_17(struct struct_145 *pol,
+       const nodemask_t *var_146, struct struct_18 *nsc)
+{
+ int var_133;
+
+
+ if (pol == NULL)
+  return 0;
+
+ nodes_and(nsc->mask1,
+    cpuset_current_mems_allowed, node_states[N_MEMORY]);
+
+ VM_BUG_ON(!var_146);
+ if (pol->mode == MPOL_PREFERRED && nodes_empty(*var_146))
+  var_146 = NULL;
+ else {
+  if (pol->flags & MPOL_F_RELATIVE_NODES)
+   mpol_relative_nodemask(&nsc->mask2, var_146, &nsc->mask1);
+  else
+   nodes_and(nsc->mask2, *var_146, nsc->mask1);
+
+  if (mpol_store_user_nodemask(pol))
+   pol->w.user_nodemask = *var_146;
+  else
+   pol->w.cpuset_mems_allowed =
+      cpuset_current_mems_allowed;
+ }
+
+ if (var_146)
+  var_133 = mpol_ops[pol->mode].create(pol, &nsc->mask2);
+ else
+  var_133 = mpol_ops[pol->mode].create(pol, NULL);
+ return var_133;
+}
+
+
+
+
+
+static struct struct_145 *fn_19(unsigned short var_146, unsigned short var_146,
+      nodemask_t *var_146)
+{
+ struct struct_145 *policy;
+
+ pr_debug("setting mode %d flags %d nodes[0] %lx\n",
+   var_146, var_146, var_146 ? nodes_addr(*var_146)[0] : var_135);
+
+ if (var_146 == var_146) {
+  if (var_146 && !nodes_empty(*var_146))
+   return ERR_PTR(-EINVAL);
+  return NULL;
+ }
+ VM_BUG_ON(!var_146);
+
+
+
+
+
+
+ if (var_146 == MPOL_PREFERRED) {
+  if (nodes_empty(*var_146)) {
+   if (((var_146 & MPOL_F_STATIC_NODES) ||
+        (var_146 & MPOL_F_RELATIVE_NODES)))
+    return ERR_PTR(-EINVAL);
+  }
+ } else if (var_146 == MPOL_LOCAL) {
+  if (!nodes_empty(*var_146) ||
+      (var_146 & MPOL_F_STATIC_NODES) ||
+      (var_146 & MPOL_F_RELATIVE_NODES))
+   return ERR_PTR(-EINVAL);
+  var_146 = MPOL_PREFERRED;
+ } else if (nodes_empty(*var_146))
+  return ERR_PTR(-EINVAL);
+ policy = kmem_cache_alloc(policy_cache, GFP_KERNEL);
+ if (!policy)
+  return ERR_PTR(-ENOMEM);
+ atomic_set(&policy->refcnt, 1);
+ policy->mode = var_146;
+ policy->flags = var_146;
+
+ return policy;
+}
+
+
+void fn_23(struct struct_145 *p)
+{
+ if (!atomic_dec_and_test(&p->refcnt))
+  return;
+ kmem_cache_free(policy_cache, p);
+}
+
+static void fn_24(struct struct_145 *pol, const nodemask_t *var_146)
+{
+}
+
+static void fn_25(struct struct_145 *pol, const nodemask_t *var_146)
+{
+ nodemask_t tmp;
+
+ if (pol->flags & MPOL_F_STATIC_NODES)
+  nodes_and(tmp, pol->w.user_nodemask, *var_146);
+ else if (pol->flags & MPOL_F_RELATIVE_NODES)
+  mpol_relative_nodemask(&tmp, &pol->w.user_nodemask, var_146);
+ else {
+  nodes_remap(tmp, pol->v.nodes,pol->w.cpuset_mems_allowed,
+        *var_146);
+  pol->w.cpuset_mems_allowed = *var_146;
+ }
+
+ if (nodes_empty(tmp))
+  tmp = *var_146;
+
+ pol->v.nodes = tmp;
+}
+
+static void fn_26(struct struct_145 *pol,
+      const nodemask_t *var_146)
+{
+ nodemask_t tmp;
+
+ if (pol->flags & MPOL_F_STATIC_NODES) {
+  int var_130 = first_node(pol->w.user_nodemask);
+
+  if (node_isset(var_130, *var_146)) {
+   pol->v.preferred_node = var_130;
+   pol->flags &= ~MPOL_F_LOCAL;
+  } else
+   pol->flags |= MPOL_F_LOCAL;
+ } else if (pol->flags & MPOL_F_RELATIVE_NODES) {
+  mpol_relative_nodemask(&tmp, &pol->w.user_nodemask, var_146);
+  pol->v.preferred_node = first_node(tmp);
+ } else if (!(pol->flags & MPOL_F_LOCAL)) {
+  pol->v.preferred_node = node_remap(pol->v.preferred_node,
+         pol->w.cpuset_mems_allowed,
+         *var_146);
+  pol->w.cpuset_mems_allowed = *var_146;
+ }
+}
+
+static void fn_27(struct struct_145 *pol, const nodemask_t *newmask)
+{
+ if (!pol)
+  return;
+ if (!mpol_store_user_nodemask(pol) && !(pol->flags & MPOL_F_LOCAL) &&
+     nodes_equal(pol->w.cpuset_mems_allowed, *newmask))
+  return;
+
+ mpol_ops[pol->mode].rebind(pol, newmask);
+}
+
+void fn_28(struct struct_128 *tsk, const nodemask_t *new)
+{
+ mpol_rebind_policy(tsk->mempolicy, new);
+}
+
+
+
+
+
+
+
+void fn_29(struct struct_80 *mm, nodemask_t *new)
+{
+ struct struct_134 *vma;
+
+ down_write(&mm->mmap_sem);
+ for (vma = mm->mmap; vma; vma = vma->vm_next)
+  mpol_rebind_policy(vma->vm_policy, new);
+ up_write(&mm->mmap_sem);
+}
+
+static const struct struct_32 mpol_ops[MPOL_MAX] = {
+ [var_146] = {
+  .rebind = mpol_rebind_default,
+ },
+ [MPOL_INTERLEAVE] = {
+  .create = mpol_new_interleave,
+  .rebind = mpol_rebind_nodemask,
+ },
+ [MPOL_PREFERRED] = {
+  .create = mpol_new_preferred,
+  .rebind = mpol_rebind_preferred,
+ },
+ [MPOL_BIND] = {
+  .create = mpol_new_bind,
+  .rebind = mpol_rebind_nodemask,
+ },
+};
+
+static int fn_63(struct struct_123 *page, struct struct_63 *pagelist,
+    unsigned long var_146);
+
+struct struct_55 {
+ struct struct_63 *pagelist;
+ unsigned long flags;
+ nodemask_t *nmask;
+ unsigned long start;
+ unsigned long end;
+ struct struct_134 *first;
+};
+
+
+
+
+
+
+
+static inline bool fn_36(struct struct_123 *page,
+     struct struct_55 *var_55)
+{
+ int var_141 = page_to_nid(page);
+ unsigned long var_146 = var_55->flags;
+
+ return node_isset(var_141, *var_55->nmask) == !(var_146 & (MPOL_MF_INTERNAL << 1));
+}
+
+static int fn_39(pmd_t *pmd, spinlock_t *ptl, unsigned long var_127,
+    unsigned long var_132, struct struct_50 *walk)
+{
+ int var_133 = 0;
+ struct struct_123 *page;
+ struct struct_55 *var_55 = walk->private;
+ unsigned long var_146;
+
+ if (unlikely(is_pmd_migration_entry(*pmd))) {
+  var_133 = -EIO;
+  goto unlock;
+ }
+ page = pmd_page(*pmd);
+ if (is_huge_zero_page(page)) {
+  spin_unlock(ptl);
+  __split_huge_pmd(walk->vma, pmd, var_127, false, NULL);
+  var_133 = 2;
+  goto out;
+ }
+ if (!queue_pages_required(page, var_55))
+  goto unlock;
+
+ var_146 = var_55->flags;
+
+ if (var_146 & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
+  if (!vma_migratable(walk->vma) ||
+      migrate_page_add(page, var_55->pagelist, var_146)) {
+   var_133 = 1;
+   goto unlock;
+  }
+ } else
+  var_133 = -EIO;
+unlock:
+ spin_unlock(ptl);
+out:
+ return var_133;
+}
+
+static int fn_43(pmd_t *pmd, unsigned long var_127,
+   unsigned long var_132, struct struct_50 *walk)
+{
+ struct struct_134 *vma = walk->vma;
+ struct struct_123 *page;
+ struct struct_55 *var_55 = walk->private;
+ unsigned long var_146 = var_55->flags;
+ int var_133;
+ bool var_45 = false;
+ pte_t *pte;
+ spinlock_t *ptl;
+
+ ptl = pmd_trans_huge_lock(pmd, vma);
+ if (ptl) {
+  var_133 = queue_pages_pmd(pmd, ptl, var_127, var_132, walk);
+  if (var_133 != 2)
+   return var_133;
+ }
+
+
+ if (pmd_trans_unstable(pmd))
+  return 0;
+
+ pte = pte_offset_map_lock(walk->mm, pmd, var_127, &ptl);
+ for (; var_127 != var_132; pte++, var_127 += PAGE_SIZE) {
+  if (!pte_present(*pte))
+   continue;
+  page = vm_normal_page(vma, var_127, *pte);
+  if (!page)
+   continue;
+
+
+
+
+  if (PageReserved(page))
+   continue;
+  if (!queue_pages_required(page, var_55))
+   continue;
+  if (var_146 & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
+
+   if (!vma_migratable(vma)) {
+    var_45 = true;
+    break;
+   }
+
+
+
+
+
+
+   if (migrate_page_add(page, var_55->pagelist, var_146))
+    var_45 = true;
+  } else
+   break;
+ }
+ pte_unmap_unlock(pte - 1, ptl);
+ cond_resched();
+
+ if (var_45)
+  return 1;
+
+ return var_127 != var_132 ? -EIO : 0;
+}
+
+static int fn_45(pte_t *pte, unsigned long var_46,
+          unsigned long var_127, unsigned long var_132,
+          struct struct_50 *walk)
+{
+ int var_133 = 0;
+
+ BUG();
+
+ return var_133;
+}
+
+static unsigned long fn_47(struct struct_134 *vma,
+   unsigned long var_127, unsigned long var_132)
+{
+ return 0;
+}
+
+
+static int fn_48(unsigned long var_132, unsigned long var_132,
+    struct struct_50 *walk)
+{
+ struct struct_134 *vma = walk->vma;
+ struct struct_55 *var_55 = walk->private;
+ unsigned long var_51 = vma->vm_end;
+ unsigned long var_146 = var_55->flags;
+
+
+ VM_BUG_ON_VMA((vma->vm_start > var_132) || (vma->vm_end < var_132), vma);
+
+ if (!var_55->first) {
+  var_55->first = vma;
+  if (!(var_146 & (MPOL_MF_INTERNAL << 0)) &&
+   (var_55->start < vma->vm_start))
+
+   return -EFAULT;
+ }
+ if (!(var_146 & (MPOL_MF_INTERNAL << 0)) &&
+  ((vma->vm_end < var_55->end) &&
+  (!vma->vm_next || vma->vm_end < vma->vm_next->vm_start)))
+
+  return -EFAULT;
+
+
+
+
+
+ if (!vma_migratable(vma) &&
+     !(var_146 & MPOL_MF_STRICT))
+  return 1;
+
+ if (var_51 > var_132)
+  var_51 = var_132;
+
+ if (var_146 & MPOL_MF_LAZY) {
+
+  if (!is_vm_hugetlb_page(vma) &&
+   (vma->vm_flags & (VM_READ | VM_EXEC | VM_WRITE)) &&
+   !(vma->vm_flags & VM_MIXEDMAP))
+   change_prot_numa(vma, var_132, var_51);
+  return 1;
+ }
+
+
+ if (var_146 & MPOL_MF_VALID)
+  return 0;
+ return 1;
+}
+
+static const struct struct_51 var_55 = {
+ .hugetlb_entry = queue_pages_hugetlb,
+ .pmd_entry = queue_pages_pte_range,
+ .test_walk = queue_pages_test_walk,
+};
+
+static int
+fn_53(struct struct_80 *mm, unsigned long var_132, unsigned long var_132,
+  nodemask_t *var_146, unsigned long var_146,
+  struct struct_63 *pagelist)
+{
+ int var_135;
+ struct struct_55 var_55 = {
+  .pagelist = pagelist,
+  .flags = var_146,
+  .nmask = var_146,
+  .start = var_132,
+  .end = var_132,
+  .first = NULL,
+ };
+
+ var_135 = walk_page_range(mm, var_132, var_132, &var_55, &var_55);
+
+ if (!var_55.first)
+
+  var_135 = -EFAULT;
+
+ return var_135;
+}
+
+
+
+
+
+static int fn_55(struct struct_134 *vma,
+      struct struct_145 *pol)
+{
+ int var_135;
+ struct struct_145 *old;
+ struct struct_145 *new;
+
+ pr_debug("vma %lx-%lx/%lx vm_ops %p vm_file %p set_policy %p\n",
+   vma->vm_start, vma->vm_end, vma->vm_pgoff,
+   vma->vm_ops, vma->vm_file,
+   vma->vm_ops ? vma->vm_ops->set_policy : NULL);
+
+ new = mpol_dup(pol);
+ if (IS_ERR(new))
+  return PTR_ERR(new);
+
+ if (vma->vm_ops && vma->vm_ops->set_policy) {
+  var_135 = vma->vm_ops->set_policy(vma, new);
+  if (var_135)
+   goto err_out;
+ }
+
+ old = vma->vm_policy;
+ vma->vm_policy = new;
+ mpol_put(old);
+
+ return 0;
+ err_out:
+ mpol_put(new);
+ return var_135;
+}
+
+
+static int fn_56(struct struct_80 *mm, unsigned long var_132,
+         unsigned long var_132, struct struct_145 *new_pol)
+{
+ struct struct_134 *next;
+ struct struct_134 *prev;
+ struct struct_134 *vma;
+ int var_135 = 0;
+ pgoff_t pgoff;
+ unsigned long vmstart;
+ unsigned long vmend;
+
+ vma = find_vma(mm, var_132);
+ VM_BUG_ON(!vma);
+
+ prev = vma->vm_prev;
+ if (var_132 > vma->vm_start)
+  prev = vma;
+
+ for (; vma && vma->vm_start < var_132; prev = vma, vma = next) {
+  next = vma->vm_next;
+  vmstart = max(var_132, vma->vm_start);
+  vmend = min(var_132, vma->vm_end);
+
+  if (mpol_equal(vma_policy(vma), new_pol))
+   continue;
+
+  pgoff = vma->vm_pgoff +
+   ((vmstart - vma->vm_start) >> PAGE_SHIFT);
+  prev = vma_merge(mm, prev, vmstart, vmend, vma->vm_flags,
+     vma->anon_vma, vma->vm_file, pgoff,
+     new_pol, vma->vm_userfaultfd_ctx);
+  if (prev) {
+   vma = prev;
+   next = vma->vm_next;
+   if (mpol_equal(vma_policy(vma), new_pol))
+    continue;
+
+   goto replace;
+  }
+  if (vma->vm_start != vmstart) {
+   var_135 = split_vma(vma->vm_mm, vma, vmstart, 1);
+   if (var_135)
+    goto out;
+  }
+  if (vma->vm_end != vmend) {
+   var_135 = split_vma(vma->vm_mm, vma, vmend, 0);
+   if (var_135)
+    goto out;
+  }
+ replace:
+  var_135 = vma_replace_policy(vma, new_pol);
+  if (var_135)
+   goto out;
+ }
+
+ out:
+ return var_135;
+}
+
+
+static long fn_57(unsigned short var_146, unsigned short var_146,
+        nodemask_t *var_146)
+{
+ struct struct_145 *new, *old;
+ NODEMASK_SCRATCH(scratch);
+ int var_133;
+
+ if (!scratch)
+  return -ENOMEM;
+
+ new = mpol_new(var_146, var_146, var_146);
+ if (IS_ERR(new)) {
+  var_133 = PTR_ERR(new);
+  goto out;
+ }
+
+ task_lock(var_133);
+ var_133 = mpol_set_nodemask(new, var_146, scratch);
+ if (var_133) {
+  task_unlock(var_133);
+  mpol_put(new);
+  goto out;
+ }
+ old = var_133->mempolicy;
+ var_133->mempolicy = new;
+ if (new && new->mode == MPOL_INTERLEAVE)
+  var_133->il_prev = MAX_NUMNODES-1;
+ task_unlock(var_133);
+ mpol_put(old);
+ var_133 = 0;
+out:
+ NODEMASK_SCRATCH_FREE(scratch);
+ return var_133;
+}
+
+
+
+
+
+
+static void fn_59(struct struct_145 *p, nodemask_t *var_146)
+{
+ nodes_clear(*var_146);
+ if (p == &var_146)
+  return;
+
+ switch (p->mode) {
+ case MPOL_BIND:
+
+ case MPOL_INTERLEAVE:
+  *var_146 = p->v.nodes;
+  break;
+ case MPOL_PREFERRED:
+  if (!(p->flags & MPOL_F_LOCAL))
+   node_set(p->v.preferred_node, *var_146);
+
+  break;
+ default:
+  BUG();
+ }
+}
+
+static int fn_60(struct struct_80 *mm, unsigned long var_127)
+{
+ struct struct_123 *p;
+ int var_135;
+
+ int var_62 = 1;
+ var_135 = get_user_pages_locked(var_127 & PAGE_MASK, 1, 0, &p, &var_62);
+ if (var_135 >= 0) {
+  var_135 = page_to_nid(p);
+  put_page(p);
+ }
+ if (var_62)
+  up_read(&mm->mmap_sem);
+ return var_135;
+}
+
+
+static long fn_62(int *policy, nodemask_t *nmask,
+        unsigned long var_127, unsigned long var_146)
+{
+ int var_135;
+ struct struct_80 *mm = var_133->mm;
+ struct struct_134 *vma = NULL;
+ struct struct_145 *pol = var_133->mempolicy, *pol_refcount = NULL;
+
+ if (var_146 &
+  ~(unsigned long)(MPOL_F_NODE|MPOL_F_ADDR|MPOL_F_MEMS_ALLOWED))
+  return -EINVAL;
+
+ if (var_146 & MPOL_F_MEMS_ALLOWED) {
+  if (var_146 & (MPOL_F_NODE|MPOL_F_ADDR))
+   return -EINVAL;
+  *policy = 0;
+  task_lock(var_133);
+  *nmask = cpuset_current_mems_allowed;
+  task_unlock(var_133);
+  return 0;
+ }
+
+ if (var_146 & MPOL_F_ADDR) {
+
+
+
+
+
+  down_read(&mm->mmap_sem);
+  vma = find_vma_intersection(mm, var_127, var_127+1);
+  if (!vma) {
+   up_read(&mm->mmap_sem);
+   return -EFAULT;
+  }
+  if (vma->vm_ops && vma->vm_ops->get_policy)
+   pol = vma->vm_ops->get_policy(vma, var_127);
+  else
+   pol = vma->vm_policy;
+ } else if (var_127)
+  return -EINVAL;
+
+ if (!pol)
+  pol = &var_146;
+
+ if (var_146 & MPOL_F_NODE) {
+  if (var_146 & MPOL_F_ADDR) {
+
+
+
+
+
+
+   pol_refcount = pol;
+   vma = NULL;
+   mpol_get(pol);
+   var_135 = lookup_node(mm, var_127);
+   if (var_135 < 0)
+    goto out;
+   *policy = var_135;
+  } else if (pol == var_133->mempolicy &&
+    pol->mode == MPOL_INTERLEAVE) {
+   *policy = next_node_in(var_133->il_prev, pol->v.nodes);
+  } else {
+   var_135 = -EINVAL;
+   goto out;
+  }
+ } else {
+  *policy = pol == &var_146 ? var_146 :
+      pol->mode;
+
+
+
+
+  *policy |= (pol->flags & MPOL_MODE_FLAGS);
+ }
+
+ var_135 = 0;
+ if (nmask) {
+  if (mpol_store_user_nodemask(pol)) {
+   *nmask = pol->w.user_nodemask;
+  } else {
+   task_lock(var_133);
+   get_policy_nodemask(pol, nmask);
+   task_unlock(var_133);
+  }
+ }
+
+ out:
+ mpol_cond_put(pol);
+ if (vma)
+  up_read(&mm->mmap_sem);
+ if (pol_refcount)
+  mpol_put(pol_refcount);
+ return var_135;
+}
+
+static int fn_63(struct struct_123 *page, struct struct_63 *pagelist,
+    unsigned long var_146)
+{
+ return -EIO;
+}
+
+int fn_63(struct struct_80 *mm, const nodemask_t *from,
+       const nodemask_t *to, int var_146)
+{
+ return -ENOSYS;
+}
+
+static struct struct_123 *fn_64(struct struct_123 *page, unsigned long var_132)
+{
+ return NULL;
+}
+
+
+static long fn_65(unsigned long var_132, unsigned long var_77,
+       unsigned short var_146, unsigned short var_77,
+       nodemask_t *nmask, unsigned long var_146)
+{
+ struct struct_80 *mm = var_133->mm;
+ struct struct_145 *new;
+ unsigned long var_132;
+ int var_135;
+ int var_133;
+ LIST_HEAD(pagelist);
+
+ if (var_146 & ~(unsigned long)MPOL_MF_VALID)
+  return -EINVAL;
+ if ((var_146 & MPOL_MF_MOVE_ALL) && !capable(CAP_SYS_NICE))
+  return -EPERM;
+
+ if (var_132 & ~PAGE_MASK)
+  return -EINVAL;
+
+ if (var_146 == var_146)
+  var_146 &= ~MPOL_MF_STRICT;
+
+ var_77 = (var_77 + PAGE_SIZE - 1) & PAGE_MASK;
+ var_132 = var_132 + var_77;
+
+ if (var_132 < var_132)
+  return -EINVAL;
+ if (var_132 == var_132)
+  return 0;
+
+ new = mpol_new(var_146, var_77, nmask);
+ if (IS_ERR(new))
+  return PTR_ERR(new);
+
+ if (var_146 & MPOL_MF_LAZY)
+  new->flags |= MPOL_F_MOF;
+
+
+
+
+
+ if (!new)
+  var_146 |= (MPOL_MF_INTERNAL << 0);
+
+ pr_debug("mbind %lx-%lx mode:%d flags:%d nodes:%lx\n",
+   var_132, var_132 + var_77, var_146, var_77,
+   nmask ? nodes_addr(*nmask)[0] : var_135);
+
+ if (var_146 & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
+
+  var_135 = migrate_prep();
+  if (var_135)
+   goto mpol_out;
+ }
+ {
+  NODEMASK_SCRATCH(scratch);
+  if (scratch) {
+   down_write(&mm->mmap_sem);
+   task_lock(var_133);
+   var_135 = mpol_set_nodemask(new, nmask, scratch);
+   task_unlock(var_133);
+   if (var_135)
+    up_write(&mm->mmap_sem);
+  } else
+   var_135 = -ENOMEM;
+  NODEMASK_SCRATCH_FREE(scratch);
+ }
+ if (var_135)
+  goto mpol_out;
+
+ var_133 = queue_pages_range(mm, var_132, var_132, nmask,
+     var_146 | (MPOL_MF_INTERNAL << 1), &pagelist);
+
+ if (var_133 < 0) {
+  var_135 = var_133;
+  goto up_out;
+ }
+
+ var_135 = mbind_range(mm, var_132, var_132, new);
+
+ if (!var_135) {
+  int var_69 = 0;
+
+  if (!list_empty(&pagelist)) {
+   WARN_ON_ONCE(var_146 & MPOL_MF_LAZY);
+   var_69 = migrate_pages(&pagelist, new_page, NULL,
+    var_132, MIGRATE_SYNC, MR_MEMPOLICY_MBIND);
+   if (var_69)
+    putback_movable_pages(&pagelist);
+  }
+
+  if ((var_133 > 0) || (var_69 && (var_146 & MPOL_MF_STRICT)))
+   var_135 = -EIO;
+ } else {
+up_out:
+  if (!list_empty(&pagelist))
+   putback_movable_pages(&pagelist);
+ }
+
+ up_write(&mm->mmap_sem);
+mpol_out:
+ mpol_put(new);
+ return var_135;
+}
+
+
+
+
+
+
+static int fn_69(nodemask_t *var_146, const unsigned long __user *nmask,
+       unsigned long var_82)
+{
+ unsigned long k;
+ unsigned long t;
+ unsigned long nlongs;
+ unsigned long var_73;
+
+ --var_82;
+ nodes_clear(*var_146);
+ if (var_82 == 0 || !nmask)
+  return 0;
+ if (var_82 > PAGE_SIZE*BITS_PER_BYTE)
+  return -EINVAL;
+
+ nlongs = BITS_TO_LONGS(var_82);
+ if ((var_82 % BITS_PER_LONG) == 0)
+  var_73 = ~0UL;
+ else
+  var_73 = (1UL << (var_82 % BITS_PER_LONG)) - 1;
+
+ if (nlongs > BITS_TO_LONGS(MAX_NUMNODES)) {
+  for (k = BITS_TO_LONGS(MAX_NUMNODES); k < nlongs; k++) {
+   if (get_user(t, nmask + k))
+    return -EFAULT;
+   if (k == nlongs - 1) {
+    if (t & var_73)
+     return -EINVAL;
+   } else if (t)
+    return -EINVAL;
+  }
+  nlongs = BITS_TO_LONGS(MAX_NUMNODES);
+  var_73 = ~0UL;
+ }
+
+ if (var_82 > MAX_NUMNODES && MAX_NUMNODES % BITS_PER_LONG != 0) {
+  unsigned long var_73 = var_73;
+
+  var_73 &= ~((1UL << (MAX_NUMNODES % BITS_PER_LONG)) - 1);
+  if (get_user(t, nmask + nlongs - 1))
+   return -EFAULT;
+  if (t & var_73)
+   return -EINVAL;
+ }
+
+ if (copy_from_user(nodes_addr(*var_146), nmask, nlongs*sizeof(unsigned long)))
+  return -EFAULT;
+ nodes_addr(*var_146)[nlongs-1] &= var_73;
+ return 0;
+}
+
+
+static int fn_73(unsigned long __user *mask, unsigned long var_82,
+         nodemask_t *var_146)
+{
+ unsigned long var_76 = ALIGN(var_82-1, 64) / 8;
+ unsigned int var_76 = BITS_TO_LONGS(nr_node_ids) * sizeof(long);
+
+ if (var_76 > var_76) {
+  if (var_76 > PAGE_SIZE)
+   return -EINVAL;
+  if (clear_user((char __user *)mask + var_76, var_76 - var_76))
+   return -EFAULT;
+  var_76 = var_76;
+ }
+ return copy_to_user(mask, nodes_addr(*var_146), var_76) ? -EFAULT : 0;
+}
+
+static long fn_76(unsigned long var_132, unsigned long var_77,
+    unsigned long var_146, const unsigned long __user *nmask,
+    unsigned long var_82, unsigned int var_146)
+{
+ nodemask_t var_146;
+ int var_135;
+ unsigned short var_77;
+
+ var_132 = untagged_addr(var_132);
+ var_77 = var_146 & MPOL_MODE_FLAGS;
+ var_146 &= ~MPOL_MODE_FLAGS;
+ if (var_146 >= MPOL_MAX)
+  return -EINVAL;
+ if ((var_77 & MPOL_F_STATIC_NODES) &&
+     (var_77 & MPOL_F_RELATIVE_NODES))
+  return -EINVAL;
+ var_135 = get_nodes(&var_146, nmask, var_82);
+ if (var_135)
+  return var_135;
+ return do_mbind(var_132, var_77, var_146, var_77, &var_146, var_146);
+}
+
+SYSCALL_DEFINE6(mbind, unsigned long, var_132, unsigned long, var_77,
+  unsigned long, var_146, const unsigned long __user *, nmask,
+  unsigned long, var_82, unsigned int, var_146)
+{
+ return kernel_mbind(var_132, var_77, var_146, nmask, var_82, var_146);
+}
+
+
+static long fn_77(int var_146, const unsigned long __user *nmask,
+     unsigned long var_82)
+{
+ int var_135;
+ nodemask_t var_146;
+ unsigned short var_146;
+
+ var_146 = var_146 & MPOL_MODE_FLAGS;
+ var_146 &= ~MPOL_MODE_FLAGS;
+ if ((unsigned int)var_146 >= MPOL_MAX)
+  return -EINVAL;
+ if ((var_146 & MPOL_F_STATIC_NODES) && (var_146 & MPOL_F_RELATIVE_NODES))
+  return -EINVAL;
+ var_135 = get_nodes(&var_146, nmask, var_82);
+ if (var_135)
+  return var_135;
+ return do_set_mempolicy(var_146, var_146, &var_146);
+}
+
+SYSCALL_DEFINE3(set_mempolicy, int, var_146, const unsigned long __user *, nmask,
+  unsigned long, var_82)
+{
+ return kernel_set_mempolicy(var_146, nmask, var_82);
+}
+
+static int fn_78(pid_t var_80, unsigned long var_82,
+    const unsigned long __user *old_nodes,
+    const unsigned long __user *new_nodes)
+{
+ struct struct_80 *mm = NULL;
+ struct struct_128 *task;
+ nodemask_t task_nodes;
+ int var_135;
+ nodemask_t *old;
+ nodemask_t *new;
+ NODEMASK_SCRATCH(scratch);
+
+ if (!scratch)
+  return -ENOMEM;
+
+ old = &scratch->mask1;
+ new = &scratch->mask2;
+
+ var_135 = get_nodes(old, old_nodes, var_82);
+ if (var_135)
+  goto out;
+
+ var_135 = get_nodes(new, new_nodes, var_82);
+ if (var_135)
+  goto out;
+
+
+ rcu_read_lock();
+ task = var_80 ? find_task_by_vpid(var_80) : var_133;
+ if (!task) {
+  rcu_read_unlock();
+  var_135 = -ESRCH;
+  goto out;
+ }
+ get_task_struct(task);
+
+ var_135 = -EINVAL;
+
+
+
+
+
+ if (!ptrace_may_access(task, PTRACE_MODE_READ_REALCREDS)) {
+  rcu_read_unlock();
+  var_135 = -EPERM;
+  goto out_put;
+ }
+ rcu_read_unlock();
+
+ task_nodes = cpuset_mems_allowed(task);
+
+ if (!nodes_subset(*new, task_nodes) && !capable(CAP_SYS_NICE)) {
+  var_135 = -EPERM;
+  goto out_put;
+ }
+
+ task_nodes = cpuset_mems_allowed(var_133);
+ nodes_and(*new, *new, task_nodes);
+ if (nodes_empty(*new))
+  goto out_put;
+
+ var_135 = security_task_movememory(task);
+ if (var_135)
+  goto out_put;
+
+ mm = get_task_mm(task);
+ put_task_struct(task);
+
+ if (!mm) {
+  var_135 = -EINVAL;
+  goto out;
+ }
+
+ var_135 = do_migrate_pages(mm, old, new,
+  capable(CAP_SYS_NICE) ? MPOL_MF_MOVE_ALL : MPOL_MF_MOVE);
+
+ mmput(mm);
+out:
+ NODEMASK_SCRATCH_FREE(scratch);
+
+ return var_135;
+
+out_put:
+ put_task_struct(task);
+ goto out;
+
+}
+
+SYSCALL_DEFINE4(migrate_pages, pid_t, var_80, unsigned long, var_82,
+  const unsigned long __user *, old_nodes,
+  const unsigned long __user *, new_nodes)
+{
+ return kernel_migrate_pages(var_80, var_82, old_nodes, new_nodes);
+}
+
+
+
+static int fn_80(int __user *policy,
+    unsigned long __user *nmask,
+    unsigned long var_82,
+    unsigned long var_127,
+    unsigned long var_146)
+{
+ int var_135;
+ int fn_81(pval);
+ nodemask_t var_146;
+
+ var_127 = untagged_addr(var_127);
+
+ if (nmask != NULL && var_82 < nr_node_ids)
+  return -EINVAL;
+
+ var_135 = do_get_mempolicy(&pval, &var_146, var_127, var_146);
+
+ if (var_135)
+  return var_135;
+
+ if (policy && put_user(pval, policy))
+  return -EFAULT;
+
+ if (nmask)
+  var_135 = copy_nodes_to_user(nmask, var_82, &var_146);
+
+ return var_135;
+}
+
+SYSCALL_DEFINE5(get_mempolicy, int __user *, policy,
+  unsigned long __user *, nmask, unsigned long, var_82,
+  unsigned long, var_127, unsigned long, var_146)
+{
+ return kernel_get_mempolicy(policy, nmask, var_82, var_127, var_146);
+}
+
+bool fn_82(struct struct_134 *vma)
+{
+ if (vma->vm_flags & (VM_IO | VM_PFNMAP))
+  return false;
+
+
+
+
+
+ if (vma_is_dax(vma))
+  return false;
+
+ if (is_vm_hugetlb_page(vma) &&
+  !hugepage_migration_supported(hstate_vma(vma)))
+  return false;
+
+
+
+
+
+
+ if (vma->vm_file &&
+  gfp_zone(mapping_gfp_mask(vma->vm_file->f_mapping))
+   < var_89)
+  return false;
+ return true;
+}
+
+struct struct_145 *fn_83(struct struct_134 *vma,
+      unsigned long var_127)
+{
+ struct struct_145 *pol = NULL;
+
+ if (vma) {
+  if (vma->vm_ops && vma->vm_ops->get_policy) {
+   pol = vma->vm_ops->get_policy(vma, var_127);
+  } else if (vma->vm_policy) {
+   pol = vma->vm_policy;
+
+
+
+
+
+
+
+   if (mpol_needs_cond_ref(pol))
+    mpol_get(pol);
+  }
+ }
+
+ return pol;
+}
+
+static struct struct_145 *fn_84(struct struct_134 *vma,
+      unsigned long var_127)
+{
+ struct struct_145 *pol = __get_vma_policy(vma, var_127);
+
+ if (!pol)
+  pol = get_task_policy(var_133);
+
+ return pol;
+}
+
+bool fn_85(struct struct_134 *vma)
+{
+ struct struct_145 *pol;
+
+ if (vma->vm_ops && vma->vm_ops->get_policy) {
+  bool var_133 = false;
+
+  pol = vma->vm_ops->get_policy(vma, vma->vm_start);
+  if (pol && (pol->flags & MPOL_F_MOF))
+   var_133 = true;
+  mpol_cond_put(pol);
+
+  return var_133;
+ }
+
+ pol = vma->vm_policy;
+ if (!pol)
+  pol = get_task_policy(var_133);
+
+ return pol->flags & MPOL_F_MOF;
+}
+
+static int fn_86(struct struct_145 *policy, enum enumtype_97 var_89)
+{
+ enum enumtype_97 var_89 = var_89;
+
+ BUG_ON(var_89 == ZONE_MOVABLE);
+
+ if (!nodes_intersects(policy->v.nodes, node_states[N_HIGH_MEMORY]))
+  var_89 = ZONE_MOVABLE;
+
+ return var_89 >= var_89;
+}
+
+
+
+
+
+static nodemask_t *fn_89(gfp_t var_110, struct struct_145 *policy)
+{
+
+ if (unlikely(policy->mode == MPOL_BIND) &&
+   apply_policy_zone(policy, gfp_zone(var_110)) &&
+   cpuset_nodemask_valid_mems_allowed(&policy->v.nodes))
+  return &policy->v.nodes;
+
+ return NULL;
+}
+
+
+static int fn_91(gfp_t var_110, struct struct_145 *policy,
+        int var_136)
+{
+ if (policy->mode == MPOL_PREFERRED && !(policy->flags & MPOL_F_LOCAL))
+  var_136 = policy->v.preferred_node;
+ else {
+
+
+
+
+
+  WARN_ON_ONCE(policy->mode == MPOL_BIND && (var_110 & __GFP_THISNODE));
+ }
+
+ return var_136;
+}
+
+
+static unsigned fn_93(struct struct_145 *policy)
+{
+ unsigned next;
+ struct struct_128 *me = var_133;
+
+ next = next_node_in(me->il_prev, policy->v.nodes);
+ if (next < MAX_NUMNODES)
+  me->il_prev = next;
+ return next;
+}
+
+
+
+
+
+unsigned int fn_94(void)
+{
+ struct struct_145 *policy;
+ int var_130 = numa_mem_id();
+
+ if (in_interrupt())
+  return var_130;
+
+ policy = var_133->mempolicy;
+ if (!policy || policy->flags & MPOL_F_LOCAL)
+  return var_130;
+
+ switch (policy->mode) {
+ case MPOL_PREFERRED:
+
+
+
+  return policy->v.preferred_node;
+
+ case MPOL_INTERLEAVE:
+  return interleave_nodes(policy);
+
+ case MPOL_BIND: {
+  struct struct_123 *z;
+
+
+
+
+
+  struct struct_96 *zonelist;
+  enum enumtype_97 var_98 = gfp_zone(GFP_KERNEL);
+  zonelist = &NODE_DATA(var_130)->node_zonelists[ZONELIST_FALLBACK];
+  z = first_zones_zonelist(zonelist, var_98,
+       &policy->v.nodes);
+  return z->zone ? zone_to_nid(z->zone) : var_130;
+ }
+
+ default:
+  BUG();
+ }
+}
+
+
+
+
+
+
+static unsigned fn_98(struct struct_145 *pol, unsigned long var_136)
+{
+ unsigned var_101 = nodes_weight(pol->v.nodes);
+ unsigned target;
+ int i;
+ int var_141;
+
+ if (!var_101)
+  return numa_node_id();
+ target = (unsigned int)var_136 % var_101;
+ var_141 = first_node(pol->v.nodes);
+ for (i = 0; i < target; i++)
+  var_141 = next_node(var_141, pol->v.nodes);
+ return var_141;
+}
+
+
+static inline unsigned fn_101(struct struct_145 *pol,
+   struct struct_134 *vma, unsigned long var_127, int var_103)
+{
+ if (vma) {
+  unsigned long off;
+
+  BUG_ON(var_103 < PAGE_SHIFT);
+  off = vma->vm_pgoff >> (var_103 - PAGE_SHIFT);
+  off += (var_127 - vma->vm_start) >> var_103;
+  return offset_il_node(pol, off);
+ } else
+  return interleave_nodes(pol);
+}
+
+bool fn_103(struct struct_128 *tsk,
+     const nodemask_t *mask)
+{
+ struct struct_145 *mempolicy;
+ bool var_133 = true;
+
+ if (!mask)
+  return var_133;
+ task_lock(tsk);
+ mempolicy = tsk->mempolicy;
+ if (!mempolicy)
+  goto out;
+
+ switch (mempolicy->mode) {
+ case MPOL_PREFERRED:
+
+
+
+
+
+
+  break;
+ case MPOL_BIND:
+ case MPOL_INTERLEAVE:
+  var_133 = nodes_intersects(mempolicy->v.nodes, *mask);
+  break;
+ default:
+  BUG();
+ }
+out:
+ task_unlock(tsk);
+ return var_133;
+}
+
+
+
+static struct struct_123 *fn_104(gfp_t var_110, unsigned var_110,
+     unsigned var_141)
+{
+ struct struct_123 *page;
+
+ page = __alloc_pages(var_110, var_110, var_141);
+
+ if (!static_branch_likely(&vm_numa_stat_key))
+  return page;
+ if (page && page_to_nid(page) == var_141) {
+  preempt_disable();
+  __inc_numa_state(page_zone(page), NUMA_INTERLEAVE_HIT);
+  preempt_enable();
+ }
+ return page;
+}
+
+struct struct_123 *
+fn_106(gfp_t var_110, int var_110, struct struct_134 *vma,
+  unsigned long var_127, int var_130, bool var_108)
+{
+ struct struct_145 *pol;
+ struct struct_123 *page;
+ int preferred_nid;
+ nodemask_t *nmask;
+
+ pol = get_vma_policy(vma, var_127);
+
+ if (pol->mode == MPOL_INTERLEAVE) {
+  unsigned var_141;
+
+  var_141 = interleave_nid(pol, vma, var_127, PAGE_SHIFT + var_110);
+  mpol_cond_put(pol);
+  page = alloc_page_interleave(var_110, var_110, var_141);
+  goto out;
+ }
+
+ if (unlikely(IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE) && var_108)) {
+  int var_109 = var_130;
+
+  if (pol->mode == MPOL_PREFERRED && !(pol->flags & MPOL_F_LOCAL))
+   var_109 = pol->v.preferred_node;
+
+  nmask = policy_nodemask(var_110, pol);
+  if (!nmask || node_isset(var_109, *nmask)) {
+   mpol_cond_put(pol);
+
+
+
+
+   page = __alloc_pages_node(var_109,
+    var_110 | __GFP_THISNODE | __GFP_NORETRY, var_110);
+
+
+
+
+
+
+
+   if (!page && (var_110 & __GFP_DIRECT_RECLAIM))
+    page = __alloc_pages_node(var_109,
+        var_110, var_110);
+
+   goto out;
+  }
+ }
+
+ nmask = policy_nodemask(var_110, pol);
+ preferred_nid = policy_node(var_110, pol, var_130);
+ page = __alloc_pages_nodemask(var_110, var_110, preferred_nid, nmask);
+ mpol_cond_put(pol);
+out:
+ return page;
+}
+EXPORT_SYMBOL(alloc_pages_vma);
+
+struct struct_123 *fn_109(gfp_t var_110, unsigned var_110)
+{
+ struct struct_145 *pol = &var_146;
+ struct struct_123 *page;
+
+ if (!in_interrupt() && !(var_110 & __GFP_THISNODE))
+  pol = get_task_policy(var_133);
+
+
+
+
+
+ if (pol->mode == MPOL_INTERLEAVE)
+  page = alloc_page_interleave(var_110, var_110, interleave_nodes(pol));
+ else
+  page = __alloc_pages_nodemask(var_110, var_110,
+    policy_node(var_110, pol, numa_node_id()),
+    policy_nodemask(var_110, pol));
+
+ return page;
+}
+EXPORT_SYMBOL(alloc_pages_current);
+
+int fn_110(struct struct_134 *src, struct struct_134 *dst)
+{
+ struct struct_145 *pol = mpol_dup(vma_policy(src));
+
+ if (IS_ERR(pol))
+  return PTR_ERR(pol);
+ dst->vm_policy = pol;
+ return 0;
+}
+
+struct struct_145 *fn_111(struct struct_145 *old)
+{
+ struct struct_145 *new = kmem_cache_alloc(policy_cache, GFP_KERNEL);
+
+ if (!new)
+  return ERR_PTR(-ENOMEM);
+
+
+ if (old == var_133->mempolicy) {
+  task_lock(var_133);
+  *new = *old;
+  task_unlock(var_133);
+ } else
+  *new = *old;
+
+ if (current_cpuset_is_being_rebound()) {
+  nodemask_t var_113 = cpuset_mems_allowed(var_133);
+  mpol_rebind_policy(new, &var_113);
+ }
+ atomic_set(&new->refcnt, 1);
+ return new;
+}
+
+
+bool fn_113(struct struct_145 *a, struct struct_145 *b)
+{
+ if (!a || !b)
+  return false;
+ if (a->mode != b->mode)
+  return false;
+ if (a->flags != b->flags)
+  return false;
+ if (mpol_store_user_nodemask(a))
+  if (!nodes_equal(a->w.user_nodemask, b->w.user_nodemask))
+   return false;
+
+ switch (a->mode) {
+ case MPOL_BIND:
+
+ case MPOL_INTERLEAVE:
+  return !!nodes_equal(a->v.nodes, b->v.nodes);
+ case MPOL_PREFERRED:
+
+  if (a->flags & MPOL_F_LOCAL)
+   return true;
+  return a->v.preferred_node == b->v.preferred_node;
+ default:
+  BUG();
+  return false;
+ }
+}
+
+static struct struct_140 *
+fn_115(struct struct_136 *sp, unsigned long var_132, unsigned long var_132)
+{
+ struct struct_136 *var_136 = sp->root.rb_node;
+
+ while (var_136) {
+  struct struct_140 *p = rb_entry(var_136, struct sp_node, var_136);
+
+  if (var_132 >= p->end)
+   var_136 = var_136->rb_right;
+  else if (var_132 <= p->start)
+   var_136 = var_136->rb_left;
+  else
+   break;
+ }
+ if (!var_136)
+  return NULL;
+ for (;;) {
+  struct struct_140 *w = NULL;
+  struct struct_136 *prev = rb_prev(var_136);
+  if (!prev)
+   break;
+  w = rb_entry(prev, struct sp_node, var_136);
+  if (w->end <= var_132)
+   break;
+  var_136 = prev;
+ }
+ return rb_entry(var_136, struct sp_node, var_136);
+}
+
+
+
+
+
+static void fn_118(struct struct_136 *sp, struct struct_140 *new)
+{
+ struct struct_136 **p = &sp->root.rb_node;
+ struct struct_136 *parent = NULL;
+ struct struct_140 *var_136;
+
+ while (*p) {
+  parent = *p;
+  var_136 = rb_entry(parent, struct sp_node, var_136);
+  if (new->start < var_136->start)
+   p = &(*p)->rb_left;
+  else if (new->end > var_136->end)
+   p = &(*p)->rb_right;
+  else
+   BUG();
+ }
+ rb_link_node(&new->nd, parent, p);
+ rb_insert_color(&new->nd, &sp->root);
+ pr_debug("inserting %lx-%lx: %d\n", new->start, new->end,
+   new->policy ? new->policy->mode : 0);
+}
+
+
+struct struct_145 *
+fn_119(struct struct_136 *sp, unsigned long var_121)
+{
+ struct struct_145 *pol = NULL;
+ struct struct_140 *sn;
+
+ if (!sp->root.rb_node)
+  return NULL;
+ read_lock(&sp->lock);
+ sn = sp_lookup(sp, var_121, var_121+1);
+ if (sn) {
+  mpol_get(sn->policy);
+  pol = sn->policy;
+ }
+ read_unlock(&sp->lock);
+ return pol;
+}
+
+static void fn_121(struct struct_140 *var_136)
+{
+ mpol_put(var_136->policy);
+ kmem_cache_free(sn_cache, var_136);
+}
+
+int fn_122(struct struct_123 *page, struct struct_134 *vma, unsigned long var_127)
+{
+ struct struct_145 *pol;
+ struct struct_123 *z;
+ int var_127 = page_to_nid(page);
+ unsigned long pgoff;
+ int var_127 = raw_smp_processor_id();
+ int var_127 = cpu_to_node(var_127);
+ int var_127 = var_135;
+ int var_133 = -1;
+
+ pol = get_vma_policy(vma, var_127);
+ if (!(pol->flags & MPOL_F_MOF))
+  goto out;
+
+ switch (pol->mode) {
+ case MPOL_INTERLEAVE:
+  pgoff = vma->vm_pgoff;
+  pgoff += (var_127 - vma->vm_start) >> PAGE_SHIFT;
+  var_127 = offset_il_node(pol, pgoff);
+  break;
+
+ case MPOL_PREFERRED:
+  if (pol->flags & MPOL_F_LOCAL)
+   var_127 = numa_node_id();
+  else
+   var_127 = pol->v.preferred_node;
+  break;
+
+ case MPOL_BIND:
+
+
+
+
+
+
+
+  if (node_isset(var_127, pol->v.nodes))
+   goto out;
+  z = first_zones_zonelist(
+    node_zonelist(numa_node_id(), GFP_HIGHUSER),
+    gfp_zone(GFP_HIGHUSER),
+    &pol->v.nodes);
+  var_127 = zone_to_nid(z->zone);
+  break;
+
+ default:
+  BUG();
+ }
+
+
+ if (pol->flags & MPOL_F_MORON) {
+  var_127 = var_127;
+
+  if (!should_numa_migrate_memory(var_133, page, var_127, var_127))
+   goto out;
+ }
+
+ if (var_127 != var_127)
+  var_133 = var_127;
+out:
+ mpol_cond_put(pol);
+
+ return var_133;
+}
+
+
+
+
+
+
+
+void fn_127(struct struct_128 *task)
+{
+ struct struct_145 *pol;
+
+ task_lock(task);
+ pol = task->mempolicy;
+ task->mempolicy = NULL;
+ task_unlock(task);
+ mpol_put(pol);
+}
+
+static void fn_128(struct struct_136 *sp, struct struct_140 *var_136)
+{
+ pr_debug("deleting %lx-l%lx\n", var_136->start, var_136->end);
+ rb_erase(&var_136->nd, &sp->root);
+ sp_free(var_136);
+}
+
+static void fn_129(struct struct_140 *var_130, unsigned long var_132,
+   unsigned long var_132, struct struct_145 *pol)
+{
+ var_130->start = var_132;
+ var_130->end = var_132;
+ var_130->policy = pol;
+}
+
+static struct struct_140 *fn_130(unsigned long var_132, unsigned long var_132,
+    struct struct_145 *pol)
+{
+ struct struct_140 *var_136;
+ struct struct_145 *newpol;
+
+ var_136 = kmem_cache_alloc(sn_cache, GFP_KERNEL);
+ if (!var_136)
+  return NULL;
+
+ newpol = mpol_dup(pol);
+ if (IS_ERR(newpol)) {
+  kmem_cache_free(sn_cache, var_136);
+  return NULL;
+ }
+ newpol->flags |= MPOL_F_SHARED;
+ sp_node_init(var_136, var_132, var_132, newpol);
+
+ return var_136;
+}
+
+
+static int fn_131(struct struct_136 *sp, unsigned long var_132,
+     unsigned long var_132, struct struct_140 *new)
+{
+ struct struct_140 *var_136;
+ struct struct_140 *n_new = NULL;
+ struct struct_145 *mpol_new = NULL;
+ int var_133 = 0;
+
+restart:
+ write_lock(&sp->lock);
+ var_136 = sp_lookup(sp, var_132, var_132);
+
+ while (var_136 && var_136->start < var_132) {
+  struct struct_136 *next = rb_next(&var_136->nd);
+  if (var_136->start >= var_132) {
+   if (var_136->end <= var_132)
+    sp_delete(sp, var_136);
+   else
+    var_136->start = var_132;
+  } else {
+
+   if (var_136->end > var_132) {
+    if (!n_new)
+     goto alloc_new;
+
+    *mpol_new = *var_136->policy;
+    atomic_set(&mpol_new->refcnt, 1);
+    sp_node_init(n_new, var_132, var_136->end, mpol_new);
+    var_136->end = var_132;
+    sp_insert(sp, n_new);
+    n_new = NULL;
+    mpol_new = NULL;
+    break;
+   } else
+    var_136->end = var_132;
+  }
+  if (!next)
+   break;
+  var_136 = rb_entry(next, struct sp_node, var_136);
+ }
+ if (new)
+  sp_insert(sp, new);
+ write_unlock(&sp->lock);
+ var_133 = 0;
+
+err_out:
+ if (mpol_new)
+  mpol_put(mpol_new);
+ if (n_new)
+  kmem_cache_free(sn_cache, n_new);
+
+ return var_133;
+
+alloc_new:
+ write_unlock(&sp->lock);
+ var_133 = -ENOMEM;
+ n_new = kmem_cache_alloc(sn_cache, GFP_KERNEL);
+ if (!n_new)
+  goto err_out;
+ mpol_new = kmem_cache_alloc(policy_cache, GFP_KERNEL);
+ if (!mpol_new)
+  goto err_out;
+ goto restart;
+}
+
+void fn_132(struct struct_136 *sp, struct struct_145 *mpol)
+{
+ int var_133;
+
+ sp->root = RB_ROOT;
+ rwlock_init(&sp->lock);
+
+ if (mpol) {
+  struct struct_134 pvma;
+  struct struct_145 *new;
+  NODEMASK_SCRATCH(scratch);
+
+  if (!scratch)
+   goto put_mpol;
+
+  new = mpol_new(mpol->mode, mpol->flags, &mpol->w.user_nodemask);
+  if (IS_ERR(new))
+   goto free_scratch;
+
+  task_lock(var_133);
+  var_133 = mpol_set_nodemask(new, &mpol->w.user_nodemask, scratch);
+  task_unlock(var_133);
+  if (var_133)
+   goto put_new;
+
+
+  vma_init(&pvma, NULL);
+  pvma.vm_end = TASK_SIZE;
+  mpol_set_shared_policy(sp, &pvma, new);
+
+put_new:
+  mpol_put(new);
+free_scratch:
+  NODEMASK_SCRATCH_FREE(scratch);
+put_mpol:
+  mpol_put(mpol);
+ }
+}
+
+int fn_133(struct struct_136 *info,
+   struct struct_134 *vma, struct struct_145 *npol)
+{
+ int var_135;
+ struct struct_140 *new = NULL;
+ unsigned long var_135 = vma_pages(vma);
+
+ pr_debug("set_shared_policy %lx sz %lu %d %d %lx\n",
+   vma->vm_pgoff,
+   var_135, npol ? npol->mode : -1,
+   npol ? npol->flags : -1,
+   npol ? nodes_addr(npol->v.nodes)[0] : var_135);
+
+ if (npol) {
+  new = sp_alloc(vma->vm_pgoff, vma->vm_pgoff + var_135, npol);
+  if (!new)
+   return -ENOMEM;
+ }
+ var_135 = shared_policy_replace(info, vma->vm_pgoff, vma->vm_pgoff+var_135, new);
+ if (var_135 && new)
+  sp_free(new);
+ return var_135;
+}
+
+
+void fn_135(struct struct_136 *p)
+{
+ struct struct_140 *var_136;
+ struct struct_136 *next;
+
+ if (!p->root.rb_node)
+  return;
+ write_lock(&p->lock);
+ next = rb_first(&p->root);
+ while (next) {
+  var_136 = rb_entry(next, struct sp_node, var_136);
+  next = rb_next(&var_136->nd);
+  sp_delete(p, var_136);
+ }
+ write_unlock(&p->lock);
+}
+
+static inline void __init fn_136(void)
+{
+}
+
+
+
+void __init fn_137(void)
+{
+ nodemask_t interleave_nodes;
+ unsigned long var_141 = 0;
+ int var_141, var_141 = 0;
+
+ policy_cache = kmem_cache_create("numa_policy",
+      sizeof(struct struct_145),
+      0, SLAB_PANIC, NULL);
+
+ sn_cache = kmem_cache_create("shared_policy_node",
+         sizeof(struct struct_140),
+         0, SLAB_PANIC, NULL);
+
+ for_each_node(var_141) {
+  preferred_node_policy[var_141] = (struct struct_145) {
+   .refcnt = ATOMIC_INIT(1),
+   .mode = MPOL_PREFERRED,
+   .flags = MPOL_F_MOF | MPOL_F_MORON,
+   .v = { .preferred_node = var_141, },
+  };
+ }
+
+
+
+
+
+
+ nodes_clear(interleave_nodes);
+ for_each_node_state(var_141, N_MEMORY) {
+  unsigned long var_141 = node_present_pages(var_141);
+
+
+  if (var_141 < var_141) {
+   var_141 = var_141;
+   var_141 = var_141;
+  }
+
+
+  if ((var_141 << PAGE_SHIFT) >= 16777216)
+   node_set(var_141, interleave_nodes);
+ }
+
+
+ if (unlikely(nodes_empty(interleave_nodes)))
+  node_set(var_141, interleave_nodes);
+
+ if (do_set_mempolicy(MPOL_INTERLEAVE, 0, &interleave_nodes))
+  pr_err("%s: interleaving failed\n", __func__);
+
+ check_numabalancing_enable();
+}
+
+
+void fn_141(void)
+{
+ do_set_mempolicy(var_146, 0, NULL);
+}
+
+static const char * const policy_modes[] =
+{
+ [var_146] = "default",
+ [MPOL_PREFERRED] = "prefer",
+ [MPOL_BIND] = "bind",
+ [MPOL_INTERLEAVE] = "interleave",
+ [MPOL_LOCAL] = "local",
+};
+
+void fn_142(char *var_146, int var_146, struct struct_145 *pol)
+{
+ char *p = var_146;
+ nodemask_t var_146 = var_145;
+ unsigned short var_146 = var_146;
+ unsigned short var_146 = 0;
+
+ if (pol && pol != &var_146 && !(pol->flags & MPOL_F_MORON)) {
+  var_146 = pol->mode;
+  var_146 = pol->flags;
+ }
+
+ switch (var_146) {
+ case var_146:
+  break;
+ case MPOL_PREFERRED:
+  if (var_146 & MPOL_F_LOCAL)
+   var_146 = MPOL_LOCAL;
+  else
+   node_set(pol->v.preferred_node, var_146);
+  break;
+ case MPOL_BIND:
+ case MPOL_INTERLEAVE:
+  var_146 = pol->v.nodes;
+  break;
+ default:
+  WARN_ON_ONCE(1);
+  snprintf(p, var_146, "unknown");
+  return;
+ }
+
+ p += snprintf(p, var_146, "%s", policy_modes[var_146]);
+
+ if (var_146 & MPOL_MODE_FLAGS) {
+  p += snprintf(p, var_146 + var_146 - p, "=");
+
+
+
+
+  if (var_146 & MPOL_F_STATIC_NODES)
+   p += snprintf(p, var_146 + var_146 - p, "static");
+  else if (var_146 & MPOL_F_RELATIVE_NODES)
+   p += snprintf(p, var_146 + var_146 - p, "relative");
+ }
+
+ if (!nodes_empty(var_146))
+  p += scnprintf(p, var_146 + var_146 - p, ":%*pbl",
+          nodemask_pr_args(&var_146));
+}

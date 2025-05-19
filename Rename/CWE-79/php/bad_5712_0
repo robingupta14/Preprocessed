@@ -1,0 +1,216 @@
+<?php
+
+
+
+
+
+
+$var_16['goto'] = $cfg['DefaultTabDatabase'];
+$var_16['back'] = 'view_create.php';
+
+$var_0 = array(
+    'UNDEFINED',
+    'MERGE',
+    'TEMPTABLE',
+);
+
+$var_1 = array(
+    'CASCADED CHECK OPTION',
+    'LOCAL CHECK OPTION'
+);
+
+if (isset($_REQUEST['createview'])) {
+    
+    $var_2 = "\r\n";
+
+    $var_3 = 'CREATE';
+
+    if (isset($_REQUEST['view']['or_replace'])) {
+        $var_3 .= ' OR REPLACE';
+    }
+
+    if (PMA_isValid($_REQUEST['view']['algorithm'], $var_0)) {
+        $var_3 .= $var_2 . ' ALGORITHM = ' . $_REQUEST['view']['algorithm'];
+    }
+
+    $var_3 .= $var_2 . ' VIEW ' . PMA_Util::backquote($_REQUEST['view']['name']);
+
+    if (! empty($_REQUEST['view']['column_names'])) {
+        $var_3 .= $var_2 . ' (' . $_REQUEST['view']['column_names'] . ')';
+    }
+
+    $var_3 .= $var_2 . ' AS ' . $_REQUEST['view']['as'];
+
+    if (isset($_REQUEST['view']['with'])) {
+        $var_4 = array_intersect($_REQUEST['view']['with'], $var_1);
+        if (count($var_4)) {
+            $var_3 .= $var_2 . ' WITH ' . implode(' ', $var_4);
+        }
+    }
+
+    if (PMA_DBI_try_query($var_3)) {
+        
+        
+        
+        $var_5 = array();
+        if (isset($_REQUEST['view']['column_names'])) {
+            $var_5 = explode(',', $_REQUEST['view']['column_names']);
+        }
+        
+        $var_6 = PMA_getColumnMap($_REQUEST['view']['as'], $var_5);
+        $var_7 = PMA_getExistingTranformationData($GLOBALS['db']);
+        
+        if ($var_7 !== false) {
+            
+            
+            $var_8 = PMA_getNewTransformationDataSql(
+                $var_7, $var_6, $_REQUEST['view']['name'],
+                $GLOBALS['db']
+            );            
+            
+            
+            if ($var_8 != '') {
+                PMA_DBI_try_query($var_8);
+            }
+            
+        }
+        unset($var_7);
+        
+        if ($GLOBALS['is_ajax_request'] != true) {
+            $var_9 = PMA_Message::success();
+        } else {
+            $var_10 = PMA_Response::getInstance();
+            $var_10->addJSON(
+                'message',
+                PMA_Util::getMessage(
+                    PMA_Message::success(), $var_3
+                )
+            );
+        }
+        
+        var_12;
+        
+    } else {
+        if ($GLOBALS['is_ajax_request'] != true) {
+            $var_9 = PMA_Message::rawError(PMA_DBI_getError());
+        } else {
+            $var_10 = PMA_Response::getInstance();
+            $var_10->addJSON(
+                'message',
+                PMA_Message::error(
+                    "<i>$var_3</i><br /><br />" . PMA_DBI_getError()
+                )
+            );
+            $var_10->isSuccess(false);
+            var_12;
+        }
+    }
+}
+
+
+$var_14 = array(
+    'or_replace' => '',
+    'algorithm' => '',
+    'name' => '',
+    'column_names' => '',
+    'as' => $var_3,
+    'with' => array(),
+);
+
+if (PMA_isValid($_REQUEST['view'], 'array')) {
+    $var_14 = array_merge($var_14, $_REQUEST['view']);
+}
+
+$var_16['db'] = $GLOBALS['db'];
+$var_16['reload'] = 1;
+
+
+$var_15 = '<!-- CREATE VIEW options -->'
+    . '<div id="div_view_options">'
+    . '<form method="post" action="view_create.php">'
+    . PMA_generate_common_hidden_inputs($var_16)
+    . '<fieldset>'
+    . '<legend>' . __('Create view')
+    . PMA_Util::showMySQLDocu('SQL-Syntax', 'CREATE_VIEW') . '</legend>'
+    . '<table class="rte_table">'
+    . '<tr><td><label for="or_replace">OR REPLACE</label></td>'
+    . '<td><input type="checkbox" name="view[or_replace]" id="or_replace"';
+if ($var_14['or_replace']) {
+    $var_15 .= ' checked="checked"';
+}
+$var_15 .= ' value="1" />'
+    . '</td>'
+    . '</tr>'
+    . '<tr>'
+    . '<td><label for="algorithm">ALGORITHM</label></td>'
+    . '<td><select name="view[algorithm]" id="algorithm">';
+
+foreach ($var_0 as $var_17) {
+    $var_15 .= '<option value="' . htmlspecialchars($var_17) . '"';
+    if ($var_14['algorithm'] === $var_17) {
+        $var_15 .= ' selected="selected"';
+    }
+    $var_15 .= '>' . htmlspecialchars($var_17) . '</option>';
+}
+
+$var_15 .= '</select>'
+    . '</td>'
+    . '</tr>'
+    . '<tr><td>' . __('VIEW name') . '</td>'
+    . '<td><input type="text" size="20" name="view[name]" onfocus="this.select()"'
+    . ' value="' . htmlspecialchars($var_14['name']) . '" />'
+    . '</td>'
+    . '</tr>'
+    . '<tr><td>' . __('Column names') . '</td>'
+    . '<td><input type="text" maxlength="100" size="50" name="view[column_names]"'
+    . ' onfocus="this.select()"'
+    . ' value="' . htmlspecialchars($var_14['column_names']) . '" />'
+    . '</td>'
+    . '</tr>'
+    . '<tr><td>AS</td>'
+    . '<td>'
+    . '<textarea name="view[as]" rows="' . $cfg['TextareaRows'] . '"'
+    . ' cols="' . $cfg['TextareaCols'] . '"'
+    . ' dir="' . $var_18 . '"';
+
+if ($GLOBALS['cfg']['TextareaAutoSelect'] || true) {
+    $var_15 .= ' onclick="selectContent(this, sql_box_locked, true)"';
+}
+
+$var_15 .= '>' . htmlspecialchars($var_14['as']) . '</textarea>'
+    . '</td>'
+    . '</tr>'
+    . '<tr><td>WITH</td>'
+    . '<td>';
+
+foreach ($var_1 as $var_17) {
+    $var_15 .= '<input type="checkbox" name="view[with][]"';
+    if (in_array($var_17, $var_14['with'])) {
+        $var_15 .= ' checked="checked"';
+    }
+    $var_15 .= ' id="view_with_'
+        . str_replace(' ', '_', htmlspecialchars($var_17)) . '"'
+        . ' value="' . htmlspecialchars($var_17) . '" />'
+        . '<label for="view_with_' . str_replace(' ', '_', htmlspecialchars($var_17))
+        . '">&nbsp;'
+        . htmlspecialchars($var_17) . '</label><br />';
+}
+
+$var_15 .= '</td>'
+    . '</tr>'
+    . '</table>'
+    . '</fieldset>';
+
+if ($GLOBALS['is_ajax_request'] != true) {
+    $var_15 .= '<fieldset class="tblFooters">'
+        . '<input type="submit" name="createview" value="' . __('Go') . '" />'
+        . '</fieldset>';
+} else {
+    $var_15 .= '<input type="hidden" name="createview" value="1" />'
+        . '<input type="hidden" name="ajax_request" value="1" />';
+}
+
+$var_15 .= '</form>'
+    . '</div>';
+
+

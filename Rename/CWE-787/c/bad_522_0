@@ -1,0 +1,3035 @@
+
+
+
+
+
+
+
+
+static void fn_33(rfbClientPtr var_111);
+static void fn_80(rfbClientPtr var_111);
+static void fn_38(rfbClientPtr var_111);
+
+void fn_4(rfbClientPtr var_111) {}
+void fn_5(rfbClientPtr var_111) {}
+
+
+
+
+
+
+struct struct_12 {
+  rfbClientPtr next;
+  rfbScreenInfoPtr screen;
+  rfbBool closedToo;
+};
+
+void
+fn_7(rfbScreenInfoPtr var_111)
+{
+    if(sizeof(rfbBool)!=1) {
+
+        fprintf(stderr,"rfbBool's size is not 1 (%d)!\n",(int)sizeof(rfbBool));
+
+ exit(1);
+    }
+    var_111->clientHead = NULL;
+    INIT_MUTEX(rfbClientListMutex);
+}
+
+rfbClientIteratorPtr
+fn_9(rfbScreenInfoPtr var_111)
+{
+  rfbClientIteratorPtr var_107 =
+    (rfbClientIteratorPtr)malloc(sizeof(struct struct_12));
+  var_107->next = NULL;
+  var_107->screen = var_111;
+  var_107->closedToo = FALSE;
+  return var_107;
+}
+
+rfbClientIteratorPtr
+fn_11(rfbScreenInfoPtr var_111)
+{
+  rfbClientIteratorPtr var_107 =
+    (rfbClientIteratorPtr)malloc(sizeof(struct struct_12));
+  var_107->next = NULL;
+  var_107->screen = var_111;
+  var_107->closedToo = TRUE;
+  return var_107;
+}
+
+rfbClientPtr
+fn_12(rfbClientIteratorPtr var_107)
+{
+
+
+
+
+
+
+  LOCK(rfbClientListMutex);
+  var_107->next = var_107->screen->clientHead;
+  UNLOCK(rfbClientListMutex);
+  return var_107->next;
+}
+
+rfbClientPtr
+fn_13(rfbClientIteratorPtr var_107)
+{
+  if(var_107->next == 0) {
+    LOCK(rfbClientListMutex);
+    var_107->next = var_107->screen->clientHead;
+    UNLOCK(rfbClientListMutex);
+  } else {
+    IF_PTHREADS(rfbClientPtr var_111 = var_107->next);
+    var_107->next = var_107->next->next;
+    IF_PTHREADS(rfbDecrClientRef(var_111));
+  }
+
+    return var_107->next;
+}
+
+void
+fn_14(rfbClientIteratorPtr var_108)
+{
+  IF_PTHREADS(if(var_108->next) rfbDecrClientRef(var_108->next));
+  free(var_108);
+}
+
+
+
+
+
+
+
+void
+fn_16(rfbScreenInfoPtr var_111,
+                       int var_110)
+{
+    rfbNewClient(var_111,var_110);
+}
+
+
+
+
+
+
+
+rfbClientPtr
+fn_18(rfbScreenInfoPtr var_111,
+                     char *host,
+                     int var_20)
+{
+    int var_110;
+    rfbClientPtr var_111;
+
+    if ((var_110 = rfbConnect(var_111, host, var_20)) < 0)
+        return (rfbClientPtr)NULL;
+
+    var_111 = rfbNewClient(var_111, var_110);
+
+    if (var_111) {
+        var_111->reverseConnection = TRUE;
+    }
+
+    return var_111;
+}
+
+
+void
+fn_20(rfbScreenInfoPtr var_111, int var_34, int var_34)
+{
+
+
+    if ((var_34==3) && (var_34 > 2 && var_34 < 9))
+    {
+      var_111->protocolMajorVersion = var_34;
+      var_111->protocolMinorVersion = var_34;
+    }
+    else
+        rfbLog("rfbSetProtocolVersion(%d,%d) set to invalid values\n", var_34, var_34);
+}
+
+
+
+
+
+
+static rfbClientPtr
+fn_23(rfbScreenInfoPtr var_111,
+                     int var_110,
+                     rfbBool var_27)
+{
+    rfbProtocolVersionMsg pv;
+    rfbClientIteratorPtr var_108;
+    rfbClientPtr var_111,cl_;
+
+
+
+    struct struct_25 addr;
+
+    socklen_t var_29 = sizeof(addr);
+    rfbProtocolExtension* extension;
+
+    var_111 = (rfbClientPtr)calloc(sizeof(rfbClientRec),1);
+
+    var_111->screen = var_111;
+    var_111->sock = var_110;
+    var_111->viewOnly = FALSE;
+
+    var_111->scaledScreen = var_111;
+    var_111->scaledScreen->scaledScreenRefCount++;
+
+    rfbResetStats(var_111);
+
+    var_111->clientData = NULL;
+    var_111->clientGoneHook = rfbDoNothingWithClient;
+
+    if(var_27) {
+      rfbLog(" accepted UDP client\n");
+ } else {
+
+
+
+      int var_29=1;
+
+      getpeername(var_110, (struct struct_28 *)&addr, &var_29);
+
+      var_111->host = strdup(inet_ntoa(addr.sin_addr));
+
+
+      rfbLog("  other clients:\n");
+      var_108 = rfbGetClientIterator(var_111);
+      while ((cl_ = rfbClientIteratorNext(var_108)) != NULL) {
+        rfbLog("     %s\n",cl_->host);
+      }
+      rfbReleaseClientIterator(var_108);
+
+      if(!rfbSetNonBlocking(var_110)) {
+ close(var_110);
+ return NULL;
+      }
+
+      if (setsockopt(var_110, IPPROTO_TCP, TCP_NODELAY,
+       (char *)&var_29, sizeof(var_29)) < 0) {
+ rfbLogPerror("setsockopt failed: can't set TCP_NODELAY flag, non TCP socket?");
+      }
+
+      FD_SET(var_110,&(var_111->allFds));
+  var_111->maxFd = rfbMax(var_110,var_111->maxFd);
+
+      INIT_MUTEX(var_111->outputMutex);
+      INIT_MUTEX(var_111->refCountMutex);
+      INIT_MUTEX(var_111->sendMutex);
+      INIT_COND(var_111->deleteCond);
+
+      var_111->state = RFB_PROTOCOL_VERSION;
+
+      var_111->reverseConnection = FALSE;
+      var_111->readyForSetColourMapEntries = FALSE;
+      var_111->useCopyRect = FALSE;
+      var_111->preferredEncoding = -1;
+      var_111->correMaxWidth = 48;
+      var_111->correMaxHeight = 48;
+
+
+
+
+      var_111->copyRegion = sraRgnCreate();
+      var_111->copyDX = 0;
+      var_111->copyDY = 0;
+
+      var_111->modifiedRegion =
+ sraRgnCreateRect(0,0,var_111->width,var_111->height);
+
+      INIT_MUTEX(var_111->updateMutex);
+      INIT_COND(var_111->updateCond);
+
+      var_111->requestedRegion = sraRgnCreate();
+
+      var_111->format = var_111->screen->serverFormat;
+      var_111->translateFn = rfbTranslateNone;
+      var_111->translateLookupTable = NULL;
+
+      LOCK(rfbClientListMutex);
+
+      IF_PTHREADS(var_111->refCount = 0);
+      var_111->next = var_111->clientHead;
+      var_111->prev = NULL;
+      if (var_111->clientHead)
+        var_111->clientHead->prev = var_111;
+
+      var_111->clientHead = var_111;
+      UNLOCK(rfbClientListMutex);
+
+      var_111->fileTransfer.fd = -1;
+
+      var_111->enableCursorShapeUpdates = FALSE;
+      var_111->enableCursorPosUpdates = FALSE;
+      var_111->useRichCursorEncoding = FALSE;
+      var_111->enableLastRectEncoding = FALSE;
+      var_111->enableKeyboardLedState = FALSE;
+      var_111->enableSupportedMessages = FALSE;
+      var_111->enableSupportedEncodings = FALSE;
+      var_111->enableServerIdentity = FALSE;
+      var_111->lastKeyboardLedState = -1;
+      var_111->cursorX = var_111->cursorX;
+      var_111->cursorY = var_111->cursorY;
+      var_111->useNewFBSize = FALSE;
+
+      var_111->progressiveSliceY = 0;
+
+      var_111->extensions = NULL;
+
+      var_111->lastPtrX = -1;
+
+      sprintf(pv,rfbProtocolVersionFormat,var_111->protocolMajorVersion,
+              var_111->protocolMinorVersion);
+
+      if (rfbWriteExact(var_111, pv, sz_rfbProtocolVersionMsg) < 0) {
+        rfbLogPerror("rfbNewClient: write");
+        rfbCloseClient(var_111);
+ rfbClientConnectionGone(var_111);
+        return NULL;
+      }
+    }
+
+    for(extension = rfbGetExtensionIterator(); extension;
+     extension=extension->next) {
+ void* data = NULL;
+
+
+ if(extension->newClient && extension->newClient(var_111, &data))
+  rfbEnableExtension(var_111, extension, data);
+    }
+    rfbReleaseExtensionIterator();
+
+    switch (var_111->screen->newClientHook(var_111)) {
+    case RFB_CLIENT_ON_HOLD:
+     var_111->onHold = TRUE;
+     break;
+    case RFB_CLIENT_ACCEPT:
+     var_111->onHold = FALSE;
+     break;
+    case RFB_CLIENT_REFUSE:
+     rfbCloseClient(var_111);
+     rfbClientConnectionGone(var_111);
+     var_111 = NULL;
+     break;
+    }
+    return var_111;
+}
+
+rfbClientPtr
+fn_29(rfbScreenInfoPtr var_111,
+             int var_110)
+{
+  return(rfbNewTCPOrUDPClient(var_111,var_110,FALSE));
+}
+
+rfbClientPtr
+fn_30(rfbScreenInfoPtr var_111)
+{
+  return((var_111->udpClient=
+   rfbNewTCPOrUDPClient(var_111,var_111->udpSock,TRUE)));
+}
+
+
+
+
+
+
+void
+fn_31(rfbClientPtr var_111)
+{
+
+
+
+
+    LOCK(rfbClientListMutex);
+
+    if (var_111->prev)
+        var_111->prev->next = var_111->next;
+    else
+        var_111->screen->clientHead = var_111->next;
+    if (var_111->next)
+        var_111->next->prev = var_111->prev;
+
+    UNLOCK(rfbClientListMutex);
+
+    if(var_111->sock>=0)
+ close(var_111->sock);
+
+    if (var_111->scaledScreen!=NULL)
+        var_111->scaledScreen->scaledScreenRefCount--;
+
+
+
+
+
+    rfbFreeUltraData(var_111);
+
+
+    free(var_111->beforeEncBuf);
+    free(var_111->afterEncBuf);
+
+    if(var_111->sock>=0)
+       FD_CLR(var_111->sock,&(var_111->screen->allFds));
+
+    var_111->clientGoneHook(var_111);
+
+    rfbLog("Client %s gone\n",var_111->host);
+    free(var_111->host);
+
+    if (var_111->screen->pointerClient == var_111)
+        var_111->screen->pointerClient = NULL;
+
+    sraRgnDestroy(var_111->modifiedRegion);
+    sraRgnDestroy(var_111->requestedRegion);
+    sraRgnDestroy(var_111->copyRegion);
+
+    if (var_111->translateLookupTable) free(var_111->translateLookupTable);
+
+    TINI_COND(var_111->updateCond);
+    TINI_MUTEX(var_111->updateMutex);
+
+
+    LOCK(var_111->outputMutex);
+    UNLOCK(var_111->outputMutex);
+    TINI_MUTEX(var_111->outputMutex);
+
+    LOCK(var_111->sendMutex);
+    UNLOCK(var_111->sendMutex);
+    TINI_MUTEX(var_111->sendMutex);
+
+    rfbPrintStats(var_111);
+    rfbResetStats(var_111);
+
+    free(var_111);
+}
+
+
+
+
+
+
+void
+fn_32(rfbClientPtr var_111)
+{
+    switch (var_111->state) {
+    case RFB_PROTOCOL_VERSION:
+        rfbProcessClientProtocolVersion(var_111);
+        return;
+    case RFB_SECURITY_TYPE:
+        rfbProcessClientSecurityType(var_111);
+        return;
+    case RFB_AUTHENTICATION:
+        rfbAuthProcessClientMessage(var_111);
+        return;
+    case RFB_INITIALISATION:
+    case RFB_INITIALISATION_SHARED:
+        rfbProcessClientInitMessage(var_111);
+        return;
+    default:
+        rfbProcessClientNormalMessage(var_111);
+        return;
+    }
+}
+
+
+
+
+
+
+
+static void
+fn_33(rfbClientPtr var_111)
+{
+    rfbProtocolVersionMsg pv;
+    int var_111, var_34, var_34;
+
+    if ((var_111 = rfbReadExact(var_111, pv, sz_rfbProtocolVersionMsg)) <= 0) {
+        if (var_111 == 0)
+            rfbLog("rfbProcessClientProtocolVersion: client gone\n");
+        else
+            rfbLogPerror("rfbProcessClientProtocolVersion: read");
+        rfbCloseClient(var_111);
+        return;
+    }
+
+    pv[sz_rfbProtocolVersionMsg] = 0;
+    if (sscanf(pv,rfbProtocolVersionFormat,&var_34,&var_34) != 2) {
+ rfbErr("rfbProcessClientProtocolVersion: not a valid RFB client: %s\n", pv);
+ rfbCloseClient(var_111);
+ return;
+    }
+    rfbLog("Client Protocol Version %d.%d\n", var_34, var_34);
+
+    if (var_34 != rfbProtocolMajorVersion) {
+        rfbErr("RFB protocol version mismatch - server %d.%d, client %d.%d",
+                var_111->screen->protocolMajorVersion, var_111->screen->protocolMinorVersion,
+                var_34,var_34);
+        rfbCloseClient(var_111);
+        return;
+    }
+
+    var_111->protocolMajorVersion = var_34;
+    var_111->protocolMinorVersion = var_34;
+
+    rfbLog("Protocol version sent %d.%d, using %d.%d\n",
+              var_34, var_34, rfbProtocolMajorVersion, var_111->protocolMinorVersion);
+
+    rfbAuthNewClient(var_111);
+}
+
+
+void
+fn_34(rfbClientPtr var_111, const char *reason)
+{
+    char *var_106;
+    int var_108 = strlen(reason);
+
+    rfbLog("rfbClientSendString(\"%s\")\n", reason);
+
+    var_106 = (char *)malloc(4 + var_108);
+    ((uint32_t *)var_106)[0] = Swap32IfLE(var_108);
+    memcpy(var_106 + 4, reason, var_108);
+
+    if (rfbWriteExact(var_111, var_106, 4 + var_108) < 0)
+        rfbLogPerror("rfbClientSendString: write");
+    free(var_106);
+
+    rfbCloseClient(var_111);
+}
+
+
+
+
+
+
+void
+fn_37(rfbClientPtr var_111,
+                    const char *reason)
+{
+    char *var_106;
+    int var_108 = strlen(reason);
+
+    rfbLog("rfbClientConnFailed(\"%s\")\n", reason);
+
+    var_106 = (char *)malloc(8 + var_108);
+    ((uint32_t *)var_106)[0] = Swap32IfLE(rfbConnFailed);
+    ((uint32_t *)var_106)[1] = Swap32IfLE(var_108);
+    memcpy(var_106 + 8, reason, var_108);
+
+    if (rfbWriteExact(var_111, var_106, 8 + var_108) < 0)
+        rfbLogPerror("rfbClientConnFailed: write");
+    free(var_106);
+
+    rfbCloseClient(var_111);
+}
+
+
+
+
+
+
+
+static void
+fn_38(rfbClientPtr var_111)
+{
+    rfbClientInitMsg ci;
+    union {
+        char buf[256];
+        rfbServerInitMsg si;
+    } u;
+    int var_108, var_111;
+    rfbClientIteratorPtr var_108;
+    rfbClientPtr otherCl;
+    rfbExtensionData* extension;
+
+    if (var_111->state == RFB_INITIALISATION_SHARED) {
+
+
+        ci.shared = 1;
+
+
+        var_111->state = RFB_INITIALISATION;
+    } else {
+        if ((var_111 = rfbReadExact(var_111, (char *)&ci,sz_rfbClientInitMsg)) <= 0) {
+            if (var_111 == 0)
+                rfbLog("rfbProcessClientInitMessage: client gone\n");
+            else
+                rfbLogPerror("rfbProcessClientInitMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+    }
+
+    memset(u.buf,0,sizeof(u.buf));
+
+    u.si.framebufferWidth = Swap16IfLE(var_111->screen->width);
+    u.si.framebufferHeight = Swap16IfLE(var_111->screen->height);
+    u.si.format = var_111->screen->serverFormat;
+    u.si.format.redMax = Swap16IfLE(u.si.format.redMax);
+    u.si.format.greenMax = Swap16IfLE(u.si.format.greenMax);
+    u.si.format.blueMax = Swap16IfLE(u.si.format.blueMax);
+
+    strncpy(u.buf + sz_rfbServerInitMsg, var_111->screen->desktopName, 127);
+    var_108 = strlen(u.buf + sz_rfbServerInitMsg);
+    u.si.nameLength = Swap32IfLE(var_108);
+
+    if (rfbWriteExact(var_111, u.buf, sz_rfbServerInitMsg + var_108) < 0) {
+        rfbLogPerror("rfbProcessClientInitMessage: write");
+        rfbCloseClient(var_111);
+        return;
+    }
+
+    for(extension = var_111->extensions; extension;) {
+ rfbExtensionData* next = extension->next;
+ if(extension->extension->init &&
+  !extension->extension->init(var_111, extension->data))
+
+     rfbDisableExtension(var_111, extension->extension);
+ extension = next;
+    }
+
+    var_111->state = RFB_NORMAL;
+
+    if (!var_111->reverseConnection &&
+                        (var_111->screen->neverShared || (!var_111->screen->alwaysShared && !ci.shared))) {
+
+        if (var_111->screen->dontDisconnect) {
+            var_108 = rfbGetClientIterator(var_111->screen);
+            while ((otherCl = rfbClientIteratorNext(var_108)) != NULL) {
+                if ((otherCl != var_111) && (otherCl->state == RFB_NORMAL)) {
+                    rfbLog("-dontdisconnect: Not shared & existing client\n");
+                    rfbLog("  refusing new client %s\n", var_111->host);
+                    rfbCloseClient(var_111);
+                    rfbReleaseClientIterator(var_108);
+                    return;
+                }
+            }
+            rfbReleaseClientIterator(var_108);
+        } else {
+            var_108 = rfbGetClientIterator(var_111->screen);
+            while ((otherCl = rfbClientIteratorNext(var_108)) != NULL) {
+                if ((otherCl != var_111) && (otherCl->state == RFB_NORMAL)) {
+                    rfbLog("Not shared - closing connection to client %s\n",
+                           otherCl->host);
+                    rfbCloseClient(otherCl);
+                }
+            }
+            rfbReleaseClientIterator(var_108);
+        }
+    }
+}
+
+
+
+
+static rfbBool fn_38(uint16_t* var_100,uint16_t* var_100,uint16_t* var_102,uint16_t* var_102,
+  rfbClientPtr var_111)
+{
+ int var_47=Swap16IfLE(*var_100);
+ int var_47=Swap16IfLE(*var_100);
+ int var_47=Swap16IfLE(*var_102);
+ int var_47=Swap16IfLE(*var_102);
+
+ rfbScaledCorrection(var_111->scaledScreen, var_111->screen, &var_47, &var_47, &var_47, &var_47, "rectSwapIfLEAndClip");
+ *var_100 = var_47;
+ *var_100 = var_47;
+ *var_102 = var_47;
+ *var_102 = var_47;
+
+ if(*var_102>var_111->screen->width-*var_100)
+  *var_102=var_111->screen->width-*var_100;
+
+ if(*var_102>var_111->screen->width-*var_100)
+  return FALSE;
+ if(*var_102>var_111->screen->height-*var_100)
+  *var_102=var_111->screen->height-*var_100;
+ if(*var_102>var_111->screen->height-*var_100)
+  return FALSE;
+
+ return TRUE;
+}
+
+
+
+
+
+rfbBool
+fn_47(rfbClientPtr var_111)
+{
+    rfbFramebufferUpdateRectHeader rect;
+
+    if (var_111->ublen + sz_rfbFramebufferUpdateRectHeader > UPDATE_BUF_SIZE) {
+        if (!rfbSendUpdateBuf(var_111))
+            return FALSE;
+    }
+
+    rect.encoding = Swap32IfLE(rfbEncodingKeyboardLedState);
+    rect.r.x = Swap16IfLE(var_111->lastKeyboardLedState);
+    rect.r.y = 0;
+    rect.r.w = 0;
+    rect.r.h = 0;
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,
+        sz_rfbFramebufferUpdateRectHeader);
+    var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+    rfbStatRecordEncodingSent(var_111, rfbEncodingKeyboardLedState, sz_rfbFramebufferUpdateRectHeader, sz_rfbFramebufferUpdateRectHeader);
+
+    if (!rfbSendUpdateBuf(var_111))
+        return FALSE;
+
+    return TRUE;
+}
+
+rfbBool
+fn_48(rfbClientPtr var_111)
+{
+    rfbFramebufferUpdateRectHeader rect;
+    rfbSupportedMessages msgs;
+
+    if (var_111->ublen + sz_rfbFramebufferUpdateRectHeader
+                  + sz_rfbSupportedMessages > UPDATE_BUF_SIZE) {
+        if (!rfbSendUpdateBuf(var_111))
+            return FALSE;
+    }
+
+    rect.encoding = Swap32IfLE(rfbEncodingSupportedMessages);
+    rect.r.x = 0;
+    rect.r.y = 0;
+    rect.r.w = Swap16IfLE(sz_rfbSupportedMessages);
+    rect.r.h = 0;
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,
+        sz_rfbFramebufferUpdateRectHeader);
+    var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+    memset((char *)&msgs, 0, sz_rfbSupportedMessages);
+    (msgs.client2server[(rfbSetPixelFormat & 255) / 8] |= (1 << (rfbSetPixelFormat % 8)));
+    (msgs.client2server[(rfbFixColourMapEntries & 255) / 8] |= (1 << (rfbFixColourMapEntries % 8)));
+    (msgs.client2server[(rfbSetEncodings & 255) / 8] |= (1 << (rfbSetEncodings % 8)));
+    (msgs.client2server[(rfbFramebufferUpdateRequest & 255) / 8] |= (1 << (rfbFramebufferUpdateRequest % 8)));
+    (msgs.client2server[(rfbKeyEvent & 255) / 8] |= (1 << (rfbKeyEvent % 8)));
+    (msgs.client2server[(rfbPointerEvent & 255) / 8] |= (1 << (rfbPointerEvent % 8)));
+    (msgs.client2server[(rfbClientCutText & 255) / 8] |= (1 << (rfbClientCutText % 8)));
+    (msgs.client2server[(rfbFileTransfer & 255) / 8] |= (1 << (rfbFileTransfer % 8)));
+    (msgs.client2server[(rfbSetScale & 255) / 8] |= (1 << (rfbSetScale % 8)));
+
+
+
+    (msgs.client2server[(rfbPalmVNCSetScaleFactor & 255) / 8] |= (1 << (rfbPalmVNCSetScaleFactor % 8)));
+
+    (msgs.server2client[(rfbFramebufferUpdate & 255) / 8] |= (1 << (rfbFramebufferUpdate % 8)));
+    (msgs.server2client[(rfbSetColourMapEntries & 255) / 8] |= (1 << (rfbSetColourMapEntries % 8)));
+    (msgs.server2client[(rfbBell & 255) / 8] |= (1 << (rfbBell % 8)));
+    (msgs.server2client[(rfbServerCutText & 255) / 8] |= (1 << (rfbServerCutText % 8)));
+    (msgs.server2client[(rfbResizeFrameBuffer & 255) / 8] |= (1 << (rfbResizeFrameBuffer % 8)));
+    (msgs.server2client[(rfbPalmVNCReSizeFrameBuffer & 255) / 8] |= (1 << (rfbPalmVNCReSizeFrameBuffer % 8)));
+
+    if (var_111->screen->xvpHook) {
+        (msgs.client2server[(rfbXvp & 255) / 8] |= (1 << (rfbXvp % 8)));
+        (msgs.server2client[(rfbXvp & 255) / 8] |= (1 << (rfbXvp % 8)));
+    }
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&msgs, sz_rfbSupportedMessages);
+    var_111->ublen += sz_rfbSupportedMessages;
+
+    rfbStatRecordEncodingSent(var_111, rfbEncodingSupportedMessages,
+        sz_rfbFramebufferUpdateRectHeader+sz_rfbSupportedMessages,
+        sz_rfbFramebufferUpdateRectHeader+sz_rfbSupportedMessages);
+    if (!rfbSendUpdateBuf(var_111))
+        return FALSE;
+
+    return TRUE;
+}
+
+
+
+
+
+
+
+rfbBool
+fn_49(rfbClientPtr var_111)
+{
+    rfbFramebufferUpdateRectHeader rect;
+    static uint32_t supported[] = {
+        rfbEncodingRaw,
+ rfbEncodingCopyRect,
+ rfbEncodingRRE,
+ rfbEncodingCoRRE,
+ rfbEncodingHextile,
+
+ rfbEncodingUltra,
+ rfbEncodingUltraZip,
+ rfbEncodingXCursor,
+ rfbEncodingRichCursor,
+ rfbEncodingPointerPos,
+ rfbEncodingLastRect,
+ rfbEncodingNewFBSize,
+ rfbEncodingKeyboardLedState,
+ rfbEncodingSupportedMessages,
+ rfbEncodingSupportedEncodings,
+ rfbEncodingServerIdentity,
+    };
+    uint32_t var_52 = sizeof(supported) / sizeof(supported[0]), var_107;
+
+
+
+    if (var_111->ublen + sz_rfbFramebufferUpdateRectHeader
+                  + (var_52 * sizeof(uint32_t)) > UPDATE_BUF_SIZE) {
+        if (!rfbSendUpdateBuf(var_111))
+            return FALSE;
+    }
+
+    rect.encoding = Swap32IfLE(rfbEncodingSupportedEncodings);
+    rect.r.x = 0;
+    rect.r.y = 0;
+    rect.r.w = Swap16IfLE(var_52 * sizeof(uint32_t));
+    rect.r.h = Swap16IfLE(var_52);
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,
+        sz_rfbFramebufferUpdateRectHeader);
+    var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+    for (var_107 = 0; var_107 < var_52; var_107++) {
+        uint32_t var_52 = Swap32IfLE(supported[var_107]);
+ memcpy(&var_111->updateBuf[var_111->ublen], (char *)&var_52, sizeof(var_52));
+ var_111->ublen += sizeof(var_52);
+    }
+
+    rfbStatRecordEncodingSent(var_111, rfbEncodingSupportedEncodings,
+        sz_rfbFramebufferUpdateRectHeader+(var_52 * sizeof(uint32_t)),
+        sz_rfbFramebufferUpdateRectHeader+(var_52 * sizeof(uint32_t)));
+
+    if (!rfbSendUpdateBuf(var_111))
+        return FALSE;
+
+    return TRUE;
+}
+
+
+void
+fn_52(rfbScreenInfoPtr var_54, char *fmt, ...)
+{
+    char buffer[256];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
+    va_end(ap);
+
+    if (var_54->versionString!=NULL) free(var_54->versionString);
+    var_54->versionString = strdup(buffer);
+}
+
+
+
+
+
+rfbBool
+fn_54(rfbClientPtr var_111)
+{
+    rfbFramebufferUpdateRectHeader rect;
+    char buffer[512];
+
+
+    snprintf(buffer,sizeof(buffer)-1, "%s (%s)",
+        (var_111->screen->versionString==NULL ? "unknown" : var_111->screen->versionString),
+        LIBVNCSERVER_PACKAGE_STRING);
+
+    if (var_111->ublen + sz_rfbFramebufferUpdateRectHeader
+                  + (strlen(buffer)+1) > UPDATE_BUF_SIZE) {
+        if (!rfbSendUpdateBuf(var_111))
+            return FALSE;
+    }
+
+    rect.encoding = Swap32IfLE(rfbEncodingServerIdentity);
+    rect.r.x = 0;
+    rect.r.y = 0;
+    rect.r.w = Swap16IfLE(strlen(buffer)+1);
+    rect.r.h = 0;
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,
+        sz_rfbFramebufferUpdateRectHeader);
+    var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+    memcpy(&var_111->updateBuf[var_111->ublen], buffer, strlen(buffer)+1);
+    var_111->ublen += strlen(buffer)+1;
+
+    rfbStatRecordEncodingSent(var_111, rfbEncodingServerIdentity,
+        sz_rfbFramebufferUpdateRectHeader+strlen(buffer)+1,
+        sz_rfbFramebufferUpdateRectHeader+strlen(buffer)+1);
+
+
+    if (!rfbSendUpdateBuf(var_111))
+        return FALSE;
+
+    return TRUE;
+}
+
+
+
+
+
+rfbBool
+fn_55(rfbClientPtr var_111, uint8_t var_58, uint8_t var_58)
+{
+    rfbXvpMsg xvp;
+
+    xvp.type = rfbXvp;
+    xvp.pad = 0;
+    xvp.version = var_58;
+    xvp.code = var_58;
+
+    LOCK(var_111->sendMutex);
+    if (rfbWriteExact(var_111, (char *)&xvp, sz_rfbXvpMsg) < 0) {
+      rfbLogPerror("rfbSendXvp: write");
+      rfbCloseClient(var_111);
+    }
+    UNLOCK(var_111->sendMutex);
+
+    rfbStatRecordMessageSent(var_111, rfbXvp, sz_rfbXvpMsg, sz_rfbXvpMsg);
+
+    return TRUE;
+}
+
+
+rfbBool fn_58(rfbClientPtr var_111, uint32_t var_80, char *buffer)
+{
+    rfbTextChatMsg tc;
+    int var_61=0;
+
+    memset((char *)&tc, 0, sizeof(tc));
+    tc.type = rfbTextChat;
+    tc.length = Swap32IfLE(var_80);
+
+    switch(var_80) {
+    case rfbTextChatOpen:
+    case rfbTextChatClose:
+    case rfbTextChatFinished:
+        var_61=0;
+        break;
+    default:
+        var_61=var_80;
+        if (var_61>rfbTextMaxSize)
+            var_61=rfbTextMaxSize;
+    }
+
+    if (var_111->ublen + sz_rfbTextChatMsg + var_61 > UPDATE_BUF_SIZE) {
+        if (!rfbSendUpdateBuf(var_111))
+            return FALSE;
+    }
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&tc, sz_rfbTextChatMsg);
+    var_111->ublen += sz_rfbTextChatMsg;
+    if (var_61>0) {
+        memcpy(&var_111->updateBuf[var_111->ublen], buffer, var_61);
+        var_111->ublen += var_61;
+    }
+    rfbStatRecordMessageSent(var_111, rfbTextChat, sz_rfbTextChatMsg+var_61, sz_rfbTextChatMsg+var_61);
+
+    if (!rfbSendUpdateBuf(var_111))
+        return FALSE;
+
+    return TRUE;
+}
+
+int var_80 = 1;
+
+rfbBool fn_62(rfbClientPtr var_111, uint8_t var_80, uint8_t var_80, uint32_t var_80, uint32_t var_80, const char *buffer)
+{
+    rfbFileTransferMsg ft;
+    ft.type = rfbFileTransfer;
+    ft.contentType = var_80;
+    ft.contentParam = var_80;
+    ft.pad = 0;
+    ft.size = Swap32IfLE(var_80);
+    ft.length = Swap32IfLE(var_80);
+
+    if ((var_111->screen->getFileTransferPermission != NULL && var_111->screen->getFileTransferPermission(var_111) != TRUE) || var_111->screen->permitFileTransfer != TRUE) { rfbLog("%sUltra File Transfer is disabled, dropping client: %s\n", "", var_111->host); rfbCloseClient(var_111); return FALSE; };
+
+
+
+    LOCK(var_111->sendMutex);
+    if (rfbWriteExact(var_111, (char *)&ft, sz_rfbFileTransferMsg) < 0) {
+        rfbLogPerror("rfbSendFileTransferMessage: write");
+        rfbCloseClient(var_111);
+        UNLOCK(var_111->sendMutex);
+        return FALSE;
+    }
+
+    if (var_80>0)
+    {
+        if (rfbWriteExact(var_111, buffer, var_80) < 0) {
+            rfbLogPerror("rfbSendFileTransferMessage: write");
+            rfbCloseClient(var_111);
+            UNLOCK(var_111->sendMutex);
+            return FALSE;
+        }
+    }
+    UNLOCK(var_111->sendMutex);
+
+    rfbStatRecordMessageSent(var_111, rfbFileTransfer, sz_rfbFileTransferMsg+var_80, sz_rfbFileTransferMsg+var_80);
+
+    return TRUE;
+}
+
+
+
+
+
+
+
+typedef struct {
+    uint32_t dwLowDateTime;
+    uint32_t dwHighDateTime;
+} RFB_FILETIME;
+
+typedef struct {
+    uint32_t dwFileAttributes;
+    RFB_FILETIME ftCreationTime;
+    RFB_FILETIME ftLastAccessTime;
+    RFB_FILETIME ftLastWriteTime;
+    uint32_t nFileSizeHigh;
+    uint32_t nFileSizeLow;
+    uint32_t dwReserved0;
+    uint32_t dwReserved1;
+    uint8_t cFileName[ 260 ];
+    uint8_t cAlternateFileName[ 14 ];
+} RFB_FIND_DATA;
+
+rfbBool fn_66(rfbClientPtr var_111, char *path, char *unixPath, size_t var_68)
+{
+    int var_100;
+    char *home=NULL;
+
+    if ((var_111->screen->getFileTransferPermission != NULL && var_111->screen->getFileTransferPermission(var_111) != TRUE) || var_111->screen->permitFileTransfer != TRUE) { rfbLog("%sUltra File Transfer is disabled, dropping client: %s\n", "", var_111->host); rfbCloseClient(var_111); return FALSE; };
+
+
+
+
+
+    if (strlen(path) >= var_68)
+      return FALSE;
+
+
+    if (path[0]=='C' && path[1]==':')
+      strcpy(unixPath, &path[2]);
+    else
+    {
+      home = getenv("HOME");
+      if (home!=NULL)
+      {
+
+        if ((strlen(path) + strlen(home) + 1) >= var_68)
+          return FALSE;
+
+        strcpy(unixPath, home);
+        strcat(unixPath,"/");
+        strcat(unixPath, path);
+      }
+      else
+        strcpy(unixPath, path);
+    }
+    for (var_100=0;var_100<strlen(unixPath);var_100++)
+      if (unixPath[var_100]=='\\') unixPath[var_100]='/';
+    return TRUE;
+}
+
+rfbBool fn_68(rfbClientPtr var_111, char *unixPath, char *path)
+{
+    int var_100;
+
+    if ((var_111->screen->getFileTransferPermission != NULL && var_111->screen->getFileTransferPermission(var_111) != TRUE) || var_111->screen->permitFileTransfer != TRUE) { rfbLog("%sUltra File Transfer is disabled, dropping client: %s\n", "", var_111->host); rfbCloseClient(var_111); return FALSE; };
+
+    sprintf(path,"C:%s", unixPath);
+    for (var_100=2;var_100<strlen(path);var_100++)
+        if (path[var_100]=='/') path[var_100]='\\';
+    return TRUE;
+}
+
+rfbBool fn_69(rfbClientPtr var_111, int var_80, char *buffer)
+{
+    char retfilename[260];
+    char path[260];
+    struct struct_79 statbuf;
+    RFB_FIND_DATA win32filename;
+    int var_74 = 0, var_80=0;
+
+
+
+
+
+
+    DIR *dirp=NULL;
+    struct struct_73 *direntp=NULL;
+
+
+    if ((var_111->screen->getFileTransferPermission != NULL && var_111->screen->getFileTransferPermission(var_111) != TRUE) || var_111->screen->permitFileTransfer != TRUE) { rfbLog("%sUltra File Transfer is disabled, dropping client: %s\n", "", var_111->host); rfbCloseClient(var_111); return FALSE; };
+
+
+    if (!rfbFilenameTranslate2UNIX(var_111, buffer, path, sizeof(path)))
+        return FALSE;
+
+    if (var_80) rfbLog("rfbProcessFileTransfer() rfbDirContentRequest: rfbRDirContent: \"%s\"->\"%s\"\n",buffer, path);
+
+    dirp=opendir(path);
+    if (dirp==NULL)
+
+        return rfbSendFileTransferMessage(var_111, rfbDirPacket, rfbADirectory, 0, 0, NULL);
+
+
+    if (rfbSendFileTransferMessage(var_111, rfbDirPacket, rfbADirectory, 0, var_80, buffer)==FALSE) return FALSE;
+
+
+
+
+    for (direntp=readdir(dirp); direntp!=NULL; direntp=readdir(dirp))
+
+    {
+
+
+
+
+    snprintf(retfilename,sizeof(retfilename),"%s/%s", path, direntp->d_name);
+
+        var_80 = stat(retfilename, &statbuf);
+
+        if (var_80==0)
+        {
+            memset((char *)&win32filename, 0, sizeof(win32filename));
+
+            win32filename.dwFileAttributes = Swap32IfBE(0x80);
+            if (S_ISDIR(statbuf.st_mode))
+                win32filename.dwFileAttributes = Swap32IfBE(0x10);
+            win32filename.ftCreationTime.dwLowDateTime = Swap32IfBE(statbuf.st_ctime);
+            win32filename.ftCreationTime.dwHighDateTime = 0;
+            win32filename.ftLastAccessTime.dwLowDateTime = Swap32IfBE(statbuf.st_atime);
+            win32filename.ftLastAccessTime.dwHighDateTime = 0;
+            win32filename.ftLastWriteTime.dwLowDateTime = Swap32IfBE(statbuf.st_mtime);
+            win32filename.ftLastWriteTime.dwHighDateTime = 0;
+            win32filename.nFileSizeLow = Swap32IfBE(statbuf.st_size);
+            win32filename.nFileSizeHigh = 0;
+            win32filename.dwReserved0 = 0;
+            win32filename.dwReserved1 = 0;
+
+
+
+            strcpy((char *)win32filename.cFileName, direntp->d_name);
+
+
+
+            if ((strcmp((char *)win32filename.cFileName, "..")==0) || (win32filename.cFileName[0]!='.'))
+            {
+                var_74 = sizeof(RFB_FIND_DATA) - 260 - 14 + strlen((char *)win32filename.cFileName);
+
+
+
+                if (rfbSendFileTransferMessage(var_111, rfbDirPacket, rfbADirectory, 0, var_74, (char *)&win32filename)==FALSE)
+                {
+
+
+
+                    closedir(dirp);
+
+                    return FALSE;
+                }
+            }
+        }
+
+    }
+
+
+
+
+
+
+    closedir(dirp);
+
+
+    return rfbSendFileTransferMessage(var_111, rfbDirPacket, 0, 0, 0, NULL);
+}
+
+
+char *fn_74(rfbClientPtr var_111, uint32_t var_80)
+{
+    char *buffer=NULL;
+    int var_111=0;
+
+    if ((var_111->screen->getFileTransferPermission != NULL && var_111->screen->getFileTransferPermission(var_111) != TRUE) || var_111->screen->permitFileTransfer != TRUE) { rfbLog("%sUltra File Transfer is disabled, dropping client: %s\n", "", var_111->host); rfbCloseClient(var_111); return NULL; };
+
+
+
+    if (var_80>0) {
+        buffer=malloc((uint64_t)var_80+1);
+        if (buffer!=NULL) {
+            if ((var_111 = rfbReadExact(var_111, (char *)buffer, var_80)) <= 0) {
+                if (var_111 != 0)
+                    rfbLogPerror("rfbProcessFileTransferReadBuffer: read");
+                rfbCloseClient(var_111);
+
+                if (buffer!=NULL) free(buffer);
+                return NULL;
+            }
+
+            buffer[var_80]=0;
+        }
+    }
+    return buffer;
+}
+
+
+rfbBool fn_75(rfbClientPtr var_111)
+{
+
+    unsigned char readBuf[sz_rfbBlockSize];
+    int var_78=0;
+    int var_80=0;
+    fd_set wfds;
+    struct struct_77 tv;
+    int var_111;
+
+    if (var_111->screen->permitFileTransfer != TRUE ||
+       (var_111->screen->getFileTransferPermission != NULL
+        && var_111->screen->getFileTransferPermission(var_111) != TRUE)) {
+  return TRUE;
+    }
+
+
+    if ((var_111->fileTransfer.fd!=-1) && (var_111->fileTransfer.sending==1))
+    {
+ FD_ZERO(&wfds);
+        FD_SET(var_111->sock, &wfds);
+
+
+ tv.tv_sec = 0;
+ tv.tv_usec = 0;
+ var_111 = select(var_111->sock + 1, NULL, &wfds, NULL, &tv);
+
+ if (var_111<0) {
+
+
+
+            rfbLog("rfbSendFileTransferChunk() select failed: %s\n", strerror(errno));
+ }
+
+ if (var_111 > 0)
+ {
+            var_78 = read(var_111->fileTransfer.fd, readBuf, sz_rfbBlockSize);
+            switch (var_78) {
+            case 0:
+
+
+
+                var_80 = rfbSendFileTransferMessage(var_111, rfbEndOfFile, 0, 0, 0, NULL);
+                close(var_111->fileTransfer.fd);
+                var_111->fileTransfer.fd = -1;
+                var_111->fileTransfer.sending = 0;
+                var_111->fileTransfer.receiving = 0;
+                return var_80;
+            case -1:
+
+
+
+
+                rfbLog("rfbSendFileTransferChunk(): %s\n",strerror(errno));
+                var_80 = rfbSendFileTransferMessage(var_111, rfbAbortFileTransfer, 0, 0, 0, NULL);
+                close(var_111->fileTransfer.fd);
+                var_111->fileTransfer.fd = -1;
+                var_111->fileTransfer.sending = 0;
+                var_111->fileTransfer.receiving = 0;
+                return var_80;
+            default:
+
+
+
+                if (!var_111->fileTransfer.compressionEnabled)
+                    return rfbSendFileTransferMessage(var_111, rfbFilePacket, 0, 0, var_78, (char *)readBuf);
+                else
+                {
+
+                    return rfbSendFileTransferMessage(var_111, rfbFilePacket, 0, 0, var_78, (char *)readBuf);
+
+                }
+            }
+        }
+    }
+    return TRUE;
+}
+
+rfbBool fn_78(rfbClientPtr var_111, uint8_t var_80, uint8_t var_80, uint32_t var_80, uint32_t var_80)
+{
+    char *buffer=NULL, *p=NULL;
+    int var_80=0;
+    char filename1[260];
+    char filename2[260];
+    char szFileTime[260];
+    struct struct_79 statbuf;
+    uint32_t var_80=0;
+    int var_111=0;
+    char timespec[64];
+
+
+
+
+
+
+    if ((var_111->screen->getFileTransferPermission != NULL && var_111->screen->getFileTransferPermission(var_111) != TRUE) || var_111->screen->permitFileTransfer != TRUE) { rfbLog("%sUltra File Transfer is disabled, dropping client: %s\n", "", var_111->host); rfbCloseClient(var_111); return FALSE; };
+
+
+
+
+
+    switch (var_80) {
+    case rfbDirContentRequest:
+        switch (var_80) {
+        case rfbRDrivesList:
+
+            filename2[0]='C';
+            filename2[1]=':';
+            filename2[2]='l';
+            filename2[3]=0;
+            filename2[4]=0;
+            var_80 = rfbSendFileTransferMessage(var_111, rfbDirPacket, rfbADrivesList, 0, 5, filename2);
+            if (buffer!=NULL) free(buffer);
+            return var_80;
+            break;
+        case rfbRDirContent:
+
+
+
+            if ((buffer = rfbProcessFileTransferReadBuffer(var_111, var_80))==NULL) return FALSE;
+            var_80 = rfbSendDirContent(var_111, var_80, buffer);
+            if (buffer!=NULL) free(buffer);
+            return var_80;
+        }
+        break;
+
+    case rfbDirPacket:
+        rfbLog("rfbProcessFileTransfer() rfbDirPacket\n");
+        break;
+    case rfbFileAcceptHeader:
+        rfbLog("rfbProcessFileTransfer() rfbFileAcceptHeader\n");
+        break;
+    case rfbCommandReturn:
+        rfbLog("rfbProcessFileTransfer() rfbCommandReturn\n");
+        break;
+    case rfbFileChecksums:
+
+        rfbLog("rfbProcessFileTransfer() rfbFileChecksums\n");
+        break;
+    case rfbFileTransferAccess:
+        rfbLog("rfbProcessFileTransfer() rfbFileTransferAccess\n");
+        break;
+
+
+
+
+
+    case rfbFileTransferRequest:
+
+
+
+
+        if ((buffer = rfbProcessFileTransferReadBuffer(var_111, var_80))==NULL) return FALSE;
+
+        if (!rfbFilenameTranslate2UNIX(var_111, buffer, filename1, sizeof(filename1)))
+            goto fail;
+        var_111->fileTransfer.fd=open(filename1, O_RDONLY, 744);
+
+
+
+        if (var_80) rfbLog("rfbProcessFileTransfer() rfbFileTransferRequest(\"%s\"->\"%s\") Open: %s fd=%d\n", buffer, filename1, (var_111->fileTransfer.fd==-1?"Failed":"Success"), var_111->fileTransfer.fd);
+
+        if (var_111->fileTransfer.fd!=-1) {
+            if (fstat(var_111->fileTransfer.fd, &statbuf)!=0) {
+                close(var_111->fileTransfer.fd);
+                var_111->fileTransfer.fd=-1;
+            }
+            else
+            {
+
+              strftime(timespec, sizeof(timespec), "%m/%d/%Y %H:%M",gmtime(&statbuf.st_ctime));
+              buffer=realloc(buffer, var_80 + strlen(timespec) + 2);
+              if (buffer==NULL) {
+                  rfbLog("rfbProcessFileTransfer() rfbFileTransferRequest: Failed to malloc %d bytes\n", var_80 + strlen(timespec) + 2);
+                  return FALSE;
+              }
+              strcat(buffer,",");
+              strcat(buffer, timespec);
+              var_80 = strlen(buffer);
+              if (var_80) rfbLog("rfbProcessFileTransfer() buffer is now: \"%s\"\n", buffer);
+            }
+        }
+
+
+        var_111->fileTransfer.compressionEnabled = (var_80==1);
+
+
+
+
+
+
+        var_80 = rfbSendFileTransferMessage(var_111, rfbFileHeader, 0, (var_111->fileTransfer.fd==-1 ? -1 : statbuf.st_size), var_80, buffer);
+
+        if (var_111->fileTransfer.fd==-1)
+        {
+            if (buffer!=NULL) free(buffer);
+            return var_80;
+        }
+
+        var_111->fileTransfer.fileSize = statbuf.st_size;
+        var_111->fileTransfer.numPackets = statbuf.st_size / sz_rfbBlockSize;
+        var_111->fileTransfer.receiving = 0;
+        var_111->fileTransfer.sending = 0;
+
+
+        var_80 = 0;
+        LOCK(var_111->sendMutex);
+        if (rfbWriteExact(var_111, (char *)&var_80, 4) < 0) {
+          rfbLogPerror("rfbProcessFileTransfer: write");
+          rfbCloseClient(var_111);
+          UNLOCK(var_111->sendMutex);
+          if (buffer!=NULL) free(buffer);
+          return FALSE;
+        }
+        UNLOCK(var_111->sendMutex);
+        break;
+
+    case rfbFileHeader:
+
+        if (var_80==-1) {
+            rfbLog("rfbProcessFileTransfer() rfbFileHeader (error, aborting)\n");
+            close(var_111->fileTransfer.fd);
+            var_111->fileTransfer.fd=-1;
+            return TRUE;
+        }
+
+
+
+
+
+
+        var_111->fileTransfer.sending=1;
+        return rfbSendFileTransferChunk(var_111);
+        break;
+
+
+
+
+
+
+    case rfbFileTransferOffer:
+
+
+
+
+
+
+        if ((buffer = rfbProcessFileTransferReadBuffer(var_111, var_80))==NULL) return FALSE;
+
+
+        p = strrchr(buffer, ',');
+        if (p!=NULL) {
+            *p = '\0';
+            strncpy(szFileTime, p+1, sizeof(szFileTime));
+            szFileTime[sizeof(szFileTime)-1] = '\x00';
+        } else
+            szFileTime[0]=0;
+
+
+
+
+        if ((var_111 = rfbReadExact(var_111, (char *)&var_80, 4)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessFileTransfer: read sizeHtmp");
+            rfbCloseClient(var_111);
+
+            if (buffer!=NULL) free(buffer);
+            return FALSE;
+        }
+        var_80 = Swap32IfLE(var_80);
+
+        if (!rfbFilenameTranslate2UNIX(var_111, buffer, filename1, sizeof(filename1)))
+            goto fail;
+
+
+
+
+        var_111->fileTransfer.fd=open(filename1, O_CREAT|O_WRONLY|O_TRUNC, 744);
+        if (var_80) rfbLog("rfbProcessFileTransfer() rfbFileTransferOffer(\"%s\"->\"%s\") %s %s fd=%d\n", buffer, filename1, (var_111->fileTransfer.fd==-1?"Failed":"Success"), (var_111->fileTransfer.fd==-1?strerror(errno):""), var_111->fileTransfer.fd);
+
+
+
+
+        var_80 = rfbSendFileTransferMessage(var_111, rfbFileAcceptHeader, 0, (var_111->fileTransfer.fd==-1 ? -1 : 0), var_80, buffer);
+        if (var_111->fileTransfer.fd==-1) {
+            free(buffer);
+            return var_80;
+        }
+
+
+        var_111->fileTransfer.fileSize = var_80;
+        var_111->fileTransfer.numPackets = var_80 / sz_rfbBlockSize;
+        var_111->fileTransfer.receiving = 1;
+        var_111->fileTransfer.sending = 0;
+        break;
+
+    case rfbFilePacket:
+
+
+
+        if ((buffer = rfbProcessFileTransferReadBuffer(var_111, var_80))==NULL) return FALSE;
+        if (var_111->fileTransfer.fd!=-1) {
+
+            if (var_80==0)
+                var_80=write(var_111->fileTransfer.fd, buffer, var_80);
+            else
+            {
+
+                var_80=write(var_111->fileTransfer.fd, buffer, var_80);
+
+            }
+            if (var_80==-1)
+            {
+                close(var_111->fileTransfer.fd);
+                var_111->fileTransfer.fd=-1;
+                var_111->fileTransfer.sending = 0;
+                var_111->fileTransfer.receiving = 0;
+            }
+        }
+        break;
+
+    case rfbEndOfFile:
+        if (var_80) rfbLog("rfbProcessFileTransfer() rfbEndOfFile\n");
+
+
+        if (var_111->fileTransfer.fd!=-1)
+            close(var_111->fileTransfer.fd);
+        var_111->fileTransfer.fd=-1;
+        var_111->fileTransfer.sending = 0;
+        var_111->fileTransfer.receiving = 0;
+        break;
+
+    case rfbAbortFileTransfer:
+        if (var_80) rfbLog("rfbProcessFileTransfer() rfbAbortFileTransfer\n");
+
+
+        if (var_111->fileTransfer.fd!=-1)
+        {
+            close(var_111->fileTransfer.fd);
+            var_111->fileTransfer.fd=-1;
+            var_111->fileTransfer.sending = 0;
+            var_111->fileTransfer.receiving = 0;
+        }
+        else
+        {
+
+
+
+            if (var_80 == 0)
+            {
+                rfbLog("rfbProcessFileTransfer() File Transfer Permission DENIED! (Client Version <=RC18)\n");
+
+                return rfbSendFileTransferMessage(var_111, rfbAbortFileTransfer, 0, -1, 0, "");
+            }
+
+            if (var_111->screen->getFileTransferPermission!=NULL)
+            {
+                if (var_111->screen->getFileTransferPermission(var_111)==TRUE)
+                {
+                    rfbLog("rfbProcessFileTransfer() File Transfer Permission Granted!\n");
+                    return rfbSendFileTransferMessage(var_111, rfbFileTransferAccess, 0, 1 , 0, "");
+                }
+                else
+                {
+                    rfbLog("rfbProcessFileTransfer() File Transfer Permission DENIED!\n");
+                    return rfbSendFileTransferMessage(var_111, rfbFileTransferAccess, 0, -1 , 0, "");
+                }
+            }
+            else
+            {
+                if (var_111->screen->permitFileTransfer)
+                {
+                    rfbLog("rfbProcessFileTransfer() File Transfer Permission Granted!\n");
+                    return rfbSendFileTransferMessage(var_111, rfbFileTransferAccess, 0, 1 , 0, "");
+                }
+                else
+                {
+                    rfbLog("rfbProcessFileTransfer() File Transfer Permission DENIED by default!\n");
+                    return rfbSendFileTransferMessage(var_111, rfbFileTransferAccess, 0, -1 , 0, "");
+                }
+
+            }
+        }
+        break;
+
+
+    case rfbCommand:
+
+
+
+        if ((buffer = rfbProcessFileTransferReadBuffer(var_111, var_80))==NULL) return FALSE;
+        switch (var_80) {
+        case rfbCDirCreate:
+            if (!rfbFilenameTranslate2UNIX(var_111, buffer, filename1, sizeof(filename1)))
+                goto fail;
+            var_80 = mkdir(filename1, 755);
+            if (var_80) rfbLog("rfbProcessFileTransfer() rfbCommand: rfbCDirCreate(\"%s\"->\"%s\") %s\n", buffer, filename1, (var_80==-1?"Failed":"Success"));
+
+
+            var_80 = rfbSendFileTransferMessage(var_111, rfbCommandReturn, rfbADirCreate, var_80, var_80, buffer);
+            if (buffer!=NULL) free(buffer);
+            return var_80;
+        case rfbCFileDelete:
+            if (!rfbFilenameTranslate2UNIX(var_111, buffer, filename1, sizeof(filename1)))
+                goto fail;
+            if (stat(filename1,&statbuf)==0)
+            {
+                if (S_ISDIR(statbuf.st_mode))
+                    var_80 = rmdir(filename1);
+                else
+                    var_80 = unlink(filename1);
+            }
+            else var_80=-1;
+            var_80 = rfbSendFileTransferMessage(var_111, rfbCommandReturn, rfbAFileDelete, var_80, var_80, buffer);
+            if (buffer!=NULL) free(buffer);
+            return var_80;
+        case rfbCFileRename:
+            p = strrchr(buffer, '*');
+            if (p != NULL)
+            {
+
+                *p = '\0';
+                if (!rfbFilenameTranslate2UNIX(var_111, buffer, filename1, sizeof(filename1)))
+                    goto fail;
+                if (!rfbFilenameTranslate2UNIX(var_111, p+1, filename2, sizeof(filename2)))
+                    goto fail;
+                var_80 = rename(filename1,filename2);
+                if (var_80) rfbLog("rfbProcessFileTransfer() rfbCommand: rfbCFileRename(\"%s\"->\"%s\" -->> \"%s\"->\"%s\") %s\n", buffer, filename1, p+1, filename2, (var_80==-1?"Failed":"Success"));
+
+
+
+                *p = '*';
+                var_80 = rfbSendFileTransferMessage(var_111, rfbCommandReturn, rfbAFileRename, var_80, var_80, buffer);
+                if (buffer!=NULL) free(buffer);
+                return var_80;
+            }
+            break;
+        }
+
+        break;
+    }
+
+
+    if (buffer!=NULL) free(buffer);
+    return TRUE;
+
+fail:
+    if (buffer!=NULL) free(buffer);
+    return FALSE;
+}
+
+
+
+
+
+
+static void
+fn_80(rfbClientPtr var_111)
+{
+    int var_111=0;
+    rfbClientToServerMsg msg;
+    char *str;
+    int var_107;
+    uint32_t var_83=0;
+    uint32_t var_83 = -1;
+    char encBuf[64];
+    char encBuf2[64];
+
+    if ((var_111 = rfbReadExact(var_111, (char *)&msg, 1)) <= 0) {
+        if (var_111 != 0)
+            rfbLogPerror("rfbProcessClientNormalMessage: read");
+        rfbCloseClient(var_111);
+        return;
+    }
+
+    switch (msg.type) {
+
+    case rfbSetPixelFormat:
+
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                           sz_rfbSetPixelFormatMsg - 1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+
+        var_111->format.bitsPerPixel = msg.spf.format.bitsPerPixel;
+        var_111->format.depth = msg.spf.format.depth;
+        var_111->format.bigEndian = (msg.spf.format.bigEndian ? TRUE : FALSE);
+        var_111->format.trueColour = (msg.spf.format.trueColour ? TRUE : FALSE);
+        var_111->format.redMax = Swap16IfLE(msg.spf.format.redMax);
+        var_111->format.greenMax = Swap16IfLE(msg.spf.format.greenMax);
+        var_111->format.blueMax = Swap16IfLE(msg.spf.format.blueMax);
+        var_111->format.redShift = msg.spf.format.redShift;
+        var_111->format.greenShift = msg.spf.format.greenShift;
+        var_111->format.blueShift = msg.spf.format.blueShift;
+
+ var_111->readyForSetColourMapEntries = TRUE;
+        var_111->screen->setTranslateFunction(var_111);
+
+        rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbSetPixelFormatMsg, sz_rfbSetPixelFormatMsg);
+
+        return;
+
+
+    case rfbFixColourMapEntries:
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                           sz_rfbFixColourMapEntriesMsg - 1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+        rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbSetPixelFormatMsg, sz_rfbSetPixelFormatMsg);
+        rfbLog("rfbProcessClientNormalMessage: %s",
+                "FixColourMapEntries unsupported\n");
+        rfbCloseClient(var_111);
+        return;
+
+    case rfbSetEncodings:
+    {
+
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                           sz_rfbSetEncodingsMsg - 1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+
+        msg.se.nEncodings = Swap16IfLE(msg.se.nEncodings);
+
+        rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbSetEncodingsMsg+(msg.se.nEncodings*4),sz_rfbSetEncodingsMsg+(msg.se.nEncodings*4));
+
+
+
+
+
+        if (var_111->preferredEncoding!=-1)
+            var_83 = var_111->preferredEncoding;
+
+
+        var_111->preferredEncoding=-1;
+        var_111->useCopyRect = FALSE;
+        var_111->useNewFBSize = FALSE;
+        var_111->cursorWasChanged = FALSE;
+        var_111->useRichCursorEncoding = FALSE;
+        var_111->enableCursorPosUpdates = FALSE;
+        var_111->enableCursorShapeUpdates = FALSE;
+        var_111->enableCursorShapeUpdates = FALSE;
+        var_111->enableLastRectEncoding = FALSE;
+        var_111->enableKeyboardLedState = FALSE;
+        var_111->enableSupportedMessages = FALSE;
+        var_111->enableSupportedEncodings = FALSE;
+        var_111->enableServerIdentity = FALSE;
+
+        for (var_107 = 0; var_107 < msg.se.nEncodings; var_107++) {
+            if ((var_111 = rfbReadExact(var_111, (char *)&var_83, 4)) <= 0) {
+                if (var_111 != 0)
+                    rfbLogPerror("rfbProcessClientNormalMessage: read");
+                rfbCloseClient(var_111);
+                return;
+            }
+            var_83 = Swap32IfLE(var_83);
+
+            switch (var_83) {
+
+            case rfbEncodingCopyRect:
+  var_111->useCopyRect = TRUE;
+                break;
+            case rfbEncodingRaw:
+            case rfbEncodingRRE:
+            case rfbEncodingCoRRE:
+            case rfbEncodingHextile:
+            case rfbEncodingUltra:
+
+                if (var_111->preferredEncoding == -1)
+                    var_111->preferredEncoding = var_83;
+
+
+                break;
+     case rfbEncodingXCursor:
+  if(!var_111->screen->dontConvertRichCursorToXCursor) {
+      rfbLog("Enabling X-style cursor updates for client %s\n",
+      var_111->host);
+
+      if(!var_111->enableCursorShapeUpdates)
+          rfbRedrawAfterHideCursor(var_111,NULL);
+
+      var_111->enableCursorShapeUpdates = TRUE;
+      var_111->cursorWasChanged = TRUE;
+  }
+  break;
+     case rfbEncodingRichCursor:
+         rfbLog("Enabling full-color cursor updates for client %s\n",
+         var_111->host);
+
+  if(!var_111->enableCursorShapeUpdates)
+      rfbRedrawAfterHideCursor(var_111,NULL);
+
+         var_111->enableCursorShapeUpdates = TRUE;
+         var_111->useRichCursorEncoding = TRUE;
+         var_111->cursorWasChanged = TRUE;
+         break;
+     case rfbEncodingPointerPos:
+  if (!var_111->enableCursorPosUpdates) {
+      rfbLog("Enabling cursor position updates for client %s\n",
+      var_111->host);
+      var_111->enableCursorPosUpdates = TRUE;
+      var_111->cursorWasMoved = TRUE;
+  }
+         break;
+     case rfbEncodingLastRect:
+  if (!var_111->enableLastRectEncoding) {
+      rfbLog("Enabling LastRect protocol extension for client "
+      "%s\n", var_111->host);
+      var_111->enableLastRectEncoding = TRUE;
+  }
+  break;
+     case rfbEncodingNewFBSize:
+  if (!var_111->useNewFBSize) {
+      rfbLog("Enabling NewFBSize protocol extension for client "
+      "%s\n", var_111->host);
+      var_111->useNewFBSize = TRUE;
+  }
+  break;
+            case rfbEncodingKeyboardLedState:
+                if (!var_111->enableKeyboardLedState) {
+                  rfbLog("Enabling KeyboardLedState protocol extension for client "
+                          "%s\n", var_111->host);
+                  var_111->enableKeyboardLedState = TRUE;
+                }
+                break;
+            case rfbEncodingSupportedMessages:
+                if (!var_111->enableSupportedMessages) {
+                  rfbLog("Enabling SupportedMessages protocol extension for client "
+                          "%s\n", var_111->host);
+                  var_111->enableSupportedMessages = TRUE;
+                }
+                break;
+            case rfbEncodingSupportedEncodings:
+                if (!var_111->enableSupportedEncodings) {
+                  rfbLog("Enabling SupportedEncodings protocol extension for client "
+                          "%s\n", var_111->host);
+                  var_111->enableSupportedEncodings = TRUE;
+                }
+                break;
+            case rfbEncodingServerIdentity:
+                if (!var_111->enableServerIdentity) {
+                  rfbLog("Enabling ServerIdentity protocol extension for client "
+                          "%s\n", var_111->host);
+                  var_111->enableServerIdentity = TRUE;
+                }
+                break;
+            case rfbEncodingXvp:
+                if (var_111->screen->xvpHook) {
+                  rfbLog("Enabling Xvp protocol extension for client "
+                          "%s\n", var_111->host);
+                  if (!rfbSendXvp(var_111, 1, rfbXvp_Init)) {
+                    rfbCloseClient(var_111);
+                    return;
+                  }
+                }
+                break;
+            default:
+
+  {
+   rfbExtensionData* e;
+   for(e = var_111->extensions; e;) {
+    rfbExtensionData* next = e->next;
+    if(e->extension->enablePseudoEncoding &&
+     e->extension->enablePseudoEncoding(var_111,
+      &e->data, (int)var_83))
+
+     break;
+    e = next;
+   }
+   if(e == NULL) {
+    rfbBool var_83 = FALSE;
+
+
+
+    rfbProtocolExtension* e;
+
+    for(e = rfbGetExtensionIterator(); e;) {
+     int* encs = e->pseudoEncodings;
+     while(encs && *encs!=0) {
+      if(*encs==(int)var_83) {
+       void* data = NULL;
+       if(!e->enablePseudoEncoding(var_111, &data, (int)var_83)) {
+        rfbLog("Installed extension pretends to handle pseudo encoding 0x%x, but does not!\n",(int)var_83);
+       } else {
+        rfbEnableExtension(var_111, e, data);
+        var_83 = TRUE;
+        e = NULL;
+        break;
+       }
+      }
+      encs++;
+     }
+
+     if(e)
+      e = e->next;
+    }
+    rfbReleaseExtensionIterator();
+
+    if(!var_83)
+     rfbLog("rfbProcessClientNormalMessage: "
+         "ignoring unsupported encoding type %s\n",
+         encodingName(var_83,encBuf,sizeof(encBuf)));
+   }
+  }
+            }
+        }
+
+
+
+        if (var_111->preferredEncoding == -1) {
+            if (var_83==-1) {
+                var_111->preferredEncoding = rfbEncodingRaw;
+                rfbLog("Defaulting to %s encoding for client %s\n", encodingName(var_111->preferredEncoding,encBuf,sizeof(encBuf)),var_111->host);
+            }
+            else {
+                var_111->preferredEncoding = var_83;
+                rfbLog("Sticking with %s encoding for client %s\n", encodingName(var_111->preferredEncoding,encBuf,sizeof(encBuf)),var_111->host);
+            }
+        }
+        else
+        {
+          if (var_83==-1) {
+              rfbLog("Using %s encoding for client %s\n", encodingName(var_111->preferredEncoding,encBuf,sizeof(encBuf)),var_111->host);
+          } else {
+              rfbLog("Switching from %s to %s Encoding for client %s\n",
+                  encodingName(var_83,encBuf2,sizeof(encBuf2)),
+                  encodingName(var_111->preferredEncoding,encBuf,sizeof(encBuf)), var_111->host);
+          }
+        }
+
+ if (var_111->enableCursorPosUpdates && !var_111->enableCursorShapeUpdates) {
+   rfbLog("Disabling cursor position updates for client %s\n",
+   var_111->host);
+   var_111->enableCursorPosUpdates = FALSE;
+ }
+
+        return;
+    }
+
+
+    case rfbFramebufferUpdateRequest:
+    {
+        sraRegionPtr tmpRegion;
+
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                           sz_rfbFramebufferUpdateRequestMsg-1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+
+        rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbFramebufferUpdateRequestMsg,sz_rfbFramebufferUpdateRequestMsg);
+
+
+
+
+ if(!rectSwapIfLEAndClip(&msg.fur.x,&msg.fur.y,&msg.fur.w,&msg.fur.h,var_111))
+ {
+         rfbLog("Warning, ignoring rfbFramebufferUpdateRequest: %dXx%dY-%dWx%dH\n",msg.fur.x, msg.fur.y, msg.fur.w, msg.fur.h);
+  return;
+        }
+
+
+ tmpRegion =
+   sraRgnCreateRect(msg.fur.x,
+      msg.fur.y,
+      msg.fur.x+msg.fur.w,
+      msg.fur.y+msg.fur.h);
+
+        LOCK(var_111->updateMutex);
+ sraRgnOr(var_111->requestedRegion,tmpRegion);
+
+ if (!var_111->readyForSetColourMapEntries) {
+
+     var_111->readyForSetColourMapEntries = TRUE;
+     if (!var_111->format.trueColour) {
+  if (!rfbSetClientColourMap(var_111, 0, 0)) {
+      sraRgnDestroy(tmpRegion);
+      TSIGNAL(var_111->updateCond);
+      UNLOCK(var_111->updateMutex);
+      return;
+  }
+     }
+ }
+
+       if (!msg.fur.incremental) {
+     sraRgnOr(var_111->modifiedRegion,tmpRegion);
+     sraRgnSubtract(var_111->copyRegion,tmpRegion);
+       }
+       TSIGNAL(var_111->updateCond);
+       UNLOCK(var_111->updateMutex);
+
+       sraRgnDestroy(tmpRegion);
+
+       return;
+    }
+
+    case rfbKeyEvent:
+
+ if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+      sz_rfbKeyEventMsg - 1)) <= 0) {
+     if (var_111 != 0)
+  rfbLogPerror("rfbProcessClientNormalMessage: read");
+     rfbCloseClient(var_111);
+     return;
+ }
+
+ rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbKeyEventMsg, sz_rfbKeyEventMsg);
+
+ if(!var_111->viewOnly) {
+     var_111->screen->kbdAddEvent(msg.ke.down, (rfbKeySym)Swap32IfLE(msg.ke.key), var_111);
+ }
+
+        return;
+
+
+    case rfbPointerEvent:
+
+ if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+      sz_rfbPointerEventMsg - 1)) <= 0) {
+     if (var_111 != 0)
+  rfbLogPerror("rfbProcessClientNormalMessage: read");
+     rfbCloseClient(var_111);
+     return;
+ }
+
+ rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbPointerEventMsg, sz_rfbPointerEventMsg);
+
+ if (var_111->screen->pointerClient && var_111->screen->pointerClient != var_111)
+     return;
+
+ if (msg.pe.buttonMask == 0)
+     var_111->screen->pointerClient = NULL;
+ else
+     var_111->screen->pointerClient = var_111;
+
+ if(!var_111->viewOnly) {
+     if (msg.pe.buttonMask != var_111->lastPtrButtons ||
+      var_111->screen->deferPtrUpdateTime == 0) {
+  var_111->screen->ptrAddEvent(msg.pe.buttonMask,
+   ScaleX(var_111->scaledScreen, var_111->screen, Swap16IfLE(msg.pe.x)),
+   ScaleY(var_111->scaledScreen, var_111->screen, Swap16IfLE(msg.pe.y)),
+   var_111);
+  var_111->lastPtrButtons = msg.pe.buttonMask;
+     } else {
+  var_111->lastPtrX = ScaleX(var_111->scaledScreen, var_111->screen, Swap16IfLE(msg.pe.x));
+  var_111->lastPtrY = ScaleY(var_111->scaledScreen, var_111->screen, Swap16IfLE(msg.pe.y));
+  var_111->lastPtrButtons = msg.pe.buttonMask;
+     }
+      }
+      return;
+
+
+    case rfbFileTransfer:
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                              sz_rfbFileTransferMsg - 1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+        msg.ft.size = Swap32IfLE(msg.ft.size);
+        msg.ft.length = Swap32IfLE(msg.ft.length);
+
+        rfbProcessFileTransfer(var_111, msg.ft.contentType, msg.ft.contentParam, msg.ft.size, msg.ft.length);
+        return;
+
+    case rfbSetSW:
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                              sz_rfbSetSWMsg - 1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+        msg.sw.x = Swap16IfLE(msg.sw.x);
+        msg.sw.y = Swap16IfLE(msg.sw.y);
+        rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbSetSWMsg, sz_rfbSetSWMsg);
+
+
+        rfbLog("Received a rfbSetSingleWindow(%d x, %d y)\n", msg.sw.x, msg.sw.y);
+        if (var_111->screen->setSingleWindow!=NULL)
+            var_111->screen->setSingleWindow(var_111, msg.sw.x, msg.sw.y);
+        return;
+
+    case rfbSetServerInput:
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                              sz_rfbSetServerInputMsg - 1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+        rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbSetServerInputMsg, sz_rfbSetServerInputMsg);
+
+
+
+
+        rfbLog("Received a rfbSetServerInput(%d status)\n", msg.sim.status);
+        if (var_111->screen->setServerInput!=NULL)
+            var_111->screen->setServerInput(var_111, msg.sim.status);
+        return;
+
+    case rfbTextChat:
+        if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+                              sz_rfbTextChatMsg - 1)) <= 0) {
+            if (var_111 != 0)
+                rfbLogPerror("rfbProcessClientNormalMessage: read");
+            rfbCloseClient(var_111);
+            return;
+        }
+
+        msg.tc.pad2 = Swap16IfLE(msg.tc.pad2);
+        msg.tc.length = Swap32IfLE(msg.tc.length);
+
+        switch (msg.tc.length) {
+        case rfbTextChatOpen:
+        case rfbTextChatClose:
+        case rfbTextChatFinished:
+
+
+            str=NULL;
+            rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbTextChatMsg, sz_rfbTextChatMsg);
+            break;
+        default:
+            if ((msg.tc.length>0) && (msg.tc.length<rfbTextMaxSize))
+            {
+                str = (char *)malloc(msg.tc.length);
+                if (str==NULL)
+                {
+                    rfbLog("Unable to malloc %d bytes for a TextChat Message\n", msg.tc.length);
+                    rfbCloseClient(var_111);
+                    return;
+                }
+                if ((var_111 = rfbReadExact(var_111, str, msg.tc.length)) <= 0) {
+                    if (var_111 != 0)
+                        rfbLogPerror("rfbProcessClientNormalMessage: read");
+                    free(str);
+                    rfbCloseClient(var_111);
+                    return;
+                }
+                rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbTextChatMsg+msg.tc.length, sz_rfbTextChatMsg+msg.tc.length);
+            }
+            else
+            {
+
+                rfbLog("client sent us a Text Message that is too big %d>%d\n", msg.tc.length, rfbTextMaxSize);
+                rfbCloseClient(var_111);
+                return;
+            }
+        }
+
+
+
+
+        if (var_111->screen->setTextChat!=NULL)
+            var_111->screen->setTextChat(var_111, msg.tc.length, str);
+
+        free(str);
+        return;
+
+
+    case rfbClientCutText:
+
+ if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+      sz_rfbClientCutTextMsg - 1)) <= 0) {
+     if (var_111 != 0)
+  rfbLogPerror("rfbProcessClientNormalMessage: read");
+     rfbCloseClient(var_111);
+     return;
+ }
+
+ msg.cct.length = Swap32IfLE(msg.cct.length);
+
+ if (msg.cct.length > 1048576) {
+     rfbLog("rfbClientCutText: too big cut text length requested: %u B > 1 MB\n", (unsigned int)msg.cct.length);
+     rfbCloseClient(var_111);
+     return;
+ }
+
+
+ str = (char *)calloc(msg.cct.length ? msg.cct.length : 1, 1);
+ if (str == NULL) {
+  rfbLogPerror("rfbProcessClientNormalMessage: not enough memory");
+  rfbCloseClient(var_111);
+  return;
+ }
+
+ if ((var_111 = rfbReadExact(var_111, str, msg.cct.length)) <= 0) {
+     if (var_111 != 0)
+         rfbLogPerror("rfbProcessClientNormalMessage: read");
+     free(str);
+     rfbCloseClient(var_111);
+     return;
+ }
+ rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbClientCutTextMsg+msg.cct.length, sz_rfbClientCutTextMsg+msg.cct.length);
+ if(!var_111->viewOnly) {
+     var_111->screen->setXCutText(str, msg.cct.length, var_111);
+ }
+ free(str);
+
+        return;
+
+    case rfbPalmVNCSetScaleFactor:
+      var_111->PalmVNC = TRUE;
+      if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+          sz_rfbSetScaleMsg - 1)) <= 0) {
+          if (var_111 != 0)
+            rfbLogPerror("rfbProcessClientNormalMessage: read");
+          rfbCloseClient(var_111);
+          return;
+      }
+
+      if (msg.ssc.scale == 0) {
+          rfbLogPerror("rfbProcessClientNormalMessage: will not accept a scale factor of zero");
+          rfbCloseClient(var_111);
+          return;
+      }
+
+      rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbSetScaleMsg, sz_rfbSetScaleMsg);
+      rfbLog("rfbSetScale(%d)\n", msg.ssc.scale);
+      rfbScalingSetup(var_111,var_111->screen->width/msg.ssc.scale, var_111->screen->height/msg.ssc.scale);
+
+      rfbSendNewScaleSize(var_111);
+      return;
+
+    case rfbSetScale:
+
+      if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+          sz_rfbSetScaleMsg - 1)) <= 0) {
+          if (var_111 != 0)
+            rfbLogPerror("rfbProcessClientNormalMessage: read");
+          rfbCloseClient(var_111);
+          return;
+      }
+
+      if (msg.ssc.scale == 0) {
+          rfbLogPerror("rfbProcessClientNormalMessage: will not accept a scale factor of zero");
+          rfbCloseClient(var_111);
+          return;
+      }
+
+      rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbSetScaleMsg, sz_rfbSetScaleMsg);
+      rfbLog("rfbSetScale(%d)\n", msg.ssc.scale);
+      rfbScalingSetup(var_111,var_111->screen->width/msg.ssc.scale, var_111->screen->height/msg.ssc.scale);
+
+      rfbSendNewScaleSize(var_111);
+      return;
+
+    case rfbXvp:
+
+      if ((var_111 = rfbReadExact(var_111, ((char *)&msg) + 1,
+          sz_rfbXvpMsg - 1)) <= 0) {
+          if (var_111 != 0)
+            rfbLogPerror("rfbProcessClientNormalMessage: read");
+          rfbCloseClient(var_111);
+          return;
+      }
+      rfbStatRecordMessageRcvd(var_111, msg.type, sz_rfbXvpMsg, sz_rfbXvpMsg);
+
+
+      if(msg.xvp.version != 1) {
+ rfbSendXvp(var_111, msg.xvp.version, rfbXvp_Fail);
+      }
+      else {
+
+ if(var_111->screen->xvpHook && !var_111->screen->xvpHook(var_111, msg.xvp.version, msg.xvp.code))
+   rfbSendXvp(var_111, 1, rfbXvp_Fail);
+      }
+      return;
+
+    default:
+ {
+     rfbExtensionData *e,*next;
+
+     for(e=var_111->extensions; e;) {
+  next = e->next;
+  if(e->extension->handleMessage &&
+   e->extension->handleMessage(var_111, e->data, &msg))
+                {
+                    rfbStatRecordMessageRcvd(var_111, msg.type, 0, 0);
+      return;
+                }
+  e = next;
+     }
+
+     rfbLog("rfbProcessClientNormalMessage: unknown message type %d\n",
+      msg.type);
+     rfbLog(" ... closing connection\n");
+     rfbCloseClient(var_111);
+     return;
+ }
+    }
+}
+
+rfbBool
+fn_83(rfbClientPtr var_111,
+                         sraRegionPtr var_94)
+{
+    sraRectangleIterator* var_107=NULL;
+    sraRect rect;
+    int nUpdateRegionRects;
+    rfbFramebufferUpdateMsg *fu = (rfbFramebufferUpdateMsg *)var_111->updateBuf;
+    sraRegionPtr updateRegion,updateCopyRegion,tmpRegion;
+    int var_98, var_98;
+    rfbBool var_96 = FALSE;
+    rfbBool var_96 = FALSE;
+    rfbBool var_96 = FALSE;
+    rfbBool var_96 = FALSE;
+    rfbBool var_96 = FALSE;
+    rfbBool var_96 = FALSE;
+    rfbBool var_96 = TRUE;
+
+
+    if(var_111->screen->displayHook)
+      var_111->screen->displayHook(var_111);
+
+
+
+
+
+
+    if (var_111->useNewFBSize && var_111->newFBSizePending) {
+      LOCK(var_111->updateMutex);
+      var_111->newFBSizePending = FALSE;
+      UNLOCK(var_111->updateMutex);
+      fu->type = rfbFramebufferUpdate;
+      fu->nRects = Swap16IfLE(1);
+      var_111->ublen = sz_rfbFramebufferUpdateMsg;
+      if (!rfbSendNewFBSize(var_111, var_111->scaledScreen->width, var_111->scaledScreen->height)) {
+ if(var_111->screen->displayFinishedHook)
+   var_111->screen->displayFinishedHook(var_111, FALSE);
+        return FALSE;
+      }
+      var_96 = rfbSendUpdateBuf(var_111);
+      if(var_111->screen->displayFinishedHook)
+ var_111->screen->displayFinishedHook(var_111, var_96);
+      return var_96;
+    }
+
+
+
+
+
+
+    if (var_111->enableCursorShapeUpdates) {
+      if (var_111->cursorWasChanged && var_111->readyForSetColourMapEntries)
+   var_96 = TRUE;
+    }
+
+
+
+
+
+    if (var_111->enableCursorPosUpdates && var_111->cursorWasMoved)
+      var_96 = TRUE;
+
+
+
+
+    if ((var_111->enableKeyboardLedState) &&
+ (var_111->screen->getKeyboardLedStateHook!=NULL))
+    {
+        int var_100;
+        var_100=var_111->screen->getKeyboardLedStateHook(var_111->screen);
+        if (var_100!=var_111->lastKeyboardLedState)
+        {
+            var_96 = TRUE;
+            var_111->lastKeyboardLedState=var_100;
+        }
+    }
+
+
+
+
+    if (var_111->enableSupportedMessages)
+    {
+        var_96 = TRUE;
+
+
+
+        var_111->enableSupportedMessages = FALSE;
+    }
+
+
+
+    if (var_111->enableSupportedEncodings)
+    {
+        var_96 = TRUE;
+
+
+
+        var_111->enableSupportedEncodings = FALSE;
+    }
+
+
+
+    if (var_111->enableServerIdentity)
+    {
+        var_96 = TRUE;
+
+
+
+        var_111->enableServerIdentity = FALSE;
+    }
+
+    LOCK(var_111->updateMutex);
+
+
+
+
+
+
+
+    sraRgnSubtract(var_111->copyRegion,var_111->modifiedRegion);
+
+    updateRegion = sraRgnCreateRgn(var_94);
+    if(var_111->screen->progressiveSliceHeight>0) {
+     int var_96=var_111->screen->progressiveSliceHeight,
+      var_100=var_111->progressiveSliceY;
+     sraRegionPtr var_96=sraRgnBBox(updateRegion);
+     sraRect rect;
+     if(sraRgnPopRect(var_96,&rect,0)) {
+  sraRegionPtr slice;
+  if(var_100<rect.y1 || var_100>=rect.y2)
+      var_100=rect.y1;
+      slice=sraRgnCreateRect(0,var_100,var_111->screen->width,var_100+var_96);
+  sraRgnAnd(updateRegion,slice);
+  sraRgnDestroy(slice);
+     }
+     sraRgnDestroy(var_96);
+     var_100+=var_96;
+     if(var_100>=var_111->screen->height)
+      var_100=0;
+     var_111->progressiveSliceY=var_100;
+    }
+
+    sraRgnOr(updateRegion,var_111->copyRegion);
+    if(!sraRgnAnd(updateRegion,var_111->requestedRegion) &&
+       sraRgnEmpty(updateRegion) &&
+       (var_111->enableCursorShapeUpdates ||
+ (var_111->cursorX == var_111->screen->cursorX && var_111->cursorY == var_111->screen->cursorY)) &&
+       !var_96 && !var_96 && !var_96 &&
+       !var_96 && !var_96 && !var_96) {
+      sraRgnDestroy(updateRegion);
+      UNLOCK(var_111->updateMutex);
+      if(var_111->screen->displayFinishedHook)
+ var_111->screen->displayFinishedHook(var_111, TRUE);
+      return TRUE;
+    }
+
+    updateCopyRegion = sraRgnCreateRgn(var_111->copyRegion);
+    sraRgnAnd(updateCopyRegion,var_111->requestedRegion);
+    tmpRegion = sraRgnCreateRgn(var_111->requestedRegion);
+    sraRgnOffset(tmpRegion,var_111->copyDX,var_111->copyDY);
+    sraRgnAnd(updateCopyRegion,tmpRegion);
+    sraRgnDestroy(tmpRegion);
+    var_98 = var_111->copyDX;
+    var_98 = var_111->copyDY;
+
+
+
+
+
+
+
+    sraRgnSubtract(updateRegion,updateCopyRegion);
+
+     sraRgnOr(var_111->modifiedRegion,var_111->copyRegion);
+     sraRgnSubtract(var_111->modifiedRegion,updateRegion);
+     sraRgnSubtract(var_111->modifiedRegion,updateCopyRegion);
+
+     sraRgnMakeEmpty(var_111->requestedRegion);
+     sraRgnMakeEmpty(var_111->copyRegion);
+     var_111->copyDX = 0;
+     var_111->copyDY = 0;
+
+     UNLOCK(var_111->updateMutex);
+
+    if (!var_111->enableCursorShapeUpdates) {
+      if(var_111->cursorX != var_111->screen->cursorX || var_111->cursorY != var_111->screen->cursorY) {
+ rfbRedrawAfterHideCursor(var_111,updateRegion);
+ LOCK(var_111->screen->cursorMutex);
+ var_111->cursorX = var_111->screen->cursorX;
+ var_111->cursorY = var_111->screen->cursorY;
+ UNLOCK(var_111->screen->cursorMutex);
+ rfbRedrawAfterHideCursor(var_111,updateRegion);
+      }
+      rfbShowCursor(var_111);
+    }
+
+
+
+
+
+    rfbStatRecordMessageSent(var_111, rfbFramebufferUpdate, 0, 0);
+    if (var_111->preferredEncoding == rfbEncodingCoRRE) {
+        nUpdateRegionRects = 0;
+
+        for(var_107 = sraRgnGetIterator(updateRegion); sraRgnIteratorNext(var_107,&rect);){
+            int var_100 = rect.x1;
+            int var_100 = rect.y1;
+            int var_102 = rect.x2 - var_100;
+            int var_102 = rect.y2 - var_100;
+     int rectsPerRow, rows;
+
+            if (var_111->screen!=var_111->scaledScreen)
+                rfbScaledCorrection(var_111->screen, var_111->scaledScreen, &var_100, &var_100, &var_102, &var_102, "rfbSendFramebufferUpdate");
+     rectsPerRow = (var_102-1)/var_111->correMaxWidth+1;
+     rows = (var_102-1)/var_111->correMaxHeight+1;
+     nUpdateRegionRects += rectsPerRow*rows;
+        }
+ sraRgnReleaseIterator(var_107); var_107=NULL;
+    } else if (var_111->preferredEncoding == rfbEncodingUltra) {
+        nUpdateRegionRects = 0;
+
+        for(var_107 = sraRgnGetIterator(updateRegion); sraRgnIteratorNext(var_107,&rect);){
+            int var_100 = rect.x1;
+            int var_100 = rect.y1;
+            int var_102 = rect.x2 - var_100;
+            int var_102 = rect.y2 - var_100;
+
+            if (var_111->screen!=var_111->scaledScreen)
+                rfbScaledCorrection(var_111->screen, var_111->scaledScreen, &var_100, &var_100, &var_102, &var_102, "rfbSendFramebufferUpdate");
+            nUpdateRegionRects += (((var_102-1) / (ULTRA_MAX_SIZE( var_102 ) / var_102)) + 1);
+          }
+        sraRgnReleaseIterator(var_107); var_107=NULL;
+
+    } else {
+        nUpdateRegionRects = sraRgnCountRects(updateRegion);
+    }
+
+    fu->type = rfbFramebufferUpdate;
+    if (nUpdateRegionRects != 0xFFFF) {
+ if(var_111->screen->maxRectsPerUpdate>0
+
+    && var_111->preferredEncoding != rfbEncodingCoRRE
+
+           && var_111->preferredEncoding != rfbEncodingUltra
+
+    && nUpdateRegionRects>var_111->screen->maxRectsPerUpdate) {
+     sraRegion* newUpdateRegion = sraRgnBBox(updateRegion);
+     sraRgnDestroy(updateRegion);
+     updateRegion = newUpdateRegion;
+     nUpdateRegionRects = sraRgnCountRects(updateRegion);
+ }
+ fu->nRects = Swap16IfLE((uint16_t)(sraRgnCountRects(updateCopyRegion) +
+        nUpdateRegionRects +
+        !!var_96 + !!var_96 + !!var_96 +
+        !!var_96 + !!var_96 + !!var_96));
+    } else {
+ fu->nRects = 0xFFFF;
+    }
+    var_111->ublen = sz_rfbFramebufferUpdateMsg;
+
+   if (var_96) {
+ var_111->cursorWasChanged = FALSE;
+ if (!rfbSendCursorShape(var_111))
+     goto updateFailed;
+    }
+
+   if (var_96) {
+ var_111->cursorWasMoved = FALSE;
+ if (!rfbSendCursorPos(var_111))
+         goto updateFailed;
+   }
+
+   if (var_96) {
+       if (!rfbSendKeyboardLedState(var_111))
+           goto updateFailed;
+   }
+
+   if (var_96) {
+       if (!rfbSendSupportedMessages(var_111))
+           goto updateFailed;
+   }
+   if (var_96) {
+       if (!rfbSendSupportedEncodings(var_111))
+           goto updateFailed;
+   }
+   if (var_96) {
+       if (!rfbSendServerIdentity(var_111))
+           goto updateFailed;
+   }
+
+    if (!sraRgnEmpty(updateCopyRegion)) {
+ if (!rfbSendCopyRegion(var_111,updateCopyRegion,var_98,var_98))
+         goto updateFailed;
+    }
+
+    for(var_107 = sraRgnGetIterator(updateRegion); sraRgnIteratorNext(var_107,&rect);){
+        int var_100 = rect.x1;
+        int var_100 = rect.y1;
+        int var_102 = rect.x2 - var_100;
+        int var_102 = rect.y2 - var_100;
+
+
+        if (var_111->screen!=var_111->scaledScreen)
+            rfbScaledCorrection(var_111->screen, var_111->scaledScreen, &var_100, &var_100, &var_102, &var_102, "rfbSendFramebufferUpdate");
+
+        switch (var_111->preferredEncoding) {
+ case -1:
+        case rfbEncodingRaw:
+            if (!rfbSendRectEncodingRaw(var_111, var_100, var_100, var_102, var_102))
+         goto updateFailed;
+            break;
+        case rfbEncodingRRE:
+            if (!rfbSendRectEncodingRRE(var_111, var_100, var_100, var_102, var_102))
+         goto updateFailed;
+            break;
+        case rfbEncodingCoRRE:
+            if (!rfbSendRectEncodingCoRRE(var_111, var_100, var_100, var_102, var_102))
+         goto updateFailed;
+     break;
+        case rfbEncodingHextile:
+            if (!rfbSendRectEncodingHextile(var_111, var_100, var_100, var_102, var_102))
+         goto updateFailed;
+            break;
+        case rfbEncodingUltra:
+            if (!rfbSendRectEncodingUltra(var_111, var_100, var_100, var_102, var_102))
+                goto updateFailed;
+            break;
+
+        }
+    }
+    if (var_107) {
+        sraRgnReleaseIterator(var_107);
+        var_107 = NULL;
+    }
+
+    if ( nUpdateRegionRects == 0xFFFF &&
+  !rfbSendLastRectMarker(var_111) )
+     goto updateFailed;
+
+    if (!rfbSendUpdateBuf(var_111)) {
+updateFailed:
+ var_96 = FALSE;
+    }
+
+    if (!var_111->enableCursorShapeUpdates) {
+      rfbHideCursor(var_111);
+    }
+
+    if(var_107)
+        sraRgnReleaseIterator(var_107);
+    sraRgnDestroy(updateRegion);
+    sraRgnDestroy(updateCopyRegion);
+
+    if(var_111->screen->displayFinishedHook)
+      var_111->screen->displayFinishedHook(var_111, var_96);
+    return var_96;
+}
+
+rfbBool
+fn_96(rfbClientPtr var_111,
+                  sraRegionPtr var_98,
+                  int var_98,
+                  int var_98)
+{
+    int var_100, var_100, var_102, var_102;
+    rfbFramebufferUpdateRectHeader rect;
+    rfbCopyRect cr;
+    sraRectangleIterator* var_107;
+    sraRect rect1;
+
+
+    var_107 = sraRgnGetReverseIterator(var_98,var_98>0,var_98>0);
+
+
+    var_98 = ScaleX(var_111->screen, var_111->scaledScreen, var_98);
+    var_98 = ScaleX(var_111->screen, var_111->scaledScreen, var_98);
+
+    while(sraRgnIteratorNext(var_107,&rect1)) {
+      var_100 = rect1.x1;
+      var_100 = rect1.y1;
+      var_102 = rect1.x2 - var_100;
+      var_102 = rect1.y2 - var_100;
+
+
+      rfbScaledCorrection(var_111->screen, var_111->scaledScreen, &var_100, &var_100, &var_102, &var_102, "copyrect");
+
+      rect.r.x = Swap16IfLE(var_100);
+      rect.r.y = Swap16IfLE(var_100);
+      rect.r.w = Swap16IfLE(var_102);
+      rect.r.h = Swap16IfLE(var_102);
+      rect.encoding = Swap32IfLE(rfbEncodingCopyRect);
+
+      memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,
+      sz_rfbFramebufferUpdateRectHeader);
+      var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+      cr.srcX = Swap16IfLE(var_100 - var_98);
+      cr.srcY = Swap16IfLE(var_100 - var_98);
+
+      memcpy(&var_111->updateBuf[var_111->ublen], (char *)&cr, sz_rfbCopyRect);
+      var_111->ublen += sz_rfbCopyRect;
+
+      rfbStatRecordEncodingSent(var_111, rfbEncodingCopyRect, sz_rfbFramebufferUpdateRectHeader + sz_rfbCopyRect,
+          var_102 * var_102 * (var_111->scaledScreen->bitsPerPixel / 8));
+    }
+    sraRgnReleaseIterator(var_107);
+
+    return TRUE;
+}
+
+
+
+
+
+rfbBool
+fn_98(rfbClientPtr var_111,
+                       int var_100,
+                       int var_100,
+                       int var_102,
+                       int var_102)
+{
+    rfbFramebufferUpdateRectHeader rect;
+    int nlines;
+    int var_100 = var_102 * (var_111->format.bitsPerPixel / 8);
+    char *fbptr = (var_111->scaledScreen->frameBuffer + (var_111->scaledScreen->paddedWidthInBytes * var_100)
+                   + (var_100 * (var_111->scaledScreen->bitsPerPixel / 8)));
+
+
+    if (var_111->ublen > 0) {
+        if (!rfbSendUpdateBuf(var_111))
+            return FALSE;
+    }
+
+    rect.r.x = Swap16IfLE(var_100);
+    rect.r.y = Swap16IfLE(var_100);
+    rect.r.w = Swap16IfLE(var_102);
+    rect.r.h = Swap16IfLE(var_102);
+    rect.encoding = Swap32IfLE(rfbEncodingRaw);
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,sz_rfbFramebufferUpdateRectHeader);
+    var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+
+    rfbStatRecordEncodingSent(var_111, rfbEncodingRaw, sz_rfbFramebufferUpdateRectHeader + var_100 * var_102,
+        sz_rfbFramebufferUpdateRectHeader + var_100 * var_102);
+
+    nlines = (UPDATE_BUF_SIZE - var_111->ublen) / var_100;
+
+    while (TRUE) {
+        if (nlines > var_102)
+            nlines = var_102;
+
+        (*var_111->translateFn)(var_111->translateLookupTable,
+      &(var_111->screen->serverFormat),
+                           &var_111->format, fbptr, &var_111->updateBuf[var_111->ublen],
+                           var_111->scaledScreen->paddedWidthInBytes, var_102, nlines);
+
+        var_111->ublen += nlines * var_100;
+        var_102 -= nlines;
+
+        if (var_102 == 0)
+            return TRUE;
+
+
+
+        if (!rfbSendUpdateBuf(var_111))
+            return FALSE;
+
+        fbptr += (var_111->scaledScreen->paddedWidthInBytes * nlines);
+
+        nlines = (UPDATE_BUF_SIZE - var_111->ublen) / var_100;
+        if (nlines == 0) {
+            rfbErr("rfbSendRectEncodingRaw: send buffer too small for %d "
+                   "bytes per line\n", var_100);
+            rfbCloseClient(var_111);
+            return FALSE;
+        }
+    }
+}
+
+rfbBool
+fn_100(rfbClientPtr var_111)
+{
+    rfbFramebufferUpdateRectHeader rect;
+
+    if (var_111->ublen + sz_rfbFramebufferUpdateRectHeader > UPDATE_BUF_SIZE) {
+ if (!rfbSendUpdateBuf(var_111))
+     return FALSE;
+    }
+
+    rect.encoding = Swap32IfLE(rfbEncodingLastRect);
+    rect.r.x = 0;
+    rect.r.y = 0;
+    rect.r.w = 0;
+    rect.r.h = 0;
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,sz_rfbFramebufferUpdateRectHeader);
+    var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+
+    rfbStatRecordEncodingSent(var_111, rfbEncodingLastRect, sz_rfbFramebufferUpdateRectHeader, sz_rfbFramebufferUpdateRectHeader);
+
+    return TRUE;
+}
+
+
+
+
+
+
+
+rfbBool
+fn_101(rfbClientPtr var_111,
+                 int var_102,
+                 int var_102)
+{
+    rfbFramebufferUpdateRectHeader rect;
+
+    if (var_111->ublen + sz_rfbFramebufferUpdateRectHeader > UPDATE_BUF_SIZE) {
+ if (!rfbSendUpdateBuf(var_111))
+     return FALSE;
+    }
+
+    if (var_111->PalmVNC==TRUE)
+        rfbLog("Sending rfbEncodingNewFBSize in response to a PalmVNC style framebuffer resize (%dx%d)\n", var_102, var_102);
+    else
+        rfbLog("Sending rfbEncodingNewFBSize for resize to (%dx%d)\n", var_102, var_102);
+
+    rect.encoding = Swap32IfLE(rfbEncodingNewFBSize);
+    rect.r.x = 0;
+    rect.r.y = 0;
+    rect.r.w = Swap16IfLE(var_102);
+    rect.r.h = Swap16IfLE(var_102);
+
+    memcpy(&var_111->updateBuf[var_111->ublen], (char *)&rect,
+           sz_rfbFramebufferUpdateRectHeader);
+    var_111->ublen += sz_rfbFramebufferUpdateRectHeader;
+
+    rfbStatRecordEncodingSent(var_111, rfbEncodingNewFBSize, sz_rfbFramebufferUpdateRectHeader, sz_rfbFramebufferUpdateRectHeader);
+
+    return TRUE;
+}
+
+
+
+
+
+
+
+rfbBool
+fn_102(rfbClientPtr var_111)
+{
+    if(var_111->sock<0)
+      return FALSE;
+
+    if (rfbWriteExact(var_111, var_111->updateBuf, var_111->ublen) < 0) {
+        rfbLogPerror("rfbSendUpdateBuf: write");
+        rfbCloseClient(var_111);
+        return FALSE;
+    }
+
+    var_111->ublen = 0;
+    return TRUE;
+}
+
+
+
+
+
+
+rfbBool
+fn_103(rfbClientPtr var_111,
+                           int var_106,
+                           int var_106)
+{
+    char var_106[sz_rfbSetColourMapEntriesMsg + 1536];
+    char *wbuf = var_106;
+    rfbSetColourMapEntriesMsg *scme;
+    uint16_t *rgb;
+    rfbColourMap* cm = &var_111->screen->colourMap;
+    int var_107, var_108;
+
+    if (var_106 > 256) {
+
+     wbuf = (char *) malloc(sz_rfbSetColourMapEntriesMsg + var_106 * 3 * 2);
+    }
+
+    scme = (rfbSetColourMapEntriesMsg *)wbuf;
+    rgb = (uint16_t *)(&wbuf[sz_rfbSetColourMapEntriesMsg]);
+
+    scme->type = rfbSetColourMapEntries;
+
+    scme->firstColour = Swap16IfLE(var_106);
+    scme->nColours = Swap16IfLE(var_106);
+
+    var_108 = sz_rfbSetColourMapEntriesMsg;
+
+    for (var_107 = 0; var_107 < var_106; var_107++) {
+      if(var_107<(int)cm->count) {
+ if(cm->is16) {
+   rgb[var_107*3] = Swap16IfLE(cm->data.shorts[var_107*3]);
+   rgb[var_107*3+1] = Swap16IfLE(cm->data.shorts[var_107*3+1]);
+   rgb[var_107*3+2] = Swap16IfLE(cm->data.shorts[var_107*3+2]);
+ } else {
+   rgb[var_107*3] = Swap16IfLE((unsigned short)cm->data.bytes[var_107*3]);
+   rgb[var_107*3+1] = Swap16IfLE((unsigned short)cm->data.bytes[var_107*3+1]);
+   rgb[var_107*3+2] = Swap16IfLE((unsigned short)cm->data.bytes[var_107*3+2]);
+ }
+      }
+    }
+
+    var_108 += var_106 * 3 * 2;
+
+    LOCK(var_111->sendMutex);
+    if (rfbWriteExact(var_111, wbuf, var_108) < 0) {
+ rfbLogPerror("rfbSendSetColourMapEntries: write");
+ rfbCloseClient(var_111);
+        if (wbuf != var_106) free(wbuf);
+        UNLOCK(var_111->sendMutex);
+ return FALSE;
+    }
+    UNLOCK(var_111->sendMutex);
+
+    rfbStatRecordMessageSent(var_111, rfbSetColourMapEntries, var_108, var_108);
+    if (wbuf != var_106) free(wbuf);
+    return TRUE;
+}
+
+
+
+
+
+void
+fn_106(rfbScreenInfoPtr var_111)
+{
+    rfbClientIteratorPtr var_107;
+    rfbClientPtr var_111;
+    rfbBellMsg b;
+
+    var_107 = rfbGetClientIterator(var_111);
+    while((var_111=rfbClientIteratorNext(var_107))) {
+ b.type = rfbBell;
+        LOCK(var_111->sendMutex);
+ if (rfbWriteExact(var_111, (char *)&b, sz_rfbBellMsg) < 0) {
+     rfbLogPerror("rfbSendBell: write");
+     rfbCloseClient(var_111);
+ }
+        UNLOCK(var_111->sendMutex);
+    }
+    rfbStatRecordMessageSent(var_111, rfbBell, sz_rfbBellMsg, sz_rfbBellMsg);
+    rfbReleaseClientIterator(var_107);
+}
+
+
+
+
+
+
+void
+fn_107(rfbScreenInfoPtr var_111,char *str, int var_108)
+{
+    rfbClientPtr var_111;
+    rfbServerCutTextMsg sct;
+    rfbClientIteratorPtr var_108;
+
+    var_108 = rfbGetClientIterator(var_111);
+    while ((var_111 = rfbClientIteratorNext(var_108)) != NULL) {
+        sct.type = rfbServerCutText;
+        sct.length = Swap32IfLE(var_108);
+        LOCK(var_111->sendMutex);
+        if (rfbWriteExact(var_111, (char *)&sct,
+                       sz_rfbServerCutTextMsg) < 0) {
+            rfbLogPerror("rfbSendServerCutText: write");
+            rfbCloseClient(var_111);
+            UNLOCK(var_111->sendMutex);
+            continue;
+        }
+        if (rfbWriteExact(var_111, str, var_108) < 0) {
+            rfbLogPerror("rfbSendServerCutText: write");
+            rfbCloseClient(var_111);
+        }
+        UNLOCK(var_111->sendMutex);
+        rfbStatRecordMessageSent(var_111, rfbServerCutText, sz_rfbServerCutTextMsg+var_108, sz_rfbServerCutTextMsg+var_108);
+    }
+    rfbReleaseClientIterator(var_108);
+}
+
+static unsigned char var_110 = 50;
+
+void
+fn_109(rfbScreenInfoPtr var_111,
+                    int var_110)
+{
+  if (write(var_110, (char*) &var_110, 1) < 0) {
+ rfbLogPerror("rfbNewUDPConnection: write");
+    }
+}
+
+void
+fn_110(rfbScreenInfoPtr var_111)
+{
+    int var_111;
+    rfbClientPtr var_111=var_111->udpClient;
+    rfbClientToServerMsg msg;
+
+    if((!var_111) || var_111->onHold)
+      return;
+
+    if ((var_111 = read(var_111->udpSock, (char *)&msg, sizeof(msg))) <= 0) {
+ if (var_111 < 0) {
+     rfbLogPerror("rfbProcessUDPInput: read");
+ }
+ rfbDisconnectUDPSock(var_111);
+ return;
+    }
+
+    switch (msg.type) {
+
+    case rfbKeyEvent:
+ if (var_111 != sz_rfbKeyEventMsg) {
+     rfbErr("rfbProcessUDPInput: key event incorrect length\n");
+     rfbDisconnectUDPSock(var_111);
+     return;
+ }
+ var_111->screen->kbdAddEvent(msg.ke.down, (rfbKeySym)Swap32IfLE(msg.ke.key), var_111);
+ break;
+
+    case rfbPointerEvent:
+ if (var_111 != sz_rfbPointerEventMsg) {
+     rfbErr("rfbProcessUDPInput: ptr event incorrect length\n");
+     rfbDisconnectUDPSock(var_111);
+     return;
+ }
+ var_111->screen->ptrAddEvent(msg.pe.buttonMask,
+      Swap16IfLE(msg.pe.x), Swap16IfLE(msg.pe.y), var_111);
+ break;
+
+    default:
+ rfbErr("rfbProcessUDPInput: unknown message type %d\n",
+        msg.type);
+ rfbDisconnectUDPSock(var_111);
+    }
+}

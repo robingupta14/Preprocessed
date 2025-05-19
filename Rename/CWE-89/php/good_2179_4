@@ -1,0 +1,743 @@
+<?php
+
+
+    
+    $var_0 = new class_0($var_1);
+
+	
+	
+	
+	$var_2 = array();
+	if (($var_3 == "c" || $var_3 == "w") && $var_4)	{
+		$var_5 = $var_1->query("SELECT * FROM host, extended_host_information ehi WHERE host_id = '".$var_4."' AND ehi.host_host_id = host.host_id LIMIT 1");
+
+		
+		if ($var_5->numRows())	{
+			$var_2 = array_map("myDecode", $var_5->fetchRow());
+			
+			$var_9 = explode(',', $var_2["host_notification_options"]);
+			foreach ($var_9 as $var_10 => $var_11)
+				$var_2["host_notifOpts"][trim($var_11)] = 1;
+
+			
+			$var_9 = explode(',', $var_2["host_stalking_options"]);
+			foreach ($var_9 as $var_10 => $var_11)
+				$var_2["host_stalOpts"][trim($var_11)] = 1;
+			$var_5->free();
+
+			
+			$var_5 = $var_1->query("SELECT DISTINCT contactgroup_cg_id FROM contactgroup_host_relation WHERE host_host_id = '".$var_4."'");
+			for($var_13 = 0; $var_14 = $var_5->fetchRow(); $var_13++)
+				$var_2["host_cgs"][$var_13] = $var_14["contactgroup_cg_id"];
+			$var_5->free();
+
+			
+			$var_5 = $var_1->query("SELECT DISTINCT contact_id FROM contact_host_relation WHERE host_host_id = '".$var_4."'");
+			for ($var_13 = 0; $var_15 = $var_5->fetchRow(); $var_13++)
+				$var_2["host_cs"][$var_13] = $var_15["contact_id"];
+			$var_5->free();
+
+			
+			$var_5 = $var_1->query("SELECT DISTINCT host_parent_hp_id FROM host_hostparent_relation WHERE host_host_id = '".$var_4."'");
+			for($var_13 = 0; $var_16 = $var_5->fetchRow(); $var_13++)
+				$var_2["host_parents"][$var_13] = $var_16["host_parent_hp_id"];
+			$var_5->free();
+
+			
+			$var_5 = $var_1->query("SELECT DISTINCT service_service_id FROM host_service_relation WHERE host_host_id = '".$var_4."'");
+			for($var_13 = 0; $var_17 = $var_5->fetchRow(); $var_13++){
+				$var_18 = $var_1->query("SELECT service_register FROM service WHERE service_id = '".$var_17['service_service_id']."' LIMIT 1");
+				$var_19 = $var_18->fetchRow();
+				if ($var_19['service_register'] == 0)
+					$var_2["host_svTpls"][$var_13] = $var_17["service_service_id"];
+
+			}
+			$var_5->free();
+
+            
+            $var_5 = $var_1->query('SELECT DISTINCT hostcategories_hc_id 
+                FROM hostcategories_relation hcr, hostcategories hc
+                WHERE hcr.hostcategories_hc_id = hc.hc_id
+                AND hc.level IS NULL
+                AND hcr.host_host_id = \''.$var_4.'\'');
+            for ($var_13 = 0; $var_20 = $var_5->fetchRow(); $var_13++)
+                $var_2["host_hcs"][$var_13] = $var_20['hostcategories_hc_id'];
+            $var_5->free();
+                        
+                        
+                        $var_21 = $var_1->query("SELECT hc.hc_id 
+                            FROM hostcategories hc, hostcategories_relation hcr
+                            WHERE hcr.host_host_id = " . $var_1->escape($var_4). "
+                            AND hcr.hostcategories_hc_id = hc.hc_id
+                            AND hc.level IS NOT NULL
+                            ORDER BY hc.level ASC
+                            LIMIT 1");
+                        if ($var_21->numRows()) {
+                            $var_23 = $var_21->fetchRow();
+                            $var_2['criticality_id'] = $var_23['hc_id'];
+                        }
+		}
+	}
+        
+        $var_24 = CentreonData::getInstance();
+        $var_25 = $var_0->getCustomMacro(isset($var_4) ? $var_4 : null);
+        $var_24->addJsData('clone-values-macro', htmlspecialchars(
+                          json_encode($var_25), 
+                          var_28
+                          )
+        );
+        $var_24->addJsData('clone-count-macro', count($var_25));        
+        
+        $var_29 = $var_0->getTemplates(isset($var_4) ? $var_4 : null);
+        $var_24->addJsData('clone-values-template', htmlspecialchars(
+                                    json_encode($var_29), 
+                                    var_28
+                                )
+        );
+        $var_24->addJsData('clone-count-template', count($var_29));
+        
+	
+	
+	
+
+	
+	$var_31 = array();
+	if (isset($_GET["host_id"]) && $_GET["host_id"]){
+		$var_5 = $var_1->query("SELECT host_id, host_name FROM host WHERE host_template_model_htm_id = '".$var_1->escape($_GET["host_id"])."'");
+		while($var_32 = $var_5->fetchRow())
+			$var_31[$var_32["host_id"]] = $var_32["host_name"];
+		$var_5->free();
+	}
+
+	
+	$var_33 = array(NULL=>NULL);
+	$var_5 = $var_1->query("SELECT host_id, host_name, host_template_model_htm_id FROM host WHERE host_register = '0' AND host_id != '".$var_4."' ORDER BY host_name");
+	while($var_34 = $var_5->fetchRow())	{
+		if (!$var_34["host_name"])
+			$var_34["host_name"] = getMyHostName($var_34["host_template_model_htm_id"])."'";
+		if (!isset($var_31[$var_34["host_id"]]))
+			$var_33[$var_34["host_id"]] = $var_34["host_name"];
+	}
+	$var_5->free();
+	
+	$var_35 = array();
+	$var_5 = $var_1->query("SELECT service_id, service_description, service_template_model_stm_id FROM service WHERE service_register = '0' ORDER BY service_description");
+	while($var_17 = $var_5->fetchRow())	{
+		if (!$var_17["service_description"])
+			$var_17["service_description"] = getMyServiceName($var_17["service_template_model_stm_id"])."'";
+		else	{
+			$var_17["service_description"] = str_replace('
+			$svTpl["service_description"] = str_replace('
+		}
+		$var_35[$var_17["service_id"]] = $var_17["service_description"];
+	}
+	$var_5->free();
+
+	
+	$var_36 = array(NULL=>NULL);
+	$var_5 = $var_1->query("SELECT tp_id, tp_name FROM timeperiod ORDER BY tp_name");
+	while($var_37 = $var_5->fetchRow())
+		$var_36[$var_37["tp_id"]] = $var_37["tp_name"];
+	$var_5->free();
+
+	
+	$var_38 = array(NULL=>NULL);
+	$var_5 = $var_1->query("SELECT command_id, command_name FROM command WHERE command_type = '2' ORDER BY command_name");
+	while($var_39 = $var_5->fetchRow())
+		$var_38[$var_39["command_id"]] = $var_39["command_name"];
+	$var_5->free();
+
+	
+	$var_40 = array();
+	$var_41 = new class_1($var_1);
+	$var_40 = $var_41->getListContactgroup(true);
+        
+	
+	$var_43 = array();
+	$var_5 = $var_1->query("SELECT contact_id, contact_name FROM contact WHERE contact_register = 1 ORDER BY contact_name");
+	while($var_15 = $var_5->fetchRow())
+		$var_43[$var_15["contact_id"]] = $var_15["contact_name"];
+	$var_5->free();
+
+    
+    $var_44 = array();
+    $var_5 = $var_1->query("SELECT hc_id, hc_name FROM hostcategories WHERE level IS NULL ORDER BY hc_name");
+    while ($var_20 = $var_5->fetchRow())
+        $var_44[$var_20["hc_id"]] = $var_20["hc_name"];
+    $var_5->free();
+
+	
+	$var_45 = array();
+	$var_46 = 0;
+	$var_5 = $var_1->query("SELECT host_tpl_id FROM host_template_relation WHERE host_host_id = '". $var_4 ."' ORDER BY `order`");
+	while($var_47 = $var_5->fetchRow()) {
+		$var_45[$var_46] = $var_47["host_tpl_id"];
+		$var_46++;
+	}
+	$var_5->free();
+
+	
+	$var_48 = 0;
+	$var_5 = $var_1->query("SELECT host_macro_id, host_macro_name, host_macro_value, host_host_id FROM on_demand_macro_host WHERE host_host_id = '". $var_4 ."' ORDER BY `host_macro_id`");
+	while ($var_49 = $var_5->fetchRow()){
+		$od_macro_id[$var_48] = $var_49["host_macro_id"];
+		$od_macro_name[$var_48] = str_replace("\$_HOST", "", $var_49["host_macro_name"]);
+		$od_macro_name[$var_48] = str_replace("\$", "", $od_macro_name[$var_48]);
+		$od_macro_name[$var_48] = str_replace("
+		$od_macro_name[$var_48] = str_replace("
+		$od_macro_value[$var_48] = str_replace("
+		$od_macro_value[$var_48] = str_replace("
+		$od_macro_host_id[$var_48] = $var_49["var_50"];
+		$var_48++;
+	}
+	$var_5->var_12();
+
+	
+	$var_51 = array();
+	$var_51 = return_image_list(1);
+	$var_52 = array();
+	$var_52 = return_image_list(2);
+	
+	
+	
+	
+	
+	
+	$var_53 		= array("var_54"=>"30");
+	$var_55		= array("size"=>"6");
+	$var_56 = array("style" => "width: 300px; height: 100px;");
+	$var_57 = array("style" => "width: 300px; height: 200px;");
+	$var_58 	= array("rows"=>"5", "cols"=>"40");
+	$var_59	= '<table><tr><td><div class="ams">{label_2}</div>{unselected}</td><td align="center">{add}<br /><br /><br />{remove}</td><td><div class="ams">{label_3}</div>{selected}</td></tr></table>';
+
+	
+	
+	
+	$var_60 = new class_2('Form', 'post', "?p=".$var_61);
+	if ($var_3 == "a")
+		$var_60->addElement('header', 'title', _("Add a Host Template"));
+	else if ($var_3 == "c")
+		$var_60->addElement('header', 'title', _("Modify a Host Template"));
+	else if ($var_3 == "w")
+		$var_60->addElement('header', 'title', _("View a Host Template"));
+	else if ($var_3 == "mc")
+		$var_60->addElement('header', 'title', _("Massive Change"));
+
+	
+	
+	
+	
+	$var_60->addElement('header', 'information', _("General Information"));
+	
+	if ($var_3 != "mc")	{
+		$var_60->addElement('text', 'host_name', _("Host Template Name"), $var_53);
+		$var_60->addElement('text', 'host_alias', _("Alias"), $var_53);
+	}
+	$var_60->addElement('text', 'host_address', _("IP Address / DNS"), $var_53);
+	$var_60->addElement('select', 'host_snmp_version', _("Version"), array(null=>null, 1=>"1", "2c"=>"2c", 3=>"3"));
+	$var_60->addElement('text', 'host_snmp_community', _("SNMP Community"), $var_53);
+
+	$var_60->addElement('select', 'host_template_model_htm_id', _("Host Template"), $var_33);
+	$var_60->addElement('text', 'host_parallel_template', _("Host Parallel Templates"), $var_33);
+
+	if ($var_3 == "mc")	{
+		$var_63 = array();
+		$var_63[] = class_2::createElement('radio', 'mc_mod_tplp', null, _("Incremental"), '0');
+		$var_63[] = class_2::createElement('radio', 'mc_mod_tplp', null, _("Replacement"), '1');
+		$var_60->addGroup($var_63, 'mc_mod_tplp', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_tplp'=>'0'));
+	}
+
+	?>
+	<script type="text/javascript" src="lib/wz_tooltip/wz_tooltip.js"></script>
+	<?php
+	$var_60->addElement('static', 'tplTextParallel', _("A host can have multiple templates, their orders have a significant importance")."<br><a href='
+	$var_60->var_62('static', 'tplText', _("var_66 var_67 var_68 var_69 var_70 var_71 var_72 var_73-var_74 var_68 var_75"));
+
+        $var_76 = array();
+        $var_76[] = $var_60->addElement(
+                'text', 
+                'macroInput[
+                _('var_77 var_78'),
+                array(
+                    'id' => 'macroInput_
+                    'var_54' => 25
+                )
+                );
+        $var_76[] = $var_60->addElement(
+                'text', 
+                'macroValue[
+                _('var_77 var_11'),
+                array(
+                    'id' => 'macroValue_
+                    'var_54' => 25
+                )
+                );
+        $var_76[] = $var_60->addElement(
+                'checkbox',
+                'macroPassword[
+                _('var_79'),
+                null,
+                array(
+                    'id' => 'macroPassword_
+                    'var_80' => 'var_81:var_82(var_83, false)'
+                )
+        );
+        
+        $cloneSetTemplate = array();
+        $cloneSetTemplate[] = $form->addElement(
+                'var_84', 
+                'tpSelect[
+                _("Template"), 
+                (array(null => null) + $hostObj->getList(false, true))
+                ,
+                array(
+                    "id" => "tpSelect_
+                    "type" => "select-one"
+                    )
+                );
+        
+	
+	$form->addElement('var_85', 'check', _("Host Check Properties"));
+	$var_60->addElement('select', 'command_command_id', _("Check Command"), $var_38, 'onchange=setArgument(this.form,"command_command_id","example1")');
+	$var_60->addElement('text', 'command_command_id_arg1', _("Args"), $var_53);
+
+	$var_60->addElement('text', 'host_max_check_attempts', _("Max Check Attempts"), $var_55);
+
+	$var_86[] = class_2::createElement('radio', 'host_event_handler_enabled', null, _("Yes"), '1');
+	$var_86[] = class_2::createElement('radio', 'host_event_handler_enabled', null, _("No"), '0');
+	$var_86[] = class_2::createElement('radio', 'host_event_handler_enabled', null, _("Default"), '2');
+	$var_60->addGroup($var_86, 'host_event_handler_enabled', _("Event Handler Enabled"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_event_handler_enabled' => '2'));
+	$var_60->addElement('select', 'command_command_id2', _("Event Handler"), $var_38, 'onchange=setArgument(this.form,"command_command_id2","example2")');
+	$var_60->addElement('text', 'command_command_id_arg2', _("Args"), $var_53);
+
+	
+
+	$var_60->addElement('text', 'host_check_interval', _("Normal Check Interval"), $var_55);
+	$var_60->addElement('text', 'host_retry_check_interval', _("Retry Check Interval"), $var_55);
+
+	$var_87[] = class_2::createElement('radio', 'host_active_checks_enabled', null, _("Yes"), '1');
+	$var_87[] = class_2::createElement('radio', 'host_active_checks_enabled', null, _("No"), '0');
+	$var_87[] = class_2::createElement('radio', 'host_active_checks_enabled', null, _("Default"), '2');
+	$var_60->addGroup($var_87, 'host_active_checks_enabled', _("Active Checks Enabled"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_active_checks_enabled' => '2'));
+
+	$var_88[] = class_2::createElement('radio', 'host_passive_checks_enabled', null, _("Yes"), '1');
+	$var_88[] = class_2::createElement('radio', 'host_passive_checks_enabled', null, _("No"), '0');
+	$var_88[] = class_2::createElement('radio', 'host_passive_checks_enabled', null, _("Default"), '2');
+	$var_60->addGroup($var_88, 'host_passive_checks_enabled', _("Passive Checks Enabled"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_passive_checks_enabled' => '2'));
+
+	$var_60->addElement('select', 'timeperiod_tp_id', _("Check Period"), $var_36);
+
+	
+	
+	
+	$var_60->addElement('header', 'notification', _("Notification"));
+	$var_89[] = class_2::createElement('radio', 'host_notifications_enabled', null, _("Yes"), '1');
+	$var_89[] = class_2::createElement('radio', 'host_notifications_enabled', null, _("No"), '0');
+	$var_89[] = class_2::createElement('radio', 'host_notifications_enabled', null, _("Default"), '2');
+	$var_60->addGroup($var_89, 'host_notifications_enabled', _("Notification Enabled"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_notifications_enabled' => '2'));
+
+    
+    $var_60->addElement('checkbox', 'contact_additive_inheritance', _('Contact additive inheritance'));
+    $var_60->addElement('checkbox', 'cg_additive_inheritance', _('Contact group additive inheritance'));
+        
+	if ($var_3 == "mc")	{
+		$var_90 = array();
+		$var_90[] = &class_2::createElement('radio', 'mc_mod_notifopt_first_notification_delay', null, _("Incremental"), '0');
+		$var_90[] = &class_2::createElement('radio', 'mc_mod_notifopt_first_notification_delay', null, _("Replacement"), '1');
+		$var_60->addGroup($var_90, 'mc_mod_notifopt_first_notification_delay', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_notifopt_first_notification_delay'=>'0'));
+	}
+
+	$var_60->addElement('text', 'host_first_notification_delay', _("First notification delay"), $var_55);
+
+	if ($var_3 == "mc")	{
+		$var_91 = array();
+		$var_91[] = class_2::createElement('radio', 'mc_mod_hcg', null, _("Incremental"), '0');
+		$var_91[] = class_2::createElement('radio', 'mc_mod_hcg', null, _("Replacement"), '1');
+		$var_60->addGroup($var_91, 'mc_mod_hcg', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_hcg'=>'0'));
+	}
+
+	
+	$var_92 = $var_60->addElement('advmultiselect', 'host_cs', array(_("Linked Contacts"), _("Available"), _("Selected")), $var_43, $var_56, var_93);
+	$var_92->setButtonAttributes('add', array('value' =>  _("Add")));
+	$var_92->setButtonAttributes('remove', array('value' => _("Remove")));
+	$var_92->setElementTemplate($var_59);
+	
+
+
+	
+	$var_92 = $var_60->addElement('advmultiselect', 'host_cgs', array(_("Linked Contact Groups"), _("Available"), _("Selected")), $var_40, $var_56, var_93);
+	$var_92->setButtonAttributes('add', array('value' =>  _("Add")));
+	$var_92->setButtonAttributes('remove', array('value' => _("Remove")));
+	$var_92->setElementTemplate($var_59);
+	
+    
+    
+    if ($var_3 == "mc")	{
+		$var_96 = array();
+		$var_96[] = class_2::createElement('radio', 'mc_mod_hhc', null, _("Incremental"), '0');
+		$var_96[] = class_2::createElement('radio', 'mc_mod_hhc', null, _("Replacement"), '1');
+		$var_60->addGroup($var_96, 'mc_mod_hhc', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_hhc'=>'0'));
+	}
+    $var_60->addElement('header', 'HClinks', _("Host Categories Relations"));
+    $var_92 = $var_60->addElement('advmultiselect', 'host_hcs', array(_("Parent Host Categories"), _("Available"), _("Selected")), $var_44, $var_56, var_93);
+	$var_92->setButtonAttributes('add', array('value' =>  _("Add")));
+	$var_92->setButtonAttributes('remove', array('value' => _("Remove")));
+	$var_92->setElementTemplate($var_59);
+	
+
+	if ($var_3 == "mc")	{
+		$var_97 = array();
+		$var_97[] = &class_2::createElement('radio', 'mc_mod_notifopt_notification_interval', null, _("Incremental"), '0');
+		$var_97[] = &class_2::createElement('radio', 'mc_mod_notifopt_notification_interval', null, _("Replacement"), '1');
+		$var_60->addGroup($var_97, 'mc_mod_notifopt_notification_interval', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_notifopt_notification_interval'=>'0'));
+	}
+
+	$var_60->addElement('text', 'host_notification_interval', _("Notification Interval"), $var_55);
+
+	if ($var_3 == "mc")	{
+		$var_98 = array();
+		$var_98[] = &class_2::createElement('radio', 'mc_mod_notifopt_timeperiod', null, _("Incremental"), '0');
+		$var_98[] = &class_2::createElement('radio', 'mc_mod_notifopt_timeperiod', null, _("Replacement"), '1');
+		$var_60->addGroup($var_98, 'mc_mod_notifopt_timeperiod', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_notifopt_timeperiod'=>'0'));
+	}
+
+	$var_60->addElement('select', 'timeperiod_tp_id2', _("Notification Period"), $var_36);
+
+	if ($var_3 == "mc")	{
+		$var_99 = array();
+		$var_99[] = &class_2::createElement('radio', 'mc_mod_notifopts', null, _("Incremental"), '0');
+		$var_99[] = &class_2::createElement('radio', 'mc_mod_notifopts', null, _("Replacement"), '1');
+		$var_60->addGroup($var_99, 'mc_mod_notifopts', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_notifopts'=>'0'));
+	}
+
+ 	$var_100[] = class_2::createElement('checkbox', 'd', '&nbsp;', _("Down"));
+	$var_100[] = class_2::createElement('checkbox', 'u', '&nbsp;', _("Unreachable"));
+	$var_100[] = class_2::createElement('checkbox', 'r', '&nbsp;', _("Recovery"));
+	$var_100[] = class_2::createElement('checkbox', 'f', '&nbsp;', _("Flapping"));
+	$var_100[] = class_2::createElement('checkbox', 's', '&nbsp;', _("Downtime Scheduled"));
+	$var_60->addGroup($var_100, 'host_notifOpts', _("Notification Options"), '&nbsp;&nbsp;');
+
+ 	$var_101[] = class_2::createElement('checkbox', 'o', '&nbsp;', _("Ok/Up"));
+	$var_101[] = class_2::createElement('checkbox', 'd', '&nbsp;', _("Down"));
+	$var_101[] = class_2::createElement('checkbox', 'u', '&nbsp;', _("Unreachable"));
+	$var_60->addGroup($var_101, 'host_stalOpts', _("Stalking Options"), '&nbsp;&nbsp;');
+
+	
+	
+	
+	$var_60->addElement('header', 'furtherInfos', _("Additional Information"));
+	$var_102[] = class_2::createElement('radio', 'host_activate', null, _("Enabled"), '1');
+	$var_102[] = class_2::createElement('radio', 'host_activate', null, _("Disabled"), '0');
+	$var_60->addGroup($var_102, 'host_activate', _("Status"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_activate' => '1'));
+
+	$var_60->addElement('textarea', 'host_comment', _("Comments"), $var_58);
+
+	
+	
+	
+	if ($var_3 == "a")
+		$var_60->addElement('header', 'title2', _("Add relations"));
+	else if ($var_3 == "c")
+		$var_60->addElement('header', 'title2', _("Modify relations"));
+	else if ($var_3 == "w")
+		$var_60->addElement('header', 'title2', _("View relations"));
+	else if ($var_3 == "mc")
+		$var_60->addElement('header', 'title2', _("Massive Change"));
+
+	$var_60->addElement('header', 'links', _("Relations"));
+	if ($var_3 == "mc")	{
+		$var_103 = array();
+		$var_103[] = class_2::createElement('radio', 'mc_mod_htpl', null, _("Incremental"), '0');
+		$var_103[] = class_2::createElement('radio', 'mc_mod_htpl', null, _("Replacement"), '1');
+		$var_60->addGroup($var_103, 'mc_mod_htpl', _("Update mode"), '&nbsp;');
+		$var_60->setDefaults(array('mc_mod_htpl'=>'0'));
+	}
+	$var_92 = $var_60->addElement('advmultiselect', 'host_svTpls', array(_("Linked Service Templates"), _("Available"), _("Selected")), $var_35, $var_57, var_93);
+	$var_92->setButtonAttributes('add', array('value' =>  _("Add")));
+	$var_92->setButtonAttributes('remove', array('value' => _("Remove")));
+	$var_92->setElementTemplate($var_59);
+	
+
+	
+	
+	
+	if ($var_3 == "a")
+		$var_60->addElement('header', 'title3', _("Add Data Processing"));
+	else if ($var_3 == "c")
+		$var_60->addElement('header', 'title3', _("Modify Data Processing"));
+	else if ($var_3 == "w")
+		$var_60->addElement('header', 'title3', _("View Data Processing"));
+	else if ($var_3 == "mc")
+		$var_60->addElement('header', 'title2', _("Massive Change"));
+
+	$var_60->addElement('header', 'treatment', _("Data Processing"));
+
+	$var_104[] = class_2::createElement('radio', 'host_obsess_over_host', null, _("Yes"), '1');
+	$var_104[] = class_2::createElement('radio', 'host_obsess_over_host', null, _("No"), '0');
+	$var_104[] = class_2::createElement('radio', 'host_obsess_over_host', null, _("Default"), '2');
+	$var_60->addGroup($var_104, 'host_obsess_over_host', _("Obsess Over Host"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_obsess_over_host' => '2'));
+
+	$var_105[] = class_2::createElement('radio', 'host_check_freshness', null, _("Yes"), '1');
+	$var_105[] = class_2::createElement('radio', 'host_check_freshness', null, _("No"), '0');
+	$var_105[] = class_2::createElement('radio', 'host_check_freshness', null, _("Default"), '2');
+	$var_60->addGroup($var_105, 'host_check_freshness', _("Check Freshness"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_check_freshness' => '2'));
+
+	$var_106[] = class_2::createElement('radio', 'host_flap_detection_enabled', null, _("Yes"), '1');
+	$var_106[] = class_2::createElement('radio', 'host_flap_detection_enabled', null, _("No"), '0');
+	$var_106[] = class_2::createElement('radio', 'host_flap_detection_enabled', null, _("Default"), '2');
+	$var_60->addGroup($var_106, 'host_flap_detection_enabled', _("Flap Detection Enabled"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_flap_detection_enabled' => '2'));
+
+	$var_60->addElement('text', 'host_freshness_threshold', _("Freshness Threshold"), $var_55);
+	$var_60->addElement('text', 'host_low_flap_threshold', _("Low Flap threshold"), $var_55);
+	$var_60->addElement('text', 'host_high_flap_threshold', _("High Flap Threshold"), $var_55);
+
+	$var_107[] = class_2::createElement('radio', 'host_process_perf_data', null, _("Yes"), '1');
+	$var_107[] = class_2::createElement('radio', 'host_process_perf_data', null, _("No"), '0');
+	$var_107[] = class_2::createElement('radio', 'host_process_perf_data', null, _("Default"), '2');
+	$var_60->addGroup($var_107, 'host_process_perf_data', _("Process Perf Data"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_process_perf_data' => '2'));
+
+	$var_108[] = class_2::createElement('radio', 'host_retain_status_information', null, _("Yes"), '1');
+	$var_108[] = class_2::createElement('radio', 'host_retain_status_information', null, _("No"), '0');
+	$var_108[] = class_2::createElement('radio', 'host_retain_status_information', null, _("Default"), '2');
+	$var_60->addGroup($var_108, 'host_retain_status_information', _("Retain Satus Information"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_retain_status_information' => '2'));
+
+	$var_109[] = class_2::createElement('radio', 'host_retain_nonstatus_information', null, _("Yes"), '1');
+	$var_109[] = class_2::createElement('radio', 'host_retain_nonstatus_information', null, _("No"), '0');
+	$var_109[] = class_2::createElement('radio', 'host_retain_nonstatus_information', null, _("Default"), '2');
+	$var_60->addGroup($var_109, 'host_retain_nonstatus_information', _("Retain Non Status Information"), '&nbsp;');
+	if ($var_3 != "mc")
+		$var_60->setDefaults(array('host_retain_nonstatus_information' => '2'));
+
+	
+	
+	
+	if ($var_3 == "a")
+		$var_60->addElement('header', 'title4', _("Add a Host Extended Info"));
+	else if ($var_3 == "c")
+		$var_60->addElement('header', 'title4', _("Modify a Host Extended Info"));
+	else if ($var_3 == "w")
+		$var_60->addElement('header', 'title4', _("View a Host Extended Info"));
+
+	$var_60->addElement('header', 'nagios', _("Monitoring engine"));
+	$var_60->addElement('text', 'ehi_notes', _("Notes"), $var_53);
+	$var_60->addElement('text', 'ehi_notes_url', _("URL"), $var_53);
+	$var_60->addElement('text', 'ehi_action_url', _("Action URL"), $var_53);
+	$var_60->addElement('select', 'ehi_icon_image', _("Icon"), $var_51, array("id"=>"ehi_icon_image", "onChange"=>"showLogo('ehi_icon_image_img',this.value)", "onkeyup" => "this.blur();this.focus();"));
+	$var_60->addElement('text', 'ehi_icon_image_alt', _("Alt icon"), $var_53);
+	$var_60->addElement('select', 'ehi_vrml_image', _("VRML Image"), $var_51, array("id"=>"ehi_vrml_image", "onChange"=>"showLogo('ehi_vrml_image_img',this.value)", "onkeyup" => "this.blur();this.focus();"));
+	$var_60->addElement('select', 'ehi_statusmap_image', _("Status Map Image"),$var_52, array("id"=>"ehi_statusmap_image", "onChange"=>"showLogo('ehi_statusmap_image_img',this.value)", "onkeyup" => "this.blur();this.focus();"));
+	$var_60->addElement('text', 'ehi_2d_coords', _("2d Coords"), $var_55);
+	$var_60->addElement('text', 'ehi_3d_coords', _("3d Coords"), $var_55);
+
+        
+        $var_110 = new class_3($var_1);
+        $var_111 = $var_110->getList();
+        $var_113 = array(null => null);
+        foreach($var_111 as $var_114 => $var_115) {
+            $var_113[$var_114] = $var_115['hc_name'].' ('.$var_115['level'].')';
+        }
+        $var_60->addElement('select', 'criticality_id', _('Severity level'), $var_113);
+        
+	$var_60->addElement('header', 'oreon', _("Centreon"));
+
+	
+	
+	
+
+	if ($var_3 == "a")
+		$var_60->addElement('header', 'title5', _("Add macros"));
+	else if ($var_3 == "c")
+		$var_60->addElement('header', 'title5', _("Modify macros"));
+	else if ($var_3 == "w")
+		$var_60->addElement('header', 'title5', _("View macros"));
+	else if ($var_3 == "mc")
+		$var_60->addElement('header', 'title5', _("Massive Change"));
+
+	$var_60->addElement('header', 'macro', _("Macros"));
+	$var_60->addElement('text', 'add_new', _("Add a new macro"), $var_55);
+	$var_60->addElement('text', 'macroName', _("Macro name"), $var_55);
+	$var_60->addElement('text', 'macroValue', _("Macro value"), $var_55);
+	$var_60->addElement('text', 'macroDelete', _("Delete"), $var_55);
+
+	$var_116 = array();
+	$var_116[] = class_2::createElement('radio', 'action', null, _("List"), '1');
+	$var_116[] = class_2::createElement('radio', 'action', null, _("Form"), '0');
+	$var_60->addGroup($var_116, 'action', _("Post Validation"), '&nbsp;');
+	$var_60->setDefaults(array('action' => '1'));
+
+	$var_60->addElement('hidden', 'host_id');
+	$var_117 = $var_60->addElement('hidden', 'host_register');
+	$var_117->setValue("0");
+	$var_119 = 0;
+	$var_120 = $var_60->addElement('hidden', 'dupSvTplAssoc');
+	$var_120->setValue("0");
+	$var_121 = $var_60->addElement('hidden', 'o');
+	$var_121->setValue($var_3);
+	if (is_array($var_84))	{
+		$var_122 = NULL;
+		foreach ($var_84 as $var_10 => $var_11)
+			$var_122 .= $var_10.",";
+		$var_123 = $var_60->addElement('hidden', 'select');
+		$var_123->setValue($var_122);
+	}
+
+	
+	
+	
+	function fn_0()	{
+		global $var_60;
+		return (str_replace(" ", "_", $var_60->getSubmitValue("host_name")));
+	}
+	$var_60->applyFilter('__ALL__', 'myTrim');
+	$var_60->applyFilter('host_name', 'myReplace');
+	$var_60->registerRule('existTemplate', 'callback', 'testHostTplExistence');
+	$var_60->registerRule('exist', 'callback', 'testHostExistence');
+	$var_60->addRule('host_name', _("Template name is already in use"), 'existTemplate');
+	$var_60->addRule('host_name', _("Host name is already in use"), 'exist');
+	$var_60->addRule('host_name', _("Compulsory Name"), 'required');
+	$var_60->addRule('host_alias', _("Compulsory Alias"), 'required');
+	$var_128 = false;
+	if ($var_3 == "mc")	{
+		if ($var_60->getSubmitValue("submitMC"))
+			$var_128 = false;
+		else
+			$var_128 = true;
+	}
+
+	
+	
+	
+
+	
+	$var_129 = new class_4();
+	$var_129 = initSmartyTpl($var_130, $var_129);
+
+	
+	if ($var_3 == "w")	{
+		if (!$var_131 && $var_132->var_133->var_134->page($var_61) != 2)
+			$var_60->addElement("button", "change", _("Modify"), array("onClick"=>"javascript:window.location.href='?p=".$var_61."&o=c&host_id=".$var_4."'"));
+	    $var_60->setDefaults($var_2);
+		$var_60->freeze();
+	}
+	
+	else if ($var_3 == "c")	{
+		$var_137 = $var_60->addElement('submit', 'submitC', _("Save"));
+		$var_21 = $var_60->addElement('reset', 'reset', _("Reset"));
+	    $var_60->setDefaults($var_2);
+	}
+	
+	else if ($var_3 == "a")	{
+		$var_138 = $var_60->addElement('submit', 'submitA', _("Save"));
+		$var_21 = $var_60->addElement('reset', 'reset', _("Reset"));
+	}
+	
+	else if ($var_3 == "mc")	{
+		$var_139 = $var_60->addElement('submit', 'submitMC', _("Save"));
+		$var_21 = $var_60->addElement('reset', 'reset', _("Reset"));
+	}
+
+	$var_129->assign('msg', array ("nagios"=>$var_141->var_133->get_version(), "tpl"=>1, "min"=>$var_131));
+	$var_129->assign('min', $var_131);
+	$var_129->assign('p', $var_61);
+	$var_129->assign("sort1", _("Host Configuration"));
+	$var_129->assign("sort2", _("Relations"));
+	$var_129->assign("sort3", _("Data Processing"));
+	$var_129->assign("sort4", _("Host Extended Infos"));
+	$var_129->assign("sort5", _("Macros"));
+	$var_129->assign("initJS", "<script type='text/javascript'>
+							jQuery(function () {
+							init();
+							initAutoComplete('Form','city_name','sub');
+							});</script>");
+	$var_129->assign('javascript', '
+            <script type="text/javascript" src="./include/common/javascript/showLogo.js"></script>
+            <script type="text/javascript" src="./include/common/javascript/centreon/macroPasswordField.js"></script>
+        ');
+	$var_129->var_140("helpattr", 'TITLE, "'._("Help").'", CLOSEBTN, true, FIX, [this, 0, 5], BGCOLOR, "
+
+	
+	$helptext = "";
+	foreach ($help as $key => $text) {
+		$helptext .= '<var_143 var_144="var_145:var_146" var_147="var_148:'.$var_10.'">'.$var_149.'</span>'."\n";
+	}
+	$var_129->assign("helptext", $var_150);
+
+	$var_129->assign('time_unit', " * ".$var_141->optGen["interval_length"]." "._("seconds"));
+
+	$var_151 = false;
+	if ($var_60->validate() && $var_128 == false)	{
+		$var_0 = $var_60->getElement('host_id');
+		if ($var_60->getSubmitValue("submitA"))
+			$var_0->setValue(insertHostInDB());
+		else if ($var_60->getSubmitValue("submitC"))
+			updateHostInDB($var_0->getValue());
+		else if ($var_60->getSubmitValue("submitMC"))	{
+			$var_84 = explode(",", $var_84);
+			foreach ($var_84 as $var_10=>$var_11)
+				if ($var_11)
+					updateHostInDB($var_11, true);
+		}
+		$var_3 = NULL;
+		$var_60->addElement("button", "change", _("Modify"), array("onClick"=>"javascript:window.location.href='?p=".$var_61."&o=c&host_id=".$var_0->getValue()."'"));
+		$var_60->freeze();
+		$var_151 = true;
+	}
+	$var_155 = $var_60->getSubmitValue("action");
+	if ($var_151 && $var_155["action"]["action"])
+	else {
+            
+            $var_156 = new class_5($var_129, true);
+            $var_156->setRequiredTemplate('{$label}&nbsp;<font color="red" size="1">*</font>');
+            $var_156->setErrorTemplate('<font color="red">{$error}</font><br />{$html}');
+            $var_60->accept($var_156);
+            $var_129->assign('form', $var_156->toArray());
+            $var_129->assign('o', $var_3);
+
+            $var_129->assign('custom_macro_label', _('Custom macros'));
+            $var_129->assign('cloneSetMacro', $var_76);
+            $var_129->assign('cloneSetTemplate', $var_161);
+            $var_129->assign('centreon_path', $var_132->optGen['oreon_path']);
+            $var_129->assign("Freshness_Control_options", _("Freshness Control options"));
+            $var_129->assign("Flapping_Options", _("Flapping options"));
+            $var_129->assign("Perfdata_Options", _("Perfdata Options"));
+            $var_129->assign("History_Options", _("History Options"));
+            $var_129->assign("Event_Handler", _("Event Handler"));
+            $var_129->assign("add_mtp_label", _("Add a template"));
+            $var_129->assign("seconds", _("seconds"));
+            $var_129->assign("tpl", 1);
+            $var_129->display("formHost.ihtml");
+
+?>
+<var_162 var_163="var_149/var_81">
+		showLogo('ehi_icon_image_img', var_164.getElementById('ehi_icon_image').var_11);
+		showLogo('ehi_vrml_image_img', var_164.getElementById('ehi_vrml_image').var_11);
+		showLogo('ehi_statusmap_image_img', var_164.getElementById('ehi_statusmap_image').var_11);
+</var_162>
+<?php } ?>

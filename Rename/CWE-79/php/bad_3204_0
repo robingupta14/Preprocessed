@@ -1,0 +1,248 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$var_0 = 1;
+
+
+$var_1 = gpc_get_int( 'id' );
+$var_2 = bug_get( $var_1 );
+
+$var_3 = var_4;
+$var_5 = dirname( var_4 ) . var_6;
+$var_7 = false;
+$var_8 = true;
+$var_9 = 'bug_change_status_page_fields';
+
+if( $var_2->var_10 != helper_get_current_project() ) {
+	
+	
+	$var_11 = $var_2->var_10;
+}
+
+$var_12 = gpc_get_int( 'new_status' );
+$var_13 = gpc_get_string( 'change_type', var_14 );
+
+$var_15 = config_get( 'bug_reopen_status', null, null, $var_2->var_10 );
+$var_16 = config_get( 'bug_resolved_status_threshold', null, null, $var_2->var_10 );
+$var_17 = config_get( 'bug_closed_status_threshold', null, null, $var_2->var_10 );
+$var_18 = auth_get_current_user_id();
+
+
+if( $var_12 == $var_15 && $var_13 == var_19 ) {
+	access_ensure_can_reopen_bug( $var_2, $var_18 );
+} else if( $var_12 == $var_17 ) {
+	access_ensure_can_close_bug( $var_2, $var_18 );
+} else if( bug_is_readonly( $var_1 )
+	|| !access_has_bug_level( access_get_status_threshold( $var_12, $var_2->var_10 ), $var_1, $var_18 ) ) {
+	access_denied();
+}
+
+$var_20 = access_has_bug_level( config_get( 'due_date_update_threshold' ), $var_1 );
+if( $var_20 ) {
+}
+
+
+$var_21 = gpc_get_int( 'handler_id', $var_2->var_22 );
+
+if( config_get( 'bug_assigned_status' ) == $var_12 ) {
+	$var_23 = config_get( 'enable_sponsorship' )
+		&& sponsorship_get_amount( sponsorship_get_all_ids( $var_1 ) ) > 0;
+	if( $var_23 && !access_has_bug_level( config_get( 'assign_sponsored_bugs_threshold' ), $var_1 ) ) {
+		trigger_error( var_24, var_25 );
+	}
+
+	if( $var_21 != var_26 ) {
+		if( !access_has_bug_level( config_get( 'handle_bug_threshold' ), $var_1, $var_21 ) ) {
+			trigger_error( var_27, var_25 );
+		}
+
+		if( $var_23 && !access_has_bug_level( config_get( 'handle_sponsored_bugs_threshold' ), $var_1, $var_21 ) ) {
+			trigger_error( var_28, var_25 );
+		}
+	}
+}
+
+$var_29 = str_replace( ' ', '_', MantisEnum::getLabel( config_get( 'status_enum_string' ), $var_12 ) );
+
+html_page_top( bug_format_summary( $var_1, var_30 ) );
+
+print_recently_visited();
+?>
+
+<br />
+<div id="bug-change-status-div" class="form-container">
+
+<h2><?php  ?></h2>
+<?php
+	if( $var_12 >= $var_16 ) {
+		if( relationship_can_resolve_bug( $var_1 ) == false ) {
+			
+			
+			
+		}
+	}
+?>
+
+<form id="bug-change-status-form" name="bug_change_status_form" method="post" action="bug_update.php">
+
+<fieldset>
+
+	<?php  ?>" />
+
+<?php
+	$var_31 = $var_2->var_32;
+	$var_33 = $var_31 < $var_16;
+
+	if( $var_12 >= $var_16 && ( $var_12 < $var_17 || $var_33 ) ) {
+?>
+	<!-- Resolution -->
+	<div class="field-container">
+		<label for="resolution">
+			<span><?php 
+
+				$var_34 = relationship_get_all_src( $var_1 );
+				foreach( $var_34 as $var_35 ) {
+					if( $var_35->var_36 == var_37 ) {
+						$var_38 = config_get( 'bug_duplicate_resolution' );
+						break;
+					}
+				}
+
+				print_enum_string_option_list( 'resolution', $var_38 );
+?>
+			</select>
+		</span>
+		<span class="label-style"></span>
+	</div>
+<?php
+		if( $var_38 != config_get( 'bug_duplicate_resolution' ) ) {
+?>
+	<!-- Duplicate ID -->
+	<div class="field-container">
+		<label for="duplicate_id">
+			<span><?php 
+
+		if( $var_39 == var_26 && access_has_bug_level( config_get( 'handle_bug_threshold' ), $var_1 ) ) {
+			$var_39 = $var_18;
+		}
+
+?>
+	<!-- Assigned To -->
+	<div class="field-container">
+		<label for="handler_id">
+			<span><?php 
+
+		if( !date_is_null( $var_2->var_40 ) ) {
+			$var_41 = date( config_get( 'calendar_date_format' ), $var_2->var_40 );
+		}
+?>
+	<!-- Due date -->
+	<div class="field-container">
+		<label for="due_date">
+			<span><?php  
+	if( ( $var_12 >= $var_16 ) && ( $var_12 < $var_17 ) ) {
+		$var_42 = 'resolved';
+	}
+	if( $var_17 == $var_12 ) {
+		$var_42 = 'closed';
+	}
+
+	$var_43 = custom_field_get_linked_ids( $var_2->var_10 );
+
+	foreach( $var_43 as $var_44 ) {
+		$var_45 = custom_field_get_definition( $var_44 );
+		$var_46 = $var_45['display_' . $var_42];
+		$var_47 = $var_45['require_' . $var_42];
+
+		if( ( 'update' == $var_42 ) && ( !$var_47 ) ) {
+			continue;
+		}
+		if( in_array( $var_42, array( 'resolved', 'closed' ) ) && !( $var_46 || $var_47 ) ) {
+			continue;
+		}
+		$var_48 = custom_field_has_write_access( $var_44, $var_1 );
+		$var_49 = $var_47 && $var_48 ? 'class="required"' : '';
+?>
+	<div class="field-container">
+		<label <?php 
+			} elseif( custom_field_has_read_access( $var_44, $var_1 ) ) {
+				print_custom_field_value( $var_45, $var_44, $var_1 );
+			}
+?>
+		</span>
+		<span class="label-style"></span>
+	</div>
+
+<?php
+	} 
+
+	if( ( $var_12 >= $var_16 ) ) {
+		if( version_should_show_product_version( $var_2->var_10 )
+			&& !bug_is_readonly( $var_1 )
+			&& access_has_bug_level( config_get( 'update_bug_threshold' ), $var_1 )
+		) {
+?>
+	<!-- Fixed in Version -->
+	<div class="field-container">
+		<label for="due_date">
+			<span><?php 
+
+	if( $var_13 == var_19 ) {
+?>
+	<!-- Bug was re-opened -->
+<?php
+		printf( '	<input type="hidden" name="resolution" value="%s" />' . "\n", config_get( 'bug_reopen_resolution' ) );
+	}
+?>
+
+	<!-- Bugnote -->
+	<div class="field-container">
+		<label for="bugnote_text">
+			<span><?php 
+?>
+	<!-- View status -->
+	<div class="field-container">
+		<label for="private">
+			<span><?php  ?> />
+<?php
+			
+		} else {
+			
+		}
+?>
+		</span>
+		<span class="label-style"></span>
+	</div>
+
+<?php
+	}
+
+	if(     config_get( 'time_tracking_enabled' )
+		&& access_has_bug_level( config_get( 'private_bugnote_threshold' ), $var_1 )
+		&& access_has_bug_level( config_get( 'time_tracking_edit_threshold' ), $var_1 )
+	) {
+?>
+	<!-- Time tracking -->
+	<div class="field-container">
+		<label for="time_tracking">
+			<span><?php 
+?>
+
+	<!-- Submit Button -->
+	<span class="submit-button">
+		<input type="submit" class="button" value="<?php 

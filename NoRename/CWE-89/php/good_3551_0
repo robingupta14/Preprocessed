@@ -1,0 +1,227 @@
+<?php
+
+class ComponentSet extends DataObjectSet {
+	
+	protected $type;
+	
+	
+	protected $ownerObj;
+	
+	
+	protected $ownerClass;
+	
+	
+	protected $tableName;
+	
+	
+	protected $childClass;
+	
+	
+	protected $joinField;
+	
+	
+	function setComponentInfo($type, $ownerObj, $ownerClass, $tableName, $childClass, $joinField = null) {
+		$this->type = $type;
+		$this->ownerObj = $ownerObj;
+		$this->ownerClass = $ownerClass ? $ownerClass : $ownerObj->class;
+		$this->tableName = $tableName;
+		$this->childClass = $childClass;
+		$this->joinField = $joinField;
+	}
+	
+	
+	public function getComponentInfo() {
+		return array( 
+			'type' => $this->type,
+			'ownerObj' => $this->ownerObj,
+			'ownerClass' => $this->ownerClass,
+			'tableName' => $this->tableName,
+			'childClass' => $this->childClass,
+			'joinField' => $this->joinField 
+		);
+	}
+		
+	
+	function getIdList() {
+		$list = array();
+		foreach($this->items as $item) {
+			$list[$item->ID] = $item->ID;
+		}
+		return $list;
+	}
+		
+	
+	function add($item, $extraFields = null) {
+		if(!isset($item)) {
+			user_error("ComponentSet::add() Not passed an object or ID", E_USER_ERROR);
+		}
+		
+		if(is_object($item)) {
+			if(!is_a($item, $this->childClass)) {
+				user_error("ComponentSet::add() Tried to add an '{$item->class}' object, but a '{$this->childClass}' object expected", E_USER_ERROR);
+			}
+		} else {
+			if(!$this->childClass) {
+				user_error("ComponentSet::add() \$this->childClass not set", E_USER_ERROR);
+			}
+			
+			$item = DataObject::get_by_id($this->childClass, $item);
+			if(!$item) return;
+		}
+
+		
+		if($this->ownerObj->ID && is_numeric($this->ownerObj->ID)) {
+			$this->loadChildIntoDatabase($item, $extraFields);
+		}
+		
+		
+		$this->items[] = $item;
+	}
+	
+	
+	protected function loadChildIntoDatabase($item, $extraFields = null) {
+		if($this->type == '1-to-many') {
+			$child = DataObject::get_by_id($this->childClass,$item->ID);
+			if (!$child) $child = $item;
+			$joinField = $this->joinField;
+			$child->$joinField = $this->ownerObj->ID;
+			$child->write();
+			
+		} else {		
+			$parentField = $this->ownerClass . 'ID';
+			$childField = ($this->childClass == $this->ownerClass) ? "ChildID" : ($this->childClass . 'ID');
+			
+			DB::query( "DELETE FROM \"$this->tableName\" WHERE \"$parentField\" = {$this->ownerObj->ID} AND \"$childField\" = {$item->ID}" );
+			
+			$extraKeys = $extraValues = '';
+			if($extraFields) foreach($extraFields as $k => $v) {
+				$extraKeys .= ", \"$k\"";
+				$extraValues .= ", '" . Convert::raw2sql($v) . "'";
+			}
+
+			DB::query("INSERT INTO \"$this->tableName\" (\"$parentField\",\"$childField\" $extraKeys) VALUES ({$this->ownerObj->ID}, {$item->ID} $extraValues)");
+		}
+	}
+    	
+	
+	function addMany($items) {
+		foreach($items as $item) {
+			$this->add($item);
+		}
+	}
+	
+	
+	function setByIDList($idList) {
+		$has = array();
+		
+		if($this->items) foreach($this->items as $item) {
+		   $has[$item->ID] = true;
+		}
+		
+		
+		$itemsToDelete = $has;
+		
+		
+		
+		if($idList) foreach($idList as $id) {
+			$itemsToDelete[$id] = false;
+			if($id && !isset($has[$id])) $this->add($id);
+		}
+
+		
+		$removeList = array();
+		foreach($itemsToDelete as $id => $actuallyDelete) {
+			if($actuallyDelete) $removeList[] = $id;
+		}
+		$this->removeMany($removeList);
+	}
+	
+	
+	function remove($item) {
+		if(is_object($item)) {
+			if(!is_a($item, $this->childClass)) {
+				user_error("ComponentSet::remove() Tried to remove an '{$item->class}' object, but a '{$this->childClass}' object expected", E_USER_ERROR);
+			}
+		} else {
+			$item = DataObject::get_by_id($this->childClass, $item);
+		}
+
+		
+		if($this->ownerObj->ID && is_numeric($this->ownerObj->ID)) {
+			if($this->type == '1-to-many') {
+				$child = DataObject::get_by_id($this->childClass,$item->ID);
+				$joinField = $this->joinField;
+				if($child->$joinField == $this->ownerObj->ID) {
+					$child->$joinField = null;
+					$child->write();
+				}
+				
+			} else {
+				$parentField = $this->ownerClass . 'ID';
+				$childField = ($this->childClass == $this->ownerClass) ? "ChildID" : ($this->childClass . 'ID');
+				DB::query("DELETE FROM \"$this->tableName\" WHERE \"$parentField\" = {$this->ownerObj->ID} AND \"$childField\" = {$item->ID}");
+			}
+		}
+		
+		
+		if($this->items) foreach($this->items as $i => $candidateItem) {
+			if($candidateItem->ID == $item->ID) {
+				unset($this->items[$i]);
+				break;
+			}
+		}
+	}
+	
+	
+	function removeMany($itemList) {
+		if(!count($itemList)) return false;
+		
+		if($this->type == '1-to-many') {
+			foreach($itemList as $item) $this->remove($item);
+		} else {
+			$itemCSV = implode(", ", $itemList);
+			$parentField = $this->ownerClass . 'ID';
+			$childField = ($this->childClass == $this->ownerClass) ? "ChildID" : ($this->childClass . 'ID');
+			DB::query("DELETE FROM \"$this->tableName\" WHERE \"$parentField\" = {$this->ownerObj->ID} AND \"$childField\" IN ($itemCSV)");
+		}
+	}
+
+	
+	function removeAll() {
+		if(!empty($this->tableName)) {
+			$parentField = $this->ownerClass . 'ID';
+			DB::query("DELETE FROM \"$this->tableName\" WHERE \"$parentField\" = {$this->ownerObj->ID}");
+		} else {
+			foreach($this->items as $item) {
+				$this->remove($item);
+			}
+		}
+	}
+	
+	
+	function write($firstWrite = false) {
+		if($firstWrite) {
+			foreach($this->items as $item) {
+				$this->loadChildIntoDatabase($item);
+			}
+		}
+	}
+	
+	
+	function debug() {
+		$size = count($this->items);
+		
+		$output = <<<OUT
+<h3>ComponentSet</h3>
+<ul>
+	<li>Type: {$this->type}</li>
+	<li>Size: $size</li>
+</ul>
+
+OUT;
+
+		return $output;
+	}
+}
+
+?>

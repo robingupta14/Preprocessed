@@ -1,0 +1,59 @@
+<?php
+
+
+
+
+$RUNTIME_NOSETUPFS=true;
+
+ 
+
+
+OCP\JSON::checkLoggedIn();
+OCP\JSON::checkAppEnabled('bookmarks');
+
+$CONFIG_DBTYPE = OCP\Config::getSystemValue( "dbtype", "sqlite" );
+if( $CONFIG_DBTYPE == 'sqlite' or $CONFIG_DBTYPE == 'sqlite3' ){
+	$_ut = "strftime('%s','now')";
+} elseif($CONFIG_DBTYPE == 'pgsql') {
+	$_ut = 'date_part(\'epoch\',now())::integer';
+} else {
+	$_ut = "UNIX_TIMESTAMP()";
+}
+
+$bookmark_id = (int)$_POST["id"];
+
+$query = OCP\DB::prepare("
+	UPDATE *PREFIX*bookmarks
+	SET url = ?, title =?, lastmodified = $_ut
+	WHERE id = $bookmark_id
+	");
+
+$params=array(
+	htmlspecialchars_decode($_POST["url"]),
+	htmlspecialchars_decode($_POST["title"]),
+	);
+$query->execute($params);
+
+
+$query = OCP\DB::prepare("
+	DELETE FROM *PREFIX*bookmarks_tags
+	WHERE bookmark_id = $bookmark_id
+	");
+
+$query->execute();
+
+$query = OCP\DB::prepare("
+	INSERT INTO *PREFIX*bookmarks_tags
+	(bookmark_id, tag)
+	VALUES (?, ?)
+	");
+	
+$tags = explode(' ', urldecode($_POST["tags"]));
+foreach ($tags as $tag) {
+	if(empty($tag)) {
+		
+		continue;
+	}
+	$params = array($bookmark_id, trim($tag));
+	$query->execute($params);
+}

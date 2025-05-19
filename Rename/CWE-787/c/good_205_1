@@ -1,0 +1,517 @@
+
+
+
+
+
+
+
+
+DEFINE_PER_CPU_ALIGNED(irq_cpustat_t, irq_stat);
+EXPORT_PER_CPU_SYMBOL(irq_stat);
+
+
+static struct struct_35 softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;
+
+DEFINE_PER_CPU(struct struct_4 *, ksoftirqd);
+
+const char * const softirq_to_name[NR_SOFTIRQS] = {
+ "HI", "TIMER", "NET_TX", "NET_RX", "BLOCK", "IRQ_POLL",
+ "TASKLET", "SCHED", "HRTIMER", "RCU"
+};
+
+
+
+
+
+
+
+static void fn_2(void)
+{
+
+ struct struct_4 *tsk = __this_cpu_read(ksoftirqd);
+
+ if (tsk && tsk->state != TASK_RUNNING)
+  wake_up_process(tsk);
+}
+
+
+
+
+
+static bool fn_3(void)
+{
+ struct struct_4 *tsk = __this_cpu_read(ksoftirqd);
+
+ return tsk && (tsk->state == TASK_RUNNING);
+}
+
+static void fn_4(unsigned int var_9)
+{
+ lockdep_assert_irqs_disabled();
+
+ if (preempt_count() == var_9)
+  trace_preempt_on(CALLER_ADDR0, get_lock_parent_ip());
+
+ if (softirq_count() == (var_9 & SOFTIRQ_MASK))
+  trace_softirqs_on(_RET_IP_);
+
+ __preempt_count_sub(var_9);
+}
+
+
+
+
+
+void fn_6(void)
+{
+ WARN_ON_ONCE(in_irq());
+ __local_bh_enable(SOFTIRQ_DISABLE_OFFSET);
+}
+EXPORT_SYMBOL(_local_bh_enable);
+
+void fn_7(unsigned long var_9, unsigned int var_9)
+{
+ WARN_ON_ONCE(in_irq());
+ lockdep_assert_irqs_enabled();
+
+
+
+
+
+
+ if (softirq_count() == SOFTIRQ_DISABLE_OFFSET)
+  trace_softirqs_on(var_9);
+
+
+
+
+ preempt_count_sub(var_9 - 1);
+
+ if (unlikely(!in_interrupt() && local_softirq_pending())) {
+
+
+
+
+  do_softirq();
+ }
+
+ preempt_count_dec();
+
+
+
+ preempt_check_resched();
+}
+EXPORT_SYMBOL(__local_bh_enable_ip);
+
+static inline bool fn_9(void) { return false; }
+static inline void fn_10(bool var_15) { }
+
+
+asmlinkage __visible void __softirq_entry __do_softirq(void)
+{
+ unsigned long var_15 = jiffies + msecs_to_jiffies(2);
+ unsigned long var_15 = current->flags;
+ int var_15 = 10;
+ struct struct_35 *h;
+ bool var_15;
+ __u32 pending;
+ int softirq_bit;
+
+
+
+
+
+
+ current->flags &= ~PF_MEMALLOC;
+
+ pending = local_softirq_pending();
+ account_irq_enter_time(current);
+
+ __local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);
+ var_15 = lockdep_softirq_start();
+
+restart:
+
+ set_softirq_pending(0);
+
+ local_irq_enable();
+
+ h = softirq_vec;
+
+ while ((softirq_bit = ffs(pending))) {
+  unsigned int vec_nr;
+  int prev_count;
+
+  h += softirq_bit - 1;
+
+  vec_nr = h - softirq_vec;
+  prev_count = preempt_count();
+
+  kstat_incr_softirqs_this_cpu(vec_nr);
+
+  trace_softirq_entry(vec_nr);
+  h->action(h);
+  trace_softirq_exit(vec_nr);
+  if (unlikely(prev_count != preempt_count())) {
+   pr_err("huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n",
+          vec_nr, softirq_to_name[vec_nr], h->action,
+          prev_count, preempt_count());
+   preempt_count_set(prev_count);
+  }
+  h++;
+  pending >>= softirq_bit;
+ }
+
+ rcu_bh_qs();
+ local_irq_disable();
+
+ pending = local_softirq_pending();
+ if (pending) {
+  if (time_before(jiffies, var_15) && !need_resched() &&
+      --var_15)
+   goto restart;
+
+  wakeup_softirqd();
+ }
+
+ lockdep_softirq_end(var_15);
+ account_irq_exit_time(current);
+ __local_bh_enable(SOFTIRQ_OFFSET);
+ WARN_ON_ONCE(in_interrupt());
+ current_restore_flags(var_15, PF_MEMALLOC);
+}
+
+asmlinkage __visible void fn_15(void)
+{
+ __u32 pending;
+ unsigned long flags;
+
+ if (in_interrupt())
+  return;
+
+ local_irq_save(flags);
+
+ pending = local_softirq_pending();
+
+ if (pending && !ksoftirqd_running())
+  do_softirq_own_stack();
+
+ local_irq_restore(flags);
+}
+
+
+
+
+void fn_16(void)
+{
+ rcu_irq_enter();
+ if (is_idle_task(current) && !in_interrupt()) {
+
+
+
+
+  local_bh_disable();
+  tick_irq_enter();
+  _local_bh_enable();
+ }
+
+ __irq_enter();
+}
+
+static inline void fn_17(void)
+{
+ if (ksoftirqd_running())
+  return;
+
+ if (!force_irqthreads) {
+
+  do_softirq_own_stack();
+
+ } else {
+  wakeup_softirqd();
+ }
+}
+
+static inline void fn_18(void)
+{
+
+}
+
+
+
+
+void fn_19(void)
+{
+
+ local_irq_disable();
+
+
+
+ account_irq_exit_time(current);
+ preempt_count_sub(HARDIRQ_OFFSET);
+ if (!in_interrupt() && local_softirq_pending())
+  invoke_softirq();
+
+ tick_irq_exit();
+ rcu_irq_exit();
+ trace_hardirq_exit();
+}
+
+
+
+
+inline void fn_20(unsigned int var_25)
+{
+ __raise_softirq_irqoff(var_25);
+
+ if (!in_interrupt())
+  wakeup_softirqd();
+}
+
+void fn_22(unsigned int var_25)
+{
+ unsigned long flags;
+
+ local_irq_save(flags);
+ raise_softirq_irqoff(var_25);
+ local_irq_restore(flags);
+}
+
+void fn_23(unsigned int var_25)
+{
+ trace_softirq_raise(var_25);
+ or_softirq_pending(1UL << var_25);
+}
+
+void fn_24(int var_25, void (*action)(struct struct_35 *))
+{
+ softirq_vec[var_25].action = action;
+}
+
+
+
+
+struct struct_32 {
+ struct struct_38 *head;
+ struct struct_38 **tail;
+};
+
+static DEFINE_PER_CPU(struct struct_32, tasklet_vec);
+static DEFINE_PER_CPU(struct struct_32, tasklet_hi_vec);
+
+static void fn_27(struct struct_38 *t,
+          struct struct_32 __percpu *headp,
+          unsigned int var_33)
+{
+ struct struct_32 *head;
+ unsigned long flags;
+
+ local_irq_save(flags);
+ head = this_cpu_ptr(headp);
+ t->next = NULL;
+ *head->tail = t;
+ head->tail = &(t->next);
+ raise_softirq_irqoff(var_33);
+ local_irq_restore(flags);
+}
+
+void fn_29(struct struct_38 *t)
+{
+ __tasklet_schedule_common(t, &tasklet_vec,
+      TASKLET_SOFTIRQ);
+}
+EXPORT_SYMBOL(__tasklet_schedule);
+
+void fn_30(struct struct_38 *t)
+{
+ __tasklet_schedule_common(t, &tasklet_hi_vec,
+      HI_SOFTIRQ);
+}
+EXPORT_SYMBOL(__tasklet_hi_schedule);
+
+static void fn_31(struct struct_35 *a,
+      struct struct_32 *tl_head,
+      unsigned int var_33)
+{
+ struct struct_38 *var_33;
+
+ local_irq_disable();
+ var_33 = tl_head->head;
+ tl_head->head = NULL;
+ tl_head->tail = &tl_head->head;
+ local_irq_enable();
+
+ while (var_33) {
+  struct struct_38 *t = var_33;
+
+  var_33 = var_33->next;
+
+  if (tasklet_trylock(t)) {
+   if (!atomic_read(&t->count)) {
+    if (!test_and_clear_bit(TASKLET_STATE_SCHED,
+       &t->state))
+     BUG();
+    t->func(t->data);
+    tasklet_unlock(t);
+    continue;
+   }
+   tasklet_unlock(t);
+  }
+
+  local_irq_disable();
+  t->next = NULL;
+  *tl_head->tail = t;
+  tl_head->tail = &t->next;
+  __raise_softirq_irqoff(var_33);
+  local_irq_enable();
+ }
+}
+
+static __latent_entropy void fn_33(struct struct_35 *a)
+{
+ tasklet_action_common(a, this_cpu_ptr(&tasklet_vec), TASKLET_SOFTIRQ);
+}
+
+static __latent_entropy void fn_34(struct struct_35 *a)
+{
+ tasklet_action_common(a, this_cpu_ptr(&tasklet_hi_vec), HI_SOFTIRQ);
+}
+
+void fn_35(struct struct_38 *t,
+    void (*func)(unsigned long), unsigned long var_43)
+{
+ t->next = NULL;
+ t->state = 0;
+ atomic_set(&t->count, 0);
+ t->func = func;
+ t->data = var_43;
+}
+EXPORT_SYMBOL(tasklet_init);
+
+void fn_37(struct struct_38 *t)
+{
+ if (in_interrupt())
+  pr_notice("Attempt to kill tasklet from interrupt\n");
+
+ while (test_and_set_bit(TASKLET_STATE_SCHED, &t->state)) {
+  do {
+   yield();
+  } while (test_bit(TASKLET_STATE_SCHED, &t->state));
+ }
+ tasklet_unlock_wait(t);
+ clear_bit(TASKLET_STATE_SCHED, &t->state);
+}
+EXPORT_SYMBOL(tasklet_kill);
+
+static enum enumtype_44 fn_39(struct struct_44 *timer)
+{
+ struct struct_44 *ttimer =
+  container_of(timer, struct tasklet_hrtimer, timer);
+
+ tasklet_hi_schedule(&ttimer->tasklet);
+ return HRTIMER_NORESTART;
+}
+
+
+
+
+
+static void fn_42(unsigned long var_43)
+{
+ struct struct_44 *ttimer = (void *)var_43;
+ enum enumtype_44 restart;
+
+ restart = ttimer->function(&ttimer->timer);
+ if (restart != HRTIMER_NORESTART)
+  hrtimer_restart(&ttimer->timer);
+}
+
+void fn_43(struct struct_44 *ttimer,
+     enum enumtype_44 (*function)(struct struct_44 *),
+     clockid_t var_47, enum enumtype_45 var_47)
+{
+ hrtimer_init(&ttimer->timer, var_47, var_47);
+ ttimer->timer.function = __hrtimer_tasklet_trampoline;
+ tasklet_init(&ttimer->tasklet, __tasklet_hrtimer_trampoline,
+       (unsigned long)ttimer);
+ ttimer->function = function;
+}
+EXPORT_SYMBOL_GPL(tasklet_hrtimer_init);
+
+void __init fn_47(void)
+{
+ int var_51;
+
+ for_each_possible_cpu(var_51) {
+  per_cpu(tasklet_vec, var_51).tail =
+   &per_cpu(tasklet_vec, var_51).head;
+  per_cpu(tasklet_hi_vec, var_51).tail =
+   &per_cpu(tasklet_hi_vec, var_51).head;
+ }
+
+ open_softirq(TASKLET_SOFTIRQ, tasklet_action);
+ open_softirq(HI_SOFTIRQ, tasklet_hi_action);
+}
+
+static int fn_49(unsigned int var_51)
+{
+ return local_softirq_pending();
+}
+
+static void fn_50(unsigned int var_51)
+{
+ local_irq_disable();
+ if (local_softirq_pending()) {
+
+
+
+
+  __do_softirq();
+  local_irq_enable();
+  cond_resched();
+  return;
+ }
+ local_irq_enable();
+}
+
+static struct struct_51 var_54 = {
+ .store = &ksoftirqd,
+ .thread_should_run = ksoftirqd_should_run,
+ .thread_fn = run_ksoftirqd,
+ .thread_comm = "ksoftirqd/%u",
+};
+
+static __init int fn_53(void)
+{
+ cpuhp_setup_state_nocalls(CPUHP_SOFTIRQ_DEAD, "softirq:dead", NULL,
+      NULL);
+ BUG_ON(smpboot_register_percpu_thread(&var_54));
+
+ return 0;
+}
+early_initcall(spawn_ksoftirqd);
+
+
+
+
+
+
+int __init __weak fn_54(void)
+{
+ return 0;
+}
+
+int __init __weak fn_55(void)
+{
+ return NR_IRQS_LEGACY;
+}
+
+int __init __weak fn_56(void)
+{
+ return 0;
+}
+
+unsigned int __weak fn_57(unsigned int var_59)
+{
+ return var_59;
+}

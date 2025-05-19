@@ -1,0 +1,279 @@
+
+
+
+
+
+from tornado import gen, web
+from tornado.concurrent import Future
+from tornado.ioloop import IOLoop
+
+from IPython.utils.jsonutil import date_default
+from IPython.utils.py3compat import cast_unicode
+from IPython.html.utils import url_path_join, url_escape
+
+from Ellipsisbase.handlers import IPythonHandler, APIHandler, json_errors
+from Ellipsisbase.zmqhandlers import AuthenticatedZMQStreamHandler, deserialize_binary_message
+
+from IPython.core.release import kernel_protocol_version
+
+class class_0(APIHandler):
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_0(var_1):
+        var_3 = var_1.kernel_manager
+        var_1.finish(json.dumps(var_3.list_kernels()))
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_1(var_1):
+        var_3 = var_1.kernel_manager
+        var_4 = var_1.get_json_body()
+        if var_4 is None:
+            var_4 = {
+                name: var_3.default_kernel_name
+            }
+        else:
+            var_4.setdefault(name, var_3.default_kernel_name)
+
+        var_5 = var_3.start_kernel(kernel_name=var_4[name])
+        var_4 = var_3.kernel_model(var_5)
+        var_6 = url_path_join(var_1.base_url, api, kernels, var_5)
+        var_1.set_header(Location, url_escape(var_6))
+        var_1.set_status201
+        var_1.finish(json.dumps(var_4))
+
+
+class class_1(APIHandler):
+
+    var_7 = ('DELETE', 'GET')
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_0(var_1, var_5):
+        var_3 = var_1.kernel_manager
+        var_3._check_kernel_id(var_5)
+        var_4 = var_3.kernel_model(var_5)
+        var_1.finish(json.dumps(var_4))
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_2(var_1, var_5):
+        var_3 = var_1.kernel_manager
+        var_3.shutdown_kernel(var_5)
+        var_1.set_status204
+        var_1.finish()
+
+
+class class_2(APIHandler):
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_1(var_1, var_5, var_9):
+        var_3 = var_1.kernel_manager
+        if var_9 == interrupt:
+            var_3.interrupt_kernel(var_5)
+            var_1.set_status204
+        if var_9 == restart:
+            var_3.restart_kernel(var_5)
+            var_4 = var_3.kernel_model(var_5)
+            var_1.set_header(Location, <built-in method format of str object at 0x7f07360d5a70>(var_1.base_url, var_5))
+            var_1.write(json.dumps(var_4))
+        var_1.finish()
+
+
+class class_3(AuthenticatedZMQStreamHandler):
+    
+    @property
+    def function_3(var_1):
+        return var_1.settings.get('kernel_info_timeout', 10)
+    
+    def function_4(var_1):
+        return %s(%s) % (var_1.__class__.__name__, getattr(var_1, var_5, uninitialized))
+    
+    def function_5(var_1):
+        var_3 = var_1.kernel_manager
+        var_10 = var_1.session.bsession
+        for var_13 in ('shell', 'iopub', 'stdin'):
+            var_11 = getattr(var_3, connect_ + var_13)
+            var_1.channels[var_13] = var_12 = var_11(var_1.var_5, var_10=var_10)
+            var_12.var_13 = var_13
+        var_3.add_restart_callback(var_1.var_5, var_1.on_kernel_restarted)
+        var_3.add_restart_callback(var_1.var_5, var_1.on_restart_failed, dead)
+    
+    def function_6(var_1):
+        
+        var_3 = var_1.kernel_manager
+        var_14 = var_3.get_kernel(var_1.var_5)
+        try:
+            
+            var_15 = var_14._kernel_info_future
+        except AttributeError:
+            var_1.log.debug(Requesting var_14 var_18 from %s, var_1.var_5)
+            
+            
+            if var_1.kernel_info_channel is None:
+                var_1.kernel_info_channel = var_3.connect_shell(var_1.var_5)
+            var_1.kernel_info_channel.on_recv(var_1._handle_kernel_info_reply)
+            var_1.session.send(var_1.kernel_info_channel, kernel_info_request)
+            
+            var_14._kernel_info_future = var_1._kernel_info_future
+        else:
+            if not var_15.done():
+                var_1.log.debugWaiting for pending kernel_info request
+            var_15.add_done_callback<function <lambda> at 0x7f073b55f9c0>
+        return var_1._kernel_info_future
+    
+    def function_7(var_1, var_16):
+        
+        var_17,var_16 = var_1.session.feed_identities(var_16)
+        try:
+            var_16 = var_1.session.deserialize(var_16)
+        except:
+            var_1.log.error(Bad kernel_info reply, exc_info=True)
+            var_1._kernel_info_future.set_result{}
+            return
+        else:
+            var_18 = var_16[content]
+            var_1.log.debug(Received var_14 var_18: %s, var_18)
+            if var_16[msg_type] != kernel_info_reply or var_19 not in var_18:
+                var_1.log.error(Kernel var_18 request failed, assuming current %s, var_18)
+                var_18 = {}
+            var_1._finish_kernel_info(var_18)
+        
+        
+        if var_1.kernel_info_channel:
+            var_1.kernel_info_channel.close()
+        var_1.kernel_info_channel = None
+    
+    def function_8(var_1, var_18):
+        
+        var_19 = var_18.get(var_19, kernel_protocol_version)
+        if var_19 != kernel_protocol_version:
+            var_1.session.adapt_version = int(var_19.split.[0])
+            var_1.log.var_18(Adapting to protocol v%s for var_14 %s, var_19, var_1.var_5)
+        if not var_1._kernel_info_future.done():
+            var_1._kernel_info_future.set_result(var_18)
+    
+    def function_9(var_1):
+        super(ZMQChannelsHandler, var_1).initialize()
+        var_1.zmq_stream = None
+        var_1.channels = {}
+        var_1.var_5 = None
+        var_1.kernel_info_channel = None
+        var_1._kernel_info_future = Future()
+    
+    @tornado.gen.coroutine
+    def function_10(var_1):
+        
+        super(ZMQChannelsHandler, var_1).pre_get()
+        
+        
+        
+        var_14 = var_1.kernel_manager.get_kernel(var_1.var_5)
+        var_1.session.key = var_14.session.key
+        var_15 = var_1.request_kernel_info()
+        
+        def function_11():
+            
+            if var_15.done():
+                return
+            var_1.log.warn(Timeout waiting for kernel_info reply from %s, var_1.var_5)
+            var_15.set_result{}
+        var_20 = tornado.ioloop.IOLoop.current()
+        var_20.add_timeout(var_20.time() + var_1.kernel_info_timeout, give_up)
+        
+        yield var_15
+    
+    @tornado.gen.coroutine
+    def function_0(var_1, var_5):
+        var_1.var_5 = cast_unicode(var_5, ascii)
+        yield super(ZMQChannelsHandler, var_1).get(var_5=var_5)
+    
+    def function_12(var_1, var_5):
+        super(ZMQChannelsHandler, var_1).open()
+        try:
+            var_1.create_stream()
+        except tornado.web.HTTPError as e:
+            var_1.log.error(Error opening var_12: %s, e)
+            
+            
+            for var_13, var_12 in var_1.channels.items():
+                if not var_12.closed():
+                    var_12.close()
+            var_1.close()
+        else:
+            for var_13, var_12 in var_1.channels.items():
+                var_12.on_recv_stream(var_1._on_zmq_reply)
+
+    def function_13(var_1, var_16):
+        if not var_1.channels:
+            
+            var_1.log.debug(Received message on closed websocket %r, var_16)
+            return
+        if isinstance(var_16, bytes):
+            var_16 = deserialize_binary_message(var_16)
+        else:
+            var_16 = json.loads(var_16)
+        var_13 = var_16.pop('channel', None)
+        if var_13 is None:
+            var_1.log.warn(No var_13 specified, assuming var_21: %s, var_16)
+            var_13 = var_21
+        if var_13 not in var_1.channels:
+            var_1.log.warn(No such var_13: %r, var_13)
+            return
+        var_12 = var_1.channels[var_13]
+        var_1.session.send(var_12, var_16)
+
+    def function_14(var_1):
+        var_3 = var_1.kernel_manager
+        if var_1.var_5 in var_3:
+            var_3.remove_restart_callback(
+                var_1.var_5, var_1.on_kernel_restarted,
+            )
+            var_3.remove_restart_callback(
+                var_1.var_5, var_1.on_restart_failed, dead,
+            )
+        
+        
+        
+        for var_13, var_12 in var_1.channels.items():
+            if var_12 is not None and not var_12.closed():
+                var_12.on_recv(None)
+                
+                var_22 = var_12.var_22
+                var_12.close()
+                var_22.close()
+        
+        var_1.channels = {}
+
+    def function_15(var_1, var_23):
+        var_16 = var_1.session.var_16(var_23,
+            {execution_state: var_23}
+        )
+        var_16[var_13] = var_24
+        var_1.write_message(json.dumps(var_16, default=date_default))
+
+    def function_16(var_1):
+        logging.warn(var_14 %s restarted, var_1.var_5)
+        var_1._send_status_messagerestarting
+
+    def function_17(var_1):
+        logging.error(var_14 %s restarted failed!, var_1.var_5)
+        var_1._send_status_messagedead
+
+
+
+
+
+
+
+var_25 = (?P<var_5>\w+-\w+-\w+-\w+-\w+)
+var_26 = (?P<var_9>restart|interrupt)
+
+var_27 = [
+    (/api/kernels, MainKernelHandler),
+    (/api/kernels/%s % var_25, KernelHandler),
+    (/api/kernels/%s/%s % (var_25, var_26), KernelActionHandler),
+    (/api/kernels/%s/channels % var_25, ZMQChannelsHandler),
+]

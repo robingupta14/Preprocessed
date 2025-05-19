@@ -1,0 +1,749 @@
+<?php
+
+
+
+
+
+$langs->load("members");
+
+$rowid  = GETPOST('rowid','int');
+$action = GETPOST('action','alpha');
+$cancel = GETPOST('cancel','alpha');
+$backtopage = GETPOST('backtopage','alpha');
+
+$search_lastname	= GETPOST('search_lastname','alpha');
+$search_login		= GETPOST('search_login','alpha');
+$search_email		= GETPOST('search_email','alpha');
+$type				= GETPOST('type','alpha');
+$status				= GETPOST('status','alpha');
+
+$limit = GETPOST('limit','int')?GETPOST('limit','int'):$conf->liste_limit;
+$sortfield = GETPOST("sortfield",'alpha');
+$sortorder = GETPOST("sortorder",'alpha');
+$page = GETPOST("page",'int');
+if (empty($page) || $page == -1) { $page = 0; }     
+$offset = $limit * $page ;
+$pageprev = $page - 1;
+$pagenext = $page + 1;
+if (! $sortorder) {  $sortorder="DESC"; }
+if (! $sortfield) {  $sortfield="d.lastname"; }
+
+$label=GETPOST("label","alpha");
+$subscription=GETPOST("subscription","int");
+$vote=GETPOST("vote","int");
+$comment=GETPOST("comment");
+$mail_valid=GETPOST("mail_valid");
+
+
+$result=restrictedArea($user,'adherent',$rowid,'adherent_type');
+
+$object = new AdherentType($db);
+
+$extrafields = new ExtraFields($db);
+
+
+$extralabels=$extrafields->fetch_name_optionals_label('adherent_type');
+
+if (GETPOST('button_removefilter_x','alpha') || GETPOST('button_removefilter_x','alpha') || GETPOST('button_removefilter','alpha')) 
+{
+    $search_lastname="";
+    $search_login="";
+    $search_email="";
+    $type="";
+    $sall="";
+}
+
+
+
+$hookmanager->initHooks(array('membertypecard','globalcard'));
+
+
+
+
+if ($cancel) {
+
+	$action='';
+
+	if (! empty($backtopage))
+	{
+		header("Location: ".$backtopage);
+		exit;
+	}
+}
+
+if ($action == 'add' && $user->rights->adherent->configurer)
+{
+	$object->label			= trim($label);
+	$object->subscription	= (int) trim($subscription);
+	$object->note			= trim($comment);
+	$object->mail_valid		= trim($mail_valid);
+	$object->vote			= (boolean) trim($vote);
+
+	
+	$ret = $extrafields->setOptionalsFromPost($extralabels,$object);
+	if ($ret < 0) $error++;
+
+	if (empty($object->label)) {
+		$error++;
+		setEventMessages($langs->trans("ErrorFieldRequired",$langs->transnoentities("Label")), null, 'errors');
+	}
+	else {
+		$sql = "SELECT libelle FROM ".MAIN_DB_PREFIX."adherent_type WHERE libelle='".$db->escape($object->label)."'";
+		$result = $db->query($sql);
+		if ($result) {
+			$num = $db->num_rows($result);
+		}
+		if ($num) {
+			$error++;
+			$langs->load("errors");
+			setEventMessages($langs->trans("ErrorLabelAlreadyExists",$login), null, 'errors');
+		}
+	}
+
+	if (! $error)
+	{
+		$id=$object->create($user);
+		if ($id > 0)
+		{
+			header("Location: ".$_SERVER["PHP_SELF"]);
+			exit;
+		}
+		else
+		{
+			setEventMessages($object->error, $object->errors, 'errors');
+			$action = 'create';
+		}
+	}
+	else
+	{
+		$action = 'create';
+	}
+}
+
+if ($action == 'update' && $user->rights->adherent->configurer)
+{
+	$object->fetch($rowid);
+
+	$object->oldcopy = clone $object;
+
+	$object->label			= trim($label);
+	$object->subscription	= (int) trim($subscription);
+	$object->note			= trim($comment);
+	$object->mail_valid		= trim($mail_valid);
+	$object->vote			= (boolean) trim($vote);
+
+	
+	$ret = $extrafields->setOptionalsFromPost($extralabels,$object);
+	if ($ret < 0) $error++;
+
+	$ret=$object->update($user);
+
+	if ($ret >= 0 && ! count($object->errors))
+	{
+		setEventMessages($langs->trans("MemberTypeModified"), null, 'mesgs');
+	}
+	else
+	{
+		setEventMessages($object->error, $object->errors, 'errors');
+	}
+
+	header("Location: ".$_SERVER["PHP_SELF"]."?rowid=".$object->id);
+	exit;
+}
+
+if ($action == 'confirm_delete' && $user->rights->adherent->configurer)
+{
+	$object->fetch($rowid);
+	$res=$object->delete();
+
+	if ($res > 0)
+	{
+		setEventMessages($langs->trans("MemberTypeDeleted"), null, 'mesgs');
+		header("Location: ".$_SERVER["PHP_SELF"]);
+		exit;
+	}
+	else
+	{
+		setEventMessages($langs->trans("MemberTypeCanNotBeDeleted"), null, 'errors');
+		$action='';
+	}
+}
+
+
+
+
+$form=new Form($db);
+
+llxHeader('',$langs->trans("MembersTypeSetup"),'EN:Module_Foundations|FR:Module_Adh&eacute;rents|ES:M&oacute;dulo_Miembros');
+
+
+
+if (! $rowid && $action != 'create' && $action != 'edit')
+{
+	
+
+	$sql = "SELECT d.rowid, d.libelle as label, d.subscription, d.vote";
+	$sql.= " FROM ".MAIN_DB_PREFIX."adherent_type as d";
+	$sql.= " WHERE d.entity IN (".getEntity('member_type').")";
+
+	$result = $db->query($sql);
+	if ($result)
+	{
+		$num = $db->num_rows($result);
+		$nbtotalofrecords = $num;
+
+		$i = 0;
+
+		$param = '';
+
+		$newcardbutton='';
+		if ($user->rights->adherent->configurer)
+		{
+			$newcardbutton='<a class="butActionNew" href="'.DOL_URL_ROOT.'/adherents/type.php?action=create"><span class="valignmiddle">'.$langs->trans('NewMemberType').'</span>';
+			$newcardbutton.= '<span class="fa fa-plus-circle valignmiddle"></span>';
+			$newcardbutton.= '</a>';
+		}
+
+		
+		if ($optioncss != '') 
+		
+		
+		
+		
+        
+		
+
+		print_barre_liste($langs->trans("MembersTypes"), $page, $_SERVER["PHP_SELF"], $param, $sortfield, $sortorder, '', $num, $nbtotalofrecords, 'title_generic.png', 0, $newcardbutton, '', $limit);
+
+		$moreforfilter = '';
+
+		
+		
+
+		
+		
+		
+		
+		
+		</th>';
+		
+
+		$membertype = new AdherentType($db);
+
+		while ($i < $num)
+		{
+			$objp = $db->fetch_object($result);
+
+			$membertype->id = $objp->rowid;
+			$membertype->ref = $objp->rowid;
+			$membertype->label = $objp->rowid;
+
+			
+			
+			
+			
+			
+			
+			
+			
+			if ($user->rights->adherent->configurer)
+				
+			else
+				</td>';
+			
+			$i++;
+		}
+		
+		
+
+		
+	}
+	else
+	{
+		dol_print_error($db);
+	}
+}
+
+
+
+
+
+
+
+if ($action == 'create')
+{
+	$object = new AdherentType($db);
+
+	
+
+	
+	
+	
+
+    dol_fiche_head('');
+
+	
+	
+
+	
+
+	
+	
+	
+
+	
+	
+	
+
+	
+	
+
+	
+	$doleditor=new DolEditor('mail_valid',$object->mail_valid,'',280,'dolibarr_notes','',false,true,$conf->fckeditor->enabled,15,'90%');
+	$doleditor->Create();
+	
+
+	
+	$parameters=array();
+	$reshook=$hookmanager->executeHooks('formObjectOptions',$parameters,$act,$action);    
+    
+	if (empty($reshook))
+	{
+		
+	}
+	
+	
+
+	dol_fiche_end();
+
+	
+	
+	&nbsp;&nbsp;&nbsp;&nbsp;';
+	
+	
+
+	
+}
+
+
+
+
+
+
+if ($rowid > 0)
+{
+	if ($action != 'edit')
+	{
+		$object = new AdherentType($db);
+		$object->fetch($rowid);
+		$object->fetch_optionals();
+
+		
+		if ($action == 'delete')
+		{
+			
+		}
+
+		$head = member_type_prepare_head($object);
+
+		dol_fiche_head($head, 'card', $langs->trans("MemberType"), -1, 'group');
+
+		$linkback = '<a href="'.DOL_URL_ROOT.'/adherents/type.php?restore_lastsearch_values=1">'.$langs->trans("BackToList").'</a>';
+
+		dol_banner_tab($object, 'rowid', $linkback);
+
+		
+		
+
+		
+
+		
+		
+		
+
+		
+		
+		
+
+		
+		
+
+		
+		
+
+		
+
+		
+		
+
+		dol_fiche_end();
+
+		
+
+		
+
+		
+		if ($user->rights->adherent->configurer)
+		{
+			rowid='.$object->id.'">'.$langs->trans("Modify").'</a></div>';
+		}
+
+		
+		
+
+		
+		if ($user->rights->adherent->configurer)
+		{
+			
+		}
+
+		
+
+
+		
+
+		$membertypestatic=new AdherentType($db);
+
+		$now=dol_now();
+
+		$sql = "SELECT d.rowid, d.login, d.firstname, d.lastname, d.societe, ";
+		$sql.= " d.datefin,";
+		$sql.= " d.email, d.fk_adherent_type as type_id, d.morphy, d.statut,";
+		$sql.= " t.libelle as type, t.subscription";
+		$sql.= " FROM ".MAIN_DB_PREFIX."adherent as d, ".MAIN_DB_PREFIX."adherent_type as t";
+		$sql.= " WHERE d.fk_adherent_type = t.rowid ";
+		$sql.= " AND d.entity IN (".getEntity('adherent').")";
+		$sql.= " AND t.rowid = ".$object->id;
+		if ($sall)
+		{
+			$sql.=natural_search(array("f.firstname","d.lastname","d.societe","d.email","d.login","d.address","d.town","d.note_public","d.note_private"), $sall);
+		}
+		if ($status != '')
+		{
+		    $sql.= natural_search('d.statut', $status, 2);
+		}
+		if ($action == 'search')
+		{
+			if (GETPOST('search','alpha'))
+			{
+		  		$sql.= natural_search(array("d.firstname","d.lastname"), GETPOST('search','alpha'));
+		  	}
+		}
+		if (! empty($search_lastname))
+		{
+			$sql.= natural_search(array("d.firstname","d.lastname"), $search_lastname);
+		}
+		if (! empty($search_login))
+		{
+			$sql.= natural_search("d.login", $search_login);
+		}
+		if (! empty($search_email))
+		{
+			$sql.= natural_search("d.email", $search_email);
+		}
+		if ($filter == 'uptodate')
+		{
+		    $sql.=" AND datefin >= '".$db->idate($now)."'";
+		}
+		if ($filter == 'outofdate')
+		{
+		    $sql.=" AND datefin < '".$db->idate($now)."'";
+		}
+
+		$sql.= " ".$db->order($sortfield,$sortorder);
+
+		
+		$nbtotalofrecords = '';
+		if (empty($conf->global->MAIN_DISABLE_FULL_SCANLIST))
+		{
+			$resql = $db->query($sql);
+		    if ($resql) $nbtotalofrecords = $db->num_rows($result);
+		    else dol_print_error($db);
+		    if (($page * $limit) > $nbtotalofrecords)	
+		    {
+		    	$page = 0;
+		    	$offset = 0;
+		    }
+		}
+
+		$sql.= " ".$db->plimit($conf->liste_limit+1, $offset);
+
+		$resql = $db->query($sql);
+		if ($resql)
+		{
+		    $num = $db->num_rows($resql);
+		    $i = 0;
+
+		    $titre=$langs->trans("MembersList");
+		    if ($status != '')
+		    {
+		        if ($status == '-1,1')								{ $titre=$langs->trans("MembersListQualified"); }
+		        else if ($status == '-1')							{ $titre=$langs->trans("MembersListToValid"); }
+		        else if ($status == '1' && ! $filter)				{ $titre=$langs->trans("MembersListValid"); }
+		        else if ($status == '1' && $filter=='uptodate')		{ $titre=$langs->trans("MembersListUpToDate"); }
+		        else if ($status == '1' && $filter=='outofdate')	{ $titre=$langs->trans("MembersListNotUpToDate"); }
+		        else if ($status == '0')							{ $titre=$langs->trans("MembersListResiliated"); }
+		    }
+		    elseif ($action == 'search')
+		    {
+		        $titre=$langs->trans("MembersListQualified");
+		    }
+
+		    if ($type > 0)
+		    {
+				$membertype=new AdherentType($db);
+		        $result=$membertype->fetch($type);
+				$titre.=" (".$membertype->label.")";
+		    }
+
+		    $param="&rowid=".$object->id;
+		    if (! empty($status))			$param.="&status=".$status;
+		    if (! empty($search_lastname))	$param.="&search_lastname=".$search_lastname;
+		    if (! empty($search_firstname))	$param.="&search_firstname=".$search_firstname;
+		    if (! empty($search_login))		$param.="&search_login=".$search_login;
+		    if (! empty($search_email))		$param.="&search_email=".$search_email;
+		    if (! empty($filter))			$param.="&filter=".$filter;
+
+		    if ($sall)
+		    {
+		        
+		    }
+
+			
+			
+
+			
+            print_barre_liste('',$page,$_SERVER["PHP_SELF"],$param,$sortfield,$sortorder,'',$num,$nbtotalofrecords);
+
+            $moreforfilter = '';
+
+            
+            
+
+			
+			
+
+			
+			
+
+			
+			
+
+			</td>';
+
+			
+			
+
+			</td>';
+
+			
+			
+		     ';
+		    
+			
+
+			
+
+			
+		    print_liste_field_titre( $langs->trans("Name")." / ".$langs->trans("Company"),$_SERVER["PHP_SELF"],"d.lastname",$param,"","",$sortfield,$sortorder);
+		    print_liste_field_titre("Login",$_SERVER["PHP_SELF"],"d.login",$param,"","",$sortfield,$sortorder);
+		    print_liste_field_titre("Nature",$_SERVER["PHP_SELF"],"d.morphy",$param,"","",$sortfield,$sortorder);
+		    print_liste_field_titre("EMail",$_SERVER["PHP_SELF"],"d.email",$param,"","",$sortfield,$sortorder);
+		    print_liste_field_titre("Status",$_SERVER["PHP_SELF"],"d.statut,d.datefin",$param,"","",$sortfield,$sortorder);
+		    print_liste_field_titre("EndSubscription",$_SERVER["PHP_SELF"],"d.datefin",$param,"",'align="center"',$sortfield,$sortorder);
+		    print_liste_field_titre("Action",$_SERVER["PHP_SELF"],"",$param,"",'width="60" align="center"',$sortfield,$sortorder);
+		    
+
+		    while ($i < $num && $i < $conf->liste_limit)
+		    {
+		        $objp = $db->fetch_object($resql);
+
+		        $datefin=$db->jdate($objp->datefin);
+
+		        $adh=new Adherent($db);
+		        $adh->lastname=$objp->lastname;
+		        $adh->firstname=$objp->firstname;
+
+		        
+		        
+		        if ($objp->societe != '')
+		        {
+		            
+		        }
+		        else
+		        {
+		            
+		        }
+
+		        
+		        
+
+		        
+		        
+
+		        
+		        
+
+		        
+		        
+
+		        
+		        
+		        
+		        
+
+		        
+		        if ($datefin)
+		        {
+			        
+		            if ($datefin < dol_now() && $objp->statut > 0)
+		            {
+		                
+		            }
+		            else
+		            {
+		                
+		            }
+		            
+		        }
+		        else
+		        {
+			        
+			        if ($objp->subscription == 'yes')
+			        {
+		                
+		                if ($objp->statut > 0) 
+			        }
+			        else
+			        {
+			            ';
+			        }
+		            
+		        }
+
+		        
+		        
+				if ($user->rights->adherent->creer)
+				{
+					
+				}
+				';
+				if ($user->rights->adherent->supprimer)
+				{
+					
+		        }
+				
+
+		        
+		        $i++;
+		    }
+
+		    
+            
+            
+
+			if ($num > $conf->liste_limit)
+			{
+			    print_barre_liste('',$page,$_SERVER["PHP_SELF"],$param,$sortfield,$sortorder,'',$num,$nbtotalofrecords,'');
+			}
+		}
+		else
+		{
+		    dol_print_error($db);
+		}
+
+	}
+
+	
+	
+	
+	
+	
+
+	if ($action == 'edit')
+	{
+		$object = new AdherentType($db);
+		$object->fetch($rowid);
+		$object->fetch_optionals();
+
+		$head = member_type_prepare_head($object);
+
+		
+		
+		
+		
+
+		dol_fiche_head($head, 'card', $langs->trans("MemberType"), 0, 'group');
+
+		
+
+		
+
+		
+
+		
+		
+		
+
+		
+		
+		
+
+		
+		
+
+		
+		$doleditor=new DolEditor('mail_valid',$object->mail_valid,'',280,'dolibarr_notes','',false,true,$conf->fckeditor->enabled,15,'90%');
+		$doleditor->Create();
+		
+
+		
+		$parameters=array();
+		$reshook=$hookmanager->executeHooks('formObjectOptions',$parameters,$act,$action);    
+        
+		if (empty($reshook))
+		{
+		    
+		}
+
+		
+
+		
+		if (empty($reshook))
+		{
+			
+			foreach($extrafields->attribute_label as $key=>$label)
+			{
+				if (isset($_POST["options_" . $key])) {
+					if (is_array($_POST["options_" . $key])) {
+						
+						$value = implode(",", $_POST["options_" . $key]);
+					} else {
+						$value = $_POST["options_" . $key];
+					}
+				} else {
+					$value = $adht->array_options["options_" . $key];
+				}
+				
+				
+				
+			}
+			
+		}
+
+		dol_fiche_end();
+
+		
+		
+		&nbsp;&nbsp;&nbsp;&nbsp;';
+		
+		
+
+		
+	}
+}
+
+
+llxFooter();
+
+$db->close();

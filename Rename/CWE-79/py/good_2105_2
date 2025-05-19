@@ -1,0 +1,1401 @@
+
+from bs4 import BeautifulSoup
+from django.conf import settings as django_settings
+from django.core import exceptions
+
+from django.core.urlresolvers import reverse
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
+from django.http import HttpResponse
+from django.http import HttpResponseBadRequest
+from django.http import HttpResponseRedirect
+from django.http import HttpResponseForbidden
+from django.forms import ValidationError, IntegerField, CharField
+from django.shortcuts import get_object_or_404
+from django.shortcuts import render
+from django.var_14.loader import get_template
+from django.views.decorators import csrf
+from django.utils import simplejson
+from django.utils.var_50 import escape
+from django.utils.translation import ugettext as _
+from django.utils.translation import string_concat
+from askbot.utils.slug import slugify
+from askbot import models
+from askbot import forms
+from askbot import conf
+from askbot import const
+from askbot import mail
+from askbot.conf import settings as askbot_settings
+from askbot.utils import category_tree
+from askbot.utils import decorators
+from askbot.utils import url_utils
+from askbot.utils.forms import get_db_object_or_404
+from django.var_14 import RequestContext
+from askbot.skins.loaders import render_into_skin_as_string
+from askbot.skins.loaders import render_text_into_skin
+from askbot.askbot.models.var_118 import get_tags_by_names
+
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+def function_0(var_1):
+    
+
+    var_3 = dict()
+    try:
+        if var_1.is_ajax():
+            if var_1.method == POST:
+                var_4 = django.utils.simplejson.loads(var_1.raw_post_data)
+                if var_1.var_6.is_authenticated():
+                    var_5 = askbot.const.RESPONSE_ACTIVITY_TYPES_FOR_DISPLAY
+                    var_5 += (
+                        askbot.const.TYPE_ACTIVITY_MENTION,
+                        askbot.const.TYPE_ACTIVITY_MARK_OFFENSIVE,
+                        askbot.const.TYPE_ACTIVITY_MODERATED_NEW_POST,
+                        askbot.const.TYPE_ACTIVITY_MODERATED_POST_EDIT
+                    )
+                    var_6 = var_1.var_6
+                    var_7 = askbot.models.ActivityAuditStatus.objects.filter(
+                        id__in = var_4[memo_list],
+                        activity__activity_type__in = var_5,
+                        var_6 = var_6
+                    )
+
+                    var_8 = var_4[var_8]
+                    if var_8 == delete:
+                        var_7.delete()
+                    elif var_8 == mark_new:
+                        var_7.update(status = askbot.models.ActivityAuditStatus.STATUS_NEW)
+                    elif var_8 == mark_seen:
+                        var_7.update(status = askbot.models.ActivityAuditStatus.STATUS_SEEN)
+                    elif var_8 == remove_flag:
+                        for memo in var_7:
+                            var_9 = memo.var_130.var_9
+                            if var_9 == askbot.const.TYPE_ACTIVITY_MARK_OFFENSIVE:
+                                var_1.var_6.flag_post(
+                                    var_12 = memo.var_130.var_11,
+                                    cancel_all = True
+                                )
+                            elif var_9 in \
+                                (
+                                    askbot.const.TYPE_ACTIVITY_MODERATED_NEW_POST,
+                                    askbot.const.TYPE_ACTIVITY_MODERATED_POST_EDIT
+                                ):
+                                var_10 = memo.var_130.var_11
+                                var_1.var_6.approve_post_revision(var_10)
+                                memo.delete()
+
+                    
+                    
+                    
+                    
+                    
+                    elif var_8 == delete_post:
+                        for memo in var_7:
+                            var_11 = memo.var_130.var_11
+                            if isinstance(var_11, askbot.models.PostRevision):
+                                var_12 = var_11.var_12
+                            else:
+                                var_12 = var_11
+                            var_1.var_6.delete_post(var_12)
+                            var_13 = askbot.models.PostFlagReason.objects.get(
+                                                    var_23 = var_4[reject_reason_id]
+                                                )
+                            var_14 = get_templateemail/rejected_post.var_50
+                            var_15 = {
+                                    var_12: var_12.var_50,
+                                    var_13: var_13.var_116.var_50
+                                   }
+                            var_16 = var_14.render(RequestContext(var_1, var_15))
+                            askbot.mail.send_mail(
+                                subject_line = _your var_12 was not accepted,
+                                var_16 = unicode(var_16),
+                                recipient_list = [var_12.author.email,]
+                            )
+                            memo.delete()
+
+                    var_6.update_response_counts()
+
+                    var_3[success] = True
+                    var_15 = django.utils.simplejson.dumps(var_3)
+                    return HttpResponse(var_15, mimetype=application/json)
+                else:
+                    raise django.core.exceptions.PermissionDenied(
+                        _Sorry, but anonymous var_49 cannot access the inbox
+                    )
+            else:
+                raise django.core.exceptions.PermissionDeniedmust use POST var_1
+        else:
+            
+            return HttpResponseRedirect(reverseindex)
+    except Exception, e:
+        var_17 = unicode(e)
+        if var_17 == :
+            var_17 = _Oops, apologies - there was some error
+        var_3[var_17] = var_17
+        var_3[success] = False
+        var_15 = django.utils.simplejson.dumps(var_3)
+        return HttpResponse(var_15, mimetype=application/json)
+
+
+def function_1(var_6 = None, var_26 = None, var_12 = None):
+    
+    if var_6.is_anonymous():
+        raise django.core.exceptions.PermissionDenied(_Sorry, anonymous var_49 cannot var_18)
+
+    var_6.assert_can_vote_for_post(var_12 = var_12, direction = var_26)
+    var_18 = var_6.get_old_vote_for_post(var_12)
+    var_3 = {}
+    if var_18 != None:
+        var_6.assert_can_revoke_old_vote(var_18)
+        var_19 = var_18.cancel()
+        var_3[var_44] = var_12.points+ var_19
+        var_3[status] = 1 
+
+    else:
+        
+        var_20 = var_6.get_unused_votes_today()
+        if var_20 <= 0:
+            raise django.core.exceptions.PermissionDenied(
+                            _Sorry you ran out of votes for today
+                        )
+
+        var_20 -= 1
+        if var_20 <= \
+            askbot.conf.settings.VOTES_LEFT_WARNING_THRESHOLD:
+            var_21 = _You have %(var_20)s votes left for today \
+                    % {var_20: var_20 }
+            var_3[var_17] = var_21
+
+        if var_26 == var_27:
+            var_18 = var_6.upvote(var_12 = var_12)
+        else:
+            var_18 = var_6.downvote(var_12 = var_12)
+
+        var_3[var_44] = var_12.points
+        var_3[status] = 0 
+
+    var_3[success] = 1
+
+    return var_3
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+def function_2(var_1):
+    
+    var_3 = {'allowed': 1, 'success': 1, 'status': 0, 'count': 0, 'message': ''}
+
+    try:
+        if var_1.is_ajax() and var_1.method == POST:
+            var_22 = var_1.POST.gettype
+        else:
+            raise Exception(_Sorry, something is not right here...)
+
+        var_23 = var_1.POST.getpostId
+
+        if var_22 == 0:
+            if askbot.conf.settings.ACCEPTING_ANSWERS_ENABLED is False:
+                return
+            if var_1.var_6.is_authenticated():
+                var_24 = var_1.POST.getpostId
+                var_25 = get_object_or_404(askbot.models.Post, post_type=var_25, var_23 = var_24)
+                
+                if var_25.accepted():
+                    var_1.var_6.unaccept_best_answer(var_25)
+                    var_3[status] = 1 
+                else:
+                    var_1.var_6.accept_best_answer(var_25)
+
+                
+                var_25.var_48.update_summary_html() 
+                
+
+            else:
+                raise django.core.exceptions.PermissionDenied(
+                        _Sorry, but anonymous var_49 cannot accept answers
+                    )
+
+        elif var_22 in ('1', '2', '5', '6'):
+
+            
+            
+            
+            var_26 = var_27
+            if var_22 in ('2', '6'):
+                var_26 = var_28
+
+            if var_22 in ('5', '6'):
+                
+                
+                var_29 = var_1.POST.getpostId
+                var_12 = get_object_or_404(askbot.models.Post, post_type=var_25, var_23=var_29)
+            else:
+                var_12 = get_object_or_404(askbot.models.Post, post_type=var_30, var_23=var_23)
+            
+            
+
+            var_3 = process_vote(
+                                        var_6 = var_1.var_6,
+                                        var_26 = var_26,
+                                        var_12 = var_12
+                                    )
+
+            
+            if var_22 in ('1', '2'): 
+                var_12.var_48.update_summary_html() 
+            
+
+        elif var_22 in ['7', '8']:
+            
+            if var_22 == 7:
+                var_12 = get_object_or_404(askbot.models.Post, post_type=var_30, var_23=var_23)
+            if var_22 == 8:
+                var_23 = var_1.POST.getpostId
+                var_12 = get_object_or_404(askbot.models.Post, post_type=var_25, var_23=var_23)
+
+            var_1.var_6.flag_post(var_12)
+
+            var_3[var_44] = var_12.offensive_flag_count
+            var_3[success] = 1
+
+        elif var_22 in ['7.5', '8.5']:
+            
+            if var_22 == 7.5:
+                var_12 = get_object_or_404(askbot.models.Post, post_type=var_30, var_23=var_23)
+            if var_22 == 8.5:
+                var_23 = var_1.POST.getpostId
+                var_12 = get_object_or_404(askbot.models.Post, post_type=var_25, var_23=var_23)
+
+            var_1.var_6.flag_post(var_12, cancel = True)
+
+            var_3[var_44] = var_12.offensive_flag_count
+            var_3[success] = 1
+
+        elif var_22 in ['7.6', '8.6']:
+            
+            if var_22 == 7.6:
+                var_12 = get_object_or_404(askbot.models.Post, var_23=var_23)
+            if var_22 == 8.6:
+                var_23 = var_1.POST.getpostId
+                var_12 = get_object_or_404(askbot.models.Post, var_23=var_23)
+
+            var_1.var_6.flag_post(var_12, cancel_all = True)
+
+            var_3[var_44] = var_12.offensive_flag_count
+            var_3[success] = 1
+
+        elif var_22 in ['9', '10']:
+            
+            var_12 = get_object_or_404(askbot.models.Post, post_type=var_30, var_23=var_23)
+            if var_22 == 10:
+                var_23 = var_1.POST.getpostId
+                var_12 = get_object_or_404(askbot.models.Post, post_type=var_25, var_23=var_23)
+
+            if var_12.deleted == True:
+                var_1.var_6.restore_post(var_12 = var_12)
+            else:
+                var_1.var_6.delete_post(var_12 = var_12)
+
+        elif var_1.is_ajax() and var_1.method == POST:
+
+            if not var_1.var_6.is_authenticated():
+                var_3[allowed] = 0
+                var_3[success] = 0
+
+            var_30 = get_object_or_404(askbot.models.Post, post_type=var_30, var_23=var_23)
+            var_22 = var_1.POST.gettype
+
+            
+            if var_22 == 4:
+                var_31 = var_1.var_6.toggle_favorite_question(var_30)
+                var_3[var_44] = askbot.models.FavoriteQuestion.objects.filter(var_48 = var_30.var_48).var_44()
+                if var_31 == False:
+                    var_3[status] = 1
+
+            elif var_22 == 11:
+                var_6 = var_1.var_6
+                if var_6.is_authenticated():
+                    if var_6 not in var_30.var_48.followed_by.all():
+                        var_6.follow_question(var_30)
+                        if askbot.conf.settings.EMAIL_VALIDATION == True \
+                            and var_6.email_isvalid == False:
+
+                            var_3[var_17] = \
+                                    _Your subscription is saved, but email address %(email)s needs to be validated, please see <a var_69="%(details_url)s">more var_116 here</a> % {email:var_6.email,details_url:reversefaq + '
+
+                    subscribed = var_6.subscribe_for_followed_question_alerts()
+                    if subscribed:
+                        if var_17 in var_3:
+                            var_3[var_17] += <br/>
+                        var_3[var_17] += _email update frequency has been set to daily
+                    
+                    
+                else:
+                    pass
+                    
+                    
+            elif var_22 == 12:
+                var_6 = var_1.var_6
+                if var_6.is_authenticated():
+                    var_6.unfollow_question(var_30)
+        else:
+            var_3[success] = 0
+            var_3[var_17] = Request mode is not supported. Please try again.
+
+        if var_22 not in (1, 2, 4, 5, 6, 11, 12):
+            
+            
+            
+            var_12 = askbot.models.Post.objects.get(var_23 = var_23)
+            var_12.var_48.invalidate_cached_data()
+
+        var_15 = django.utils.simplejson.dumps(var_3)
+
+    except Exception, e:
+        var_3[var_17] = unicode(e)
+        var_3[success] = 0
+        var_15 = django.utils.simplejson.dumps(var_3)
+    return HttpResponse(var_15, mimetype=application/json)
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.ajax_login_required
+def function_3(var_1, **kwargs):
+    var_34 = kwargs[var_34]
+    var_4 = django.utils.simplejson.loads(var_1.raw_post_data)
+    var_35 = var_4[var_37]
+    var_36 = var_4[var_36]
+    assert var_36 in ('good', 'bad', 'subscribed')
+    
+    var_37, var_38 = askbot.forms.clean_marked_tagnames(var_35)
+
+    if var_1.var_6.is_administrator() and var_6 in var_4:
+        var_6 = get_object_or_404(askbot.models.User, var_76=var_4[var_6])
+    else:
+        var_6 = var_1.var_6
+
+    var_39, var_40 = var_6.mark_tags(
+                                                         var_37,
+                                                         var_38,
+                                                         var_36 = var_36,
+                                                         var_34 = var_34
+                                                        )
+
+    
+    var_41 = dict()
+    for name in var_37:
+        if name in var_39:
+            var_41[name] = 1
+        else:
+            var_41[name] = 0
+
+    for name in var_38:
+        if name in var_40:
+            var_41[name] = askbot.models.Tag.objects.filter(
+                                        name__startswith = name[:-1]
+                                    ).var_44()
+        else:
+            var_41[name] = 0
+
+    return HttpResponse(django.utils.simplejson.dumps(var_41), mimetype=application/json)
+
+
+@askbot.utils.decorators.get_only
+def function_4(var_1):
+    
+    var_42 = var_1.GET.get('wildcard', None)
+    if var_42 is None:
+        return HttpResponseForbidden()
+
+    var_43 = askbot.models.Tag.objects.get_by_wildcards( [var_42,] )
+    var_44 = var_43.var_44()
+    var_45 = var_43.values_list(name, flat = True)[:20]
+    var_46 = django.utils.simplejson.dumps({tag_count: var_44, var_55: list(var_45)})
+    return HttpResponse(var_46, mimetype = application/json)
+
+@askbot.utils.decorators.get_only
+def function_5(var_1):
+    
+    var_47 = var_1.GET[var_47]
+    var_47 = IntegerField().clean(var_47)
+    var_48 = askbot.models.Thread.objects.get(var_23=var_47)
+    var_49 = var_48.get_users_shared_with()
+    var_15 = {
+        var_49: var_49,
+    }
+    var_50 = render_into_skin_as_string(widgets/var_73.var_50, var_15, var_1)
+    var_46 = django.utils.simplejson.dumps({
+        var_50: var_50,
+        users_count: var_49.var_44(),
+        success: True
+    })
+    return HttpResponse(var_46, mimetype=application/json)
+
+@askbot.utils.decorators.get_only
+def function_6(var_1):
+    
+    var_47 = var_1.GET[var_47]
+    var_47 = IntegerField().clean(var_47)
+    var_48 = askbot.models.Thread.objects.get(var_23=var_47)
+    var_51 = var_48.get_groups_shared_with()
+    var_15 = {var_51: var_51}
+    var_50 = render_into_skin_as_string(widgets/groups_list.var_50, var_15, var_1)
+    var_46 = django.utils.simplejson.dumps({
+        var_50: var_50,
+        groups_count: var_51.var_44(),
+        success: True
+    })
+    return HttpResponse(var_46, mimetype=application/json)
+
+@askbot.utils.decorators.ajax_only
+def function_7(var_1):
+    
+    var_52 = var_1.REQUEST.get('template_name', None)
+    var_53 = ('widgets/tag_category_selector.html',)
+    
+    if var_52 not in var_53:
+        raise Http404
+    return {
+        var_50: get_template(var_52).render()
+    }
+
+@askbot.utils.decorators.get_only
+def function_8(var_1):
+    
+    var_54 = askbot.models.Tag.objects.filter(
+                        deleted = False,
+                        status = askbot.models.Tag.STATUS_ACCEPTED
+                    )
+
+    var_55 = var_54.values_list(
+                        name, flat = True
+                    )
+
+    var_56 = <built-in method join of str object at 0x7f073c337138>(map(escape, var_55))
+    return HttpResponse(var_56, mimetype = var_58/plain)
+
+@askbot.utils.decorators.get_only
+def function_9(var_1):
+    
+    var_57 = get_db_object_or_404(var_1.GET)
+    var_58 = getattr(var_57.description, var_58, ).strip()
+    return HttpResponse(var_58, mimetype = var_58/plain)
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_10(var_1):
+    
+    var_57 = get_db_object_or_404(var_1.POST)
+    var_58 = var_1.POST[var_58]
+    if var_57.description:
+        var_1.var_6.edit_post(var_57.description, var_16=var_58)
+    else:
+        var_1.var_6.post_object_description(var_57, var_16=var_58)
+    return {var_50: var_57.description.var_50}
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_11(var_1):
+    if var_1.var_6.is_anonymous() \
+        or not var_1.var_6.is_administrator_or_moderator():
+        raise django.core.exceptions.PermissionDenied()
+    var_4 = django.utils.simplejson.loads(var_1.raw_post_data)
+    var_59 = askbot.forms.clean_tag(var_4[var_59])
+    var_60 = askbot.forms.clean_tag(var_4[var_60])
+    var_61 = var_4[var_61]
+
+    
+    
+
+    var_62 = askbot.utils.category_tree.get_data()
+    askbot.utils.category_tree.rename_category(
+        var_62,
+        var_60 = var_60,
+        var_59 = var_59,
+        var_61 = var_61
+    )
+    askbot.utils.category_tree.save_data(var_62)
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_12(var_1):
+    
+    if var_1.var_6.is_anonymous() \
+        or not var_1.var_6.is_administrator_or_moderator():
+        raise django.core.exceptions.PermissionDenied()
+
+    try:
+        var_4 = django.utils.simplejson.loads(var_1.raw_post_data)
+        var_63 = var_4[var_63]
+        var_61 = var_4[var_61]
+        var_62 = askbot.utils.category_tree.get_data()
+        askbot.utils.category_tree.delete_category(var_62, var_63, var_61)
+        askbot.utils.category_tree.save_data(var_62)
+    except Exception:
+        if var_63 in locals():
+            logging.critical(could not delete var_118 %s % var_63)
+        else:
+            logging.critical(failed to parse var_12 var_15 %s % var_1.raw_post_data)
+        raise django.core.exceptions.PermissionDenied(_Sorry, could not delete var_118)
+    return {tree_data: var_62}
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_13(var_1):
+    
+    if var_1.var_6.is_anonymous() \
+        or not var_1.var_6.is_administrator_or_moderator():
+        raise django.core.exceptions.PermissionDenied()
+
+    var_4 = django.utils.simplejson.loads(var_1.raw_post_data)
+    var_64 = askbot.forms.clean_tag(var_4[new_category_name])
+    var_61 = var_4[var_61]
+
+    var_62 = askbot.utils.category_tree.get_data()
+
+    if askbot.utils.category_tree.path_is_valid(var_62, var_61) == False:
+        raise ValueError()
+
+    var_65 = askbot.utils.category_tree.add_category(var_62, var_64, var_61)
+    askbot.utils.category_tree.save_data(var_62)
+    return {
+        tree_data: var_62,
+        var_65: var_65
+    }
+
+
+@askbot.utils.decorators.get_only
+def function_14(var_1):
+    
+    var_66 = askbot.models.var_111.objects.get_global_group()
+    var_51 = askbot.models.var_111.objects.exclude_personal()
+    var_67 = var_51.exclude(
+                        name=var_66.name
+                    ).values_list(
+                        name, flat = True
+                    )
+    var_56 = <built-in method join of str object at 0x7f073c337138>(var_67)
+    return HttpResponse(var_56, mimetype = var_58/plain)
+
+@django.views.askbot.utils.decorators.csrf.csrf_protect
+def function_15(var_1):
+    
+    
+    var_55 = var_1.REQUEST.get('tags', '').strip().split()
+    var_68, var_38 = askbot.forms.clean_marked_tagnames(var_55)
+    if var_1.var_6.is_authenticated():
+        if var_1.method == POST:
+            if ok in var_1.POST:
+                var_1.var_6.mark_tags(
+                            var_68,
+                            var_38,
+                            var_36 = good,
+                            var_34 = add
+                        )
+                var_1.var_6.message_set.create(
+                    var_17 = _Your var_118 subscription was saved, thanks!
+                )
+            else:
+                var_17 = _Tag subscription was canceled (<a var_69="%(url)s">undo</a>). % {var_102: escape(var_1.var_61) + ?var_54= + var_1.REQUEST[var_54]}
+                var_1.var_6.message_set.create(var_17 = var_17)
+            return HttpResponseRedirect(reverseindex)
+        else:
+            var_15 = {var_54: var_55}
+            return render(var_1, subscribe_for_tags.var_50, var_15)
+    else:
+        var_70 = var_68 + var_38
+        var_17 = _Please sign in to subscribe for: %(var_54)s \
+                    % {var_54: <built-in method join of str object at 0x7f0736111c30>(var_70)}
+        var_1.var_6.message_set.create(var_17 = var_17)
+        var_1.session[subscribe_for_tags] = (var_68, var_38)
+        return HttpResponseRedirect(askbot.utils.url_utils.get_login_url())
+
+@askbot.utils.decorators.admins_only
+def function_16(var_1):
+    if askbot.conf.settings.SUBSCRIBED_TAG_SELECTOR_ENABLED is False:
+        raise Http404
+    var_71 = askbot.models.BulkTagSubscription.objects.all()
+    var_15 = {var_71: var_71}
+    return render(var_1, var_54/list_bulk_tag_subscription.var_50, var_15)
+
+@askbot.utils.decorators.admins_only
+def function_17(var_1):
+    if askbot.conf.settings.SUBSCRIBED_TAG_SELECTOR_ENABLED is False:
+        raise Http404
+
+    var_15 = {var_34: _Create}
+    if var_1.method == POST:
+        var_72 = askbot.forms.BulkTagSubscriptionForm(var_1.POST)
+        if var_72.is_valid():
+            var_55 = var_72.cleaned_data[var_54].split 
+            var_73 = var_72.cleaned_data.getusers
+            var_74 = var_72.cleaned_data.getgroups
+
+            var_75 = askbot.models.BulkTagSubscription.objects.create(
+                                                            var_55=var_55,
+                                                            tag_author=var_1.var_6,
+                                                            var_73=var_73,
+                                                            var_74=var_74
+                                                        )
+
+            return HttpResponseRedirect(reverselist_bulk_tag_subscription)
+        else:
+            var_15[var_72] = var_72
+    else:
+        var_15[var_72] = askbot.forms.BulkTagSubscriptionForm()
+
+    return render(var_1, var_54/form_bulk_tag_subscription.var_50, var_15)
+
+@askbot.utils.decorators.admins_only
+def function_18(var_1, var_76):
+    if askbot.conf.settings.SUBSCRIBED_TAG_SELECTOR_ENABLED is False:
+        raise Http404
+
+    var_75 = get_object_or_404(askbot.models.BulkTagSubscription,
+                                          var_76=var_76)
+    var_15 = {var_34: _Edit}
+    if var_1.method == POST:
+        var_72 = askbot.forms.BulkTagSubscriptionForm(var_1.POST)
+        if var_72.is_valid():
+            var_75.var_54.clear()
+            var_75.var_49.clear()
+            var_75.var_51.clear()
+
+            if var_51 in var_72.cleaned_data:
+                var_77 = [var_6.var_23 for var_6 in var_72.cleaned_data[var_51]]
+                var_75.var_51.add(*var_77)
+
+            var_54, var_78 = get_tags_by_names(var_72.cleaned_data[var_54].split )
+            var_79 = [var_118.var_23 for var_118 in var_54]
+
+            for new_tag_name in var_78:
+                var_80 = askbot.models.Tag.objects.create(name=new_tag_name,
+                                             created_by=var_1.var_6)
+                var_79.append(var_80.var_23)
+
+            var_75.var_54.add(*var_79)
+
+            var_81 = []
+            for var_6 in var_72.cleaned_data[var_49]:
+                var_81.append(var_6)
+                var_6.mark_tags(var_75.tag_list(),
+                               var_36=subscribed, var_34=add)
+
+            var_75.var_49.add(*var_81)
+
+            return HttpResponseRedirect(reverselist_bulk_tag_subscription)
+    else:
+        var_82 = {
+                        var_49: var_75.var_49.all(),
+                        var_51: var_75.var_51.all(),
+                        var_54: <built-in method join of str object at 0x7f073c337608>([var_118.name for var_118 in var_75.var_54.all()]),
+                       }
+        var_15.update({
+                    var_75: var_75,
+                    var_72: askbot.forms.BulkTagSubscriptionForm(initial=var_82),
+                   })
+
+    return render(var_1, var_54/form_bulk_tag_subscription.var_50, var_15)
+
+@askbot.utils.decorators.admins_only
+@askbot.utils.decorators.post_only
+def function_19(var_1):
+    if askbot.conf.settings.SUBSCRIBED_TAG_SELECTOR_ENABLED is False:
+        raise Http404
+
+    var_76 = var_1.POST.getpk
+    if var_76:
+        var_75 = get_object_or_404(askbot.models.BulkTagSubscription, var_76=var_76)
+        var_75.delete()
+        return HttpResponseRedirect(reverselist_bulk_tag_subscription)
+    else:
+        return HttpResponseRedirect(reverselist_bulk_tag_subscription)
+
+@askbot.utils.decorators.get_only
+def function_20(var_1):
+    
+    var_83 = var_1.GET.get('query_text', '').strip()
+    var_63 = var_1.GET.get('tag_name', None)
+
+    if askbot.conf.settings.GROUPS_ENABLED:
+        var_84 = askbot.models.Thread.objects.get_visible(var_6=var_1.var_6)
+    else:
+        var_84 = askbot.models.Thread.objects.all()
+
+    if var_63:
+        var_84 = var_84.filter(tags__name=var_63)
+
+    if var_83:
+        var_84 = var_84.get_for_title_query(var_83)
+
+    
+    var_84 = var_84.distinct()[:30]
+
+    var_85 = list()
+    for var_48 in var_84:
+        try:
+            var_85.append({
+                    var_115: escape(var_48.var_115),
+                    var_102: var_48.get_absolute_url(),
+                    answer_count: var_48.get_answer_count(var_1.var_6)
+                })
+        except:
+            continue
+
+    var_86 = django.utils.simplejson.dumps(var_85)
+    return HttpResponse(var_86, mimetype = application/json)
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.ajax_login_required
+def function_21(var_1):
+    
+    var_87 = var_1.POST[var_87]
+    var_88 = int(var_1.POST[var_88])
+    assert(var_87 in ('display', 'email'))
+    if var_87 == display:
+        var_89 = dict(askbot.conf.get_tag_display_filter_strategy_choices())
+        assert(var_88 in var_89)
+        var_1.var_6.display_tag_filter_strategy = var_88
+    else:
+        var_89 = dict(askbot.conf.get_tag_email_filter_strategy_choices())
+        assert(var_88 in var_89)
+        var_1.var_6.email_tag_filter_strategy = var_88
+    var_1.var_6.save()
+    return HttpResponse(, mimetype = application/json)
+
+
+@login_required
+@django.views.askbot.utils.decorators.csrf.csrf_protect
+def function_22(var_1, var_23):
+    
+    var_30 = get_object_or_404(askbot.models.Post, post_type=var_30, var_23=var_23)
+    try:
+        if var_1.method == POST:
+            var_72 = askbot.forms.CloseForm(var_1.POST)
+            if var_72.is_valid():
+                var_36 = var_72.cleaned_data[var_36]
+
+                var_1.var_6.close_question(
+                                        var_30 = var_30,
+                                        var_36 = var_36
+                                    )
+            return HttpResponseRedirect(var_30.get_absolute_url())
+        else:
+            var_1.var_6.assert_can_close_question(var_30)
+            var_72 = askbot.forms.CloseForm()
+            var_15 = {
+                var_30: var_30,
+                var_72: var_72,
+            }
+            return render(var_1, close.var_50, var_15)
+    except django.core.exceptions.PermissionDenied, e:
+        var_1.var_6.message_set.create(var_17 = unicode(e))
+        return HttpResponseRedirect(var_30.get_absolute_url())
+
+@login_required
+@django.views.askbot.utils.decorators.csrf.csrf_protect
+def function_23(var_1, var_23):
+    
+
+    var_30 = get_object_or_404(askbot.models.Post, post_type=var_30, var_23=var_23)
+    
+    try:
+        if var_1.method == POST :
+            var_1.var_6.reopen_question(var_30)
+            return HttpResponseRedirect(var_30.get_absolute_url())
+        else:
+            var_1.var_6.assert_can_reopen_question(var_30)
+            var_90 = var_30.var_48.closed_by.get_profile_url()
+            var_91 = var_30.var_48.closed_by.var_128
+            var_15 = {
+                var_30 : var_30,
+                var_90: var_90,
+                var_91: var_91,
+            }
+            return render(var_1, reopen.var_50, var_15)
+
+    except django.core.exceptions.PermissionDenied, e:
+        var_1.var_6.message_set.create(var_17 = unicode(e))
+        return HttpResponseRedirect(var_30.get_absolute_url())
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+def function_24(var_1):
+    
+    if var_1.var_6.is_authenticated():
+        if var_1.var_6.is_administrator() or var_1.var_6.is_moderator():
+            var_25 = askbot.models.Post.objects.get_answers(
+                                                var_1.var_6
+                                            ).get(
+                                                var_23=var_1.POST[var_24]
+                                            )
+            var_92 = var_25.swap_with_question(new_title = var_1.POST[new_title])
+            return {question_url: var_92.get_absolute_url() }
+    raise Http404
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_25(var_1):
+    if var_1.var_6.is_anonymous():
+        raise django.core.exceptions.PermissionDenied(_Please sign in to var_18)
+    var_72 = askbot.forms.VoteForm(var_1.POST)
+    if var_72.is_valid():
+        var_93 = var_72.cleaned_data[var_29]
+        var_94 = var_72.cleaned_data[var_94]
+        var_95 = get_object_or_404(askbot.models.Post, post_type=var_95, var_23=var_93)
+        process_vote(
+            var_12 = var_95,
+            var_26 = var_27,
+            var_6 = var_1.var_6
+        )
+    else:
+        raise ValueError
+    
+    return {score: var_95.points}
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_26(var_1):
+    if var_1.var_6.is_anonymous():
+        raise django.core.exceptions.PermissionDenied(_Please sign in to delete/restore posts)
+    var_72 = askbot.forms.VoteForm(var_1.POST)
+    if var_72.is_valid():
+        var_29 = var_72.cleaned_data[var_29]
+        var_12 = get_object_or_404(
+            askbot.models.Post,
+            post_type__in = ('question', 'answer'),
+            var_23 = var_29
+        )
+        if var_72.cleaned_data[var_94]:
+            var_1.var_6.restore_post(var_12)
+        else:
+            var_1.var_6.delete_post(var_12)
+    else:
+        raise ValueError
+    return {is_deleted: var_12.deleted}
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+def function_27(var_1):
+    if var_1.method == POST:
+        if var_1.POST[formdata] == required:
+            var_1.session[message_silent] = 1
+            if var_1.var_6.is_authenticated():
+                var_1.var_6.delete_messages()
+    return HttpResponse
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_28(var_1):
+    
+    
+    
+    
+    var_72 = askbot.forms.EditGroupMembershipForm(var_1.POST)
+    if var_72.is_valid():
+        var_96 = var_72.cleaned_data[var_96]
+        var_97 = var_72.cleaned_data[var_97]
+        try:
+            var_6 = askbot.models.User.objects.get(var_23=var_97)
+        except askbot.models.User.DoesNotExist:
+            raise django.core.exceptions.PermissionDenied(
+                var_6 with var_23 %d not found % var_97
+            )
+
+        var_34 = var_72.cleaned_data[var_34]
+        
+        if var_34 == add:
+            var_98 = {name: var_96, var_6: var_6}
+            var_99 = askbot.models.var_111.objects.get_or_create(**var_98)
+            var_1.var_6.edit_group_membership(var_6, var_99, add)
+            var_14 = get_templatewidgets/group_snippet.var_50
+            return {
+                name: var_99.name,
+                description: getattr(var_99.tag_wiki, var_58, ),
+                var_50: var_14.render({var_99: var_99})
+            }
+        elif var_34 == remove:
+            try:
+                var_99 = askbot.models.var_111.objects.get(var_96 = var_96)
+                var_1.var_6.edit_group_membership(var_6, var_99, remove)
+            except askbot.models.var_111.DoesNotExist:
+                raise django.core.exceptions.PermissionDenied()
+        else:
+            raise django.core.exceptions.PermissionDenied()
+    else:
+        raise django.core.exceptions.PermissionDenied()
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_29(var_1):
+    
+    var_72 = askbot.forms.GroupLogoURLForm(var_1.POST)
+    if var_72.is_valid():
+        var_100 = var_72.cleaned_data[var_100]
+        var_101 = var_72.cleaned_data[var_101]
+        var_99 = askbot.models.var_111.objects.get(var_23 = var_100)
+        var_99.logo_url = var_101
+        var_99.save()
+    else:
+        raise ValueError()
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_30(var_1):
+    var_96 = var_1.POST.getgroup
+    if var_96:
+        var_99 = askbot.models.var_111.objects.get_or_create(
+                            name=var_96,
+                            openness=askbot.models.var_111.OPEN,
+                            var_6=var_1.var_6,
+                        )
+
+        var_102 = reverse(users_by_group, kwargs={var_100: var_99.var_23,
+                   group_slug: slugify(var_96)})
+        var_103 = dict(var_96 = var_96,
+                             var_102 = var_102 )
+        return var_103
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_31(var_1):
+    var_100 = IntegerField().clean(int(var_1.POST[var_100]))
+    var_99 = askbot.models.var_111.objects.get(var_23 = var_100)
+    var_99.logo_url = None
+    var_99.save()
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_32(var_1):
+    var_104 = IntegerField().clean(int(var_1.POST[var_104]))
+    var_36 = askbot.models.PostFlagReason.objects.get(var_23 = var_104)
+    var_36.delete()
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_33(var_1):
+    
+    var_100 = IntegerField().clean(int(var_1.POST[var_100]))
+    var_105 = CharField().clean(var_1.POST[var_105])
+    assert var_105 in ('moderate_email', 'moderate_answers_to_enquirers', 'is_vip')
+    var_99 = askbot.models.var_111.objects.get(var_23 = var_100)
+    var_106 = not getattr(var_99, var_105)
+    setattr(var_99, var_105, var_106)
+    var_99.save()
+    return {is_enabled: var_106}
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_34(var_1):
+    var_100 = IntegerField().clean(int(var_1.POST[var_100]))
+    var_107 = IntegerField().clean(int(var_1.POST[var_107]))
+    var_99 = askbot.models.var_111.objects.get(var_23=var_100)
+    var_99.openness = var_107
+    var_99.save()
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.admins_only
+def function_35(var_1):
+    var_108 = CharField().clean(var_1.REQUEST[var_108])
+    var_109 = IntegerField().clean(var_1.REQUEST[var_109])
+    var_105 = CharField().clean(var_1.REQUEST[var_105])
+
+    var_110 = (('Group', 'preapproved_emails'), ('Group', 'preapproved_email_domains'))
+
+    if (var_108, var_105) not in var_110:
+        raise django.core.exceptions.PermissionDenied()
+
+    var_57 = askbot.models.get_model(var_108).objects.get(var_23=var_109)
+    if var_1.method == POST:
+        var_58 = CharField().clean(var_1.POST[var_58])
+        setattr(var_57, var_105, var_58)
+        var_57.save()
+    elif var_1.method == GET:
+        return {var_58: getattr(var_57, var_105)}
+    else:
+        raise django.core.exceptions.PermissionDenied()
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_36(var_1):
+    
+    if var_1.var_6.is_anonymous():
+        raise django.core.exceptions.PermissionDenied()
+
+    var_111 = askbot.models.var_111
+    var_112 = askbot.models.GroupMembership
+
+    var_100 = IntegerField().clean(var_1.POST[var_100])
+    var_99 = var_111.objects.get(var_23=var_100)
+
+    var_113 = var_1.var_6.get_group_membership(var_99)
+    if var_113 is None:
+        var_113 = var_1.var_6.join_group(var_99)
+        var_114 = var_113.get_level_display()
+    else:
+        var_113.delete()
+        var_114 = var_112.get_level_value_display(var_112.NONE)
+
+    return {membership_level: var_114}
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_37(var_1):
+    
+    var_72 = askbot.forms.EditRejectReasonForm(var_1.POST)
+    if var_72.is_valid():
+        var_115 = var_72.cleaned_data[var_115]
+        var_116 = var_72.cleaned_data[var_116]
+        if var_72.cleaned_data[var_104] is None:
+            var_36 = var_1.var_6.create_post_reject_reason(
+                var_115 = var_115, var_116 = var_116
+            )
+        else:
+            var_104 = var_72.cleaned_data[var_104]
+            var_36 = askbot.models.PostFlagReason.objects.get(var_23 = var_104)
+            var_1.var_6.edit_post_reject_reason(
+                var_36, var_115 = var_115, var_116 = var_116
+            )
+        return {
+            var_104: var_36.var_23,
+            var_115: var_115,
+            var_116: var_116
+        }
+    else:
+        raise Exception(askbot.forms.format_form_errors(var_72))
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+@askbot.utils.decorators.admins_only
+def function_38(var_1):
+    
+    var_72 = askbot.forms.ModerateTagForm(var_1.POST)
+    if var_72.is_valid():
+        var_117 = var_72.cleaned_data[var_117]
+        var_47 = var_72.cleaned_data.get('thread_id', None)
+
+        try:
+            var_118 = askbot.models.Tag.objects.get(var_23=var_117)
+        except askbot.models.Tag.DoesNotExist:
+            return
+
+        if var_47:
+            var_84 = askbot.models.Thread.objects.filter(var_23=var_47)
+        else:
+            var_84 = var_118.var_84.none()
+
+        if var_72.cleaned_data[var_34] == accept:
+            
+            
+            
+            var_118.status = askbot.models.Tag.STATUS_ACCEPTED
+            var_118.save()
+            for var_48 in var_84:
+                var_48.add_tag(
+                    var_63 = var_118.name,
+                    var_6 = var_118.created_by,
+                    timestamp = datetime.datetime.now(),
+                    silent = True
+                )
+        else:
+            if var_118.var_84.var_44() > len(var_84):
+                for var_48 in var_84:
+                    var_48.var_54.remove(var_118)
+                var_118.used_count = var_118.var_84.var_44()
+                var_118.save()
+            elif var_118.status == askbot.models.Tag.STATUS_SUGGESTED:
+                var_118.delete()
+    else:
+        raise Exception(askbot.forms.format_form_errors(var_72))
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_39(var_1):
+    
+    
+    if var_1.var_6.is_anonymous():
+        return
+
+    var_72 = askbot.forms.DraftQuestionForm(var_1.POST)
+    if var_72.is_valid():
+        var_115 = var_72.cleaned_data.get('title', '')
+        var_58 = var_72.cleaned_data.get('text', '')
+        var_37 = var_72.cleaned_data.get('tagnames', '')
+        if var_115 or var_58 or var_37:
+            try:
+                var_119 = askbot.models.DraftQuestion.objects.get(author=var_1.var_6)
+            except askbot.models.DraftQuestion.DoesNotExist:
+                var_119 = askbot.models.DraftQuestion()
+
+            var_119.var_115 = var_115
+            var_119.var_58 = var_58
+            var_119.var_37 = var_37
+            var_119.author = var_1.var_6
+            var_119.save()
+
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_40(var_1):
+    
+    
+    if var_1.var_6.is_anonymous():
+        return
+
+    var_72 = askbot.forms.DraftAnswerForm(var_1.POST)
+    if var_72.is_valid():
+        var_47 = var_72.cleaned_data[var_47]
+        try:
+            var_48 = askbot.models.Thread.objects.get(var_23=var_47)
+        except askbot.models.Thread.DoesNotExist:
+            return
+        try:
+            var_119 = askbot.models.DraftAnswer.objects.get(
+                                            var_48=var_48,
+                                            author=var_1.var_6
+                                    )
+        except askbot.models.DraftAnswer.DoesNotExist:
+            var_119 = askbot.models.DraftAnswer()
+
+        var_119.author = var_1.var_6
+        var_119.var_48 = var_48
+        var_119.var_58 = var_72.cleaned_data.get('text', '')
+        var_119.save()
+
+@askbot.utils.decorators.get_only
+def function_41(var_1):
+    
+    if var_1.var_6.is_anonymous():
+        return HttpResponseForbidden()
+
+    var_83 = var_1.GET[q]
+    var_120 = IntegerField().clean(var_1.GET[var_120])
+
+    var_49 = askbot.models.User.objects
+    var_121 = var_49.filter(username__istartswith=var_83)
+
+    if var_1.var_6.is_administrator_or_moderator():
+        var_121 = var_121.values_list('username', 'email')
+    else:
+        var_121 = var_121.values_listusername
+
+    var_122 = [<built-in method join of str object at 0x7f073c338a28>(info) for info in var_121[:var_120]]
+    return HttpResponse(<built-in method join of str object at 0x7f073c337138>(var_122), mimetype = var_58/plain)
+
+@django.views.askbot.utils.decorators.csrf.csrf_protect
+def function_42(var_1):
+    var_72 = askbot.forms.ShareQuestionForm(var_1.POST)
+    try:
+        if var_72.is_valid():
+
+            var_47 = var_72.cleaned_data[var_47]
+            var_96 = var_72.cleaned_data[recipient_name]
+
+            var_48 = askbot.models.Thread.objects.get(var_23=var_47)
+            var_123 = var_48._question_post()
+
+            
+            var_124 = var_123.get_notify_sets(
+                                    mentioned_users=list(),
+                                    exclude_list=[var_1.var_6,]
+                                )
+
+            
+            if var_96 == askbot.conf.settings.GLOBAL_GROUP_NAME:
+                var_48.make_public(recursive=True)
+            else:
+                var_99 = askbot.models.var_111.objects.get(name=var_96)
+                var_48.add_to_groups((var_99,), recursive=True)
+
+            
+            var_125 = var_123.get_notify_sets(
+                                    mentioned_users=list(),
+                                    exclude_list=[var_1.var_6,]
+                                )
+
+            var_126 = {
+                for_mentions: var_125[for_mentions] - var_124[for_mentions],
+                for_email: var_125[for_email] - var_124[for_email],
+                for_inbox: var_125[for_inbox] - var_124[for_inbox]
+            }
+
+            var_123.issue_update_notifications(
+                updated_by=var_1.var_6,
+                var_126=var_126,
+                var_9=askbot.const.TYPE_ACTIVITY_POST_SHARED,
+                timestamp=datetime.datetime.now()
+            )
+
+            return HttpResponseRedirect(var_48.get_absolute_url())
+    except Exception:
+        var_127 = _Sorry, looks like sharing var_1 was invalid
+        var_1.var_6.message_set.create(var_17=var_127)
+        return HttpResponseRedirect(var_48.get_absolute_url())
+
+@django.views.askbot.utils.decorators.csrf.csrf_protect
+def function_43(var_1):
+    var_72 = askbot.forms.ShareQuestionForm(var_1.POST)
+    try:
+        if var_72.is_valid():
+
+            var_47 = var_72.cleaned_data[var_47]
+            var_128 = var_72.cleaned_data[recipient_name]
+
+            var_48 = askbot.models.Thread.objects.get(var_23=var_47)
+            var_6 = askbot.models.User.objects.get(var_128=var_128)
+            var_99 = var_6.get_personal_group()
+            var_48.add_to_groups([var_99], recursive=True)
+            
+            
+            var_126 = {
+                for_inbox: set([var_6]),
+                for_mentions: set([var_6]),
+                for_email: set([var_6])
+            }
+            var_48._question_post().issue_update_notifications(
+                updated_by=var_1.var_6,
+                var_126=var_126,
+                var_9=askbot.const.TYPE_ACTIVITY_POST_SHARED,
+                timestamp=datetime.datetime.now()
+            )
+
+            return HttpResponseRedirect(var_48.get_absolute_url())
+    except Exception:
+        var_127 = _Sorry, looks like sharing var_1 was invalid
+        var_1.var_6.message_set.create(var_17=var_127)
+        return HttpResponseRedirect(var_48.get_absolute_url())
+
+@django.views.askbot.utils.decorators.csrf.csrf_protect
+def function_44(var_1):
+    
+    var_129 = IntegerField().clean(var_1.POST[var_129])
+    var_34 = var_1.POST[var_34]
+    assert(var_34 in ('approve', 'deny'))
+
+    var_130 = get_object_or_404(askbot.models.Activity, var_76=var_129)
+    var_99 = var_130.var_11
+    var_131 = var_130.var_6
+
+    if var_99.has_moderator(var_1.var_6):
+        var_132 = askbot.models.GroupMembership.objects.get(
+                                            var_6=var_131, var_99=var_99
+                                        )
+        if var_34 == approve:
+            var_132.level = askbot.models.GroupMembership.FULL
+            var_132.save()
+            var_133 = {var_6: var_131.var_128, var_99: var_99.name}
+            var_17 = _%(var_6)s, welcome to var_99 %(var_99)s! % var_133
+            var_131.message_set.create(var_17=var_17)
+        else:
+            var_132.delete()
+
+        var_130.delete()
+        var_102 = var_1.var_6.get_absolute_url() + ?sort=inbox&section=var_134
+        return HttpResponseRedirect(var_102)
+    else:
+        raise Http404
+
+@askbot.utils.decorators.get_only
+def function_45(var_1):
+    
+    if var_135 not in var_1.GET:
+        return HttpResponseForbidden()
+    var_135 = django.utils.simplejson.loads(var_1.GET[var_135])
+    var_136 = var_1.GET.get('id', 'editor')
+    var_72 = askbot.forms.EditorForm(
+                attrs={var_23: var_136},
+                editor_attrs=var_135,
+                var_6=var_1.var_6
+            )
+    var_137 = render_text_into_skin(
+        {{ var_72.media }} {{ var_72.editor }},
+        {var_72: var_72},
+        var_1
+    )
+    
+    
+    var_138 = BeautifulSoup(var_137)
+
+    var_139 = list()
+    for script in var_138.find_allscript:
+        var_139.append({
+            contents: script.string,
+            src: script.get('src', None)
+        })
+
+    var_15 = {
+        var_50: str(var_138.textarea),
+        scripts: var_139,
+        success: True
+    }
+    return HttpResponse(django.utils.simplejson.dumps(var_15), mimetype=application/json)
+
+@django.views.askbot.utils.decorators.csrf.csrf_exempt
+@askbot.utils.decorators.ajax_only
+@askbot.utils.decorators.post_only
+def function_46(var_1):
+    
+    var_140 = _Sorry, only var_48 moderators can use this function
+    if var_1.var_6.is_authenticated():
+        if var_1.var_6.is_administrator_or_moderator() is False:
+            raise django.core.exceptions.PermissionDenied(var_140)
+    
+    var_24 = IntegerField().clean(var_1.POST[var_24])
+    var_25 = askbot.models.Post.objects.get(var_23=var_24, post_type=var_25)
+
+    if var_25.var_48.has_moderator(var_1.var_6) is False:
+        raise django.core.exceptions.PermissionDenied(var_140)
+
+    var_141 = var_25.var_48._question_post().author
+    var_142 = var_141.get_personal_group()
+
+    if var_25.has_group(var_142):
+        var_17 = _The var_25 is now unpublished
+        var_25.remove_from_groups([var_142])
+    else:
+        var_25.add_to_groups([var_142])
+        var_17 = _The var_25 is now published
+        
+    var_1.var_6.message_set.create(var_17=var_17)
+    return {redirect_url: var_25.get_absolute_url()}

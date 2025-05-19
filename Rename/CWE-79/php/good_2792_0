@@ -1,0 +1,405 @@
+<?php
+
+
+define ( 'SHIBBOLETH_PLUGIN_REVISION', preg_replace( '/\$Rev: (.+) \$/', '\\1',
+	'$Rev$') ); 
+
+
+
+$var_0 = fn_20('shibboleth_plugin_revision');
+if ($var_0 === false || var_1 != $var_0) {
+	add_action('admin_init', 'shibboleth_activate_plugin');
+}
+
+
+function fn_0() {
+	$var_2 = fn_20('shibboleth_auto_login');
+	if ( !is_user_logged_in() && fn_5() && $var_2 ) {
+		do_action('login_form_shibboleth');
+
+		$var_3 = wp_signon('', true);
+		if ( is_wp_error($var_3) ) {
+			
+		} else {
+			wp_safe_redirect($var_15['REQUEST_URI']);
+			exit();
+		}
+	}
+}
+add_action('init', 'shibboleth_auto_login');
+
+
+function fn_1() {
+	if ( function_exists('switch_to_blog') ) switch_to_blog($GLOBALS['current_site']->var_4);
+
+	fn_21('shibboleth_login_url', get_option('home') . '/Shibboleth.sso/Login');
+	fn_21('shibboleth_default_login', false);
+	fn_21('shibboleth_auto_login', false);
+	fn_21('shibboleth_logout_url', get_option('home') . '/Shibboleth.sso/Logout');
+
+	$var_5 = array(
+		'username' => array( 'name' => 'eppn', 'managed' => false),
+		'first_name' => array( 'name' => 'givenName', 'managed' => true),
+		'last_name' => array( 'name' => 'sn', 'managed' => true),
+		'nickname' => array( 'name' => 'eppn', 'managed' => true),
+		'display_name' => array( 'name' => 'displayName', 'managed' => true),
+		'email' => array( 'name' => 'mail', 'managed' => true),
+	);
+	fn_21('shibboleth_headers', $var_5);
+
+	$var_6 = array(
+		'administrator' => array(
+			'header' => 'entitlement',
+			'value' => 'urn:mace:example.edu:entitlement:wordpress:admin',
+		),
+		'author' => array(
+			'header' => 'affiliation',
+			'value' => 'faculty',
+		),
+		
+		'default' => 'subscriber',
+	);
+	fn_21('shibboleth_roles', $var_6);
+
+	fn_21('shibboleth_update_roles', true);
+
+	fn_18();
+
+	fn_3();
+
+	fn_22('shibboleth_plugin_revision', var_1);
+
+	if ( function_exists('restore_current_blog') ) restore_current_blog();
+}
+register_activation_hook('shibboleth/shibboleth.php', 'shibboleth_activate_plugin');
+
+
+
+function fn_2() {
+	fn_19();
+}
+register_deactivation_hook('shibboleth/shibboleth.php', 'shibboleth_deactivate_plugin');
+
+
+
+function fn_3() {
+
+	
+	$var_7 = fn_20('shibboleth_update_users');
+	$var_5 = fn_20('shibboleth_headers');
+	$var_8 = false;
+
+	foreach ($var_5 as $var_9 => $var_10) {
+		if ( is_string($var_10) ) {
+			$var_5[$var_9] = array(
+				'name' => $var_10,
+				'managed' => $var_7,
+			);
+			$var_8 = true;
+		}
+	}
+
+	if ( $var_8 ) {
+		fn_22('shibboleth_headers', $var_5);
+	}
+	fn_23('shibboleth_update_users');
+
+}
+
+
+function fn_4() {
+	if ( defined('WP_ADMIN') && var_11 === true ) {
+	}
+}
+add_action('init', 'shibboleth_admin_hooks');
+
+
+
+function fn_5() { 
+	$var_12 = false;
+
+	$var_13 = array('Shib-Session-ID', 'Shib_Session_ID', 'HTTP_SHIB_IDENTITY_PROVIDER');
+	foreach ($var_13 as $var_14) {
+		if ( array_key_exists($var_14, $var_15) && !empty($var_15[$var_14]) ) {
+			$var_12 = true;
+			break;
+		}
+	}
+
+	$var_12 = apply_filters('shibboleth_session_active', $var_12);
+	return $var_12;
+}
+
+
+
+function fn_6($var_16, $var_17, $var_18) {
+	if ( fn_5() ) {
+		return fn_12();
+	} else {
+		$var_19 = fn_11( $_REQUEST['redirect_to'] );
+		wp_redirect($var_19);
+		var_20;
+	}
+}
+
+
+
+function fn_7() {
+	add_filter('authenticate', 'shibboleth_authenticate', 10, 3);
+}
+add_action('login_form_shibboleth', 'shibboleth_login_form_shibboleth');
+
+
+
+function fn_8( $var_21 ) {
+	$var_22 = fn_20('shibboleth_password_reset_url');
+
+	if ( !empty($var_22) ) {
+		$var_16 = get_userdatabylogin($var_21);
+		if ( $var_16 && get_usermeta($var_16->var_23, 'shibboleth_account') ) {
+			wp_redirect($var_22);
+			var_20;
+		}
+	}
+}
+add_action('retrieve_password', 'shibboleth_retrieve_password');
+
+
+
+function fn_9($var_24) {
+	if ( fn_20('shibboleth_default_login') ) {
+		$var_24 = add_query_arg('action', 'shibboleth', $var_24);
+	}
+
+	return $var_24;
+}
+add_filter('login_url', 'shibboleth_login_url');
+
+
+
+function fn_10() {
+	$var_25 = fn_20('shibboleth_logout_url');
+
+	if ( !empty($var_25) && fn_5() ) {
+		wp_redirect($var_25);
+		var_20;
+	}
+}
+add_action('wp_logout', 'shibboleth_logout', 20);
+
+
+
+function fn_11($var_26 = null) {
+
+	
+	
+	if ( function_exists('switch_to_blog') ) switch_to_blog($GLOBALS['current_site']->var_4);
+	$var_27 = site_url('wp-login.php');
+	if ( function_exists('restore_current_blog') ) restore_current_blog();
+
+	$var_27 = add_query_arg('action', 'shibboleth', $var_27);
+	if ( !empty($var_26) ) {
+		$var_27 = add_query_arg('redirect_to', urlencode($var_26), $var_27);
+	}
+
+	
+	$var_19 = fn_20('shibboleth_login_url');
+	$var_19 = add_query_arg('target', urlencode($var_27), $var_19);
+
+	$var_19 = apply_filters('shibboleth_session_initiator_url', $var_19);
+
+	return $var_19;
+}
+
+
+
+function fn_12() {
+	$var_28 = fn_20('shibboleth_headers');
+
+	
+	$var_29 = fn_14();
+
+	if ( empty($var_29) ) {
+		return new class_0('no_access', __('You do not have sufficient access.'));
+	}
+
+	$var_17 = $var_15[$var_28['username']['name']];
+	$var_16 = new class_1($var_17);
+
+	if ( $var_16->var_23 ) {
+		if ( !get_usermeta($var_16->var_23, 'shibboleth_account') ) {
+			
+			
+		}
+	}
+
+	
+	if ( !$var_16->var_23 ) {
+		$var_16 = fn_13($var_17);
+	}
+
+	if ( !$var_16->var_23 ) {
+		$var_30 = 'Unable to create account based on data provided.';
+		if (defined('WP_DEBUG') && var_31) {
+			$var_30 .= '<!-- ' . print_r($var_15, true) . ' -->';
+		}
+		return new class_0('missing_data', $var_30);
+	}
+
+	
+	update_usermeta($var_16->var_23, 'shibboleth_account', true);
+	fn_16($var_16->var_23);
+	if ( fn_20('shibboleth_update_roles') ) {
+		$var_16->set_role($var_29);
+		do_action( 'shibboleth_set_user_roles', $var_16 );
+	}
+
+	return $var_16;
+}
+
+
+
+function fn_13($var_21) {
+	if ( empty($var_21) ) return null;
+
+	
+	$var_33 = wp_insert_user(array('user_login'=>$var_21));
+	$var_16 = new class_1($var_33);
+	update_usermeta($var_16->var_23, 'shibboleth_account', true);
+
+	
+	fn_16($var_16->var_23, true);
+	$var_29 = fn_14();
+	$var_16->set_role($var_29);
+	do_action( 'shibboleth_set_user_roles', $var_16 );
+
+	return $var_16;
+}
+
+
+
+function fn_14() {
+	global $var_34;
+	if ( !$var_34 ) $var_34 = new class_2();
+
+	$var_35 = apply_filters('shibboleth_roles', fn_20('shibboleth_roles'));
+	$var_29 = $var_35['default'];
+
+	foreach ( $var_34->var_36 as $var_9 => $var_37 ) {
+		$var_38 = $var_35[$var_9]['header'];
+		$var_39 = $var_35[$var_9]['value'];
+
+		if ( empty($var_38) || empty($var_39) ) continue;
+
+		$var_40 = split(';', $var_15[$var_38]);
+		if ( in_array($var_39, $var_40) ) {
+			$var_29 = $var_9;
+			break;
+		}
+	}
+
+	$var_29 = apply_filters('shibboleth_user_role', $var_29);
+
+	return $var_29;
+}
+
+
+
+function fn_15() {
+	$var_5 = fn_20('shibboleth_headers');
+	$var_7 = array();
+
+	foreach ($var_5 as $var_37 => $var_10) {
+		if ( $var_10['managed'] ) {
+			$var_7[] = $var_37;
+		}
+	}
+
+	return $var_7;
+}
+
+
+
+function fn_16($var_33, $var_41 = false) {
+
+	$var_28 = fn_20('shibboleth_headers');
+
+	$var_42 = array(
+		'user_login' => 'username',
+		'user_nicename' => 'username',
+		'first_name' => 'first_name',
+		'last_name' => 'last_name',
+		'nickname' => 'nickname',
+		'display_name' => 'display_name',
+		'user_email' => 'email'
+	);
+
+	$var_43 = array(
+		'ID' => $var_33,
+	);
+	
+	foreach ($var_42 as $var_44 => $var_14) {
+		if ( $var_41 || $var_28[$var_14]['managed'] ) {
+			$var_45 = 'shibboleth_' . ( strpos($var_44, 'user_') === 0 ? '' : 'user_' ) . $var_44;
+			$var_43[$var_44] = apply_filters($var_45, $var_15[$var_28[$var_14]['name']]);
+		}
+	}
+
+	wp_update_user($var_43);
+}
+
+
+
+add_filter( 'shibboleth_user_nicename', 'sanitize_user' );
+
+
+function fn_17() {
+	$var_24 = add_query_arg('action', 'shibboleth');
+	$var_24 = remove_query_arg('reauth', $var_24);
+	
+}
+add_action('login_form', 'shibboleth_login_form');
+
+
+
+function fn_18() {
+	if ( got_mod_rewrite() ) {
+		$var_46 = get_home_path() . '.htaccess';
+		$var_47 = array('AuthType shibboleth', 'Require shibboleth');
+		insert_with_markers($var_46, 'Shibboleth', $var_47);
+	}
+}
+
+
+
+function fn_19() {
+	if ( got_mod_rewrite() ) {
+		$var_46 = get_home_path() . '.htaccess';
+		insert_with_markers($var_46, 'Shibboleth', array());
+	}
+}
+
+
+
+function fn_20($var_9, $var_48 = false ) {
+	return function_exists('get_site_option') ? get_site_option($var_9, $var_48) : get_option($var_9, $var_48);
+}
+function fn_21($var_9, $var_10, $var_49 = 'yes') {
+	if (function_exists('add_site_option')) {
+		return add_site_option($var_9, $var_10);
+	} else {
+		return add_option($var_9, $var_10, '', $var_49);
+	}
+}
+function fn_22($var_9, $var_10) {
+	return function_exists('update_site_option') ? update_site_option($var_9, $var_10) : update_option($var_9, $var_10);
+}
+function fn_23($var_9) {
+	return function_exists('delete_site_option') ? delete_site_option($var_9) : delete_option($var_9);
+}
+
+
+function fn_24() {
+	load_plugin_textdomain('shibboleth', false, dirname( plugin_basename( var_50 ) ) . '/localization/');
+}
+add_action('plugins_loaded', 'shibboleth_load_textdomain');

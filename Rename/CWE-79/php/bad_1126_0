@@ -1,0 +1,184 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+global $var_0;
+global $var_1;
+
+$var_0 = strtolower(htmlspecialchars($_REQUEST['zone']));
+
+if (empty($var_0) || empty($config['captiveportal'][$var_0])) {
+	header("Location: services_captiveportal_zones.php");
+	var_2;
+}
+
+init_config_arr(array('captiveportal', $var_0, 'passthrumac'));
+$var_3 = &$config['captiveportal'];
+$var_4 = &$var_3[$var_0]['passthrumac'];
+
+$var_5 = array(gettext("Services"), gettext("Captive Portal"), $var_3[$var_0]['zone'], gettext("MACs"));
+$var_6 = array("", "services_captiveportal_zones.php", "services_captiveportal.php?zone=" . $var_0, "@self");
+$var_7 = "captiveportal";
+
+$var_8 = array('pass' => '<i class="fa fa-check text-success"></i>&nbsp;' . gettext("Pass"),
+	'block' => '<i class="fa fa-times text-danger"></i>&nbsp;' . gettext("Block"));
+
+if ($var_10['save']) {
+	$var_9 = $var_10;
+
+	if ($var_10['apply']) {
+		$var_11 = 0;
+
+		if (is_array($var_3[$var_0]['passthrumac'])) {
+			$var_1 = $var_3[$var_0]['cpzoneid'];
+			$var_12 = captiveportal_passthrumac_configure();
+			if (!empty($var_12)) {
+				@file_put_contents("{$g['tmp_path']}/passthrumac_gui", $var_12);
+				mwexec("/sbin/ipfw {$g['tmp_path']}/passthrumac_gui");
+				@unlink("{$g['tmp_path']}/passthrumac_gui");
+			}
+			if ($var_11 == 0) {
+				clear_subsystem_dirty('passthrumac');
+			}
+		}
+	}
+
+	if ($var_10['postafterlogin']) {
+		if (empty($var_4)) {
+			
+			var_2;
+		}
+
+		if ($var_10['username']) {
+			$var_13 = captiveportal_passthrumac_findbyname($var_10['username']);
+			if (!empty($var_13)) {
+				$var_10['delmac'] = $var_13['mac'];
+			} else {
+				
+			}
+		}
+
+		if ($var_10['delmac']) {
+			$var_14 = false;
+			foreach ($var_4 as $var_15 => $var_16) {
+				if ($var_16['mac'] == $var_10['delmac']) {
+					$var_14 = true;
+					break;
+				}
+			}
+			if ($var_14 == true) {
+				$var_1 = $var_3[$var_0]['zoneid'];
+				$var_12 = captiveportal_passthrumac_delete_entry($var_4[$var_15]);
+				$var_17 = uniqid("{$var_0}_mac");
+				file_put_contents("{$g['tmp_path']}/{$var_17}_tmp", $var_12);
+				mwexec("/sbin/ipfw -q {$g['tmp_path']}/{$var_17}_tmp");
+				@unlink("{$g['tmp_path']}/{$var_17}_tmp");
+				unset($var_4[$var_15]);
+				write_config();
+				
+			} else {
+				
+			}
+		}
+		var_2;
+	}
+}
+
+if ($var_10['act'] == "del") {
+	if ($var_4[$var_10['id']]) {
+		$var_1 = $var_3[$var_0]['zoneid'];
+		$var_12 = captiveportal_passthrumac_delete_entry($var_4[$var_10['id']]);
+		$var_17 = uniqid("{$var_0}_mac");
+		file_put_contents("{$g['tmp_path']}/{$var_17}_tmp", $var_12);
+		mwexec("/sbin/ipfw -q {$g['tmp_path']}/{$var_17}_tmp");
+		@unlink("{$g['tmp_path']}/{$var_17}_tmp");
+		unset($var_4[$var_10['id']]);
+		write_config();
+		header("Location: services_captiveportal_mac.php?zone={$var_0}");
+		var_2;
+	}
+}
+
+
+if ($var_10['apply']) {
+	print_apply_result_box($var_11);
+}
+
+if (is_subsystem_dirty('passthrumac')) {
+	print_apply_box(gettext("The Captive Portal MAC address configuration has been changed.") . "<br />" . gettext("The changes must be applied for them to take effect."));
+}
+
+$var_18 = array();
+$var_18[] = array(gettext("Configuration"), false, "services_captiveportal.php?zone={$var_0}");
+$var_18[] = array(gettext("MACs"), true, "services_captiveportal_mac.php?zone={$var_0}");
+$var_18[] = array(gettext("Allowed IP Addresses"), false, "services_captiveportal_ip.php?zone={$var_0}");
+$var_18[] = array(gettext("Allowed Hostnames"), false, "services_captiveportal_hostname.php?zone={$var_0}");
+$var_18[] = array(gettext("Vouchers"), false, "services_captiveportal_vouchers.php?zone={$var_0}");
+$var_18[] = array(gettext("File Manager"), false, "services_captiveportal_filemanager.php?zone={$var_0}");
+display_top_tabs($var_18, true);
+?>
+<div class="table-responsive">
+	<table class="table table-hover table-striped table-condensed sortable-theme-bootstrap table-rowdblclickedit" data-sortable>
+		<thead>
+			<tr>
+				<th><?=gettext('Action')?></th>
+				<th><?=gettext("MAC address")?></th>
+				<th><?=gettext("Description")?></th>
+				<th><?=gettext("Actions")?></th>
+			</tr>
+		</thead>
+
+<?php
+if (is_array($var_3[$var_0]['passthrumac'])): ?>
+		<tbody>
+<?php
+$var_19 = 0;
+foreach ($var_3[$var_0]['passthrumac'] as $var_13): ?>
+			<tr>
+				<td>
+					<?=$var_8[$var_13['action']]?>
+				</td>
+				<td>
+					<?=$var_13['mac']?>
+				</td>
+				<td >
+					<?=htmlspecialchars($var_13['descr'])?>
+				</td>
+				<td>
+					<a class="fa fa-pencil"	title="<?=gettext("Edit MAC address"); ?>" href="services_captiveportal_mac_edit.php?zone=<?=$var_0?>&amp;id=<?=$var_19?>"></a>
+					<a class="fa fa-trash"	title="<?=gettext("Delete MAC address")?>" href="services_captiveportal_mac.php?zone=<?=$var_0?>&amp;act=del&amp;id=<?=$var_19?>"usepost></a>
+				</td>
+			</tr>
+<?php
+$var_19++;
+endforeach; ?>
+		</tbody>
+	</table>
+<?php
+else:
+?>
+		</tbody>
+	</table>
+<?php
+endif;
+?>
+</div>
+
+<nav class="action-buttons">
+	<a href="services_captiveportal_mac_edit.php?zone=<?=$var_0?>&amp;act=add" class="btn btn-success btn-sm">
+		<i class="fa fa-plus icon-embed-btn"></i>
+		<?=gettext("Add")?>
+	</a>
+</nav>
+
+<div class="infoblock">
+	<?php print_info_box(gettext('Adding MAC addresses as "pass" MACs allows them access through the captive portal automatically without being taken to the portal page.'), 'info', false); ?>
+</div>
+<?php

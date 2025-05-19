@@ -1,0 +1,441 @@
+<?php
+
+
+
+
+
+$var_0->load("admin");
+
+if (!$var_2->var_3)
+  accessforbidden();
+
+
+$var_4 = array(0);                             
+$var_5 = array(0=>$var_0->trans("Home"));       
+$var_7 = array();
+
+
+if ((isset($_POST["action"]) && $_POST["action"] == 'addconst'))
+{
+    dolibarr_set_const($var_8, "MAIN_BOXES_MAXLINES",$_POST["MAIN_BOXES_MAXLINES"],'',0,'',$var_9->var_10);
+}
+
+if ($_POST["action"] == 'add')
+{
+	$var_11 = "SELECT rowid";
+	$var_11.= " FROM ".var_12."boxes";
+	$var_11.= " WHERE fk_user = 0";
+	$var_11.= " AND box_id = ".$_POST["boxid"];
+	$var_11.= " AND position = ".$_POST["pos"];
+
+	$var_13 = $var_8->query($var_11);
+	dol_syslog("boxes.php::search if box active sql=".$var_11);
+	if ($var_13)
+	{
+		$var_15 = $var_8->num_rows($var_13);
+		if ($var_15 == 0)
+		{
+			$var_8->begin();
+
+			
+			$var_11 = "INSERT INTO ".var_12."boxes (";
+			$var_11.= "box_id";
+			$var_11.= ", position";
+			$var_11.= ", box_order";
+			$var_11.= ", fk_user";
+			$var_11.= ") values (";
+			$var_11.= $_POST["boxid"];
+			$var_11.= ", ".$_POST["pos"];
+			$var_11.= ", ''";
+			$var_11.= ", 0";
+			$var_11.= ")";
+
+			dol_syslog("boxes.php activate box sql=".$var_11);
+			$var_13 = $var_8->query($var_11);
+
+			
+			$var_11 = "DELETE FROM ".var_12."user_param";
+			$var_11.= " WHERE param LIKE 'MAIN_BOXES_%'";
+			dol_syslog("boxes.php delete user_param sql=".$var_11);
+			$var_13 = $var_8->query($var_11);
+
+			$var_8->commit();
+		}
+
+		Header("Location: boxes.php");
+		var_19;
+	}
+	else
+	{
+		dol_print_error($var_8);
+	}
+}
+
+if ($_GET["action"] == 'delete')
+{
+	$var_8->begin();
+
+	$var_11 = "DELETE FROM ".var_12."boxes";
+	$var_11.= " WHERE rowid=".$_GET["rowid"];
+	$var_13 = $var_8->query($var_11);
+
+	
+	$var_11 = "DELETE FROM ".var_12."user_param";
+	$var_11.= " WHERE param LIKE 'MAIN_BOXES_%'";
+	$var_13 = $var_8->query($var_11);
+
+	$var_8->commit();
+}
+
+if ($_GET["action"] == 'switch')
+{
+	
+	$var_8->begin();
+
+	$var_20=new class_0($var_8);
+	$var_20->fetch($_GET["switchfrom"]);
+
+	$var_22=new class_0($var_8);
+	$var_22->fetch($_GET["switchto"]);
+
+	if (is_object($var_20) && is_object($var_22))
+	{
+		$var_11="UPDATE ".var_12."boxes set box_order='".$var_22->var_23."' WHERE rowid=".$var_20->var_24;
+		
+		$var_25 = $var_8->query($var_11);
+		if (! $var_25) { dol_print_error($var_8); }
+		$var_11="UPDATE ".var_12."boxes set box_order='".$var_20->var_23."' WHERE rowid=".$var_22->var_24;
+		
+		$var_26 = $var_8->query($var_11);
+		if (! $var_26) { dol_print_error($var_8); }
+	}
+
+	if ($var_25 && $var_26)
+	{
+		$var_8->commit();
+	}
+	else
+	{
+		$var_8->rollback();
+	}
+}
+
+
+llxHeader();
+
+print_fiche_titre($var_0->trans("Boxes"),'','setup');
+
+
+
+
+
+$var_28 = array();
+
+$var_11 = "SELECT b.rowid, b.box_id, b.position, b.box_order,";
+$var_11.= " bd.rowid as boxid";
+$var_11.= " FROM ".var_12."boxes as b, ".var_12."boxes_def as bd";
+$var_11.= " WHERE b.box_id = bd.rowid";
+$var_11.= " AND bd.entity = ".$var_9->var_10;
+$var_11.= " AND b.fk_user=0";
+$var_11.= " ORDER by b.position, b.box_order";
+
+$var_13 = $var_8->query($var_11);
+if ($var_13)
+{
+	$var_15 = $var_8->num_rows($var_13);
+	$var_29 = 0;
+	$var_30=0;
+	while ($var_29 < $var_15)
+	{
+		$var_31 = ! $var_31;
+		$var_32 = $var_8->fetch_object($var_13);
+		$var_7[$var_32->position][$var_32->var_34]=1;
+		$var_29++;
+
+		array_push($var_28,$var_32->var_34);
+
+		if ($var_32->var_23 == '' || $var_32->var_23 == '0' || $var_30) $var_30++;
+		
+		
+		if ($var_30)
+		{
+			$var_11="UPDATE ".var_12."boxes set box_order=".$var_30." WHERE rowid=".$var_32->var_24;
+			$var_8->query($var_11);
+		}
+	}
+
+	if ($var_30)
+	{
+		
+		
+		$var_11 = "SELECT box_order";
+		$var_11.= " FROM ".var_12."boxes";
+		$var_11.= " WHERE length(box_order) <= 2";
+		$var_35 = $var_8->query($var_11);
+
+		if ($var_35)
+		{
+			while ($var_36 = $var_8->fetch_array($var_35))
+			{
+				if (dol_strlen($var_36['box_order']) == 1)
+				{
+					if (preg_match("/[13579]{1}/",substr($var_36['box_order'],-1)))
+					{
+						$var_23 = "A0".$var_36['box_order'];
+						$var_11="update llx_boxes set box_order = '".$var_23."' where box_order = ".$var_36['box_order'];
+						$var_13 = $var_8->query($var_11);
+					}
+					else if (preg_match("/[02468]{1}/",substr($var_36['box_order'],-1)))
+					{
+						$var_23 = "B0".$var_36['box_order'];
+						$var_11="update llx_boxes set box_order = '".$var_23."' where box_order = ".$var_36['box_order'];
+						$var_13 = $var_8->query($var_11);
+					}
+				}
+				else if (dol_strlen($var_36['box_order']) == 2)
+				{
+					if (preg_match("/[13579]{1}/",substr($var_36['box_order'],-1)))
+					{
+						$var_23 = "A".$var_36['box_order'];
+						$var_11="update llx_boxes set box_order = '".$var_23."' where box_order = ".$var_36['box_order'];
+						$var_13 = $var_8->query($var_11);
+					}
+					else if (preg_match("/[02468]{1}/",substr($var_36['box_order'],-1)))
+					{
+						$var_23 = "B".$var_36['box_order'];
+						$var_11="update llx_boxes set box_order = '".$var_23."' where box_order = ".$var_36['box_order'];
+						$var_13 = $var_8->query($var_11);
+					}
+				}
+			}
+		}
+	}
+	$var_8->free($var_13);
+}
+
+
+
+
+print_titre($var_0->trans("BoxesAvailable"));
+
+
+
+
+
+
+
+
+
+$var_11 = "SELECT rowid, file, note, tms";
+$var_11.= " FROM ".var_12."boxes_def";
+$var_11.= " WHERE entity = ".$var_9->var_10;
+$var_13 = $var_8->query($var_11);
+$var_31=True;
+
+if ($var_13)
+{
+	$var_39=new class_1($var_8);
+
+	$var_15 = $var_8->num_rows($var_13);
+	$var_29 = 0;
+
+	
+	while ($var_29 < $var_15)
+	{
+		$var_32 = $var_8->fetch_object($var_13);
+
+		if (preg_match('/^([^@]+)@([^@]+)$/i',$var_32->var_40,$var_41))
+		{
+			$var_42 = $var_41[1];
+			$var_43 = $var_41[2];
+			$var_44 = "/".$var_43."/includes/boxes/".$var_42.".php";
+		}
+		else
+		{
+			$var_42=preg_replace('/.php$/i','',$var_32->var_40);
+			$var_44 = "/includes/boxes/".$var_42.".php";
+		}
+
+		dol_include_once($var_44);
+		$var_45=new $var_42($var_8,$var_32->var_46);
+		
+		$var_47=true;
+		if ($var_45->var_48 && sizeof($var_45->var_48) > 0)
+		{
+			foreach($var_45->var_48 as $var_43)
+			{
+				if (empty($var_9->$var_43->var_47)) $var_47=false;
+			}
+		}
+		
+		if ($var_47)
+		{
+			
+			if (in_array($var_32->var_24, $var_28))
+			{
+				
+			}
+			else
+			{
+				$var_31=!$var_31;
+	
+				if (preg_match('/^([^@]+)@([^@]+)$/i',$var_45->var_49))
+				{
+					$var_50 = $var_45->var_49;
+				}
+				else
+				{
+					$var_50=preg_replace("/^object_/i","",$var_45->var_49);
+				}
+	
+				
+				
+				
+				
+				') . '</var_51>';
+				
+	
+				
+				
+				
+				
+				
+				
+				
+				
+	
+				
+			}
+		}
+		
+		$i++;
+	}
+
+	$db->free($resql);
+}
+
+
+
+
+
+
+print_titre($langs->trans("BoxesActivated"));
+
+
+
+
+
+
+
+
+
+
+$sql = "SELECT b.rowid, b.box_id, b.position,";
+$sql.= " bd.file, bd.note, bd.tms";
+$sql.= " FROM ".MAIN_DB_PREFIX."boxes as b, ".MAIN_DB_PREFIX."boxes_def as bd";
+$sql.= " WHERE b.box_id = bd.rowid";
+$sql.= " AND bd.entity = ".$conf->entity;
+$sql.= " AND b.fk_user=0";
+$sql.= " ORDER by b.position, b.box_order";	
+
+$resql = $db->query($sql);
+
+if ($resql)
+{
+	$num = $db->num_rows($resql);
+	$i = 0;
+	$var=true;
+
+	$box_order=1;
+	$foundrupture=1;
+
+	
+	$obj = $db->fetch_object($resql);
+
+	while ($obj && $i < $num)
+	{
+		$var = ! $var;
+		$objnext = $db->fetch_object($resql);
+
+		if (preg_match('/^([^@]+)@([^@]+)$/var_29',$obj->file,$regs))
+		{
+			$boxname = $regs[1];
+			$module = $regs[2];
+			$sourcefile = "/".$module."/includes/boxes/".$boxname.".php";
+		}
+		else
+		{
+			$boxname=preg_replace('/.var_52$/var_29','',$var_32->var_40);
+			$var_44 = "/includes/boxes/".$var_42.".php";
+		}
+
+		dol_include_once($var_44);
+		$var_45=new $var_42($var_8,$var_32->var_46);
+
+		if (preg_match('/^([^@]+)@([^@]+)$/i',$var_45->var_49))
+		{
+			$var_50 = $var_45->var_49;
+		}
+		else
+		{
+			$var_50=preg_replace("/^object_/i","",$var_45->var_49);
+		}
+
+		
+		
+		') . '</var_51>';
+		
+		$hasnext=true;
+		$hasprevious=true;
+		if ($foundrupture) { $hasprevious=false; $foundrupture=0; }
+		if (! $objnext || $obj->position != $objnext->position) { $hasnext=false; $foundrupture=1; }
+		
+		
+		':'');
+		
+		
+		
+		var_53=var_54">'.img_delete().'</var_55>';
+		
+
+		
+		$i++;
+
+		$box_order++;
+
+		if (! $foundrupture) $objprevious = $obj;
+		else $box_order=1;
+		$obj=$objnext;
+	}
+
+	$db->free($resql);
+}
+
+
+
+
+
+print_titre($langs->trans("Other"));
+
+
+$var=false;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$db->close();
+
+llxFooter('$var_56: 2011/08/1 13:26:22 $ - $var_57: 1.73 $');
+?>

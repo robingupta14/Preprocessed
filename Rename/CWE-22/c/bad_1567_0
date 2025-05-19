@@ -1,0 +1,796 @@
+
+
+
+
+
+
+
+
+static unsigned var_37 = 0;
+
+static uid_t var_51 = (uid_t)-1L;
+
+
+static bool fn_2(const char *dump_dir_name)
+{
+    unsigned var_37 = strlen(g_settings_dump_location);
+
+    if (strncmp(dump_dir_name, g_settings_dump_location, var_37) == 0
+     && dump_dir_name[var_37] == '/'
+
+     && !strstr(dump_dir_name + var_37, "/.")
+    ) {
+        return 1;
+    }
+    return 0;
+}
+
+
+static int fn_4(const char *dump_dir_name)
+{
+
+    if (!dir_is_in_dump_location(dump_dir_name))
+    {
+
+        error_msg("Bad problem directory name '%s', should start with: '%s'", dump_dir_name, g_settings_dump_location);
+        return 400;
+    }
+    if (!dump_dir_accessible_by_uid(dump_dir_name, var_51))
+    {
+        if (errno == ENOTDIR)
+        {
+            error_msg("Path '%s' isn't problem directory", dump_dir_name);
+            return 404;
+        }
+        error_msg("Problem directory '%s' can't be accessed by user with uid %ld", dump_dir_name, (long)var_51);
+        return 403;
+    }
+
+    delete_dump_dir(dump_dir_name);
+
+    return 0;
+}
+
+static pid_t fn_5(const char *dump_dir_name, const char *event_name, int *fdp)
+{
+    char *args[7];
+    args[0] = (char *) LIBEXEC_DIR"/abrt-handle-event";
+
+    args[1] = (char *) "-i";
+    args[2] = (char *) "-e";
+    args[3] = (char *) event_name;
+    args[4] = (char *) "--";
+    args[5] = (char *) dump_dir_name;
+    args[6] = NULL;
+
+    int pipeout[2];
+    int var_8 = EXECFLG_INPUT_NUL | EXECFLG_OUTPUT | EXECFLG_QUIET | EXECFLG_ERR2OUT;
+    VERB1 var_8 &= ~EXECFLG_QUIET;
+
+    char *env_vec[2];
+
+    env_vec[0] = xstrdup("REPORT_CLIENT_NONINTERACTIVE=1");
+    env_vec[1] = NULL;
+
+    pid_t var_8 = fork_execv_on_steroids(var_8, args, pipeout,
+                                         env_vec, NULL,
+                                                          0);
+    if (fdp)
+        *fdp = pipeout[0];
+    return var_8;
+}
+
+static int fn_8(const char *dirname)
+{
+
+    if (!dir_is_in_dump_location(dirname))
+    {
+
+        error_msg("Bad problem directory name '%s', should start with: '%s'", dirname, g_settings_dump_location);
+        return 400;
+    }
+    if (g_settings_privatereports)
+    {
+        struct struct_9 statbuf;
+        if (lstat(dirname, &statbuf) != 0 || !S_ISDIR(statbuf.st_mode))
+        {
+            error_msg("Path '%s' isn't directory", dirname);
+            return 404;
+        }
+
+        struct struct_10 *gr = getgrnam("abrt");
+        if (!gr)
+        {
+            error_msg("Group 'abrt' does not exist");
+            return 500;
+        }
+        if (statbuf.st_uid != 0 || !(statbuf.st_gid == 0 || statbuf.st_gid == gr->gr_gid) || statbuf.st_mode & 7)
+        {
+            error_msg("Problem directory '%s' isn't owned by root:abrt or others are not restricted from access", dirname);
+            return 403;
+        }
+        struct struct_23 *dd = dd_opendir(dirname, DD_OPEN_READONLY);
+        const bool var_13 = dd && problem_dump_dir_is_complete(dd);
+        dd_close(dd);
+        if (var_13)
+        {
+            error_msg("Problem directory '%s' has already been processed", dirname);
+            return 403;
+        }
+    }
+    else if (!dump_dir_accessible_by_uid(dirname, var_51))
+    {
+        if (errno == ENOTDIR)
+        {
+            error_msg("Path '%s' isn't problem directory", dirname);
+            return 404;
+        }
+        error_msg("Problem directory '%s' can't be accessed by user with uid %ld", dirname, (long)var_51);
+        return 403;
+    }
+
+    int child_stdout_fd;
+    int var_21 = spawn_event_handler_child(dirname, "post-create", &child_stdout_fd);
+
+    char *dup_of_dir = NULL;
+    struct struct_14 *cmd_output = strbuf_new();
+
+    bool var_21 = 1;
+
+ read_child_output:
+
+
+
+    for (;;)
+    {
+        char var_18[250];
+        errno = 0;
+        int var_51 = safe_read(child_stdout_fd, var_18, sizeof(var_18) - 1);
+        if (var_51 <= 0)
+            break;
+        var_18[var_51] = '\0';
+
+
+        char *raw = var_18;
+        char *newline;
+        while ((newline = strchr(raw, '\n')) != NULL)
+        {
+            *newline = '\0';
+            strbuf_append_str(cmd_output, raw);
+            char *msg = cmd_output->buf;
+
+
+            log("%s", msg);
+
+            if (var_21
+             && prefixcmp(msg, "DUP_OF_DIR: ") == 0
+            ) {
+                free(dup_of_dir);
+                dup_of_dir = xstrdup(msg + strlen("DUP_OF_DIR: "));
+            }
+
+            strbuf_clear(cmd_output);
+
+            raw = newline + 1;
+        }
+
+
+        strbuf_append_str(cmd_output, raw);
+    }
+
+
+
+
+    int var_20 = 0;
+    if (safe_waitpid(var_21, &var_20, 0) <= 0)
+
+        perror_msg("waitpid(%d)", var_21);
+
+
+    if (!var_21)
+        goto ret;
+
+
+
+    if (var_20 != 0)
+    {
+        if (WIFSIGNALED(var_20))
+        {
+            log("'post-create' on '%s' killed by signal %d",
+                            dirname, WTERMSIG(var_20));
+            goto delete_bad_dir;
+        }
+
+        if (!dup_of_dir)
+        {
+            log("'post-create' on '%s' exited with %d",
+                            dirname, WEXITSTATUS(var_20));
+            goto delete_bad_dir;
+        }
+    }
+
+    const char *work_dir = (dup_of_dir ? dup_of_dir : dirname);
+
+
+    struct struct_23 *dd = dd_opendir(work_dir, 0);
+    if (!dd)
+
+        goto delete_bad_dir;
+
+
+    char *count_str = dd_load_text_ext(dd, FILENAME_COUNT, DD_FAIL_QUIETLY_ENOENT);
+    unsigned long var_20 = strtoul(count_str, NULL, 10);
+
+
+
+
+    if ((var_20 != 0 && dup_of_dir) || var_20 == 0)
+    {
+        var_20++;
+        char new_count_str[sizeof(long)*3 + 2];
+        sprintf(new_count_str, "%lu", var_20);
+        dd_save_text(dd, FILENAME_COUNT, new_count_str);
+
+
+
+
+
+
+        if (strcmp(dd->dd_dirname, dirname) != 0)
+        {
+
+            struct struct_23 *new_dd = dd_opendir(dirname, DD_OPEN_READONLY);
+            char *last_ocr = NULL;
+            if (new_dd)
+            {
+
+
+                last_ocr = dd_load_text_ext(new_dd, FILENAME_TIME,
+                            DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE | DD_FAIL_QUIETLY_ENOENT);
+                dd_close(new_dd);
+            }
+            else
+            {
+                error_msg("Can't read the last occurrence file from the new dump directory.");
+            }
+
+            if (!last_ocr)
+            {
+                log("Using current time for the last occurrence file which may be incorrect.");
+                time_t var_21 = time(NULL);
+                last_ocr = xasprintf("%lu", (long)var_21);
+            }
+
+            dd_save_text(dd, FILENAME_LAST_OCCURRENCE, last_ocr);
+
+            free(last_ocr);
+        }
+    }
+
+
+    dd_sanitize_mode_and_owner(dd);
+
+    dd_close(dd);
+
+    if (!dup_of_dir)
+        log_notice("New problem directory %s, processing", work_dir);
+    else
+    {
+        log_warning("Deleting problem directory %s (dup of %s)",
+                    strrchr(dirname, '/') + 1,
+                    strrchr(dup_of_dir, '/') + 1);
+        delete_dump_dir(dirname);
+    }
+
+
+    int fd;
+    var_21 = spawn_event_handler_child(
+                work_dir,
+                (dup_of_dir ? "notify-dup" : "notify"),
+                &fd
+    );
+
+    xmove_fd(fd, child_stdout_fd);
+    var_21 = 0;
+    strbuf_clear(cmd_output);
+    free(dup_of_dir);
+    dup_of_dir = NULL;
+    goto read_child_output;
+
+ delete_bad_dir:
+    log_warning("Deleting problem directory '%s'", dirname);
+    delete_dump_dir(dirname);
+
+ ret:
+    strbuf_free(cmd_output);
+    free(dup_of_dir);
+    close(child_stdout_fd);
+    return 0;
+}
+
+
+
+
+
+static int fn_21(GHashTable *problem_info, unsigned var_38)
+{
+
+    if (g_settings_nMaxCrashReportsSize > 0)
+    {
+        if (low_free_space(g_settings_nMaxCrashReportsSize, g_settings_dump_location))
+            exit(1);
+    }
+
+
+
+
+
+
+    gchar *dir_basename = g_hash_table_lookup(problem_info, "basename");
+    if (!dir_basename)
+        dir_basename = g_hash_table_lookup(problem_info, FILENAME_TYPE);
+
+    char *path = xasprintf("%s/%s-%s-%u.new",
+                           g_settings_dump_location,
+                           dir_basename,
+                           iso_date_string(NULL),
+                           var_38);
+
+
+    g_hash_table_remove(problem_info, "basename");
+
+
+
+
+    struct struct_23 *dd = dd_create(path, g_settings_privatereports ? 0 : var_51, DEFAULT_DUMP_DIR_MODE);
+    if (!dd)
+    {
+        error_msg_and_die("Error creating problem directory '%s'", path);
+    }
+
+    dd_create_basic_files(dd, var_51, NULL);
+    dd_save_text(dd, FILENAME_ABRT_VERSION, VERSION);
+
+    gpointer var_24 = g_hash_table_lookup(problem_info, FILENAME_CMDLINE);
+    if (!var_24)
+    {
+
+        char *cmdline = get_cmdline(var_38);
+        if (cmdline)
+        {
+            dd_save_text(dd, FILENAME_CMDLINE, cmdline);
+            free(cmdline);
+        }
+    }
+
+
+    char uid_str[sizeof(long) * 3 + 2];
+    sprintf(uid_str, "%lu", (long)var_51);
+    dd_save_text(dd, FILENAME_UID, uid_str);
+
+    GHashTableIter iter;
+    gpointer gpvalue;
+    g_hash_table_iter_init(&iter, problem_info);
+    while (g_hash_table_iter_next(&iter, &var_24, &gpvalue))
+    {
+        dd_save_text(dd, (gchar *) var_24, (gchar *) gpvalue);
+    }
+
+    dd_close(dd);
+
+
+    g_hash_table_destroy(problem_info);
+
+
+
+
+    char *newpath = xstrndup(path, strlen(path) - strlen(".new"));
+    if (rename(path, newpath) == 0)
+        strcpy(path, newpath);
+    free(newpath);
+
+    log_notice("Saved problem directory of pid %u to '%s'", var_38, path);
+
+
+
+
+    printf("HTTP/1.1 201 Created\r\n\r\n");
+    fflush(NULL);
+    close(STDOUT_FILENO);
+    xdup2(STDERR_FILENO, STDOUT_FILENO);
+
+
+    if (g_settings_nMaxCrashReportsSize > 0)
+    {
+        trim_problem_dirs(g_settings_dump_location, g_settings_nMaxCrashReportsSize * (double)1048576, path);
+    }
+
+    run_post_create(path);
+
+
+    exit(0);
+}
+
+
+static gboolean fn_24(const char *str)
+{
+    do {
+        if ((unsigned char)(*str) < ' ' || *str == 0x7f)
+            return FALSE;
+        str++;
+    } while (*str);
+    return TRUE;
+}
+
+static gboolean fn_25(const char *value)
+{
+    return printable_str(value) && !strchr(value, '/') && !strchr(value, '.');
+}
+
+static gboolean fn_26(gchar *key, gchar *value)
+{
+    char *i;
+
+
+
+    for (i = key; *i != 0; i++)
+    {
+        if (!isalpha(*i) && (*i != '-') && (*i != '_') && (*i != ' '))
+            return FALSE;
+    }
+
+
+
+    if (strcmp(key, "basename") == 0
+     || strcmp(key, FILENAME_TYPE) == 0
+    )
+    {
+        if (!is_correct_filename(value))
+        {
+            error_msg("Value of '%s' ('%s') is not a valid directory name",
+                      key, value);
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+
+static void fn_27(GHashTable *problem_info, char *message)
+{
+    gchar *key, *value;
+
+    value = strchr(message, '=');
+    if (value)
+    {
+        key = g_ascii_strdown(message, value - message);
+
+
+        value++;
+        if (key_value_ok(key, value))
+        {
+            if (strcmp(key, FILENAME_UID) == 0)
+            {
+                error_msg("Ignoring value of %s, will be determined later",
+                          FILENAME_UID);
+            }
+            else
+            {
+                g_hash_table_insert(problem_info, key, xstrdup(value));
+
+                if (strcmp(key, FILENAME_TYPE) == 0)
+                    g_hash_table_insert(problem_info, xstrdup(FILENAME_ANALYZER), xstrdup(value));
+
+                key = NULL;
+            }
+        }
+        else
+        {
+
+            error_msg("Invalid key or value format: %s", message);
+        }
+        free(key);
+    }
+    else
+    {
+
+        error_msg("Invalid message format: '%s'", message);
+    }
+}
+
+static void fn_28(GHashTable *problem_info)
+{
+    gboolean var_30 = FALSE;
+    gchar **pstring;
+    static const gchar *const needed[] = {
+        FILENAME_TYPE,
+        FILENAME_REASON,
+
+
+        NULL
+    };
+
+    for (pstring = (gchar**) needed; *pstring; pstring++)
+    {
+        if (!g_hash_table_lookup(problem_info, *pstring))
+        {
+            error_msg("Element '%s' is missing", *pstring);
+            var_30 = TRUE;
+        }
+    }
+
+    if (var_30)
+        error_msg_and_die("Some data is missing, aborting");
+}
+
+
+
+
+
+unsigned fn_30(GHashTable *problem_info)
+{
+    long var_38;
+    gchar *pid_str = (gchar *) g_hash_table_lookup(problem_info, FILENAME_PID);
+    char *err_pos;
+
+    if (!pid_str)
+        error_msg_and_die("PID data is missing, aborting");
+
+    errno = 0;
+    var_38 = strtol(pid_str, &err_pos, 10);
+    if (errno || pid_str == err_pos || *err_pos != '\0'
+        || var_38 > UINT_MAX || var_38 < 1)
+        error_msg_and_die("Malformed or out-of-range PID number: '%s'", pid_str);
+
+    return (unsigned) var_38;
+}
+
+static int fn_32(void)
+{
+
+
+
+    GHashTable *problem_info = g_hash_table_new_full(g_str_hash, g_str_equal,
+                                     free, free);
+
+    char *body_start = NULL;
+    char *messagebuf_data = NULL;
+    unsigned var_37 = 0;
+
+    while 1
+    {
+        messagebuf_data = xrealloc(messagebuf_data, var_37 + 8192);
+        char *p = messagebuf_data + var_37;
+        int var_37 = read(STDIN_FILENO, p, 8192);
+        if (var_37 < 0)
+        {
+            if (errno == EINTR)
+                error_msg_and_die("Timed out");
+            perror_msg_and_die("read");
+        }
+        if (var_37 == 0)
+            break;
+
+        log_debug("Received %u bytes of data", var_37);
+        var_37 += var_37;
+        var_37 += var_37;
+        if (var_37 > 4194304)
+            error_msg_and_die("Message is too long, aborting");
+
+
+
+        char *past_end = messagebuf_data + var_37;
+        if (p > messagebuf_data+1)
+            p -= 2;
+        while (p < past_end)
+        {
+            p = memchr(p, '\n', past_end - p);
+            if (!p)
+                break;
+            p++;
+            if (p >= past_end)
+                break;
+            if (*p == '\n'
+             || (*p == '\r' && p+1 < past_end && p[1] == '\n')
+            ) {
+                body_start = p + 1 + (*p == '\r');
+                *p = '\0';
+                goto found_end_of_header;
+            }
+        }
+    }
+ found_end_of_header: ;
+    log_debug("Request: %s", messagebuf_data);
+
+    if (prefixcmp(messagebuf_data, "DELETE ") == 0)
+    {
+        messagebuf_data += strlen("DELETE ");
+        char *space = strchr(messagebuf_data, ' ');
+        if (!space || prefixcmp(space+1, "HTTP/") != 0)
+            return 400;
+        *space = '\0';
+
+        alarm(0);
+        return delete_path(messagebuf_data);
+    }
+
+
+
+
+
+
+    if (prefixcmp(messagebuf_data, "PUT ") != 0
+     && prefixcmp(messagebuf_data, "POST ") != 0
+    ) {
+        return 400;
+    }
+
+    enum {
+        enum_35,
+        enum_36,
+    };
+    int url_type;
+    char *url = skip_non_whitespace(messagebuf_data) + 1;
+    if (prefixcmp(url, "/creation_notification ") == 0)
+        url_type = CREATION_NOTIFICATION;
+    else if (prefixcmp(url, "/ ") == 0)
+        url_type = CREATION_REQUEST;
+    else
+        return 400;
+
+
+    if (!body_start)
+    {
+        log_warning("Premature EOF detected, exiting");
+        return 400;
+    }
+
+    var_37 -= (body_start - messagebuf_data);
+    memmove(messagebuf_data, body_start, var_37);
+    log_debug("Body so far: %u bytes, '%s'", var_37, messagebuf_data);
+
+
+    while 1
+    {
+        if (url_type == CREATION_REQUEST)
+        {
+            while 1
+            {
+                unsigned var_37 = strnlen(messagebuf_data, var_37);
+                if (var_37 >= var_37)
+                    break;
+
+                process_message(problem_info, messagebuf_data);
+                var_37 -= (var_37 + 1);
+                memmove(messagebuf_data, messagebuf_data + var_37 + 1, var_37);
+            }
+        }
+
+        messagebuf_data = xrealloc(messagebuf_data, var_37 + 8192 + 1);
+        int var_37 = read(STDIN_FILENO, messagebuf_data + var_37, 8192);
+        if (var_37 < 0)
+        {
+            if (errno == EINTR)
+                error_msg_and_die("Timed out");
+            perror_msg_and_die("read");
+        }
+        if (var_37 == 0)
+            break;
+
+        log_debug("Received %u bytes of data", var_37);
+        var_37 += var_37;
+        var_37 += var_37;
+        if (var_37 > 4194304)
+            error_msg_and_die("Message is too long, aborting");
+    }
+
+
+    alarm(0);
+
+    if (url_type == CREATION_NOTIFICATION)
+    {
+        messagebuf_data[var_37] = '\0';
+        return run_post_create(messagebuf_data);
+    }
+
+
+    int var_38 = 0;
+    unsigned var_38 = convert_pid(problem_info);
+    die_if_data_is_missing(problem_info);
+
+    char *executable = g_hash_table_lookup(problem_info, FILENAME_EXECUTABLE);
+    if (executable)
+    {
+        char *last_file = concat_path_file(g_settings_dump_location, "last-via-server");
+        int var_38 = check_recent_crash_file(last_file, executable);
+        free(last_file);
+        if (var_38)
+            goto out;
+    }
+
+    create_problem_dir(problem_info, var_38);
+
+
+ out:
+    g_hash_table_destroy(problem_info);
+    return var_38;
+}
+
+static void fn_38(int var_39) {}
+
+int fn_40(int var_48, char **argv)
+{
+
+    setlocale(LC_ALL, "");
+
+
+
+
+
+    abrt_init(argv);
+
+
+    const char *program_usage_string = _(
+        "& [options]"
+    );
+    enum {
+        enum_42 = 1,
+        enum_43 = 2,
+        enum_44 = 4,
+        enum_45 = 8,
+    };
+
+    struct struct_46 program_options[] = {
+        OPT__VERBOSE(&g_verbose),
+        OPT_INTEGER('u', NULL, &var_51, _("Use NUM as client uid")),
+        OPT_BOOL( 's', NULL, NULL , _("Log to syslog")),
+        OPT_BOOL( 'p', NULL, NULL , _("Add program names to log")),
+        OPT_END()
+    };
+    unsigned var_48 = parse_opts(var_48, argv, program_options, program_usage_string);
+
+    export_abrt_envvars(var_48 & OPT_p);
+
+    msg_prefix = xasprintf("%s[%u]", g_progname, getpid());
+    if (var_48 & OPT_s)
+    {
+        logmode = LOGMODE_JOURNAL;
+    }
+
+
+
+
+
+    struct struct_48 sa;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = dummy_handler;
+    sigaction(SIGALRM, &sa, NULL);
+
+    alarm(10);
+
+    if (var_51 == (uid_t)-1L)
+    {
+
+        struct struct_49 cr;
+        socklen_t var_51 = sizeof(cr);
+        if (0 != getsockopt(STDIN_FILENO, SOL_SOCKET, SO_PEERCRED, &cr, &var_51))
+            perror_msg_and_die("getsockopt(SO_PEERCRED)");
+        if (var_51 != sizeof(cr))
+            error_msg_and_die("%s: bad crlen %d", "getsockopt(SO_PEERCRED)", (int)var_51);
+        var_51 = cr.uid;
+    }
+
+    load_abrt_conf();
+
+    int var_51 = perform_http_xact();
+    if (var_51 == 0)
+        var_51 = 200;
+
+    free_abrt_conf_data();
+
+    printf("HTTP/1.1 %u \r\n\r\n", var_51);
+
+    return (var_51 >= 400);
+}

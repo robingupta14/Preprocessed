@@ -1,0 +1,215 @@
+<?php
+
+declare(strict_types=1);
+
+
+
+class Dashboard
+{
+
+    
+    public const VERSION = '9.4.4';
+
+    
+    protected static $options = [];
+
+    
+    public $menu;
+
+    
+    public $resources;
+
+    
+    private $permission;
+
+    
+    private $search;
+
+    
+    private $publicDirectories;
+
+    
+    private $currentScreen;
+
+    
+    public function __construct()
+    {
+        $this->menu = new Menu();
+        $this->permission = collect([
+            'all'     => collect(),
+            'removed' => collect(),
+        ]);
+        $this->resources = collect();
+        $this->search = collect();
+        $this->publicDirectories = collect();
+    }
+
+    
+    public static function version(): string
+    {
+        return static::VERSION;
+    }
+
+    
+    public static function prefix(string $path = ''): string
+    {
+        $prefix = config('platform.prefix');
+
+        return Illuminate\Support\Str::start($prefix.$path, '/');
+    }
+
+    
+    public static function configure(array $options)
+    {
+        static::$options = $options;
+    }
+
+    
+    public static function option(string $key, $default = null)
+    {
+        return Illuminate\Support\Arr::get(static::$options, $key, $default);
+    }
+
+    
+    public static function modelClass(string $key, string $default = null)
+    {
+        $model = static::model($key, $default);
+
+        return class_exists($model) ? new $model() : $model;
+    }
+
+    
+    public static function model(string $key, string $default = null): string
+    {
+        return Illuminate\Support\Arr::get(static::$options, 'models.'.$key, $default ?? $key);
+    }
+
+    
+    public static function useModel(string $key, string $custom)
+    {
+        static::$options['models'][$key] = $custom;
+    }
+
+    
+    public static function path(string $path = ''): string
+    {
+        $current = dirname(__DIR__, 2);
+
+        return realpath($current.($path ? DIRECTORY_SEPARATOR.$path : $path));
+    }
+
+    
+    public function registerPermissions(ItemPermission $permission): self
+    {
+        if (empty($permission->group)) {
+            return $this;
+        }
+
+        $old = $this->permission->get('all')
+            ->get($permission->group, []);
+
+        $this->permission->get('all')
+            ->put($permission->group, array_merge_recursive($old, $permission->items));
+
+        return $this;
+    }
+
+    
+    public function registerSearch(array $model): self
+    {
+        $this->search = $this->search->merge($model);
+
+        return $this;
+    }
+
+    
+    public function registerResource(string $key, $value): self
+    {
+        $item = $this->resources->get($key, []);
+
+        $this->resources[$key] = array_merge($item, Illuminate\Support\Arr::wrap($value));
+
+        return $this;
+    }
+
+    
+    public function getResource($key = null)
+    {
+        if ($key === null) {
+            return $this->resources;
+        }
+
+        return $this->resources->get($key);
+    }
+
+    
+    public function getSearch(): Collection
+    {
+        return $this->search->transform(static function ($model) {
+            return is_object($model) ? $model : app()->make($model);
+        });
+    }
+
+    
+    public function menu(): Menu
+    {
+        return $this->menu;
+    }
+
+    
+    public function getPermission(): Collection
+    {
+        $all = $this->permission->get('all');
+        $removed = $this->permission->get('removed');
+
+        if (! $removed->count()) {
+            return $all;
+        }
+
+        return $all->map(static function ($group) use ($removed) {
+            foreach ($group[key($group)] as $key => $item) {
+                if ($removed->contains($item)) {
+                    unset($group[key($group)]);
+                }
+            }
+
+            return $group;
+        });
+    }
+
+    
+    public function removePermission(string $key): self
+    {
+        $this->permission->get('removed')->push($key);
+
+        return $this;
+    }
+
+    
+    public function addPublicDirectory(string $package, string $path): self
+    {
+        $this->publicDirectories->put($package, $path);
+
+        return $this;
+    }
+
+    
+    public function getPublicDirectory(): Collection
+    {
+        return $this->publicDirectories;
+    }
+
+    
+    public function setCurrentScreen(Screen $screen): self
+    {
+        $this->currentScreen = $screen;
+
+        return $this;
+    }
+
+    
+    public function getCurrentScreen(): ?Screen
+    {
+        return $this->currentScreen;
+    }
+}

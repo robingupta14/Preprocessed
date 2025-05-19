@@ -1,0 +1,2614 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+namespace ns_0
+{
+    
+    
+    
+    [TestClass]
+    public class class_0 : IonicTestClass
+    {
+        EncryptionAlgorithm[] var_0 =
+        {
+            EncryptionAlgorithm.None,
+            EncryptionAlgorithm.PkzipWeak,
+            EncryptionAlgorithm.WinZipAes128,
+            EncryptionAlgorithm.WinZipAes256,
+        };
+
+        Ionic.Zlib.CompressionLevel[] var_1 =
+            {
+                Ionic.Zlib.CompressionLevel.None,
+                Ionic.Zlib.CompressionLevel.BestSpeed,
+                Ionic.Zlib.CompressionLevel.Default,
+                Ionic.Zlib.CompressionLevel.BestCompression,
+            };
+
+
+        [ClassInitialize()]
+        public static void fn_0(TestContext var_2)
+        {
+            
+            string var_3 = System.IO.Directory.GetCurrentDirectory();
+            for (int var_4 = 0; var_4 < 3; var_4++)
+                var_3 = Path.GetDirectoryName(var_3);
+
+            var_8 = Path.Combine(var_3, "Zip\\bin\\Debug\\Ionic.Zip.dll");
+
+            Assert.IsTrue(File.Exists(var_8), "DLL ({0}) does not exist", var_8);
+
+            
+            string var_5;
+
+            int var_6 = TestUtilities.Exec_NoContext(var_9, String.Format("\"{0}\" /codebase /verbose", var_8), out var_5);
+            if (var_6 != 0)
+            {
+                string var_7 = String.Format("{0} \"{1}\" /codebase /verbose", var_9, var_8);
+                throw new Exception(String.Format("Failed to register DotNetZip with COM rc({0}) cmd({1}) out({2})", var_6, var_7, var_5));
+            }
+        }
+
+
+        [ClassCleanup()]
+        public static void fn_1()
+        {
+            string var_5;
+            
+            int var_6 = TestUtilities.Exec_NoContext(var_9, String.Format("\"{0}\" /unregister /verbose", var_8), out var_5);
+            if (var_6 != 0)
+                throw new Exception(String.Format("Failed to unregister DotNetZip with COM  rc({0}) ({1})", var_6, var_5));
+        }
+
+
+        private static string var_8;
+        private static string var_9 = "c:\\windows\\Microsoft.NET\\Framework\\v2.0.50727\\regasm.exe";
+
+
+
+        private System.Reflection.Assembly var_10;
+        private System.Reflection.Assembly myself
+        {
+            get
+            {
+                if (var_10 == null)
+                {
+                    var_10 = System.Reflection.Assembly.GetExecutingAssembly();
+                }
+                return var_10;
+            }
+        }
+
+
+        private string var_11 = null;
+        private string windir
+        {
+            get
+            {
+                if (var_11 == null)
+                {
+                    var_11 = System.Environment.GetEnvironmentVariable("Windir");
+                    Assert.IsTrue(Directory.Exists(var_11), "%windir% does not exist ({0})", var_11);
+                }
+                return var_11;
+            }
+        }
+
+
+
+        private string var_12 = null;
+        private string perl
+        {
+            get
+            {
+                if (var_12 == null)
+                {
+                    var var_13 = Environment.GetEnvironmentVariable("Path");
+                    var var_14 = var_13.Split(';');
+                    foreach (var elt in var_14)
+                    {
+                        var var_15 = Path.Combine(elt, "perl.exe");
+                        if (File.Exists(var_15))
+                        {
+                            var_12 = var_15;
+                            break;
+                        }
+                    }
+                    Assert.IsTrue(File.Exists(var_12), "Cannot find perl.exe");
+                }
+                return var_12;
+            }
+        }
+
+
+
+        private string var_16 = null;
+        private string cscriptExe
+        {
+            get
+            {
+                if (var_16 == null)
+                {
+                    var_16 = Path.Combine(Path.Combine(windir, "system32"), "cscript.exe");
+                    Assert.IsTrue(File.Exists(var_16), "cscript.exe does not exist ({0})", var_16);
+                }
+                return var_16;
+            }
+        }
+
+
+        private string fn_2(string var_17)
+        {
+            
+            string var_18 = TestUtilities.GetTestBinDir(CurrentDir);
+            string var_19 = Path.Combine(var_18, "Resources");
+            string var_20 = Path.Combine(var_19, var_17);
+            Assert.IsTrue(File.Exists(var_20), "script ({0}) does not exist", var_20);
+            return var_20;
+        }
+
+        private void fn_3(string var_21,
+                                     IEnumerable<String> var_22,
+                                     bool var_23,
+                                     bool var_24,
+                                     int var_25)
+        {
+            TestContext.WriteLine("");
+            TestContext.WriteLine("Verify file times...");
+            TimeSpan var_26 = new TimeSpan(var_25);
+            TestContext.WriteLine("Using threshold: ({0})", var_26.ToString());
+
+            foreach (var fqPath in var_22)
+            {
+                var var_27 = Path.GetFileName(fqPath);
+                var var_28 = Path.Combine(var_21, var_27);
+                Assert.IsTrue(File.Exists(var_28), "File does not exist ({0})", var_28);
+
+                
+                DateTime var_29 = File.GetLastWriteTimeUtc(fqPath);
+                DateTime var_30 = File.GetLastWriteTimeUtc(var_28);
+                TestContext.WriteLine("{0} lastwrite orig({1})  extracted({2})",
+                                      Path.GetFileName(fqPath),
+                                      var_29.ToString("G"),
+                                      var_30.ToString("G"));
+
+                TimeSpan var_31 = (var_29 > var_30) ? var_29 - var_30 : var_30 - var_29;
+                if (var_24)
+                {
+                    Assert.AreEqual<DateTime>(var_29, var_30, "LastWriteTime delta actual({0}) expected({1})", var_31.ToString(), var_26.ToString());
+                    var_29 = File.GetCreationTimeUtc(fqPath);
+                    var_30 = File.GetCreationTimeUtc(var_28);
+                    var_31 = (var_29 > var_30) ? var_29 - var_30 : var_30 - var_29;
+                    Assert.IsTrue(var_31 <= var_26, "CreationTime delta actual({0}) expected({1})", var_31.ToString(), var_26.ToString());
+                }
+                else
+                {
+                    if (var_23)
+                    {
+                        if (var_31 > var_26)
+                        {
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            TestContext.WriteLine("Adjusting delta for shell allowance...");
+                            var_31 -= new TimeSpan(1, 0, 0);  
+                        }
+                    }
+
+                    Assert.IsTrue(var_31 <= var_26,
+                                  "LastWriteTime delta actual({0}) expected({1})",
+                                  var_31.ToString(),
+                                  var_26.ToString());
+                }
+            }
+        }
+
+
+        private void fn_4(string var_21, IEnumerable<String> var_22)
+        {
+            VerifyFileTimes(var_21, var_22, true, false,
+                            10000000); 
+        }
+
+        private void fn_5(string var_21, IEnumerable<String> var_22)
+        {
+            VerifyFileTimes(var_21, var_22, true, false,
+                            100000);  
+        }
+
+        private void fn_6(string var_21, IEnumerable<String> var_22)
+        {
+            VerifyFileTimes(var_21, var_22, false, false,
+                            20000000);  
+
+        }
+
+
+        [TestMethod]
+        [ExpectedException(typeof(Ionic.Zip.ZipException))]
+        public void fn_7()
+        {
+            string var_32 = GetScript("VbsUnzip-ShellApp.vbs");
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.Initialize(var_32);
+            }
+        }
+
+
+
+
+        [TestMethod]
+        public void fn_8()
+        {
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            var var_20 = GetScript("VbsUnzip-ShellApp.vbs");
+
+            int var_4 = 0;
+            foreach (var compLevel in var_1)
+            {
+                
+                string var_37 = Path.Combine(TopLevelDir, String.Format("ShellApplication_Unzip.{0}.zip", var_4));
+                string var_21 = Path.Combine(TopLevelDir, String.Format("extract.{0}", var_4));
+
+                
+                
+                using (ZipFile var_33 = new ZipFile())
+                {
+                    var_33.CompressionLevel = (Ionic.Zlib.CompressionLevel)compLevel;
+                    
+                    for (int var_38 = 0; var_38 < var_35.Length; var_38++)
+                        var_33.AddItem(var_35[var_38], "files");
+                    var_33.Save(var_37);
+                }
+
+                
+                Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                     "Incorrect number of entries in the zip file.");
+
+                
+                this.Exec(cscriptExe,
+                          String.Format("\"{0}\" {1} {2}", var_20, var_37, var_21));
+
+                
+                VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+                
+                VerifyTimesDos(Path.Combine(var_21, "files"), var_35);
+                var_4++;
+            }
+        }
+
+
+        [TestMethod]
+        public void fn_9()
+        {
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            var var_20 = GetScript("VbsUnzip-ShellApp.vbs");
+
+            int var_4 = 0;
+            foreach (var compLevel in var_1)
+            {
+                
+                string var_37 = Path.Combine(TopLevelDir, String.Format("ShellApplication_Unzip_NonSeekableOutput.{0}.zip", var_4));
+                string var_21 = Path.Combine(TopLevelDir, String.Format("extract.{0}", var_4));
+
+                
+                
+
+                
+                
+                using (var var_39 = System.IO.File.Create(var_37))
+                {
+                    using (var var_40 = new Ionic.Zip.Tests.NonSeekableOutputStream(var_39))
+                    {
+                        using (ZipFile var_33 = new ZipFile())
+                        {
+                            var_33.CompressionLevel = (Ionic.Zlib.CompressionLevel)compLevel;
+                            for (int var_38 = 0; var_38 < var_35.Length; var_38++)
+                                var_33.AddItem(var_35[var_38], "files");
+                            var_33.Save(var_40);
+                        }
+                    }
+                }
+
+                
+                Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                     "Incorrect number of entries in the zip file.");
+
+                
+                this.Exec(cscriptExe,
+                          String.Format("\"{0}\" {1} {2}", var_20,
+                          Path.GetFileName(var_37),
+                          Path.GetFileName(var_21)));
+
+                
+                VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+                VerifyFileTimes(Path.Combine(var_21, "files"), var_35,
+                                false, false, 20000000);  
+                var_4++;
+            }
+        }
+
+
+#if SHELLAPP_UNZIP_SFX
+
+        [TestMethod]
+        public void fn_10()
+        {
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            var var_20 = GetScript("VbsUnzip-ShellApp.vbs");
+
+            int var_4=0;
+            foreach (var compLevel in var_1)
+            {
+                
+                string var_37 = Path.Combine(TopLevelDir, String.Format("ShellApp_Unzip_SFX.{0}.exe", var_4));
+                string var_21 = Path.Combine(TopLevelDir, String.Format("extract.{0}",var_4));
+
+                
+                using (ZipFile var_33 = new ZipFile())
+                {
+                    var_33.CompressionLevel = (Ionic.Zlib.CompressionLevel) compLevel;
+                    
+                    for (int var_38 = 0; var_38 < var_35.Length; var_38++)
+                        var_33.AddItem(var_35[var_38], "files");
+                    var_33.SaveSelfExtractor(var_37, SelfExtractorFlavor.ConsoleApplication);
+                }
+
+                
+                Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                     "Incorrect number of entries in the zip file.");
+
+                
+                this.Exec(cscriptExe,
+                          String.Format("\"{0}\" {1} {2}", var_20, var_37, var_21));
+
+                
+                VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+                
+                VerifyTimesDos(Path.Combine(var_21, "files"), var_35);
+                var_4++;
+            }
+        }
+#endif
+
+
+
+        [TestMethod]
+        public void fn_11()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "ShellApplication_Unzip-2.zip");
+            
+            string var_21 = Path.Combine(TopLevelDir, "extract");
+            var var_36 = new Dictionary<string, byte[]>();
+            var var_35 = GetSelectionOfTempFiles(_rnd.Next(13) + 8, var_36);
+
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.AddFiles(var_35, "files");
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Count,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            string var_20 = GetScript("VbsUnzip-ShellApp.vbs");
+
+            this.Exec(cscriptExe,
+                      String.Format("\"{0}\" {1} {2}", var_20, var_37, var_21));
+
+            
+            VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+            #if IN_A_SANE_WORLD
+            
+            
+            
+
+            
+            VerifyTimesDos(Path.Combine(var_21, "files"), var_35);
+            #endif
+        }
+
+
+
+        [TestMethod]
+        public void fn_12()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "ShellApplication_SelectedFiles_Unzip.zip");
+
+            TestContext.WriteLine("ZipFile version:  {0}", ZipFile.LibraryVersion);
+
+            
+            string var_21 = "extract";
+            string var_41 = "files";
+            TestContext.WriteLine("creating dir '{0}' with files", var_41);
+            Directory.CreateDirectory(var_41);
+
+            int var_42 = _rnd.Next(5) + 6;
+            int var_43 = 0;
+            int var_44 = _rnd.Next(0x100ff) + 8000;
+            int var_45 = 0;
+            Dictionary<string, byte[]> var_36 = new Dictionary<string, byte[]>();
+            var var_46 = new List<string>();
+            for (int var_4 = 0; var_4 < var_42 && var_45 < 2; var_4++)
+            {
+                string var_47 = string.Format("Test{0}.txt", var_4);
+                if (var_4 != 0)
+                {
+                    int var_48 = _rnd.Next(4);
+                    if (var_48 != 0)
+                    {
+                        string var_49 = string.Format("folder{0}", var_48);
+                        var_47 = Path.Combine(var_49, var_47);
+                        if (!Directory.Exists(Path.Combine(var_41, var_49)))
+                            Directory.CreateDirectory(Path.Combine(var_41, var_49));
+                        var_45++;
+                    }
+                }
+                var_47 = Path.Combine(var_41, var_47);
+                TestUtilities.CreateAndFillFileBinary(var_47, var_44 + _rnd.Next(28000));
+                var var_50 = Path.GetFileName(var_47);
+                var var_51 = TestUtilities.ComputeChecksum(var_47);
+                var_36.Add(var_50, var_51);
+                var_46.Add(var_47);
+                var_43++;
+            }
+
+            
+            var var_52 = new System.IO.StringWriter();
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.StatusMessageTextWriter = var_52;
+                
+                var_33.AddSelectedFiles("*.*", var_41, "", true);
+                var_33.Save(var_37);
+            }
+            TestContext.WriteLine(var_52.ToString());
+
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_43,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            string var_20 = GetScript("VbsUnzip-ShellApp.vbs");
+
+            this.Exec(cscriptExe,
+                      String.Format("\"{0}\" {1} {2}", var_20, var_37, Path.Combine(TopLevelDir, var_21)));
+
+            
+            foreach (var fqPath in var_46)
+            {
+                var var_27 = Path.GetFileName(fqPath);
+                var var_28 = fqPath.Replace("files", "extract");
+                Assert.IsTrue(File.Exists(var_28), "File does not exist ({0})", var_28);
+                var var_51 = TestUtilities.ComputeChecksum(var_28);
+                Assert.AreEqual<String>(TestUtilities.CheckSumToString(var_36[var_27]),
+                                        TestUtilities.CheckSumToString(var_51),
+                                        String.Format("Checksums for file {0} do not match.", var_27));
+                var_36.Remove(var_27);
+            }
+
+            Assert.AreEqual<Int32>(0, var_36.Count, "Not all of the expected files were found in the extract directory.");
+        }
+
+
+
+
+        [TestMethod]
+        public void fn_13()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "ShellApplication_Zip.zip");
+            
+
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string var_21 = "extract";
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            string var_20 = GetScript("VbsCreateZip-ShellApp.vbs");
+
+            this.Exec(cscriptExe,
+                      String.Format("\"{0}\" {1} {2}", var_20, var_37, var_34));
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            using (ZipFile var_33 = ZipFile.Read(var_37))
+            {
+                var_33.ExtractAll(var_21);
+            }
+
+            
+            VerifyChecksums(var_21, var_35, var_36);
+
+            VerifyTimesDos(var_21, var_35);
+        }
+
+
+        [TestMethod]
+        public void fn_14()
+        {
+            string var_37 = "ShellApplication_Zip.zip";
+            string var_34 = "files";
+            string var_21 = "extract";
+
+            TestContext.WriteLine("======================================================");
+
+            Dictionary<string, byte[]> var_36 = new Dictionary<string, byte[]>();
+            var var_35 = GetSelectionOfTempFiles(_rnd.Next(33) + 11, var_36);
+
+            Directory.CreateDirectory(var_34);
+            Directory.SetCurrentDirectory(var_34);
+            var var_53 = System.Environment.GetEnvironmentVariable("Windir");
+            Assert.IsTrue(Directory.Exists(var_53), "%windir% does not exist ({0})", var_53);
+            var var_54 = Path.Combine(Path.Combine(var_53, "system32"), "fsutil.exe");
+            Assert.IsTrue(File.Exists(var_54), "fsutil.exe does not exist ({0})", var_54);
+            string var_55;
+
+            TestContext.WriteLine("validating the list of files...");
+            List<String> var_56 = new List<String> ();
+            
+            
+            foreach (var var_27 in var_35)
+            {
+                if (Path.GetFileName(var_27).IndexOf(' ') > 0)
+                    var_56.Add(var_27);
+            }
+
+            foreach (var var_27 in var_56)
+            {
+                TestContext.WriteLine("removing  {0}...", Path.GetFileName(var_27));
+                var_35.Remove(var_27);
+                var_36.Remove(Path.GetFileName(var_27));
+            }
+
+            TestContext.WriteLine("--------------------------------------------");
+            TestContext.WriteLine("creating links...");
+            foreach (var var_27 in var_35)
+            {
+                string var_57= Path.GetFileName(var_27);
+                Assert.IsTrue(File.Exists(var_27));
+                string var_7 = String.Format("hardlink create \"{0}\" \"{1}\"", var_57, var_27);
+                TestUtilities.Exec_NoContext(var_54, var_7, out var_55);
+            }
+
+            TestContext.WriteLine("++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+            
+            Directory.SetCurrentDirectory(TopLevelDir);
+            string var_20 = GetScript("VbsCreateZip-ShellApp.vbs");
+
+            this.Exec(cscriptExe,
+                      String.Format("\"{0}\" {1} {2}", var_20, var_37, var_34));
+
+            
+            
+            if (TestUtilities.CountEntries(var_37) != var_35.Count)
+            {
+                string[] var_58 = Directory.GetFiles(var_34);
+
+                Action<IEnumerable<String>, string> var_59 = (var_60, var_61) =>
+                {
+                    TestContext.WriteLine("**********************************");
+                    TestContext.WriteLine("files in ({0})", var_61);
+                    foreach (var s in var_60)
+                    {
+                        TestContext.WriteLine("  {0}", Path.GetFileName(s));
+                    }
+                    TestContext.WriteLine("----------------------------------");
+                    TestContext.WriteLine("  {0} total files", var_60.Count());
+                };
+
+                var_59(var_58, "Linked Files");
+                var_59(var_35, "selected Files");
+
+                IEnumerable<String> var_62 = null;
+                using (var var_63 = ZipFile.Read(var_37))
+                {
+                    var_62 = from var_71 in var_63.Entries select var_71.FileName;
+                }
+
+                var_59(var_62, "zipped Files");
+
+                foreach (var file in var_58)
+                {
+                    if (!var_62.Contains(Path.GetFileName(file)))
+                    {
+                        TestContext.WriteLine("Missing: {0}", Path.GetFileName(file));
+                    }
+                }
+            }
+            
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Count,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            using (ZipFile var_33 = ZipFile.Read(var_37))
+            {
+                var_33.ExtractAll(var_21);
+            }
+
+            
+            VerifyChecksums(var_21, var_35, var_36);
+
+            VerifyTimesDos(var_21, var_35);
+        }
+
+
+
+        [TestMethod]
+        public void fn_15()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "VStudio_Zip.zip");
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string var_21 = "extract";
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+
+            String[] var_64 = Array.ConvertAll(var_35, var_48 => Path.GetFileName(var_48));
+            Microsoft.VisualStudio.Zip.ZipFileCompressor var_65 = new Microsoft.VisualStudio.Zip.ZipFileCompressor(var_37, "files", var_64, true);
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            using (ZipFile var_33 = ZipFile.Read(var_37))
+            {
+                var_33.ExtractAll(var_21);
+            }
+
+            
+            VerifyChecksums(var_21, var_35, var_36);
+
+            
+            
+        }
+
+
+
+        [TestMethod]
+        [Timeout(180000)]  
+        public void fn_16()
+        {
+            string var_37 = "VStudio_UnZip.zip";
+            string var_66 = "files";
+            string var_34 = Path.Combine(TopLevelDir, var_66);
+            string var_21 = "extract";
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                for (int var_4 = 0; var_4 < var_35.Length; var_4++)
+                    var_33.AddItem(var_35[var_4], var_66);
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            var var_67 = new Microsoft.VisualStudio.Zip.ZipFileDecompressor(var_37, false, true, false);
+            var_67.UncompressToFolder(var_21, false);
+
+            
+            VerifyChecksums(Path.Combine(var_21, var_66), var_35, var_36);
+
+            
+            
+        }
+
+
+
+        [TestMethod]
+        public void fn_17()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "COM_Zip.zip");
+            string var_66 = "files";
+            string var_34 = Path.Combine(TopLevelDir, var_66);
+            string var_21 = "extract";
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            string var_20 = GetScript("VbsCreateZip-DotNetZip.vbs");
+
+            this.Exec(cscriptExe,
+                      String.Format("\"{0}\" {1} {2}", var_20, var_37, var_34));
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            
+            using (ZipFile var_33 = ZipFile.Read(var_37))
+            {
+                var_33.ExtractAll(var_21);
+            }
+
+            
+            VerifyChecksums(var_21, var_35, var_36);
+
+            VerifyTimesNtfs(var_21, var_35);
+        }
+
+
+
+        [TestMethod]
+        public void fn_18()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "COM_Unzip.zip");
+
+            
+            
+            string var_21 = "extract";
+            string var_66 = "files";
+            string var_34 = Path.Combine(TopLevelDir, var_66);
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                for (int var_4 = 0; var_4 < var_35.Length; var_4++)
+                    var_33.AddItem(var_35[var_4], var_66);
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+
+            
+            string var_20 = GetScript("VbsUnzip-DotNetZip.vbs");
+            this.Exec(cscriptExe,
+                      String.Format("\"{0}\" {1} {2}", var_20, var_37, var_21));
+
+            
+            VerifyChecksums(Path.Combine(var_21, var_66), var_35, var_36);
+
+            VerifyTimesNtfs(Path.Combine(var_21, var_66), var_35);
+        }
+
+
+        [TestMethod]
+        public void fn_19()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "COM_Check.zip");
+
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                for (int var_4 = 0; var_4 < var_35.Length; var_4++)
+                    var_33.AddItem(var_35[var_4], "files");
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            string var_20 = GetScript("TestCheckZip.js");
+
+            string var_68 = this.Exec(cscriptExe,
+                                      String.Format("\"{0}\" {1}", var_20, var_37));
+
+            Assert.IsTrue(var_68.StartsWith("That zip is OK"));
+        }
+
+
+        [TestMethod]
+        public void fn_20()
+        {
+            string var_37 = Path.Combine(TopLevelDir, "COM_CheckWithExtract.zip");
+
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                for (int var_4 = 0; var_4 < var_35.Length; var_4++)
+                    var_33.AddItem(var_35[var_4], "files");
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            string var_20 = GetScript("TestCheckZip.js");
+
+            string var_68 = this.Exec(cscriptExe,
+                                      String.Format("\"{0}\" -x {1}", var_20, var_37));
+
+            Assert.IsTrue(var_68.StartsWith("That zip is OK"), "output: {0}", var_68);
+        }
+
+
+        [TestMethod]
+        public void fn_21()
+        {
+            
+
+            
+            string var_20 = GetScript("TestCheckZip.js");
+
+            string var_68 = this.Exec(cscriptExe,
+                                      String.Format("\"{0}\" {1}", var_20, cscriptExe));
+
+            Assert.IsTrue(var_68.StartsWith("That zip is not OK"));
+        }
+
+        [TestMethod]
+        public void fn_22()
+        {
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            for (int var_69=0; var_69 < 2; var_69++)
+            {
+                string var_70 = GeneratePassword(11);
+                string var_37= String.Format("COM_CheckPass-{0}.zip", var_69);
+                var_37 = Path.Combine(TopLevelDir, var_37);
+                
+                using (ZipFile var_33 = new ZipFile())
+                {
+                    
+                    for (int var_4 = 0; var_4 < var_35.Length; var_4++)
+                    {
+                        var var_71 = var_33.AddFile(var_35[var_4], "files");
+                        var_71.Password = (var_69 == 1 && var_4 == var_35.Length-1)
+                            ? "7"
+                            : var_70;
+                    }
+                    var_33.Save(var_37);
+                }
+
+                TestContext.WriteLine("Checking the count...");
+                
+                Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                     var_35.Length,
+                                     "Incorrect number of entries in the zip file.");
+
+                TestContext.WriteLine("Checking the password (case {0})...", var_69);
+                string var_20 = GetScript("TestCheckZipPassword.js");
+                string var_68 = this.Exec(cscriptExe,
+                                           String.Format("\"{0}\" {1} {2}",
+                                                         var_20, var_37, var_70));
+
+                if (var_69==0)
+                    Assert.IsTrue(var_68.StartsWith("That zip is OK"));
+                else
+                    Assert.IsFalse(var_68.StartsWith("That zip is OK"));
+            }
+        }
+
+
+        private string fn_23(int var_72)
+        {
+            
+            
+
+            return TestUtilities.GenerateRandomAsciiString(var_72).Replace(" ","_");
+            
+        }
+
+
+
+        [TestMethod]
+        public void fn_24()
+        {
+            if (!InfoZipIsPresent)
+                throw new Exception();
+
+            string var_66 = "filesToZip";
+            string var_34 = Path.Combine(TopLevelDir, var_66);
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            for (int var_38=0; var_38 < 2; var_38++)  
+            {
+                
+                int var_4 = 0;
+                foreach (var compLevel in var_1)
+                {
+                    string var_37 =
+                                     String.Format("InfoZip_Unzip.{0}.{1}.zip", var_4,var_38);
+
+                    string var_70 = GeneratePassword(9);
+                    
+                    using (ZipFile var_33 = new ZipFile())
+                    {
+                        var_33.CompressionLevel = (Ionic.Zlib.CompressionLevel)compLevel;
+                        if (var_38!=0)
+                        {
+                            var_33.Encryption = var_0[var_38];
+                            var_33.Password = var_70;
+                        }
+                        for (int var_72 = 0; var_72 < var_35.Length; var_72++)
+                            var_33.AddItem(var_35[var_72], var_66);
+                        var_33.Save(var_37);
+                    }
+
+                    Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                         var_35.Length,
+                                         "Incorrect number of entries in the zip file"+
+                                         " (i,j)=({0},{1}).", var_4,var_38);
+
+                    string var_21 = String.Format("extract.{0}.{1}", var_4,var_38);
+
+                    if (var_38==0)
+                    {
+                        this.Exec(infoZipUnzip,
+                                  String.Format("{0} -d {1}",
+                                                Path.GetFileName(var_37),
+                                                Path.GetFileName(var_21)));
+                    }
+                    else
+                    {
+                        this.Exec(infoZipUnzip,
+                                  String.Format("-P {0}  {1} -d {2}",
+                                                var_70,
+                                                Path.GetFileName(var_37),
+                                                Path.GetFileName(var_21)));
+                    }
+
+                    var var_73 = Directory.GetFiles(Path.Combine(var_21, var_66));
+                    Assert.AreEqual<int>
+                        (var_35.Length, var_73.Length,
+                         "Incorrect number of extracted files. (i,j)={0},{1}",
+                         var_4,var_38);
+
+                    VerifyChecksums(Path.Combine(var_21, var_66),
+                                    var_35, var_36);
+
+                    var_4++;
+                }
+            }
+        }
+
+
+        [TestMethod]
+        public void fn_25()
+        {
+            if (!InfoZipIsPresent)
+                throw new Exception();
+
+            
+            string var_66 = "filesToZip";
+            string var_34 = Path.Combine(TopLevelDir, var_66);
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            
+
+            for (int var_69=0; var_69 < 2; var_69++)
+            {
+                string var_37 = String.Format("InfoZip_Zip-{0}.zip", var_69);
+                string var_21 = "extractDir-" + var_69;
+
+                var var_74 = Path.GetFileName(var_34);
+
+                if (var_69==0)
+                {
+                    
+                    
+                    this.Exec(infoZip, String.Format("{0} -r {1}",
+                                                     var_37, var_74));
+                }
+                else
+                {
+                    string[] var_75 =
+                        Array.ConvertAll(var_35,
+                                         var_76 =>
+                                         Path.Combine(var_74,
+                                                      Path.GetFileName(var_76)));
+
+                    
+                    this.Exec(infoZip, var_37 + " " +
+                              String.Join(" ", var_75));
+                }
+
+                
+                System.Threading.Thread.Sleep(1200);
+
+                
+                Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                     var_35.Length,
+                                     "Incorrect number of entries in the zip file.");
+
+                
+                string var_20 = GetScript("VbsUnZip-DotNetZip.vbs");
+
+                this.Exec(cscriptExe,
+                          String.Format("\"{0}\" {1} {2}",
+                                        var_20,
+                                        Path.GetFileName(var_37),
+                                        var_21));
+                
+                VerifyChecksums(Path.Combine(var_21,var_66), var_35, var_36);
+                VerifyTimesUnix(Path.Combine(var_21,var_66), var_35);
+            }
+        }
+
+
+
+        [TestMethod]
+        public void fn_26()
+        {
+            if (!InfoZipIsPresent)
+                throw new Exception();
+
+            
+            string var_21 = "extractDir";
+            string var_66 = "filesToZip";
+            string var_34 = Path.Combine(TopLevelDir, var_66);
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+
+            string var_70 = GeneratePassword(9);
+            string var_37 = "InfoZip_Zip_Password.zip";
+
+            
+            this.Exec(infoZip, String.Format("{0} -r -P {1} {2}",
+                                             var_37,
+                                             var_70,
+                                             var_66));
+
+            
+            System.Threading.Thread.Sleep(1200);
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                 var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            using (var var_63 = ZipFile.Read(var_37))
+            {
+                var_63.Password = var_70;
+                var_63.ExtractAll(var_21);
+            }
+
+            
+            VerifyChecksums(Path.Combine(var_21, var_66), var_35, var_36);
+            VerifyTimesNtfs(Path.Combine(var_21, var_66), var_35);
+        }
+
+
+
+        [TestMethod]
+        public void fn_27()
+        {
+            if (!InfoZipIsPresent)
+                throw new Exception();
+
+            string var_41 = "dirToZip";
+            int var_77 = _rnd.Next(17) + 12;
+            string[] var_35;
+            string var_78;
+            Dictionary<string, byte[]> var_36;
+            int[] var_79 = { 256, 512, 1024, 4096, 8192 }; 
+
+            _txrx = TestUtilities.StartProgressMonitor("InfoZip-compat",
+                                                       "InfoZip split archives",
+                                                       "Creating "+var_77+" files");
+            _txrx.Send("pb 0 max 2");
+            _txrx.Send("pb 1 max " + var_77);
+
+            var var_80 = new Action<int,int,Int64>( (var_48,var_81,var_82) => {
+                    switch (var_48)
+                    {
+                        case 0:
+                        break;
+                        case 1:
+                        break;
+                        case 2:
+                        _txrx.Send("pb 1 step");
+                        var_78 = String.Format("status created {0}/{1} files",
+                                            var_81+1,
+                                            ((int)var_82));
+                        _txrx.Send(var_78);
+                        break;
+                    }
+                });
+
+            CreateLargeFilesWithChecksums(var_41, var_77, var_80,
+                                          out var_35, out var_36);
+
+            _txrx.Send("pb 0 step");
+            _txrx.Send("pb 1 max " + var_79.Length);
+            _txrx.Send("pb 1 value 0");
+            for (int var_4=0; var_4 < var_79.Length; var_4++)
+            {
+                _txrx.Send("status zip with " + var_79[var_4] + "k segments");
+                string var_83 = var_79[var_4] + "k";
+                Directory.CreateDirectory(var_83);
+                string var_37 = Path.Combine(var_83, var_83 + ".zip");
+                
+                this.Exec(infoZip, String.Format("{0} -r -s {1}k -sv {2}",
+                                                 var_37,
+                                                 var_79[var_4],
+                                                 var_41));
+
+                string var_21 = var_79[var_4] + "k.extract";
+                using (var var_63 = ZipFile.Read(var_37))
+                {
+                    var_63.ExtractAll(var_21);
+                }
+
+                VerifyChecksums(Path.Combine(var_21, var_41), var_35, var_36);
+
+                _txrx.Send("pb 1 step");
+            }
+        }
+
+
+
+
+#if NOT
+        
+        
+        
+        
+        
+
+        [TestMethod]
+        public void fn_28()
+        {
+            if (!InfoZipIsPresent)
+                throw new Exception();
+
+            string var_41 = "dirToZip";
+            int var_77 = _rnd.Next(17) + 12;
+            string[] var_35;
+            string var_78;
+            Dictionary<string, byte[]> var_36;
+            int[] var_79 = { 256, 512, 1024, 4096, 8192 }; 
+
+            _txrx = TestUtilities.StartProgressMonitor("InfoZip-compat",
+                                                       "InfoZip split archives",
+                                                       "Creating "+var_77+" files");
+            _txrx.Send("pb 0 max 2");
+            _txrx.Send("pb 1 max " + var_77);
+
+            var var_80 = new Action<int,int,Int64>( (var_48,var_81,var_82) => {
+                    switch (var_48)
+                    {
+                        case 0:
+                        break;
+                        case 1:
+                        break;
+                        case 2:
+                        _txrx.Send("pb 1 step");
+                        var_78 = String.Format("status created {0}/{1} files",
+                                            var_81+1,
+                                            ((int)var_82));
+                        _txrx.Send(var_78);
+                        break;
+                    }
+                });
+
+            CreateLargeFilesWithChecksums(var_41, var_77, var_80,
+                                          out var_35, out var_36);
+
+            _txrx.Send("pb 0 step");
+            _txrx.Send("pb 1 max " + var_79.Length);
+            _txrx.Send("pb 1 value 0");
+            for (int var_4=0; var_4 < var_79.Length; var_4++)
+            {
+                
+                _txrx.Send("status zip with " + var_79[var_4] + "k segments");
+                string var_83 = var_79[var_4] + "k";
+                Directory.CreateDirectory(var_83);
+                string var_37 = Path.Combine(var_83, var_83 + ".zip");
+                
+                using (var var_63 = new ZipFile())
+                {
+                    var_63.AddFiles(var_35);
+                    var_63.MaxOutputSegmentSize = var_79[var_4]*1024;
+                    var_63.Save(var_37);
+                }
+
+                
+                string var_21 = var_79[var_4] + "k.extract";
+                
+                this.Exec(infoZipUnzip,
+                          String.Format("{0} -d {1}",
+                                        var_37,
+                                        var_21));
+
+                VerifyChecksums(Path.Combine(var_21, var_41), var_35, var_36);
+
+                _txrx.Send("pb 1 step");
+            }
+        }
+#endif
+
+
+        [TestMethod]
+        public void fn_29()
+        {
+            if (!InfoZipIsPresent)
+                throw new Exception();
+
+            string var_41 = "dirToZip";
+            int var_77 = _rnd.Next(17) + 12;
+            string[] var_35;
+            string var_78;
+            Dictionary<string, byte[]> var_36;
+
+            _txrx = TestUtilities.StartProgressMonitor("InfoZip-compat",
+                                                       "InfoZip split archives",
+                                                       "Creating "+var_77+" files");
+            _txrx.Send("pb 0 max 3");
+            _txrx.Send("pb 1 max " + var_77);
+
+            var var_80 = new Action<int,int,Int64>( (var_48,var_81,var_82) => {
+                    switch (var_48)
+                    {
+                        case 0:
+                        break;
+                        case 1:
+                        break;
+                        case 2:
+                        _txrx.Send("pb 1 step");
+                        var_78 = String.Format("status created {0}/{1} files",
+                                            var_81+1,
+                                            ((int)var_82));
+                        _txrx.Send(var_78);
+                        break;
+                    }
+                });
+
+            CreateLargeFilesWithChecksums(var_41, var_77, var_80,
+                                          out var_35, out var_36);
+
+            _txrx.Send("pb 0 step");
+            _txrx.Send("pb 1 max 3");
+            _txrx.Send("pb 1 value 0");
+
+            string var_37 = "infozip-z64-unzip.zip";
+            
+            using (var var_63 = new ZipFile())
+            {
+                var_63.AddFiles(var_35);
+                var_63.UseZip64WhenSaving = Zip64Option.Always;
+                var_63.Save(var_37);
+            }
+            _txrx.Send("pb 1 step");
+
+            
+            string var_21 = "extract";
+            this.Exec(infoZipUnzip,
+                      String.Format("{0} -d {1}",
+                                    var_37,
+                                    var_21));
+            _txrx.Send("pb 1 step");
+
+            VerifyChecksums(Path.Combine(var_21, var_41), var_35, var_36);
+            _txrx.Send("pb 1 step");
+        }
+
+
+        [TestMethod]
+        public void fn_30()
+        {
+            if (!InfoZipIsPresent)
+                throw new Exception();
+
+            string var_70 = Path.GetFileNameWithoutExtension(Path.GetRandomFileName());
+
+            
+            
+            
+            
+            for (int var_69=0; var_69 < 3; var_69++)
+            {
+                string var_37 = "ZLF.zip";
+
+                
+                string var_84 = Path.GetRandomFileName();
+                using (StreamWriter var_52 = File.CreateText(var_84)) { }
+
+                
+                using (ZipFile var_33 = new ZipFile())
+                {
+                    if(var_69==1)
+                    {
+                        var_33.Encryption = EncryptionAlgorithm.WinZipAes256;
+                        var_33.Password = var_70;
+                    }
+                    else if (var_69==2)
+                    {
+                        var_33.Password = var_70;
+                        var_33.Encryption = EncryptionAlgorithm.PkzipWeak;
+                    }
+                    var_33.AddFile(var_84, "");
+                    var_33.Save(var_37);
+                }
+
+                
+                Assert.AreEqual<int>(1, TestUtilities.CountEntries(var_37),
+                                     "Incorrect number of entries in the zip file.");
+
+                string var_21 = "extract." + var_69;
+                Directory.CreateDirectory(var_21);
+
+                
+                
+                string var_85 = var_37 + " -d " + var_21;
+                if (var_69!=0)
+                    var_85 = "-P " + var_70 + " " + var_85;
+                string var_86 = this.Exec(infoZipUnzip, var_85);
+
+                TestContext.WriteLine("{0}", var_86);
+                Assert.IsFalse(var_86.Contains("signature not found"));
+            }
+        }
+
+
+
+
+        [TestMethod]
+        public void fn_31()
+        {
+            if (perl == null)
+                throw new Exception();
+
+            string var_37 = "newzip.zip";
+            string var_66 = "filesToZip";
+            string var_41 = Path.Combine(TopLevelDir, var_66);
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_41, out var_35, out var_36);
+
+            
+            TestContext.WriteLine("Creating a zip with perl...");
+            string var_87 = GetScript("CreateZip.pl");
+            this.Exec(perl,
+                      String.Format("\"{0}\" {1} \"{2}\"",
+                                    var_87,
+                                    var_37,
+                                    var_66));
+
+            TestContext.WriteLine("");
+            TestContext.WriteLine("Extracting that zip with DotNetZip...");
+            string var_21 = "extract";
+            using (var var_63 = ZipFile.Read(var_37))
+            {
+                var_63.ExtractAll(var_21);
+            }
+
+            TestContext.WriteLine("");
+            TestContext.WriteLine("Verifying checksums...");
+            VerifyChecksums(Path.Combine(var_21, var_41), var_35, var_36);
+        }
+
+
+
+
+        [TestMethod]
+        public void fn_32()
+        {
+            if (!SevenZipIsPresent)
+                throw new Exception();
+
+            string var_37 = Path.Combine(TopLevelDir, "7z_Zip_1.zip");
+            
+            string var_21 = "extract";
+            string var_34 = Path.Combine(TopLevelDir, "files");
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            this.Exec(sevenZip, String.Format("a {0} {1}", var_37, var_34));
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            string var_20 = GetScript("VbsUnZip-DotNetZip.vbs");
+
+            this.Exec(cscriptExe,
+                      String.Format("\"{0}\" {1} {2}", var_20, var_37, var_21));
+
+            
+            VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+            VerifyTimesNtfs(Path.Combine(var_21, "files"), var_35);
+        }
+
+
+
+        [TestMethod]
+        public void fn_33()
+        {
+            if (!SevenZipIsPresent)
+                throw new Exception();
+
+            string var_37 = Path.Combine(TopLevelDir, "7z_Zip_2.zip");
+
+            
+            string var_21 = "extract";
+            string var_34 = Path.Combine(TopLevelDir, "files");
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+
+            this.Exec(sevenZip, String.Format("a {0} {1}", var_37, var_34));
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            
+            using (ZipFile var_33 = ZipFile.Read(var_37))
+            {
+                var_33.ExtractAll(var_21);
+            }
+
+            
+            VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+            VerifyTimesNtfs(Path.Combine(var_21, "files"), var_35);
+        }
+
+
+
+        [TestMethod]
+        public void fn_34()
+        {
+            if (!SevenZipIsPresent)
+                throw new Exception();
+
+            string var_37 = Path.Combine(TopLevelDir, "7z_Unzip.zip");
+
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                for (int var_4 = 0; var_4 < var_35.Length; var_4++)
+                    var_33.AddItem(var_35[var_4], "files");
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            Directory.CreateDirectory("extract");
+            Directory.SetCurrentDirectory("extract");
+            this.Exec(sevenZip, String.Format("x {0}", var_37));
+
+            
+            Directory.SetCurrentDirectory(TopLevelDir);
+
+            VerifyChecksums(Path.Combine("extract", "files"), var_35, var_36);
+        }
+
+
+        [TestMethod]
+        public void fn_35()
+        {
+            if (!SevenZipIsPresent)
+                throw new Exception();
+
+            string var_37 = Path.Combine(TopLevelDir, "7z_Unzip_Password.zip");
+            string var_70 = Path.GetRandomFileName();
+            string var_34 = Path.Combine(TopLevelDir, "files");
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.Password = var_70;
+                var_33.AddFiles(var_35, "files");
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            Directory.CreateDirectory("extract");
+            Directory.SetCurrentDirectory("extract");
+            this.Exec(sevenZip, String.Format("x -p{0} {1}", var_70, var_37));
+
+            
+            Directory.SetCurrentDirectory(TopLevelDir);
+
+            VerifyChecksums(Path.Combine("extract", "files"), var_35, var_36);
+        }
+
+
+
+
+        [TestMethod]
+        public void fn_36()
+        {
+            if (!SevenZipIsPresent)
+                throw new Exception();
+
+            string var_34 = Path.Combine(TopLevelDir, "files");
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36 = null;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+            
+
+#if NOT
+            
+            Directory.CreateDirectory(var_34);
+            DateTime var_88 = new DateTime(DateTime.Now.Year,
+                                               DateTime.Now.Month,
+                                               DateTime.Now.Day,
+                                               11,11,11);
+            var_35 = new String[2];
+            for (int var_82=0; var_82 < 2; var_82++)
+            {
+                string var_89 = Path.Combine(var_34, String.Format("file{0:D3}.txt", var_82));
+                File.WriteAllText(var_89, "12341234123412341234123412341234");
+                File.SetLastWriteTime(var_89, var_88);
+                File.SetLastAccessTime(var_89, var_88);
+                File.SetCreationTime(var_89, var_88);
+                var_35[var_82]= var_89;
+            }
+#endif
+            TestContext.WriteLine("Test Unzip with 7zip");
+            TestContext.WriteLine("============================================");
+
+            
+            
+
+            int var_4 = 0;
+            foreach (var compLevel in var_1)
+            {
+                TestContext.WriteLine("---------------------------------");
+                TestContext.WriteLine("Trial {0}", var_4);
+                TestContext.WriteLine("CompressionLevel = {0}", compLevel);
+                string var_37 = Path.Combine(TopLevelDir, String.Format("7z_Unzip_Password_NonSeekableOutput.{0}.zip", var_4));
+                string var_70 = Path.GetRandomFileName();
+                
+                string var_21 = Path.Combine(TopLevelDir, String.Format("extract.{0}", var_4));
+
+                TestContext.WriteLine("Password = {0}", var_70);
+
+                
+                
+                
+                
+                using (var var_39 = System.IO.File.Create(var_37))
+                {
+                    using (var var_40 = new Ionic.Zip.Tests.NonSeekableOutputStream(var_39))
+                    {
+                        using (ZipFile var_33 = new ZipFile())
+                        {
+                            var_33.CompressionLevel = (Ionic.Zlib.CompressionLevel)compLevel;
+                            var_33.Password = var_70;
+                            var_33.AddFiles(var_35, "files");
+                            var_33.Save(var_40);
+                        }
+                    }
+                }
+
+                
+                Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Length,
+                                     "Incorrect number of entries in the zip file.");
+
+                
+                Directory.CreateDirectory(var_21);
+                this.Exec(sevenZip, String.Format("x -o{0} -p{1} {2}",
+                                                  Path.GetFileName(var_21),
+                                                  var_70,
+                                                  var_37));
+
+                
+                
+
+                VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+                var_4++;
+            }
+        }
+
+
+
+        [TestMethod]
+        public void fn_37()
+        {
+            if (!SevenZipIsPresent)
+                throw new Exception();
+
+            string var_37 = Path.Combine(TopLevelDir, "7z_Unzip_SFX.exe");
+
+            
+            string var_34 = Path.Combine(TopLevelDir, "files");
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                for (int var_4 = 0; var_4 < var_35.Length; var_4++)
+                    var_33.AddItem(var_35[var_4], "files");
+                var_33.SaveSelfExtractor(var_37,
+                                       SelfExtractorFlavor.ConsoleApplication);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                 var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            Directory.CreateDirectory("extract");
+            Directory.SetCurrentDirectory("extract");
+            this.Exec(sevenZip, String.Format("x {0}", var_37));
+
+            
+            Directory.SetCurrentDirectory(TopLevelDir);
+
+            VerifyChecksums(Path.Combine("extract", "files"), var_35, var_36);
+        }
+
+
+
+        [TestMethod]
+        public void fn_38()
+        {
+            Winzip_Zip_Variable("");
+        }
+
+
+        [TestMethod]
+        public void fn_39()
+        {
+            if (!WinZipIsPresent)
+                throw new Exception();
+
+
+            string var_70 = Path.GetRandomFileName().Replace(".", "@");
+            TestContext.WriteLine("creating zip with password ({0})", var_70);
+            string var_90 = Winzip_Zip_Variable("-s" + var_70, false);
+            string var_21 = "extract";
+
+            
+            
+            using (ZipFile var_33 = ZipFile.Read(var_90))
+            {
+                var_33.Password = var_70;
+                var_33.ExtractAll(var_21);
+            }
+        }
+
+
+        [TestMethod]
+        public void fn_40()
+        {
+            Winzip_Zip_Variable("-en");
+        }
+
+        [TestMethod]
+        public void fn_41()
+        {
+            Winzip_Zip_Variable("-ef");
+        }
+
+        [TestMethod]
+        public void fn_42()
+        {
+            Winzip_Zip_Variable("-es");
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(Ionic.Zip.ZipException))]
+        public void fn_43()
+        {
+            if (!WinZipIsPresent) throw new Exception();
+            
+            Winzip_Zip_Variable("-ez");
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(Ionic.Zip.ZipException))]
+        public void fn_44()
+        {
+            if (!WinZipIsPresent) throw new Exception();
+            
+            Winzip_Zip_Variable("-ep");
+        }
+
+        [TestMethod]
+        public void fn_45()
+        {
+            if (!WinZipIsPresent) throw new Exception();
+            Winzip_Zip_Variable("-eb");
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(Ionic.Zip.ZipException))]
+        public void fn_46()
+        {
+            if (!WinZipIsPresent) throw new Exception();
+            
+            Winzip_Zip_Variable("-ee");
+        }
+
+
+        [TestMethod]
+        [ExpectedException(typeof(Ionic.Zip.ZipException))]
+        public void fn_47()
+        {
+            if (!WinZipIsPresent) throw new Exception();
+            
+            Winzip_Zip_Variable("-el");
+        }
+
+
+        public string fn_48(string var_91)
+        {
+            return Winzip_Zip_Variable(var_91, true);
+        }
+
+        public string fn_48(string var_91, bool var_92)
+        {
+            if (!WinZipIsPresent)
+                throw new Exception(String.Format("[options({0})] : winzip is not present", var_91));
+
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            string var_37 = Path.Combine(TopLevelDir, "Winzip_Zip.zip");
+
+            string var_93 = "files";
+            string var_34 = Path.Combine(TopLevelDir, var_93);
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            
+            System.Threading.Thread.Sleep(1200);
+
+            
+            string var_94 = "-a -p " + var_91 + " -yx {0} {1}\\*.*";
+            string var_95 = this.Exec(wzzip, String.Format(var_94, var_37, var_34));
+
+            if (var_92)
+            {
+                
+                string var_21 = "extract";
+                using (ZipFile var_33 = ZipFile.Read(var_37))
+                {
+                    var_33.ExtractAll(var_21);
+                }
+
+                
+                VerifyChecksums(var_21, var_35, var_36);
+
+                
+                VerifyTimesNtfs(var_21, var_35);
+            }
+
+            return var_37;
+        }
+
+
+
+        [TestMethod]
+        [Timeout(540000)]  
+        public void fn_49()
+        {
+            if (!WinZipIsPresent)
+                throw new Exception();
+
+            string var_37 = "Winzip_Unzip_2.zip";
+
+            
+            string var_21 = "extract";
+            
+            Dictionary<string, byte[]> var_36 = new Dictionary<string, byte[]>();
+            var var_35 = GetSelectionOfTempFiles(_rnd.Next(13) + 8, var_36);
+
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.AddFiles(var_35, "files");
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37), var_35.Count,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            
+            Directory.CreateDirectory(var_21);
+            this.Exec(wzunzip, String.Format("-d -yx {0} \"{1}\"",
+                                             var_37, var_21));
+
+            
+            VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+            
+            VerifyTimesDos(Path.Combine(var_21, "files"), var_35);
+        }
+
+
+
+
+        [TestMethod]
+        public void fn_50()
+        {
+            if (!WinZipIsPresent)
+                throw new Exception();
+
+            string var_70 = Path.GetFileNameWithoutExtension(Path.GetRandomFileName());
+
+            
+            
+            
+            
+            for (int var_69=0; var_69 < 3; var_69++)
+            {
+                string var_37 = "ZLF.zip";
+
+                
+                string var_84 = Path.GetRandomFileName();
+                using (StreamWriter var_52 = File.CreateText(var_84)) { }
+
+                
+                using (ZipFile var_33 = new ZipFile())
+                {
+                    if(var_69==1)
+                    {
+                        var_33.Encryption = EncryptionAlgorithm.WinZipAes256;
+                        var_33.Password = var_70;
+                    }
+                    else if (var_69==2)
+                    {
+                        var_33.Password = var_70;
+                        var_33.Encryption = EncryptionAlgorithm.PkzipWeak;
+                    }
+                    var_33.AddFile(var_84, "");
+                    var_33.Save(var_37);
+                }
+
+                
+                Assert.AreEqual<int>(1, TestUtilities.CountEntries(var_37),
+                                     "Incorrect number of entries in the zip file.");
+
+                
+                
+                string var_85 = "-t " + var_37;
+                if (var_69!=0)
+                    var_85 = "-s" + var_70 + " " + var_85;
+                string var_96 = this.Exec(wzunzip, var_85);
+
+                TestContext.WriteLine("{0}", var_96);
+                Assert.IsTrue(var_96.Contains("No errors"));
+                Assert.IsFalse(var_96.Contains("At least one error was detected"));
+            }
+        }
+
+
+
+        [TestMethod]
+        public void fn_51()
+        {
+            if (!WinZipIsPresent)
+                throw new Exception();
+
+            
+            string var_37 = "Winzip_Unzip_Password.zip";
+            string var_21 = "extract";
+            string var_34 = "fodder";
+            
+            var var_35 = TestUtilities.GenerateFilesFlat(var_34);
+            string var_70 = Path.GetRandomFileName();
+
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.Password = var_70;
+                var_33.AddFiles(var_35, "");
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(var_35.Length, TestUtilities.CountEntries(var_37),
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            
+            string var_85 = String.Format("-t -s{0} {1}", var_70, var_37);
+            string var_96 = this.Exec(wzunzip, var_85);
+            TestContext.WriteLine("{0}", var_96);
+
+            Assert.IsTrue(var_96.Contains("No errors"));
+            Assert.IsFalse(var_96.Contains("At least one error was detected"));
+
+            
+            
+            var_85 = String.Format("-d -yx -s{0} {1} {2}",
+                                 var_70, var_37, var_21);
+            Directory.CreateDirectory(var_21);
+            var_96 = this.Exec(wzunzip, var_85);
+
+            Assert.IsFalse(var_96.Contains("skipping"));
+            Assert.IsFalse(var_96.Contains("incorrect"));
+        }
+
+
+
+        [TestMethod]
+        public void fn_52()
+        {
+            if (!WinZipIsPresent)
+                throw new Exception();
+
+
+            
+            string var_34 = "fodder";
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            var var_97 = Enum.GetValues(typeof(Ionic.Zlib.CompressionLevel));
+            int var_4 = 0;
+            foreach (var compLevel in var_97)
+            {
+                string var_37 =
+                    Path.Combine(TopLevelDir,
+                                 String.Format("Winzip_Unzip_Pwd_NonSeek.{0}.zip",
+                                               var_4));
+                string var_21 = "extract" + var_4.ToString();
+                string var_70 = Path.GetRandomFileName();
+
+                
+                
+                
+                using (var var_39 = System.IO.File.Create(var_37))
+                {
+                    using (var var_40 = new Ionic.Zip.Tests.NonSeekableOutputStream(var_39))
+                    {
+                        
+                        using (ZipFile var_33 = new ZipFile())
+                        {
+                            var_33.CompressionLevel = (Ionic.Zlib.CompressionLevel)compLevel;
+                            var_33.Password = var_70;
+                            var_33.AddFiles(var_35, "files");
+                            var_33.Save(var_40);
+                        }
+                    }
+                }
+
+                
+                Assert.AreEqual<int>(var_35.Length,
+                                     TestUtilities.CountEntries(var_37),
+                                     "Incorrect number of entries in the zip file.");
+
+                
+                
+                string var_96 = this.Exec(wzunzip, String.Format("-t -s{0} {1}",
+                                                                     var_70, var_37));
+                TestContext.WriteLine("{0}", var_96);
+
+                Assert.IsTrue(var_96.Contains("No errors"));
+                Assert.IsFalse(var_96.Contains("At least one error was detected"));
+
+                
+                Directory.CreateDirectory(var_21);
+                
+                var_96 = this.Exec(wzunzip, String.Format("-d -yx -s{0} {1} {2}",
+                                                             var_70, var_37, var_21));
+                Assert.IsFalse(var_96.Contains("skipping"));
+                Assert.IsFalse(var_96.Contains("incorrect"));
+
+                
+                VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+                var_4++;
+            }
+        }
+
+
+
+        [TestMethod]
+        public void fn_53()
+        {
+            if (!WinZipIsPresent)
+                throw new Exception();
+
+            string var_37 = "Winzip_Unzip_SFX.exe";
+
+            
+            string var_21 = Path.Combine(TopLevelDir, "extract");
+            string var_34 = Path.Combine(TopLevelDir, "files");
+
+            Dictionary<string, byte[]> var_36 = new Dictionary<string, byte[]>();
+            var var_35 = GetSelectionOfTempFiles(_rnd.Next(13) + 8, var_36);
+
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.AddFiles(var_35, "files");
+                var_33.SaveSelfExtractor(var_37,
+                                       SelfExtractorFlavor.ConsoleApplication);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                 var_35.Count,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            
+            Directory.CreateDirectory(var_21);
+            Directory.SetCurrentDirectory(var_21);
+
+            
+            
+            this.Exec(wzunzip, "-d -yx " + Path.Combine("..", var_37));
+
+            
+            VerifyChecksums(Path.Combine(var_21, "files"), var_35, var_36);
+
+            
+            VerifyTimesDos(Path.Combine(var_21, "files"), var_35);
+        }
+
+
+        [TestMethod]
+        public void fn_54()
+        {
+            if (!WinZipIsPresent) throw new Exception();
+
+            string var_37 = "Winzip_Unzip.zip";
+
+            string var_93 = "files";
+            string var_21 = "extract";
+            string var_34 = Path.Combine(TopLevelDir, var_93);
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            var var_98 = GetSelectionOfTempFiles(var_36);
+
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.CompressionMethod = CompressionMethod.BZip2;
+                var_33.AddFiles(var_35, var_93);
+                var_33.AddFiles(var_98, var_93);
+                var_33.Save(var_37);
+            }
+
+            TestContext.WriteLine("Verifying the number of files in the zip");
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                 var_35.Length + var_98.Count,
+                                 "Incorrect number of entries in the zip file.");
+
+
+            
+            
+            TestContext.WriteLine("Verifying that BZIP2 was the comp method used...");
+
+            
+            
+            string var_95 = this.Exec(wzzip, "-vt " + var_37);
+
+            var var_99 = TestUtilities.CountOccurrences(var_95, "Compression Method: BZipped");
+            TestContext.WriteLine("Found {0} bzipped entries.", var_99);
+
+            
+            
+            
+            var var_100 =  TestUtilities.CountOccurrences(var_95, "Compression Method: Stored");
+            TestContext.WriteLine("Found {0} stored entries.", var_100);
+
+            Assert.AreEqual<int>( var_99 + var_100,
+                                 var_35.Length + var_98.Count);
+            Assert.IsTrue( var_99 > 2*var_100,
+                           "The number of bzipped files is too low.");
+
+            TestContext.WriteLine("Extracting...");
+            
+            
+            Directory.CreateDirectory(var_21);
+            Directory.SetCurrentDirectory(var_21);
+            this.Exec(wzunzip, String.Format("-d -yx \"{0}\"",
+                                             Path.Combine(TopLevelDir,var_37)));
+
+            
+            Directory.SetCurrentDirectory(TopLevelDir);
+            String[] var_22 = new String[var_35.Length + var_98.Count];
+            var_35.CopyTo(var_22, 0);
+            var_98.ToArray().CopyTo(var_22, var_35.Length);
+
+            VerifyChecksums(Path.Combine("extract", var_93), var_22, var_36);
+
+            VerifyFileTimes1(var_21, var_98);
+        }
+
+
+        [TestMethod]
+        public void fn_55()
+        {
+            
+            
+            
+            
+            
+            
+            
+            
+            if (!WinZipIsPresent) throw new Exception();
+
+            TestContext.WriteLine("Creating the fodder files...");
+            string var_37 = "BZ_Large.zip";
+            int var_72 = _rnd.Next(5) + 5;
+            int var_44 = _rnd.Next(0x80000) + 0x3000ff;
+            int var_31 = 0x80000;
+            string var_93 = "files";
+            string var_21 = "extract";
+            string var_34 = Path.Combine(TopLevelDir, var_93);
+            var var_35 = TestUtilities.GenerateFilesFlat(var_34, var_72, var_44, var_44+var_31);
+
+            TestContext.WriteLine("Creating the zip...");
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.CompressionMethod = CompressionMethod.BZip2;
+                var_33.AddFiles(var_35, var_93);
+                var_33.Save(var_37);
+            }
+
+            
+            TestContext.WriteLine("Verifying the number of files in the zip...");
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                 var_35.Length,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            
+            string var_95 = this.Exec(wzzip, "-vt " + var_37);
+
+            
+            
+            TestContext.WriteLine("Verifying that BZIP2 was the comp method used...");
+            Assert.AreEqual<int>(TestUtilities.CountOccurrences(var_95, "Compression Method: BZipped"),
+                                 var_35.Length);
+
+            
+            
+            TestContext.WriteLine("Extracting...");
+            Directory.CreateDirectory(var_21);
+            Directory.SetCurrentDirectory(var_21);
+            this.Exec(wzunzip, String.Format("-d -yx \"{0}\"",
+                                             Path.Combine("..",var_37)));
+        }
+
+
+
+
+        [TestMethod]
+        public void fn_56()
+        {
+            if (!WinZipIsPresent)
+                throw new Exception();
+
+            string var_37 = "Winzip_Unzip_Basic.zip";
+
+            string var_93 = "files";
+            string var_21 = "extract";
+            string var_34 = Path.Combine(TopLevelDir, var_93);
+
+            string[] var_35;
+            Dictionary<string, byte[]> var_36;
+            CreateFilesAndChecksums(var_34, out var_35, out var_36);
+
+            var var_98 = GetSelectionOfTempFiles(var_36);
+
+            int var_4 = 0;
+            
+            if (!File.Exists(var_35[var_4])) throw new Exception();
+            File.SetAttributes(var_35[var_4], FileAttributes.ReadOnly | FileAttributes.System);
+
+            
+            var_4++;
+            if (var_4 == var_35.Length) throw new Exception();
+            if (!File.Exists(var_35[var_4])) throw new Exception();
+            File.SetAttributes(var_35[var_4], FileAttributes.Hidden);
+
+            
+            using (ZipFile var_33 = new ZipFile())
+            {
+                var_33.AddFiles(var_35, var_93);
+                var_33.AddFiles(var_98, var_93);
+                var_33.Save(var_37);
+            }
+
+            
+            Assert.AreEqual<int>(TestUtilities.CountEntries(var_37),
+                                 var_35.Length + var_98.Count,
+                                 "Incorrect number of entries in the zip file.");
+
+            
+            
+            string var_95 = this.Exec(wzzip, "-vt " + var_37);
+
+            string[] var_101 = { "s-r-", "-hw-", "--w-" };
+
+            
+            for (var_4 = 0; var_4 < var_101.Length; var_4++)
+            {
+                var var_27 = Path.GetFileName(var_35[var_4]);
+                var var_102 = Path.Combine(var_93, var_27);
+                string var_103 = String.Format("Filename: {0}", var_102.Replace("/", "\\"));
+                int var_48 = var_95.IndexOf(var_103);
+                Assert.IsTrue(var_48 > 0, "Could not find expected text ({0}) in WZZIP output.", var_103);
+                var_103 = "Attributes: ";
+                var_48 = var_95.IndexOf(var_103, var_48);
+                string var_104 = var_95.Substring(var_48 + var_103.Length, 4);
+                Assert.AreEqual(var_101[var_4], var_104, "Unexpected attributes on File {0}.", var_4);
+            }
+
+            
+            
+            Directory.CreateDirectory(var_21);
+            Directory.SetCurrentDirectory(var_21);
+            this.Exec(wzunzip, String.Format("-d -yx ..\\{0}", var_37));
+
+            
+            Directory.SetCurrentDirectory(TopLevelDir);
+            String[] var_22 = new String[var_35.Length + var_98.Count];
+            var_35.CopyTo(var_22, 0);
+            var_98.ToArray().CopyTo(var_22, var_35.Length);
+
+            VerifyChecksums(Path.Combine("extract", var_93), var_22, var_36);
+
+            VerifyFileTimes1(var_21, var_98);
+        }
+
+
+        private void fn_57(string var_21, List<string> var_98)
+        {
+            
+            DateTime var_88 = new DateTime(DateTime.Now.Year,
+                                               DateTime.Now.Month,
+                                               DateTime.Now.Day);
+            DateTime var_105 = var_88 - new TimeSpan(45, 0, 0, 0);
+
+            string[] var_73 = Directory.GetFiles(var_21);
+
+            foreach (var fqPath in var_73)
+            {
+                string var_84 = Path.GetFileName(fqPath);
+                DateTime var_106 = File.GetLastWriteTime(fqPath);
+                if (var_84.StartsWith("testfile"))
+                {
+                    Assert.IsTrue((var_106 == var_88 || var_106 == var_105),
+                                  "The timestamp on the file {0} is incorrect ({1}).",
+                                  fqPath, var_106.ToString("yyyy-MM-dd HH:mm:ss"));
+                }
+                else
+                {
+                    var var_107 = (from var_27 in var_98
+                                where Path.GetFileName(var_27) == var_84
+                                select var_27)
+                        .First();
+
+                    DateTime var_29 = File.GetLastWriteTime(var_84);
+                    DateTime var_30 = File.GetLastWriteTime(var_107);
+                    Assert.AreEqual<DateTime>(var_29, var_30);
+                    var_29 = File.GetCreationTime(var_84);
+                    var_30 = File.GetCreationTime(var_107);
+                    Assert.AreEqual<DateTime>(var_29, var_30);
+                }
+            }
+        }
+
+        private List<string> fn_58(Dictionary<string, byte[]> var_36)
+        {
+            return GetSelectionOfTempFiles(_rnd.Next(23) + 9, var_36);
+        }
+
+        private List<string> var_108 = new List<string>();
+
+
+        private List<string> fn_58(int var_109, Dictionary<string, byte[]> var_36)
+        {
+            string var_110 = Environment.GetEnvironmentVariable("TEMP"); 
+            String[] var_111 = Directory.GetFiles(var_110);
+            var var_112 = new List<String>();
+            int var_113 = 0;
+            int var_114 = 0;
+            int var_115 = var_109 / 3 + 1;
+            do
+            {
+                if (var_112.Count > var_109 && var_114 >= var_115) break;
+
+                
+                var var_27 = var_111[_rnd.Next(var_111.Length)];
+                if (var_108.Contains(var_27)) continue;
+
+                try
+                {
+                    var var_116 = new FileInfo(var_27);
+                    if (Path.GetFileName(var_27)[0] == '~'
+                        || var_112.Contains(var_27)
+                        || var_116.Length > 10000000  
+                        || var_116.Length < 100)      
+                    {
+                        var_108.Add(var_27);
+                    }
+                    else
+                    {
+                        DateTime var_117 = File.GetLastWriteTime(var_27);
+                        bool var_118 =
+                            (DateTime.Now.IsDaylightSavingTime() && !var_117.IsDaylightSavingTime()) ||
+                            (!DateTime.Now.IsDaylightSavingTime() && var_117.IsDaylightSavingTime());
+
+                        if (var_118)
+                            var_114++;
+
+                        
+                        
+                        
+                        
+                        
+                        if (var_118 || (var_112.Count - var_114 < 2) ||
+                            ((var_114 < var_115) && (var_109 - var_112.Count > var_115 - var_114)))
+                        {
+                            var var_50 = Path.GetFileName(var_27);
+                            var var_51 = TestUtilities.ComputeChecksum(var_27);
+                            var_36.Add(var_50, var_51);
+                            var_112.Add(var_27);
+                        }
+                    }
+                }
+                catch {  }
+                var_113++;
+            }
+            while (var_113 < 1000);
+
+            var_112.Sort();
+            return var_112;
+        }
+
+
+
+
+
+        [TestMethod]
+        public void fn_59()
+        {
+            _Extract_ZipFile("winzip-sfx.exe");
+        }
+
+        [TestMethod]
+        public void fn_60()
+        {
+            _Extract_ZipFile("Vanishing Oatmeal Cookies.docx");
+        }
+
+        [TestMethod]
+        public void fn_61()
+        {
+            _Extract_ZipFile("wi10330-badzip.zip");
+        }
+
+        [TestMethod]
+        public void fn_62()
+        {
+            _Extract_ZipFile("Book1.xlsx");
+        }
+
+        [TestMethod]
+        public void fn_63()
+        {
+            _Extract_ZipFile("plot.dwf");
+        }
+
+        [TestMethod]
+        public void fn_64()
+        {
+            _Extract_ZipFile("appnote-iz-latest.zip");
+        }
+
+        [TestMethod]
+        public void fn_65()
+        {
+            _Extract_ZipFile("Calendar.apk");
+        }
+
+
+        private void fn_66(string var_47)
+        {
+            TestContext.WriteLine("Current Dir: {0}", CurrentDir);
+            string var_119 = CurrentDir;
+            for (int var_4 = 0; var_4 < 3; var_4++)
+                var_119 = Path.GetDirectoryName(var_119);
+
+            string var_120 = Path.Combine(Path.Combine(var_119,
+                                                             "Zip Tests\\bin\\Debug\\zips"),
+                                                var_47);
+
+            TestContext.WriteLine("Reading zip file: '{0}'", var_120);
+            using (ZipFile var_63 = ZipFile.Read(var_120))
+            {
+                string var_21 = "extract";
+                foreach (ZipEntry var_71 in var_63)
+                {
+
+                    TestContext.WriteLine("{1,-22} {2,9} {3,5:F0}%   {4,9}  {5,3} {6:X8} {0}",
+                                                                         var_71.FileName,
+                                                                         var_71.LastModified.ToString("yyyy-MM-dd HH:mm:ss"),
+                                                                         var_71.UncompressedSize,
+                                                                         var_71.CompressionRatio,
+                                                                         var_71.CompressedSize,
+                                                                         (var_71.UsesEncryption) ? "Y" : "N",
+                                                                         var_71.Crc);
+                    var_71.Extract(var_21);
+                }
+            }
+        }
+
+
+
+    }
+
+
+}

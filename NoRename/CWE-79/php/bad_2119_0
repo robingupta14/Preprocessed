@@ -1,0 +1,747 @@
+<?php
+
+
+
+class InfoAction extends FormlessAction {
+	const CACHE_VERSION = '2013-03-17';
+
+	
+	public function getName() {
+		return 'info';
+	}
+
+	
+	public function requiresUnblock() {
+		return false;
+	}
+
+	
+	public function requiresWrite() {
+		return false;
+	}
+
+	
+	public static function invalidateCache( Title $title ) {
+		global $wgMemc;
+		
+		$revision = WikiPage::factory( $title )->getRevision();
+		if ( $revision !== null ) {
+			$key = wfMemcKey( 'infoaction', sha1( $title->getPrefixedText() ), $revision->getId() );
+			$wgMemc->delete( $key );
+		}
+	}
+
+	
+	public function onView() {
+		$content = '';
+
+		
+		$oldid = $this->page->getOldID();
+		if ( $oldid ) {
+			$revision = $this->page->getRevisionFetched();
+
+			
+			if ( $revision === null ) {
+				return $this->msg( 'missing-revision', $oldid )->parse();
+			}
+
+			
+			if ( !$revision->isCurrent() ) {
+				return $this->msg( 'pageinfo-not-current' )->plain();
+			}
+		}
+
+		
+		if ( !$this->msg( 'pageinfo-header' )->isDisabled() ) {
+			$content .= $this->msg( 'pageinfo-header' )->parse();
+		}
+
+		
+		$content .= Html::element( 'style', array(),
+			'.mw-hiddenCategoriesExplanation { display: none; }' ) . "\n";
+
+		
+		$content .= Html::element( 'style', array(),
+			'.mw-templatesUsedExplanation { display: none; }' ) . "\n";
+
+		
+		$pageInfo = $this->pageInfo();
+
+		
+		wfRunHooks( 'InfoAction', array( $this->getContext(), &$pageInfo ) );
+
+		
+		foreach ( $pageInfo as $header => $infoTable ) {
+			
+			
+			
+			$content .= $this->makeHeader( $this->msg( "pageinfo-${header}" )->escaped() ) . "\n";
+			$table = "\n";
+			foreach ( $infoTable as $infoRow ) {
+				$name = ( $infoRow[0] instanceof Message ) ? $infoRow[0]->escaped() : $infoRow[0];
+				$value = ( $infoRow[1] instanceof Message ) ? $infoRow[1]->escaped() : $infoRow[1];
+				$id = ( $infoRow[0] instanceof Message ) ? $infoRow[0]->getKey() : null;
+				$table = $this->addRow( $table, $name, $value, $id ) . "\n";
+			}
+			$content = $this->addTable( $content, $table ) . "\n";
+		}
+
+		
+		if ( !$this->msg( 'pageinfo-footer' )->isDisabled() ) {
+			$content .= $this->msg( 'pageinfo-footer' )->parse();
+		}
+
+		
+		
+
+		return $content;
+	}
+
+	
+	protected function makeHeader( $header ) {
+		$spanAttribs = array( 'class' => 'mw-headline', 'id' => Sanitizer::escapeId( $header ) );
+
+		return Html::rawElement( 'h2', array(), Html::element( 'span', $spanAttribs, $header ) );
+	}
+
+	
+	protected function addRow( $table, $name, $value, $id ) {
+		return $table . Html::rawElement( 'tr', $id === null ? array() : array( 'id' => 'mw-' . $id ),
+			Html::rawElement( 'td', array( 'style' => 'vertical-align: top;' ), $name ) .
+			Html::rawElement( 'td', array(), $value )
+		);
+	}
+
+	
+	protected function addTable( $content, $table ) {
+		return $content . Html::rawElement( 'table', array( 'class' => 'wikitable mw-page-info' ),
+			$table );
+	}
+
+	
+	protected function pageInfo() {
+		global $wgContLang, $wgRCMaxAge, $wgMemc, $wgMiserMode,
+			$wgUnwatchedPageThreshold, $wgPageInfoTransclusionLimit;
+
+		$user = $this->getUser();
+		$lang = $this->getLanguage();
+		$title = $this->getTitle();
+		$id = $title->getArticleID();
+
+		$memcKey = wfMemcKey( 'infoaction',
+			sha1( $title->getPrefixedText() ), $this->page->getLatest() );
+		$pageCounts = $wgMemc->get( $memcKey );
+		$version = isset( $pageCounts['cacheversion'] ) ? $pageCounts['cacheversion'] : false;
+		if ( $pageCounts === false || $version !== self::CACHE_VERSION ) {
+			
+			$pageCounts = self::pageCounts( $title );
+			$pageCounts['cacheversion'] = self::CACHE_VERSION;
+
+			$wgMemc->set( $memcKey, $pageCounts );
+		}
+
+		
+		$dbr = wfGetDB( DB_SLAVE );
+		$result = $dbr->select(
+			'page_props',
+			array( 'pp_propname', 'pp_value' ),
+			array( 'pp_page' => $id ),
+			__METHOD__
+		);
+
+		$pageProperties = array();
+		foreach ( $result as $row ) {
+			$pageProperties[$row->pp_propname] = $row->pp_value;
+		}
+
+		
+		$pageInfo = array();
+		$pageInfo['header-basic'] = array();
+
+		
+		$displayTitle = $title->getPrefixedText();
+		if ( !empty( $pageProperties['displaytitle'] ) ) {
+			$displayTitle = $pageProperties['displaytitle'];
+		}
+
+		$pageInfo['header-basic'][] = array(
+			$this->msg( 'pageinfo-display-title' ), $displayTitle
+		);
+
+		
+		if ( $title->isRedirect() ) {
+			$pageInfo['header-basic'][] = array(
+				$this->msg( 'pageinfo-redirectsto' ),
+				Linker::link( $this->page->getRedirectTarget() ) .
+				$this->msg( 'word-separator' )->text() .
+				$this->msg( 'parentheses', Linker::link(
+					$this->page->getRedirectTarget(),
+					$this->msg( 'pageinfo-redirectsto-info' )->escaped(),
+					array(),
+					array( 'action' => 'info' )
+				) )->text()
+			);
+		}
+
+		
+		$sortKey = $title->getCategorySortkey();
+		if ( !empty( $pageProperties['defaultsort'] ) ) {
+			$sortKey = $pageProperties['defaultsort'];
+		}
+
+		$pageInfo['header-basic'][] = array( $this->msg( 'pageinfo-default-sort' ), $sortKey );
+
+		
+		$pageInfo['header-basic'][] = array(
+			$this->msg( 'pageinfo-length' ), $lang->formatNum( $title->getLength() )
+		);
+
+		
+		$pageInfo['header-basic'][] = array( $this->msg( 'pageinfo-article-id' ), $id );
+
+		
+		$pageLang = $title->getPageLanguage()->getCode();
+		$pageInfo['header-basic'][] = array( $this->msg( 'pageinfo-language' ),
+			Language::fetchLanguageName( $pageLang, $lang->getCode() )
+			. ' ' . $this->msg( 'parentheses', $pageLang ) );
+
+		
+		$pageInfo['header-basic'][] = array(
+			$this->msg( 'pageinfo-content-model' ),
+			ContentHandler::getLocalizedName( $title->getContentModel() )
+		);
+
+		
+		$pOutput = new ParserOutput();
+		if ( isset( $pageProperties['noindex'] ) ) {
+			$pOutput->setIndexPolicy( 'noindex' );
+		}
+		if ( isset( $pageProperties['index'] ) ) {
+			$pOutput->setIndexPolicy( 'index' );
+		}
+
+		
+		$policy = $this->page->getRobotPolicy( 'view', $pOutput );
+		$pageInfo['header-basic'][] = array(
+			
+			$this->msg( 'pageinfo-robot-policy' ), $this->msg( "pageinfo-robot-${policy['index']}" )
+		);
+
+		if ( isset( $pageCounts['views'] ) ) {
+			
+			$pageInfo['header-basic'][] = array(
+				$this->msg( 'pageinfo-views' ), $lang->formatNum( $pageCounts['views'] )
+			);
+		}
+
+		if (
+			$user->isAllowed( 'unwatchedpages' ) ||
+			( $wgUnwatchedPageThreshold !== false &&
+				$pageCounts['watchers'] >= $wgUnwatchedPageThreshold )
+		) {
+			
+			$pageInfo['header-basic'][] = array(
+				$this->msg( 'pageinfo-watchers' ), $lang->formatNum( $pageCounts['watchers'] )
+			);
+		} elseif ( $wgUnwatchedPageThreshold !== false ) {
+			$pageInfo['header-basic'][] = array(
+				$this->msg( 'pageinfo-watchers' ),
+				$this->msg( 'pageinfo-few-watchers' )->numParams( $wgUnwatchedPageThreshold )
+			);
+		}
+
+		
+		$whatLinksHere = SpecialPage::getTitleFor( 'Whatlinkshere', $title->getPrefixedText() );
+		$pageInfo['header-basic'][] = array(
+			Linker::link(
+				$whatLinksHere,
+				$this->msg( 'pageinfo-redirects-name' )->escaped(),
+				array(),
+				array( 'hidelinks' => 1, 'hidetrans' => 1 )
+			),
+			$this->msg( 'pageinfo-redirects-value' )
+				->numParams( count( $title->getRedirectsHere() ) )
+		);
+
+		
+		if ( $this->page->isCountable() ) {
+			$pageInfo['header-basic'][] = array(
+				$this->msg( 'pageinfo-contentpage' ),
+				$this->msg( 'pageinfo-contentpage-yes' )
+			);
+		}
+
+		
+		if ( MWNamespace::hasSubpages( $title->getNamespace() ) ) {
+			$prefixIndex = SpecialPage::getTitleFor( 'Prefixindex', $title->getPrefixedText() . '/' );
+			$pageInfo['header-basic'][] = array(
+				Linker::link( $prefixIndex, $this->msg( 'pageinfo-subpages-name' )->escaped() ),
+				$this->msg( 'pageinfo-subpages-value' )
+					->numParams(
+						$pageCounts['subpages']['total'],
+						$pageCounts['subpages']['redirects'],
+						$pageCounts['subpages']['nonredirects'] )
+			);
+		}
+
+		if ( $title->inNamespace( NS_CATEGORY ) ) {
+			$category = Category::newFromTitle( $title );
+			$pageInfo['category-info'] = array(
+				array(
+					$this->msg( 'pageinfo-category-pages' ),
+					$lang->formatNum( $category->getPageCount() )
+				),
+				array(
+					$this->msg( 'pageinfo-category-subcats' ),
+					$lang->formatNum( $category->getSubcatCount() )
+				),
+				array(
+					$this->msg( 'pageinfo-category-files' ),
+					$lang->formatNum( $category->getFileCount() )
+				)
+			);
+		}
+
+		
+		$pageInfo['header-restrictions'] = array();
+
+		
+		if ( $title->isCascadeProtected() ) {
+			$cascadingFrom = '';
+			$sources = $title->getCascadeProtectionSources(); 
+
+			foreach ( $sources[0] as $sourceTitle ) {
+				$cascadingFrom .= Html::rawElement( 'li', array(), Linker::linkKnown( $sourceTitle ) );
+			}
+
+			$cascadingFrom = Html::rawElement( 'ul', array(), $cascadingFrom );
+			$pageInfo['header-restrictions'][] = array(
+				$this->msg( 'pageinfo-protect-cascading-from' ),
+				$cascadingFrom
+			);
+		}
+
+		
+		if ( $title->areRestrictionsCascading() ) {
+			$pageInfo['header-restrictions'][] = array(
+				$this->msg( 'pageinfo-protect-cascading' ),
+				$this->msg( 'pageinfo-protect-cascading-yes' )
+			);
+		}
+
+		
+		foreach ( $title->getRestrictionTypes() as $restrictionType ) {
+			$protectionLevel = implode( ', ', $title->getRestrictions( $restrictionType ) );
+
+			if ( $protectionLevel == '' ) {
+				
+				$message = $this->msg( 'protect-default' )->escaped();
+			} else {
+				
+				
+				$message = $this->msg( "protect-level-$protectionLevel" );
+				if ( $message->isDisabled() ) {
+					
+					$message = $this->msg( "protect-fallback", $protectionLevel )->parse();
+				} else {
+					$message = $message->escaped();
+				}
+			}
+
+			
+			
+			$pageInfo['header-restrictions'][] = array(
+				$this->msg( "restriction-$restrictionType" ), $message
+			);
+		}
+
+		if ( !$this->page->exists() ) {
+			return $pageInfo;
+		}
+
+		
+		$pageInfo['header-edits'] = array();
+
+		$firstRev = $this->page->getOldestRevision();
+		$lastRev = $this->page->getRevision();
+		$batch = new LinkBatch;
+
+		if ( $firstRev ) {
+			$firstRevUser = $firstRev->getUserText( Revision::FOR_THIS_USER );
+			if ( $firstRevUser !== '' ) {
+				$batch->add( NS_USER, $firstRevUser );
+				$batch->add( NS_USER_TALK, $firstRevUser );
+			}
+		}
+
+		if ( $lastRev ) {
+			$lastRevUser = $lastRev->getUserText( Revision::FOR_THIS_USER );
+			if ( $lastRevUser !== '' ) {
+				$batch->add( NS_USER, $lastRevUser );
+				$batch->add( NS_USER_TALK, $lastRevUser );
+			}
+		}
+
+		$batch->execute();
+
+		if ( $firstRev ) {
+			
+			$pageInfo['header-edits'][] = array(
+				$this->msg( 'pageinfo-firstuser' ),
+				Linker::revUserTools( $firstRev )
+			);
+
+			
+			$pageInfo['header-edits'][] = array(
+				$this->msg( 'pageinfo-firsttime' ),
+				Linker::linkKnown(
+					$title,
+					$lang->userTimeAndDate( $firstRev->getTimestamp(), $user ),
+					array(),
+					array( 'oldid' => $firstRev->getId() )
+				)
+			);
+		}
+
+		if ( $lastRev ) {
+			
+			$pageInfo['header-edits'][] = array(
+				$this->msg( 'pageinfo-lastuser' ),
+				Linker::revUserTools( $lastRev )
+			);
+
+			
+			$pageInfo['header-edits'][] = array(
+				$this->msg( 'pageinfo-lasttime' ),
+				Linker::linkKnown(
+					$title,
+					$lang->userTimeAndDate( $this->page->getTimestamp(), $user ),
+					array(),
+					array( 'oldid' => $this->page->getLatest() )
+				)
+			);
+		}
+
+		
+		$pageInfo['header-edits'][] = array(
+			$this->msg( 'pageinfo-edits' ), $lang->formatNum( $pageCounts['edits'] )
+		);
+
+		
+		$pageInfo['header-edits'][] = array(
+			$this->msg( 'pageinfo-authors' ), $lang->formatNum( $pageCounts['authors'] )
+		);
+
+		
+		$pageInfo['header-edits'][] = array(
+			$this->msg( 'pageinfo-recent-edits', $lang->formatDuration( $wgRCMaxAge ) ),
+			$lang->formatNum( $pageCounts['recent_edits'] )
+		);
+
+		
+		$pageInfo['header-edits'][] = array(
+			$this->msg( 'pageinfo-recent-authors' ), $lang->formatNum( $pageCounts['recent_authors'] )
+		);
+
+		
+		$magicWords = MagicWord::getDoubleUnderscoreArray();
+
+		
+		$wordIDs = $magicWords->names;
+
+		
+		$localizedWords = $wgContLang->getMagicWords();
+
+		$listItems = array();
+		foreach ( $pageProperties as $property => $value ) {
+			if ( in_array( $property, $wordIDs ) ) {
+				$listItems[] = Html::element( 'li', array(), $localizedWords[$property][1] );
+			}
+		}
+
+		$localizedList = Html::rawElement( 'ul', array(), implode( '', $listItems ) );
+		$hiddenCategories = $this->page->getHiddenCategories();
+
+		if (
+			count( $listItems ) > 0 ||
+			count( $hiddenCategories ) > 0 ||
+			$pageCounts['transclusion']['from'] > 0 ||
+			$pageCounts['transclusion']['to'] > 0
+		) {
+			$options = array( 'LIMIT' => $wgPageInfoTransclusionLimit );
+			$transcludedTemplates = $title->getTemplateLinksFrom( $options );
+			if ( $wgMiserMode ) {
+				$transcludedTargets = array();
+			} else {
+				$transcludedTargets = $title->getTemplateLinksTo( $options );
+			}
+
+			
+			$pageInfo['header-properties'] = array();
+
+			
+			if ( count( $listItems ) > 0 ) {
+				$pageInfo['header-properties'][] = array(
+					$this->msg( 'pageinfo-magic-words' )->numParams( count( $listItems ) ),
+					$localizedList
+				);
+			}
+
+			
+			if ( count( $hiddenCategories ) > 0 ) {
+				$pageInfo['header-properties'][] = array(
+					$this->msg( 'pageinfo-hidden-categories' )
+						->numParams( count( $hiddenCategories ) ),
+					Linker::formatHiddenCategories( $hiddenCategories )
+				);
+			}
+
+			
+			if ( $pageCounts['transclusion']['from'] > 0 ) {
+				if ( $pageCounts['transclusion']['from'] > count( $transcludedTemplates ) ) {
+					$more = $this->msg( 'morenotlisted' )->escaped();
+				} else {
+					$more = null;
+				}
+
+				$pageInfo['header-properties'][] = array(
+					$this->msg( 'pageinfo-templates' )
+						->numParams( $pageCounts['transclusion']['from'] ),
+					Linker::formatTemplates(
+						$transcludedTemplates,
+						false,
+						false,
+						$more )
+				);
+			}
+
+			if ( !$wgMiserMode && $pageCounts['transclusion']['to'] > 0 ) {
+				if ( $pageCounts['transclusion']['to'] > count( $transcludedTargets ) ) {
+					$more = Linker::link(
+						$whatLinksHere,
+						$this->msg( 'moredotdotdot' )->escaped(),
+						array(),
+						array( 'hidelinks' => 1, 'hideredirs' => 1 )
+					);
+				} else {
+					$more = null;
+				}
+
+				$pageInfo['header-properties'][] = array(
+					$this->msg( 'pageinfo-transclusions' )
+						->numParams( $pageCounts['transclusion']['to'] ),
+					Linker::formatTemplates(
+						$transcludedTargets,
+						false,
+						false,
+						$more )
+				);
+			}
+		}
+
+		return $pageInfo;
+	}
+
+	
+	protected static function pageCounts( Title $title ) {
+		global $wgRCMaxAge, $wgDisableCounters, $wgMiserMode;
+
+		wfProfileIn( __METHOD__ );
+		$id = $title->getArticleID();
+
+		$dbr = wfGetDB( DB_SLAVE );
+		$result = array();
+
+		if ( !$wgDisableCounters ) {
+			
+			$views = (int)$dbr->selectField(
+				'page',
+				'page_counter',
+				array( 'page_id' => $id ),
+				__METHOD__
+			);
+			$result['views'] = $views;
+		}
+
+		
+		$watchers = (int)$dbr->selectField(
+			'watchlist',
+			'COUNT(*)',
+			array(
+				'wl_namespace' => $title->getNamespace(),
+				'wl_title' => $title->getDBkey(),
+			),
+			__METHOD__
+		);
+		$result['watchers'] = $watchers;
+
+		
+		$edits = (int)$dbr->selectField(
+			'revision',
+			'COUNT(rev_page)',
+			array( 'rev_page' => $id ),
+			__METHOD__
+		);
+		$result['edits'] = $edits;
+
+		
+		$authors = (int)$dbr->selectField(
+			'revision',
+			'COUNT(DISTINCT rev_user_text)',
+			array( 'rev_page' => $id ),
+			__METHOD__
+		);
+		$result['authors'] = $authors;
+
+		
+		$threshold = $dbr->timestamp( time() - $wgRCMaxAge );
+
+		
+		$edits = (int)$dbr->selectField(
+			'revision',
+			'COUNT(rev_page)',
+			array(
+				'rev_page' => $id,
+				"rev_timestamp >= " . $dbr->addQuotes( $threshold )
+			),
+			__METHOD__
+		);
+		$result['recent_edits'] = $edits;
+
+		
+		$authors = (int)$dbr->selectField(
+			'revision',
+			'COUNT(DISTINCT rev_user_text)',
+			array(
+				'rev_page' => $id,
+				"rev_timestamp >= " . $dbr->addQuotes( $threshold )
+			),
+			__METHOD__
+		);
+		$result['recent_authors'] = $authors;
+
+		
+		if ( MWNamespace::hasSubpages( $title->getNamespace() ) ) {
+			$conds = array( 'page_namespace' => $title->getNamespace() );
+			$conds[] = 'page_title ' . $dbr->buildLike( $title->getDBkey() . '/', $dbr->anyString() );
+
+			
+			$conds['page_is_redirect'] = 1;
+			$result['subpages']['redirects'] = (int)$dbr->selectField(
+				'page',
+				'COUNT(page_id)',
+				$conds,
+				__METHOD__ );
+
+			
+			$conds['page_is_redirect'] = 0;
+			$result['subpages']['nonredirects'] = (int)$dbr->selectField(
+				'page',
+				'COUNT(page_id)',
+				$conds,
+				__METHOD__
+			);
+
+			
+			$result['subpages']['total'] = $result['subpages']['redirects']
+				+ $result['subpages']['nonredirects'];
+		}
+
+		
+		if ( $wgMiserMode ) {
+			$result['transclusion']['to'] = 0;
+		} else {
+			$result['transclusion']['to'] = (int)$dbr->selectField(
+				'templatelinks',
+				'COUNT(tl_from)',
+				array(
+					'tl_namespace' => $title->getNamespace(),
+					'tl_title' => $title->getDBkey()
+				),
+				__METHOD__
+			);
+		}
+
+		$result['transclusion']['from'] = (int)$dbr->selectField(
+			'templatelinks',
+			'COUNT(*)',
+			array( 'tl_from' => $title->getArticleID() ),
+			__METHOD__
+		);
+
+		wfProfileOut( __METHOD__ );
+
+		return $result;
+	}
+
+	
+	protected function getPageTitle() {
+		return $this->msg( 'pageinfo-title', $this->getTitle()->getPrefixedText() )->text();
+	}
+
+	
+	protected function getContributors() {
+		global $wgHiddenPrefs;
+
+		$contributors = $this->page->getContributors();
+		$real_names = array();
+		$user_names = array();
+		$anon_ips = array();
+
+		
+		
+		foreach ( $contributors as $user ) {
+			$page = $user->isAnon()
+				? SpecialPage::getTitleFor( 'Contributions', $user->getName() )
+				: $user->getUserPage();
+
+			if ( $user->getID() == 0 ) {
+				$anon_ips[] = Linker::link( $page, htmlspecialchars( $user->getName() ) );
+			} elseif ( !in_array( 'realname', $wgHiddenPrefs ) && $user->getRealName() ) {
+				$real_names[] = Linker::link( $page, htmlspecialchars( $user->getRealName() ) );
+			} else {
+				$user_names[] = Linker::link( $page, htmlspecialchars( $user->getName() ) );
+			}
+		}
+
+		$lang = $this->getLanguage();
+
+		$real = $lang->listToText( $real_names );
+
+		
+		if ( count( $user_names ) ) {
+			$user = $this->msg( 'siteusers' )->rawParams( $lang->listToText( $user_names ) )->params(
+				count( $user_names ) )->escaped();
+		} else {
+			$user = false;
+		}
+
+		if ( count( $anon_ips ) ) {
+			$anon = $this->msg( 'anonusers' )->rawParams( $lang->listToText( $anon_ips ) )->params(
+				count( $anon_ips ) )->escaped();
+		} else {
+			$anon = false;
+		}
+
+		
+		$fulllist = array();
+		foreach ( array( $real, $user, $anon ) as $s ) {
+			if ( $s !== '' ) {
+				array_push( $fulllist, $s );
+			}
+		}
+
+		$count = count( $fulllist );
+
+		
+		return $count
+			? $this->msg( 'othercontribs' )->rawParams(
+				$lang->listToText( $fulllist ) )->params( $count )->escaped()
+			: '';
+	}
+
+	
+	protected function getDescription() {
+		return '';
+	}
+}

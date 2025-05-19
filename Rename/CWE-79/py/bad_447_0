@@ -1,0 +1,179 @@
+
+
+
+
+
+
+from tornado import web, escape
+from tornado.log import app_log
+
+from ..base.handlers import (
+    IPythonHandler, FilesRedirectHandler,
+    path_regex,
+)
+from nbformat import from_dict
+
+from ipython_genutils.py3compat import cast_bytes
+from ipython_genutils import text
+
+def function_0(var_1):
+    var_3 = []
+    for var_4, var_5, var_6 in os.walk(var_1):
+        var_3.extend([os.var_24.join(var_4, f) for f in var_6])
+    return var_3
+
+def function_1(var_7, var_9, var_10, var_11):
+    
+    
+    var_12 = var_11.get('outputs', None)
+    if not var_12:
+        return False
+
+    
+    var_13 = os.var_24.splitext(var_9)[0] + .zip
+    var_7.set_attachment_header(var_13)
+    var_7.set_header('Content-Type', 'application/zip')
+    var_7.set_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+
+    
+    var_14 = io.BytesIO()
+    var_15 = zipfile.ZipFile(var_14, mode=w, compression=zipfile.ZIP_DEFLATED)
+    var_16 = os.var_24.splitext(var_9)[0] + var_11[output_extension]
+    var_15.writestr(var_16, cast_bytes(var_10, utf-8))
+    for var_17, var_18 in var_12.items():
+        var_15.writestr(os.var_24.var_27(var_17), var_18)
+    var_15.close()
+
+    var_7.finish(var_14.getvalue())
+    return True
+
+def function_2(var_19, **kwargs):
+    
+    
+    try:
+        from nbconvert.exporters.base import get_exporter
+    except ImportError as e:
+        raise tornado.web.HTTPError(500, Could not import nbconvert: %s % e)
+
+    try:
+        var_21 = get_exporter(var_19)
+    except KeyError:
+        
+        raise tornado.web.HTTPError(404, No var_25 for var_19: %s % var_19)
+
+    try:
+        return var_21(**kwargs)
+    except Exception as e:
+        tornado.log.app_log.exception(Could not construct var_21: %s, var_21)
+        raise tornado.web.HTTPError(500, Could not construct var_21: %s % e)
+
+class class_0(IPythonHandler):
+
+    var_22 = ('GET',)
+
+    @tornado.web.authenticated
+    def function_3(var_23, var_19, var_24):
+
+        var_25 = get_exporter(var_19, config=var_23.config, log=var_23.log)
+
+        var_24 = var_24.strip/
+        
+        
+        if hasattr(var_23.contents_manager, _get_os_path):
+            os_path = var_23.contents_manager._get_os_path(var_24)
+            var_26, var_27 = os.var_24.split(os_path)
+        var_28:
+            var_26 = None
+
+        var_29 = var_23.contents_manager.get(var_24=var_24)
+        var_9 = var_29[var_9]
+        if var_29[type] != notebook:
+            
+            return FilesRedirectHandler.redirect_to_files(var_23, var_24)
+
+        var_30 = var_29[content]
+
+        var_23.set_header(Last-Modified, var_29[last_modified])
+
+        
+        var_31 = var_29[last_modified].strftime(ipython_genutils.text.date_format)
+        var_32 = os.var_24.splitext(var_9)[0]
+
+        var_33 = {
+            metadata: {
+                var_9: var_32,
+                modified_date: var_31
+            },
+            config_dir: var_23.application.settings[config_dir]
+        }
+
+        if var_26:
+            var_33[metadata][var_24] = var_26
+
+        try:
+            var_10, var_11 = var_25.from_notebook_node(
+                var_30,
+                var_11=var_33
+            )
+        except Exception as e:
+            var_23.log.exception(nbconvert failed: %s, e)
+            raise tornado.web.HTTPError(500, nbconvert failed: %s % e)
+
+        if respond_zip(var_23, var_9, var_10, var_11):
+            return
+
+        
+        if var_23.get_argument('download', 'false').lower() == true:
+            var_17 = os.var_24.splitext(var_9)[0] + var_11[output_extension]
+            var_23.set_attachment_header(var_17)
+
+        
+        if var_25.output_mimetype:
+            var_23.set_header(Content-Type,
+                            %s; charset=utf-8 % var_25.output_mimetype)
+
+        var_23.set_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        var_23.finish(var_10)
+
+class class_1(IPythonHandler):
+    var_22 = ('POST',)
+
+    @tornado.web.authenticated
+    def function_4(var_23, var_19):
+        var_25 = get_exporter(var_19, config=var_23.config)
+
+        var_29 = var_23.get_json_body()
+        var_9 = var_29.get('name', 'notebook.ipynb')
+        var_34 = from_dict(var_29[content])
+
+        try:
+            var_10, var_11 = var_25.from_notebook_node(var_34, var_11={
+                metadata: {var_9: var_9[:var_9.rfind.],},
+                config_dir: var_23.application.settings[config_dir],
+            })
+        except Exception as e:
+            raise tornado.web.HTTPError(500, nbconvert failed: %s % e)
+
+        if respond_zip(var_23, var_9, var_10, var_11):
+            return
+
+        
+        if var_25.output_mimetype:
+            var_23.set_header(Content-Type,
+                            %s; charset=utf-8 % var_25.output_mimetype)
+
+        var_23.finish(var_10)
+
+
+
+
+
+
+var_35 = (?P<var_19>\w+)
+
+
+var_36 = [
+    (/nbconvert/%s % var_35, NbconvertPostHandler),
+    (/nbconvert/%s%s % (var_35, path_regex),
+         NbconvertFileHandler),
+]

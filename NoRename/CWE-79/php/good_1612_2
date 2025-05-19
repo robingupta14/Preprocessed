@@ -1,0 +1,145 @@
+<?php
+
+
+
+
+
+$langs->load("contracts");
+$langs->load("products");
+$langs->load("companies");
+
+$sortfield=GETPOST('sortfield','alpha');
+$sortorder=GETPOST('sortorder','alpha');
+$page=GETPOST('page','int');
+if ($page == -1) { $page = 0 ; }
+$limit = $conf->liste_limit;
+$offset = $limit * $page ;
+
+$search_nom=GETPOST('search_nom');
+$search_contract=GETPOST('search_contract');
+$sall=GETPOST('sall');
+$statut=GETPOST('statut')?GETPOST('statut'):1;
+$socid=GETPOST('socid');
+
+if (! $sortfield) $sortfield="c.rowid";
+if (! $sortorder) $sortorder="DESC";
+
+
+$id=GETPOST('id','int');
+if ($user->societe_id) $socid=$user->societe_id;
+$result = restrictedArea($user, 'contrat', $id);
+
+$staticcontrat=new Contrat($db);
+$staticcontratligne=new ContratLigne($db);
+
+
+
+
+$now=dol_now();
+
+llxHeader();
+
+$sql = 'SELECT';
+$sql.= ' SUM('.$db->ifsql("cd.statut=0",1,0).') as nb_initial,';
+$sql.= ' SUM('.$db->ifsql("cd.statut=4 AND (cd.date_fin_validite IS NULL OR cd.date_fin_validite >= ".$db->idate($now).")",1,0).') as nb_running,';
+$sql.= ' SUM('.$db->ifsql("cd.statut=4 AND (cd.date_fin_validite IS NOT NULL AND cd.date_fin_validite < ".$db->idate($now).")",1,0).') as nb_expired,';
+$sql.= ' SUM('.$db->ifsql("cd.statut=4 AND (cd.date_fin_validite IS NOT NULL AND cd.date_fin_validite < ".$db->idate($now - $conf->contrat->services->expires->warning_delay).")",1,0).') as nb_late,';
+$sql.= ' SUM('.$db->ifsql("cd.statut=5",1,0).') as nb_closed,';
+$sql.= " c.rowid as cid, c.ref, c.datec, c.date_contrat, c.statut,";
+$sql.= " s.nom, s.rowid as socid";
+$sql.= " FROM ".MAIN_DB_PREFIX."societe as s";
+if (!$user->rights->societe->client->voir && !$socid) $sql.= ", ".MAIN_DB_PREFIX."societe_commerciaux as sc";
+$sql.= ", ".MAIN_DB_PREFIX."contrat as c";
+$sql.= " LEFT JOIN ".MAIN_DB_PREFIX."contratdet as cd ON c.rowid = cd.fk_contrat";
+$sql.= " WHERE c.fk_soc = s.rowid ";
+$sql.= " AND c.entity = ".$conf->entity;
+if ($socid) $sql.= " AND s.rowid = ".$db->escape($socid);
+if (!$user->rights->societe->client->voir && !$socid) $sql.= " AND s.rowid = sc.fk_soc AND sc.fk_user = " .$user->id;
+if ($search_nom) {
+    $sql .= natural_search('s.nom', $search_nom);
+}
+if ($search_contract) {
+    $sql .= natural_search(array('c.rowid', 'c.ref'), $search_contract);
+}
+if ($sall) {
+    $sql .= natural_search(array('s.nom', 'cd.label', 'cd.description'), $sall);
+}
+$sql.= " GROUP BY c.rowid, c.ref, c.datec, c.date_contrat, c.statut,";
+$sql.= " s.nom, s.rowid";
+$sql.= " ORDER BY $sortfield $sortorder";
+$sql.= $db->plimit($conf->liste_limit + 1, $offset);
+
+$resql=$db->query($sql);
+if ($resql)
+{
+    $num = $db->num_rows($resql);
+    $i = 0;
+
+    print_barre_liste($langs->trans("ListOfContracts"), $page, $_SERVER["PHP_SELF"], '&search_contract='.htmlspecialchars($search_contract).'&search_nom='.htmlspecialchars($search_nom), $sortfield, $sortorder,'',$num);
+
+    
+
+    
+    $param='&amp;search_contract='.htmlspecialchars($search_contract);
+    $param.='&amp;search_nom='.htmlspecialchars($search_nom);
+    print_liste_field_titre($langs->trans("Ref"), $_SERVER["PHP_SELF"], "c.rowid","","$param",'',$sortfield,$sortorder);
+    print_liste_field_titre($langs->trans("Company"), $_SERVER["PHP_SELF"], "s.nom","","$param",'',$sortfield,$sortorder);
+    
+    print_liste_field_titre($langs->trans("DateContract"), $_SERVER["PHP_SELF"], "c.date_contrat","","$param",'align="center"',$sortfield,$sortorder);
+    
+    
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    </td>';
+    
+    
+    
+    
+    
+
+    $var=true;
+    while ($i < min($num,$limit))
+    {
+        $obj = $db->fetch_object($resql);
+        $var=!$var;
+        
+        
+        
+        if ($obj->nb_late) 
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        $i++;
+    }
+    $db->free($resql);
+
+    
+}
+else
+{
+    dol_print_error($db);
+}
+
+
+llxFooter();
+$db->close();
+?>

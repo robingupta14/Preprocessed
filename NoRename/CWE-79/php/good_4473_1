@@ -1,0 +1,414 @@
+<?php
+
+
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+
+class Envira_Gallery_Lite {
+
+	
+	public static $instance;
+
+	
+	public $version = '1.8.3.3';
+
+	
+	public $plugin_name = 'Envira Gallery Lite';
+
+	
+	public $plugin_slug = 'envira-gallery-lite';
+
+	
+	public $file = __FILE__;
+
+	
+	public function __construct() {
+
+		
+		do_action( 'envira_gallery_pre_init' );
+
+		
+		add_action( 'plugins_loaded', array( $this, 'load_plugin_textdomain' ) );
+
+		
+		add_action( 'init', array( $this, 'init' ), 0 );
+
+		if ( ! defined( 'ENVIRA_VERSION' ) ) {
+
+			define( 'ENVIRA_VERSION', $this->version );
+
+		}
+
+		if ( ! defined( 'ENVIRA_SLUG' ) ) {
+
+			define( 'ENVIRA_SLUG', $this->plugin_slug );
+
+		}
+
+		if ( ! defined( 'ENVIRA_FILE' ) ) {
+
+			define( 'ENVIRA_FILE', $this->file );
+
+		}
+
+		if ( ! defined( 'ENVIRA_DIR' ) ) {
+
+			define( 'ENVIRA_DIR', plugin_dir_path( __FILE__ ) );
+
+		}
+
+		if ( ! defined( 'ENVIRA_URL' ) ) {
+
+			define( 'ENVIRA_URL', plugin_dir_url( __FILE__ ) );
+
+		}
+
+	}
+
+	
+	public function load_plugin_textdomain() {
+
+		load_plugin_textdomain( 'envira-gallery-lite' );
+
+	}
+
+	
+	public function init() {
+
+		
+		
+        if ( class_exists( 'Envira_Gallery' ) ) {
+            return;
+        }
+
+        
+        
+		
+        do_action( 'envira_gallery_lite_init' );
+
+		
+		$this->require_global();
+
+        
+        if ( is_admin() ) {
+            $this->require_admin();
+        }
+
+		
+		
+		
+		do_action( 'envira_gallery_lite_loaded' );
+
+	}
+
+	
+	public function require_admin() {
+
+
+	}
+
+	
+	public function load_admin_partial( $template, $data = array() ){
+
+		$dir = trailingslashit( plugin_dir_path( __FILE__ ) . 'includes/admin/partials' );
+
+		if ( file_exists( $dir . $template . '.php' ) ) {
+			return true;
+		}
+
+		return false;
+
+	}
+
+	
+	public function require_global() {
+
+
+	}
+
+	
+	public function get_gallery( $id ) {
+
+		
+		if ( false === ( $gallery = get_transient( '_eg_cache_' . $id ) ) ) {
+			$gallery = $this->_get_gallery( $id );
+			if ( $gallery ) {
+				$expiration = Envira_Gallery_Common::get_instance()->get_transient_expiration_time();
+				set_transient( '_eg_cache_' . $id, $gallery, $expiration );
+			}
+		}
+
+		
+		return $gallery;
+
+	}
+
+	
+	public function _get_gallery( $id ) {
+
+		$meta = get_post_meta( $id, '_eg_gallery_data', true );
+
+		
+		if ( empty( $meta ) ) {
+			$gallery_id = get_post_meta( $id, '_eg_gallery_id', true );
+			$meta = get_post_meta( $gallery_id, '_eg_gallery_data', true );
+		}
+
+		return $meta;
+
+	}
+
+	
+	public function get_gallery_image_count( $id ) {
+
+		$gallery = $this->get_gallery( $id );
+	    return isset( $gallery['gallery'] ) ? count( $gallery['gallery'] ) : 0;
+
+	}
+
+	
+	public function get_gallery_by_slug( $slug ) {
+
+		
+		if ( false === ( $gallery = get_transient( '_eg_cache_' . $slug ) ) ) {
+			$gallery = $this->_get_gallery_by_slug( $slug );
+			if ( $gallery ) {
+				$expiration = Envira_Gallery_Common::get_instance()->get_transient_expiration_time();
+				set_transient( '_eg_cache_' . $slug, $gallery, $expiration );
+			}
+		}
+
+		
+		return $gallery;
+
+	}
+
+	
+	public function _get_gallery_by_slug( $slug ) {
+
+		
+		$galleries = new WP_Query( array(
+			'post_type'    => 'envira',
+			'name'              => $slug,
+			'fields'        => 'ids',
+			'posts_per_page' => 1,
+		) );
+		if ( $galleries->posts ) {
+			return get_post_meta( $galleries->posts[0], '_eg_gallery_data', true );
+		}
+
+		
+		
+		$galleries = new WP_Query( array(
+			'post_type'     => 'envira',
+			'no_found_rows' => true,
+			'cache_results' => false,
+			'fields'        => 'ids',
+			'meta_query'    => array(
+				array(
+					'key'     => '_eg_gallery_old_slug',
+					'value'   => $slug,
+				),
+			),
+			'posts_per_page' => 1,
+		) );
+		if ( $galleries->posts ) {
+			return get_post_meta( $galleries->posts[0], '_eg_gallery_data', true );
+		}
+
+		
+		return false;
+
+	}
+
+	
+	public function get_galleries( $skip_empty = true, $ignore_cache = false, $search_terms = '' ) {
+
+		
+		if ( $ignore_cache || ! empty( $search_terms ) || false === ( $galleries = get_transient( '_eg_cache_all' ) ) ) {
+			$galleries = $this->_get_galleries( $skip_empty, $search_terms );
+
+			
+			if ( $galleries && empty( $search_terms ) ) {
+				$expiration = Envira_Gallery_Common::get_instance()->get_transient_expiration_time();
+				set_transient( '_eg_cache_all', $galleries, $expiration );
+			}
+		}
+
+		
+		return $galleries;
+
+	}
+
+	
+	public function _get_galleries( $skip_empty = true, $search_terms = '' ) {
+
+		
+		$args = array(
+			'post_type'     => 'envira',
+			'post_status'   => 'publish',
+			'posts_per_page'=> 99,
+			'no_found_rows' => true,
+			'fields'        => 'ids',
+			'meta_query'    => array(
+				array(
+					'key'   => '_eg_gallery_data',
+					'compare' => 'EXISTS',
+				),
+			),
+		);
+
+		
+		if ( ! empty( $search_terms ) ) {
+			$args['s'] = $search_terms;
+		}
+
+		
+		$galleries = new WP_Query( $args );
+		if ( ! isset( $galleries->posts ) || empty( $galleries->posts ) ) {
+			return false;
+		}
+
+		
+		$ret = array();
+		foreach ( $galleries->posts as $id ) {
+			$data = get_post_meta( $id, '_eg_gallery_data', true );
+
+			
+			if ( $skip_empty && empty( $data['gallery'] ) ) {
+				continue;
+			}
+
+			
+			$type = Envira_Gallery_Shortcode::get_instance()->get_config( 'type', $data );
+			if ( 'defaults' === Envira_Gallery_Shortcode::get_instance()->get_config( 'type', $data ) || 'dynamic' === Envira_Gallery_Shortcode::get_instance()->get_config( 'type', $data ) ) {
+				continue;
+			}
+
+			
+			$ret[] = $data;
+		}
+
+		
+		return $ret;
+
+	}
+
+	
+	public function get_license_key() {
+
+		return '';
+
+	}
+
+	
+	public function get_license_key_type() {
+
+		return '';
+
+	}
+
+	
+	public function get_license_key_errors() {
+
+		return false;
+	}
+
+	
+	public static function get_instance() {
+
+		if ( ! isset( self::$instance ) && ! ( self::$instance instanceof Envira_Gallery_Lite ) ) {
+			self::$instance = new Envira_Gallery_Lite();
+		}
+
+		return self::$instance;
+
+	}
+}
+
+register_activation_hook( __FILE__, 'envira_gallery_lite_activation_hook' );
+
+function envira_gallery_lite_activation_hook( $network_wide ) {
+
+	global $wp_version;
+	if ( version_compare( $wp_version, '4.0', '<' ) && ! defined( 'ENVIRA_FORCE_ACTIVATION' ) ) {
+		deactivate_plugins( plugin_basename( __FILE__ ) );
+		wp_die( sprintf( __( 'Sorry, but your version of WordPress does not meet Envira Gallery\'s required version of <strong>4.0</strong> to run properly. The plugin has been deactivated. <a href="%s">Click here to return to the Dashboard</a>.', 'envira-gallery-lite' ), get_admin_url() ) );
+	}
+
+	
+	deactivate_plugins( 'envira-gallery/envira-gallery.php' );
+
+}
+
+
+$envira_gallery_lite = Envira_Gallery_Lite::get_instance();
+
+
+if ( ! function_exists( 'envira_mobile_detect' ) ) {
+
+	
+	function envira_mobile_detect(){
+
+		
+		if ( ! class_exists( 'Mobile_Detect' ) ) {
+
+
+		}
+
+		return new Mobile_Detect;
+
+	}
+
+}
+
+
+if ( ! function_exists( 'envira_wp_upe_upgrade_completed' ) ) {
+
+	
+	function envira_wp_upe_upgrade_completed( $upgrader_object, $options ) {
+		
+		$our_plugin = plugin_basename( __FILE__ );
+		
+		if( $options['action'] == 'update' && $options['type'] == 'plugin' && isset( $options['plugins'] ) ) {
+			
+			foreach( $options['plugins'] as $plugin ) {
+				if( $plugin == $our_plugin ) {
+					
+					set_transient( 'envira_lite_updated', 1, 60 ); 
+				}
+			}
+		}
+	}
+	add_action( 'upgrader_process_complete', 'envira_wp_upe_upgrade_completed', 10, 2 );
+
+}
+
+
+if ( ! function_exists( 'envira_gallery' ) ) {
+	
+	function envira_gallery( $id, $type = 'id', $args = array(), $return = false ) {
+
+		
+		$args_string = '';
+		if ( ! empty( $args ) ) {
+			foreach ( (array) $args as $key => $value ) {
+				$args_string .= ' ' . $key . '="' . $value . '"';
+			}
+		}
+
+		
+		$shortcode = ! empty( $args_string ) ? '[envira-gallery ' . $type . '="' . $id . '"' . $args_string . ']' : '[envira-gallery ' . $type . '="' . $id . '"]';
+
+		
+		if ( $return ) {
+			return do_shortcode( $shortcode );
+		} else {
+			
+		}
+
+	}
+}

@@ -1,0 +1,121 @@
+<?php
+
+define('PMF_ROOT_DIR', dirname(__DIR__));
+
+
+
+
+define('IS_VALID_PHPMYFAQ', null);
+
+
+
+
+
+
+PMF_Attachment_Factory::init(
+    $faqConfig->get('records.attachmentsStorageType'),
+    $faqConfig->get('records.defaultAttachmentEncKey'),
+    $faqConfig->get('records.enableAttachmentEncryption')
+);
+
+$currentSave = PMF_Filter::filterInput(INPUT_POST, 'save', FILTER_SANITIZE_STRING);
+$currentAction = PMF_Filter::filterInput(INPUT_GET, 'action', FILTER_SANITIZE_STRING);
+$currentToken = PMF_Filter::filterInput(INPUT_POST, 'csrf', FILTER_SANITIZE_STRING);
+
+$Language = new PMF_Language($faqConfig);
+$LANGCODE = $Language->setLanguage($faqConfig->get('main.languageDetection'), $faqConfig->get('main.language'));
+
+
+if (isset($LANGCODE) && PMF_Language::isASupportedLanguage($LANGCODE)) {
+} else {
+    $LANGCODE = 'en';
+}
+
+$auth = false;
+$user = PMF_User_CurrentUser::getFromCookie($faqConfig);
+if (!$user instanceof PMF_User_CurrentUser) {
+    $user = PMF_User_CurrentUser::getFromSession($faqConfig);
+}
+if ($user) {
+    $auth = true;
+} else {
+    $error = $PMF_LANG['ad_auth_sess'];
+    $user = null;
+    unset($user);
+}
+
+if (is_null($currentAction) || !is_null($currentSave)) {
+?>
+<!DOCTYPE html>
+<!--[if IE 9 ]> <html lang="<?php  ?>" class="no-js ie9"> <![endif]-->
+<!--[if (gt IE 9)|!(IE)]><!--> <html lang="<?php  ?>" class="no-js"> <!--<![endif]-->
+<head>
+    <meta charset="utf-8">
+
+    <title><?php 
+    $recordLang = filter_input(INPUT_GET, 'record_lang', FILTER_SANITIZE_STRING);
+    ?>
+        <form action="attachment.php?action=save" enctype="multipart/form-data" method="post" accept-charset="utf-8">
+            <fieldset>
+            <legend>
+                <?php 
+}
+
+if (!is_null($currentAction) && $auth && !$user->perm->checkRight($user->getUserId(), 'addattachment')) {
+    
+}
+
+if (!is_null($currentSave) && $currentSave == true && $auth &&
+    $user->perm->checkRight($user->getUserId(), 'addattachment')) {
+    $recordId = filter_input(INPUT_POST, 'record_id',   FILTER_VALIDATE_INT);
+    $recordLang = filter_input(INPUT_POST, 'record_lang', FILTER_SANITIZE_STRING);
+    ?>
+<p>
+    <strong><?php 
+        $att->setRecordId($recordId);
+        $att->setRecordLang($recordLang);
+
+        
+        try {
+            $uploaded = $att->save($_FILES['userfile']['tmp_name'], $_FILES['userfile']['name']);
+
+            if ($uploaded) {
+                
+            } else {
+                throw new Exception();
+            }
+        } catch (Exception $e) {}
+
+        printf(
+            '<p class="text-center"><a href="
+            $att->getId(),
+            $att->getFilename(),
+            $recordId,
+            $recordLang,
+            $PMF_LANG['ad_att_close']
+        );
+    } else {
+        printf(
+            '<p>%s</p>',
+            sprintf(
+                $PMF_LANG['ad_attach_4'],
+                round($faqConfig->get('records.maxAttachmentSize') / pow(1024, 2), 2)
+            )
+        );
+
+        printf(
+            '<p class="text-center"><a href="javascript:;" onclick="closeWindow();">%s</a></p>',
+            $PMF_LANG['ad_att_close']
+        );
+    }
+}
+if (!is_null($currentSave) && $currentSave == true && $auth &&
+    !$user->perm->checkRight($user->getUserId(), 'addattachment')) {
+    
+}
+
+$faqConfig->getDb()->close();
+?>
+<script src="assets/js/uploadcheck.js"></script>
+</body>
+</html>

@@ -1,0 +1,234 @@
+<?php
+
+
+
+
+
+if( ! isset($GLOBALS['files_Module']) )
+{
+	debug_die( 'Files module is disabled or missing!' );
+}
+
+if( param( 'abspath', 'string', NULL ) !== NULL )
+{	
+	if( $decoded_data = get_root_path_by_abspath( $abspath ) )
+	{	
+		set_param( 'root', $decoded_data['root'] );
+		set_param( 'path', $decoded_data['path'] );
+	}
+}
+
+
+param( 'root', 'string', true ); 
+
+
+if( ! $public_access_to_media )
+{
+	if( ! isset($current_User) )
+	{
+		debug_die( 'No permission to get file (not logged in)!', array('status'=>'403 Forbidden') );
+	}
+
+
+	
+	if( preg_match( '/^collection_(\d+)$/', $root, $perm_blog ) )
+	{	
+		$perm_blog = $perm_blog[1];
+	}
+	else
+	{	
+		$perm_blog = NULL;
+	}
+	
+
+	
+	$current_User->check_perm( 'files', 'view', true, $perm_blog );
+}
+
+
+param( 'path', 'filepath', true );
+param( 'size', 'string', NULL ); 
+param( 'size_x', 'integer', 1 ); 
+param( 'mtime', 'integer', 0 );  
+
+if( $size_x != 1 && $size_x != 2 )
+{ 
+	$size_x = 1;
+}
+
+
+if ( false !== strpos( urldecode( $path ), '..' ) )
+
+
+
+{
+	debug_die( 'Relative pathnames not allowed!' );
+}
+
+
+$FileRootCache = & get_FileRootCache();
+$FileRoot = & $FileRootCache->get_by_ID( $root );
+
+
+$File = new File( $FileRoot->type, $FileRoot->in_type_ID, $path );
+
+
+if( array_key_exists( 'HTTP_IF_MODIFIED_SINCE', $_SERVER ) )
+{
+	$if_modified_since = strtotime( preg_replace('/;.*$/','',$_SERVER['HTTP_IF_MODIFIED_SINCE']) );
+	$file_lastmode_ts = $File->get_lastmod_ts();
+	if( $file_lastmode_ts <= $if_modified_since )
+	{ 
+		header_http_response( '304 Not Modified' );
+		exit(0);
+	}
+}
+
+if( ! empty( $size ) && $File->is_image() )
+{	
+	
+
+	global $thumbnail_sizes;
+
+	load_funcs( '/files/model/_image.funcs.php' );
+
+	$size_name = $size;
+	if( ! isset( $thumbnail_sizes[$size] ) )
+	{ 
+		
+		
+		
+		$size_name = 'fit-80x80';
+	}
+
+	if( ! isset ( $thumbnail_sizes[$size_name][4] ) )
+	{	
+		$thumbnail_sizes[$size_name][4] = 0;
+	}
+	
+	list( $thumb_type, $thumb_width, $thumb_height, $thumb_quality, $thumb_percent_blur ) = $thumbnail_sizes[$size_name];
+
+	$Filetype = & $File->get_Filetype();
+	
+	
+	$mimetype = $Filetype->mimetype;
+	
+
+	
+	$err = $File->output_cached_thumb( $size_name, $mimetype, $mtime, $size_x );
+	
+
+	if( $err == '!Thumbnail not found in'.$Settings->get( 'evocache_foldername' ) )
+	{	
+		$err = NULL;		
+
+		list( $src_width, $src_height ) = imgsize( $File->get_full_path() );
+
+		if( ! $resample_all_images && check_thumbnail_sizes( $thumb_type, $thumb_width, $thumb_height, $src_width, $src_height ) )
+		{ 
+			$err = $File->get_af_thumb_path( $size_name, $mimetype, true, $size_x );
+
+			if( $err[0] != '!' && @copy( $File->get_full_path(), $err ) )
+			{	
+				
+				$err = $File->output_cached_thumb( $size_name, $mimetype, $mtime, $size_x );
+			}
+		}
+		else
+		{ 
+			list( $err, $src_imh ) = load_image( $File->get_full_path(), $mimetype );
+
+			if( empty( $err ) )
+			{
+				list( $err, $dest_imh ) = generate_thumb( $src_imh, $thumb_type, $thumb_width, $thumb_height, $thumb_percent_blur, $size_x );
+				if( empty( $err ) )
+				{
+					$err = $File->save_thumb_to_cache( $dest_imh, $size_name, $mimetype, $thumb_quality, $size_x );
+					if( empty( $err ) )
+					{	
+						
+						$err = $File->output_cached_thumb( $size_name, $mimetype, $mtime, $size_x );
+					}
+					else
+					{	
+						
+						
+					}
+				}
+			}
+		}
+	}
+
+	
+	if( !empty( $err ) )
+	{	
+		
+		$line_height = 11;
+		$err = substr( $err, 1 ); 
+		$car_width = ceil( ($thumb_width-4)/6 );
+		
+
+		
+		$err_lines = preg_split( '~\n~', wordwrap( $err, $car_width, "\n", true ) );
+		$im_handle = imagecreatetruecolor( $thumb_width, $thumb_height ); 
+		if( count($err_lines)*$line_height > $thumb_height )
+		{ 
+		  
+			$rewritten = true;
+			if( preg_match('~Unable to open \'.*?\' for writing: Permission denied~', $err) )
+				$err = 'Cannot write: permission denied';
+			else
+				$rewritten = false;
+			
+			if( $rewritten )
+			{
+				$err_lines = preg_split( '~\n~', wordwrap( $err, $car_width, "\n", true ) );
+			}
+		}
+
+		$text_color = imagecolorallocate( $im_handle, 255, 0, 0 );
+		$y = 0;
+		foreach( $err_lines as $err_string )
+		{
+			imagestring( $im_handle, 2, 2, $y, $err_string, $text_color);
+			$y += $line_height;
+		}
+
+		header('Content-type: image/png' );
+		header_nocache();	
+
+		imagepng( $im_handle );
+	}
+}
+else
+{	
+	
+	if( ! is_readable($File->get_full_path()) )
+	{
+		debug_die( sprintf('File "%s" is not readable!', rel_path_to_base($File->get_full_path())) );
+	}
+
+	$Filetype = & $File->get_Filetype();
+	if( ! empty($Filetype) )
+	{
+		header('Content-type: '.$Filetype->mimetype );
+		if( $Filetype->viewtype == 'download' )
+		{
+			header('Content-disposition: attachment; filename="'
+				.addcslashes($File->get_name(), '\\"').'"' ); 
+		}
+	}
+	$file_path = $File->get_full_path();
+	header('Content-Length: '.filesize( $file_path ) );
+
+	
+	
+	
+	
+	header_noexpire();	
+
+	
+	readfile( $file_path );
+}
+
+?>

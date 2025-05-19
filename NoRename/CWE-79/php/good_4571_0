@@ -1,0 +1,173 @@
+<?php
+
+
+
+class PrestaShopExceptionCore extends Exception
+{
+    
+    public function displayMessage()
+    {
+        if (getenv('kernel.environment') === 'test') {
+            throw $this;
+        }
+
+        header('HTTP/1.1 500 Internal Server Error');
+        if (ToolsCore::isPHPCLI()) {
+            
+            
+        } elseif (_PS_MODE_DEV_) {
+            
+            
+            
+            
+            
+
+            $this->displayFileDebug($this->getFile(), $this->getLine());
+
+            
+            
+            foreach ($this->getTrace() as $id => $trace) {
+                $relative_file = (isset($trace['file'])) ? ltrim(str_replace(array(_PS_ROOT_DIR_, '\\'), array('', '/'), $trace['file']), '/') : '';
+                $current_line = (isset($trace['line'])) ? $trace['line'] : '';
+                if (defined('_PS_ADMIN_DIR_')) {
+                    $relative_file = str_replace(basename(_PS_ADMIN_DIR_) . DIRECTORY_SEPARATOR, 'admin' . DIRECTORY_SEPARATOR, $relative_file);
+                }
+                
+                
+                 color: 
+
+                if (isset($trace['args']) && count($trace['args'])) {
+                     color: 
+                }
+
+                if ($relative_file) {
+                    $this->displayFileDebug($trace['file'], $trace['line'], $id);
+                }
+                if (isset($trace['args']) && count($trace['args'])) {
+                    $args = $this->hideCriticalArgs($trace);
+                    $this->displayArgsDebug($args, $id);
+                }
+                
+            }
+            
+            
+        } else {
+            
+            if (file_exists(_PS_ROOT_DIR_ . '/error500.html')) {
+                
+            }
+        }
+        
+        $this->logError();
+        
+        exit((int) ToolsCore::isPHPCLI());
+    }
+
+    
+    protected function displayFileDebug($file, $line, $id = null)
+    {
+        $lines = file($file);
+        $offset = $line - 6;
+        $total = 11;
+        if ($offset < 0) {
+            $total += $offset;
+            $offset = 0;
+        }
+        $lines = array_slice($lines, $offset, $total);
+        ++$offset;
+
+        
+        foreach ($lines as $k => $l) {
+            $string = ($offset + $k) . '. ' . htmlspecialchars($l);
+            if ($offset + $k == $line) {
+                
+            } else {
+                
+            }
+        }
+        
+    }
+
+    
+    protected function hideCriticalArgs(array $trace)
+    {
+        $args = $trace['args'];
+        if (empty($trace['class']) || empty($trace['function'])) {
+            return $args;
+        }
+
+        $criticalParameters = [
+            'pwd',
+            'pass',
+            'passwd',
+            'password',
+            'database',
+            'server',
+        ];
+        $hiddenArgs = [];
+
+        try {
+            $class = new \ReflectionClass($trace['class']);
+            
+            $method = $class->getMethod($trace['function']);
+            
+            foreach ($method->getParameters() as $argIndex => $parameter) {
+                if ($argIndex >= count($args)) {
+                    break;
+                }
+
+                if (in_array(strtolower($parameter->getName()), $criticalParameters)) {
+                    $hiddenArgs[] = '**hidden_' . $parameter->getName() . '**';
+                } else {
+                    $hiddenArgs[] = $args[$argIndex];
+                }
+            }
+        } catch (ReflectionException $e) {}
+
+        return $hiddenArgs;
+    }
+
+    
+    protected function displayArgsDebug($args, $id)
+    {
+        
+        foreach ($args as $arg => $value) {
+            
+            
+            
+        }
+        
+    }
+
+    
+    protected function logError()
+    {
+        $logger = new FileLogger();
+        $logger->setFilename(_PS_ROOT_DIR_ . '/var/logs/' . date('Ymd') . '_exception.log');
+        $logger->logError($this->getExtendedMessage(false));
+    }
+
+    
+    protected function getExentedMessage($html = true)
+    {
+        Tools::displayAsDeprecated('Use getExtendedMessage instead');
+
+        return $this->getExtendedMessage($html);
+    }
+
+    
+    protected function getExtendedMessage($html = true)
+    {
+        $format = '<p><b>%s</b><br /><i>at line </i><b>%d</b><i> in file </i><b>%s</b></p>';
+        if (!$html) {
+            $format = strip_tags(str_replace('<br />', ' ', $format));
+        }
+
+        return sprintf(
+            $format,
+            Tools::safeOutput($this->getMessage(), true),
+            $this->getLine(),
+            ltrim(str_replace(array(_PS_ROOT_DIR_, '\\'), array('', '/'), $this->getFile()), '/')
+        );
+    }
+}

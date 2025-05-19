@@ -1,0 +1,225 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+	 
+
+
+	access_ensure_project_level( config_get( 'view_summary_threshold' ) );
+
+	$f_width = gpc_get_int( 'width', 600 );
+	$t_ar = plugin_config_get( 'bar_aspect' );
+	$t_interval = new Period();
+	$t_interval->set_period_from_selector( 'interval' );
+	$f_show_as_table = gpc_get_bool( 'show_table', FALSE );
+	$f_summary = gpc_get_bool( 'summary', FALSE );
+
+	$t_interval_days = $t_interval->get_elapsed_days();
+	if ( $t_interval_days <= 14 ) {
+	    $t_incr = 3600; 
+	} else if ( $t_interval_days <= 92 ) {
+	    $t_incr = 86400; 
+	} else {
+	    $t_incr = 604800; 
+	}
+
+	$f_page_number = 1;
+
+	$t_per_page = -1;
+	$t_bug_count = null;
+	$t_page_count = 0;
+
+	$t_filter = current_user_get_bug_filter();
+    $t_filter['_view_type']	= 'advanced';
+    $t_filter['show_status'] = array(META_FILTER_ANY);
+	$t_filter['sort'] = '';
+	$rows = filter_get_bug_rows( $f_page_number, $t_per_page, $t_page_count, $t_bug_count, $t_filter, null, null, true );
+	if ( count($rows) == 0 ) {
+		
+		exit();
+	}
+
+	$t_bug_table			= db_get_table( 'mantis_bug_table' );
+	$t_bug_hist_table			= db_get_table( 'mantis_bug_history_table' );
+
+	$t_marker = array();
+	$t_data = array();
+	$t_ptr = 0;
+	$t_end = $t_interval->get_end_timestamp();
+	$t_start = $t_interval->get_start_timestamp();
+
+    $t_resolved = config_get( 'bug_resolved_status_threshold' );
+    $t_closed = config_get( 'bug_closed_status_threshold' );
+
+    $t_bug = array();
+    $t_bug_cat = array(); 
+    $t_category = array();
+
+	
+	$t_marker[$t_ptr] = time();
+	$t_data[$t_ptr] = array();
+	foreach ($rows as $t_row) {
+	    
+        $t_cat = category_get_name( $t_row->category_id );
+        if ($t_cat == '')
+            $t_cat = 'none';
+	    if ( !access_compare_level( $t_row->status, $t_resolved ) ) {
+	        if (in_array($t_cat, $t_category)) {
+                $t_data[$t_ptr][$t_cat] ++;
+            } else {
+                $t_data[$t_ptr][$t_cat] = 1;
+                $t_category[] = $t_cat;
+            }
+        }
+        $t_bug[] = $t_row->id;
+        $t_bug_cat[$t_row->id] = $t_cat;
+	}
+
+    
+    
+    
+    $t_select = 'SELECT bug_id, type, field_name, old_value, new_value, date_modified FROM '.$t_bug_hist_table.
+        ' WHERE bug_id in ('.implode(',', $t_bug).') and '.
+            '( (type='.NORMAL_TYPE.' and field_name=\'category\') or '.
+                '(type='.NORMAL_TYPE.' and field_name=\'status\') or type='.NEW_BUG.' ) and '.
+		'date_modified >= ' . db_param() .
+            ' order by date_modified DESC';
+	$t_result = db_query_bound( $t_select, array( $t_start ) );
+	$row = db_fetch_array( $t_result );
+
+	for ($t_now = time() - $t_incr; $t_now >= $t_start; $t_now -= $t_incr) {
+	    
+	    while( ( $row !== false ) && ( $row['date_modified'] >= $t_now ) ) {
+	        switch ($row['type']) {
+    	        case 0: 
+    	            if ($row['field_name'] == 'category') {
+	                    $t_cat = $row['new_value'];
+            	        if ($t_cat == '')
+            	            $t_cat = 'none';
+            	        if (in_array($t_cat, $t_category)) {
+                            $t_data[$t_ptr][$t_cat] --;
+                        } else {
+                            $t_data[$t_ptr][$t_cat] = 0;
+                            $t_category[] = $t_cat;
+                        }
+	                    $t_cat = $row['old_value'];
+            	        if ($t_cat == '')
+            	            $t_cat = 'none';
+            	        if (in_array($t_cat, $t_category)) {
+                            $t_data[$t_ptr][$t_cat] ++;
+                        } else {
+                            $t_data[$t_ptr][$t_cat] = 1;
+                            $t_category[] = $t_cat;
+                        }
+                        
+                        
+                        $t_bug_cat[$row['bug_id']] = $t_cat;
+                    } else { 
+                        if ( access_compare_level( $row['new_value'], $t_resolved ) &&
+                                !access_compare_level( $row['old_value'], $t_resolved ) ) {
+                            
+                            $t_cat = $t_bug_cat[$row['bug_id']];
+            	            if ($t_cat == '')
+            	                $t_cat = 'none';
+            	            if (in_array($t_cat, $t_category)) {
+                                $t_data[$t_ptr][$t_cat] ++;
+                            } else {
+                                $t_data[$t_ptr][$t_cat] = 1;
+                                $t_category[] = $t_cat;
+                            }
+                        }
+                    }
+                    break;
+    	        case 1: 
+                    $t_cat = $t_bug_cat[$row['bug_id']];
+    	            if ($t_cat == '')
+    	                $t_cat = 'none';
+    	            if (in_array($t_cat, $t_category)) {
+                        $t_data[$t_ptr][$t_cat] --;
+                    } else {
+                        $t_data[$t_ptr][$t_cat] = 0;
+                        $t_category[] = $t_cat;
+                    }
+                    break;
+            }
+        	$row = db_fetch_array( $t_result );
+        }
+
+	    if ($t_now <= $t_end) {
+    	    $t_marker[$t_ptr] = $t_now;
+	        $t_ptr++;
+	        foreach ( $t_category as $t_cat ) {
+	            $t_data[$t_ptr][$t_cat] = $t_data[$t_ptr-1][$t_cat];
+            }
+        }
+	}
+    $t_bin_count = $t_ptr;
+
+
+    $t_count_cat = count( $t_category );
+    for ( $t=0; $t<$t_count_cat; $t++ ) {
+        $t_cat = $t_category[ $t ];
+        $t_not_zero = false;
+        for ($t_ptr=0; $t_ptr<$t_bin_count; $t_ptr++) {
+            if ( isset( $t_data[$t_ptr][$t_cat] ) && ( $t_data[$t_ptr][$t_cat] > 0 ) ) {
+                $t_not_zero = true;
+                break;
+            }
+        }
+        if ( !$t_not_zero ) {
+            unset( $t_category[ $t ] );
+		}
+    }
+
+    sort($t_category);
+    if ($f_show_as_table) {
+		$t_date_format = config_get( 'short_date_format' );
+        html_begin();
+        html_head_begin();
+        html_css();
+        html_content_type();
+        html_title( lang_get( 'by_category' ) );
+    	html_head_end();
+    	html_body_begin();
+	    
+        foreach ( $t_category as $t_cat ) {
+            
+        }
+        
+	    for ($t_ptr=0; $t_ptr<$t_bin_count; $t_ptr++) {
+            
+            foreach ( $t_category as $t_cat ) {
+                
+            }
+            
+        }
+	    
+    	html_body_end();
+    	html_end();
+	} else {
+	    
+	    $t_metrics = array();
+	    for ($t_ptr=0; $t_ptr<$t_bin_count; $t_ptr++) {
+	        $t = $t_bin_count - $t_ptr - 1;
+	        $t_metrics[0][$t_ptr] = $t_marker[$t];
+            $i = 0;
+            foreach ( $t_category as $t_cat ) {
+        	    $t_metrics[++$i][$t_ptr] = isset($t_data[$t][$t_cat]) ? $t_data[$t][$t_cat] : 0;
+            }
+	    }
+	    array_unshift( $t_category, '' ); 
+	    graph_bydate( $t_metrics, $t_category, lang_get( 'by_category' ), $f_width, $f_width * $t_ar );
+    }

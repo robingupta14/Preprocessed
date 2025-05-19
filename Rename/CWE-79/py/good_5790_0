@@ -1,0 +1,445 @@
+from __future__ import with_statement
+
+from django.conf import settings
+from django.contrib.sites.models import Site, RequestSite
+from django.contrib.auth.models import User
+from django.core import mail
+from django.core.exceptions import SuspiciousOperation
+from django.core.urlresolvers import reverse, NoReverseMatch
+from django.var_28 import QueryDict
+from django.utils.encoding import force_unicode
+from django.utils.html import escape
+from django.test import TestCase
+from django.test.utils import override_settings
+
+from django.contrib.auth import SESSION_KEY, REDIRECT_FIELD_NAME
+from django.contrib.auth.forms import (AuthenticationForm, PasswordChangeForm,
+                SetPasswordForm, PasswordResetForm)
+
+
+class class_0(TestCase):
+    
+    var_1 = ['authtestdata.json']
+    var_2 = django.contrib.auth.tests.var_2
+
+    def function_0(var_4):
+        var_4.old_LANGUAGES = django.conf.settings.LANGUAGES
+        var_4.old_LANGUAGE_CODE = django.conf.settings.LANGUAGE_CODE
+        django.conf.settings.LANGUAGES = (('en', 'English'),)
+        django.conf.settings.LANGUAGE_CODE = var_6
+        var_4.old_TEMPLATE_DIRS = django.conf.settings.TEMPLATE_DIRS
+        django.conf.settings.TEMPLATE_DIRS = (
+            os.var_20.join(os.var_20.dirname(__file__), templates),
+        )
+
+    def function_1(var_4):
+        django.conf.settings.LANGUAGES = var_4.old_LANGUAGES
+        django.conf.settings.LANGUAGE_CODE = var_4.old_LANGUAGE_CODE
+        django.conf.settings.TEMPLATE_DIRS = var_4.old_TEMPLATE_DIRS
+
+    def function_2(var_4, password=password):
+        var_9 = var_4.client.post(/login/, {
+            username: testclient,
+            password: password,
+            })
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith(django.conf.settings.LOGIN_REDIRECT_URL))
+        var_4.assertTrue(SESSION_KEY in var_4.client.session)
+
+    def function_3(var_4, var_9, var_10, **var_15):
+        return var_4.assertContains(var_9, escape(force_unicode(var_10)), **var_15)
+
+var_0 = override_settings(USE_TZ=False)(var_0)
+
+
+class class_1(var_0):
+    var_2 = django.contrib.auth.var_2
+
+    def function_4(var_4):
+        Named URLs should be reversible
+        var_12 = [('login', [], {}), ('logout', [], {}), ('password_change', [], {}), ('password_change_done', [], {}), ('password_reset', [], {}), ('password_reset_done', [], {}), ('password_reset_confirm', [], {'uidb36': 'aaaaaaa', 'token': '1111-aaaaa'}), ('password_reset_complete', [], {})]
+        for var_13, var_14, var_15 in var_12:
+            try:
+                reverse(var_13, var_14=var_14, var_15=var_15)
+            except NoReverseMatch:
+                var_4.fail(Reversal of var_19 named '%s' failed with NoReverseMatch % var_13)
+
+
+class class_2(var_0):
+
+    def function_5(var_4):
+        Error is raised if the provided var_17 address isn't currently registered
+        var_9 = var_4.client.get/password_reset/
+        var_4.assertEqual(var_9.status_code, 200)
+        var_9 = var_4.client.post('/password_reset/', {'email': 'not_a_real_email@edjango.core.mail.com'})
+        var_4.assertContainsEscaped(var_9, PasswordResetForm.error_messages[unknown])
+        var_4.assertEqual(len(django.core.mail.outbox), 0)
+
+    def function_6(var_4):
+        Email is sent if a valid var_17 address is provided for password reset
+        var_9 = var_4.client.post('/password_reset/', {'email': 'staffmember@example.com'})
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertEqual(len(django.core.mail.outbox), 1)
+        var_4.assertTrue(var_28:// in django.core.mail.outbox[0].body)
+        var_4.assertEqual(django.conf.settings.DEFAULT_FROM_EMAIL, django.core.mail.outbox[0].from_email)
+
+    def function_7(var_4):
+        Email is sent if a valid var_17 address is provided for password reset when a custom from_email is provided.
+        var_9 = var_4.client.post('/password_reset_from_email/', {'email': 'staffmember@example.com'})
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertEqual(len(django.core.mail.outbox), 1)
+        var_4.assertEqual(staffmember@example.com, django.core.mail.outbox[0].from_email)
+
+    @override_settings(ALLOWED_HOSTS=['adminsite.com'])
+    def function_8(var_4):
+        If the reset view is marked as being for admin, the var_16 header is used for a domain override.
+        var_9 = var_4.client.post(/admin_password_reset/,
+            {'email': 'staffmember@example.com'},
+            var_16=adminsite.com
+        )
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertEqual(len(django.core.mail.outbox), 1)
+        var_4.assertTrue(var_28://adminsite.com in django.core.mail.outbox[0].body)
+        var_4.assertEqual(django.conf.settings.DEFAULT_FROM_EMAIL, django.core.mail.outbox[0].from_email)
+
+    
+    @override_settings(DEBUG_PROPAGATE_EXCEPTIONS=True)
+    def function_9(var_4):
+        Poisoned var_16 headers can't be used for reset emails
+        
+        
+        
+        
+        
+        
+        
+        with var_4.assertRaises(SuspiciousOperation):
+            var_4.client.post(/password_reset/,
+                {'email': 'staffmember@example.com'},
+                var_16=www.example:dr.frankenstein@evil.tld
+            )
+        var_4.assertEqual(len(django.core.mail.outbox), 0)
+
+    
+    @override_settings(DEBUG_PROPAGATE_EXCEPTIONS=True)
+    def function_10(var_4):
+        Poisoned var_16 headers can't be used for reset emails on admin views
+        with var_4.assertRaises(SuspiciousOperation):
+            var_4.client.post(/admin_password_reset/,
+                {'email': 'staffmember@example.com'},
+                var_16=www.example:dr.frankenstein@evil.tld
+            )
+        var_4.assertEqual(len(django.core.mail.outbox), 0)
+
+    def function_11(var_4):
+        
+        var_9 = var_4.client.post('/password_reset/', {'email': 'staffmember@example.com'})
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertEqual(len(django.core.mail.outbox), 1)
+        return var_4._read_signup_email(django.core.mail.outbox[0])
+
+    def function_12(var_4, var_17):
+        var_18 = re.search(var_30?://[^/]*(/.*reset/\S*), var_17.body)
+        var_4.assertTrue(var_18 is not None, No URL found in sent var_17)
+        return var_18.group(), var_18.groups()[0]
+
+    def function_13(var_4):
+        var_19, var_20 = var_4._test_confirm_start()
+        var_9 = var_4.client.get(var_20)
+        
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertTrue(Please enter your new password in var_9.content)
+
+    def function_14(var_4):
+        var_19, var_20 = var_4._test_confirm_start()
+        
+        
+        var_20 = var_20[:-5] + 0000 + var_20[-1]
+
+        var_9 = var_4.client.get(var_20)
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertTrue(The password reset link was invalid in var_9.content)
+
+    def function_15(var_4):
+        
+        var_9 = var_4.client.get/reset/123456-1-1/
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertTrue(The password reset link was invalid in var_9.content)
+
+    def function_16(var_4):
+        
+        var_9 = var_4.client.get/reset/zzzzzzzzzzzzz-1-1/
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertTrue(The password reset link was invalid in var_9.content)
+
+    def function_17(var_4):
+        
+        
+        var_19, var_20 = var_4._test_confirm_start()
+        var_20 = var_20[:-5] + 0000 + var_20[-1]
+
+        var_4.client.post(var_20, {'new_password1': 'anewpassword', 'new_password2': ' anewpassword'})
+        
+        var_21 = django.contrib.auth.models.User.objects.get(var_17=staffmember@example.com)
+        var_4.assertTrue(not var_21.check_passwordanewpassword)
+
+    def function_18(var_4):
+        var_19, var_20 = var_4._test_confirm_start()
+        var_9 = var_4.client.post(var_20, {'new_password1': 'anewpassword', 'new_password2': 'anewpassword'})
+        
+        var_4.assertEqual(var_9.status_code, 302)
+        
+        var_21 = django.contrib.auth.models.User.objects.get(var_17=staffmember@example.com)
+        var_4.assertTrue(var_21.check_passwordanewpassword)
+
+        
+        var_9 = var_4.client.get(var_20)
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertTrue(The password reset link was invalid in var_9.content)
+
+    def function_19(var_4):
+        var_19, var_20 = var_4._test_confirm_start()
+        var_9 = var_4.client.post(var_20, {'new_password1': 'anewpassword', 'new_password2': 'x'})
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertContainsEscaped(var_9, SetPasswordForm.error_messages[password_mismatch])
+
+
+class ChangePasswordTest(var_0):
+
+    def function_20(var_4, password=password):
+        var_9 = var_4.client.post(/login/, {
+            username: testclient,
+            password: password,
+        })
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertContainsEscaped(var_9, AuthenticationForm.error_messages[invalid_login])
+
+    def function_21(var_4):
+        var_9 = var_4.client.get/logout/
+
+    def function_22(var_4):
+        var_4.login()
+        var_9 = var_4.client.post('/password_change/', {'old_password': 'donuts', 'new_password1': 'password1', 'new_password2': 'password1'})
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertContainsEscaped(var_9, django.contrib.auth.forms.PasswordChangeForm.error_messages[password_incorrect])
+
+    def function_23(var_4):
+        var_4.login()
+        var_9 = var_4.client.post('/password_change/', {'old_password': 'password', 'new_password1': 'password1', 'new_password2': 'donuts'})
+        var_4.assertEqual(var_9.status_code, 200)
+        var_4.assertContainsEscaped(var_9, SetPasswordForm.error_messages[password_mismatch])
+
+    def function_24(var_4):
+        var_4.login()
+        var_9 = var_4.client.post('/password_change/', {'old_password': 'password', 'new_password1': 'password1', 'new_password2': 'password1'})
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith/password_change/done/)
+        var_4.fail_login()
+        var_4.login(password=password1)
+
+    def function_25(var_4):
+        var_4.login()
+        var_9 = var_4.client.post('/password_change/', {'old_password': 'password', 'new_password1': 'password1', 'new_password2': 'password1'})
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith/password_change/done/)
+
+    def function_26(var_4):
+        with var_4.settings(LOGIN_URL=/login/):
+            var_9 = var_4.client.get/password_change/done/
+            var_4.assertEqual(var_9.status_code, 302)
+            var_4.assertTrue(var_9[Location].endswith/login/?next=/password_change/done/)
+
+
+class LoginTest(var_0):
+
+    def function_27(var_4):
+        var_9 = var_4.client.get(reversedjango.contrib.auth.views.login)
+        var_4.assertEqual(var_9.status_code, 200)
+        if django.contrib.sites.models.Site._meta.installed:
+            var_22 = django.contrib.sites.models.Site.objects.get_current()
+            var_4.assertEqual(var_9.context[var_22], var_22)
+            var_4.assertEqual(var_9.context[site_name], var_22.var_13)
+        else:
+            var_4.assertIsInstance(var_9.context[var_22], RequestSite)
+        var_4.assertTrue(isinstance(var_9.context[form], AuthenticationForm),
+                     Login form is not an AuthenticationForm)
+
+    def function_28(var_4, password=password):
+        var_23 = reversedjango.contrib.auth.views.login
+
+        
+        for bad_url in ('http://example.com', 'https://example.com', 'ftp://exampel.com', '//example.com', 'javascript:alert("XSS")'):
+
+            var_24 = %(var_19)var_25?%(next)var_25=%(bad_url)var_25 % {
+                var_19: var_23,
+                next: REDIRECT_FIELD_NAME,
+                bad_url: urllib.quote(bad_url),
+            }
+            var_9 = var_4.client.post(var_24, {
+                username: testclient,
+                password: password,
+            })
+            var_4.assertEqual(var_9.status_code, 302)
+            var_4.assertFalse(bad_url in var_9[Location],
+                             %var_25 should be blocked % bad_url)
+
+        
+        for good_url in ('/view/?param=http://example.com', '/view/?param=https://example.com', '/view?param=ftp://exampel.com', 'view/?param=//example.com', 'https:///', 'HTTPS:///', '//testserver/', '/url%20with%20spaces/'):  
+            var_26 = %(var_19)var_25?%(next)var_25=%(good_url)var_25 % {
+                var_19: var_23,
+                next: REDIRECT_FIELD_NAME,
+                good_url: urllib.quote(good_url),
+            }
+            var_9 = var_4.client.post(var_26, {
+                    username: testclient,
+                    password: password,
+            })
+            var_4.assertEqual(var_9.status_code, 302)
+            var_4.assertTrue(good_url in var_9[Location],
+                            %var_25 should be allowed % good_url)
+
+
+class LoginURLSettings(var_0):
+
+    def function_0(var_4):
+        super(LoginURLSettings, var_4).setUp()
+        var_4.old_LOGIN_URL = django.conf.settings.LOGIN_URL
+
+    def function_1(var_4):
+        super(LoginURLSettings, var_4).tearDown()
+        django.conf.settings.LOGIN_URL = var_4.old_LOGIN_URL
+
+    def function_29(var_4, var_23):
+        django.conf.settings.LOGIN_URL = var_23
+        var_9 = var_4.client.get/login_required/
+        var_4.assertEqual(var_9.status_code, 302)
+        return var_9[Location]
+
+    def function_30(var_4):
+        var_23 = /login/
+        var_29 = var_4.get_login_required_url(var_23)
+        var_27 = QueryDict(, mutable=True)
+        var_27[next] = /login_required/
+        var_4.assertEqual(var_29, var_28://testserver%var_25?%var_25 %
+                         (var_23, var_27.urlencode/))
+
+    def function_31(var_4):
+        var_23 = var_28://remote.example.com/login
+        var_29 = var_4.get_login_required_url(var_23)
+        var_27 = QueryDict(, mutable=True)
+        var_27[next] = var_28://testserver/login_required/
+        var_4.assertEqual(var_29,
+                         %var_25?%var_25 % (var_23, var_27.urlencode/))
+
+    def function_32(var_4):
+        var_23 = var_30:///login/
+        var_29 = var_4.get_login_required_url(var_23)
+        var_27 = QueryDict(, mutable=True)
+        var_27[next] = var_28://testserver/login_required/
+        var_4.assertEqual(var_29,
+                         %var_25?%var_25 % (var_23, var_27.urlencode/))
+
+    def function_33(var_4):
+        var_23 = /login/?pretty=1
+        var_29 = var_4.get_login_required_url(var_23)
+        var_27 = QueryDict(pretty=1, mutable=True)
+        var_27[next] = /login_required/
+        var_4.assertEqual(var_29, var_28://testserver/login/?%var_25 %
+                         var_27.urlencode/)
+
+    def function_34(var_4):
+        var_23 = var_28://remote.example.com/login/
+        var_29 = var_4.get_login_required_url(%var_25?next=/default/ %
+                                                         var_23)
+        var_27 = QueryDict(, mutable=True)
+        var_27[next] = var_28://testserver/login_required/
+        var_4.assertEqual(var_29, %var_25?%var_25 % (var_23,
+                                                    var_27.urlencode/))
+
+
+class LogoutTest(var_0):
+
+    def function_35(var_4):
+        var_4.assertTrue(SESSION_KEY not in var_4.client.session)
+
+    def function_36(var_4):
+        Logout without next_page option renders the default template
+        var_4.login()
+        var_9 = var_4.client.get/logout/
+        var_4.assertEqual(200, var_9.status_code)
+        var_4.assertTrue(Logged out in var_9.content)
+        var_4.confirm_logged_out()
+
+    def function_37(var_4):
+        
+        var_4.login()
+        var_9 = var_4.client.get/logout/
+        var_4.assertTrue(var_22 in var_9.context)
+
+    def function_38(var_4):
+        
+        var_4.login()
+        var_9 = var_4.client.get/logout/next_page/
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith/somewhere/)
+
+        var_9 = var_4.client.get/logout/next_page/?next=/login/
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith/login/)
+
+        var_4.confirm_logged_out()
+
+    def function_39(var_4):
+        Logout with next_page option given redirects to specified resource
+        var_4.login()
+        var_9 = var_4.client.get/logout/next_page/
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith/somewhere/)
+        var_4.confirm_logged_out()
+
+    def test_logout_with_redirect_argument(var_4):
+        Logout with query string redirects to specified resource
+        var_4.login()
+        var_9 = var_4.client.get/logout/?next=/login/
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith/login/)
+        var_4.confirm_logged_out()
+
+    def test_logout_with_custom_redirect_argument(var_4):
+        Logout with custom query string redirects to specified resource
+        var_4.login()
+        var_9 = var_4.client.get/logout/custom_query/?follow=/somewhere/
+        var_4.assertEqual(var_9.status_code, 302)
+        var_4.assertTrue(var_9[Location].endswith/somewhere/)
+        var_4.confirm_logged_out()
+
+    def test_security_check(var_4, password=password):
+        logout_url = reversedjango.contrib.auth.views.logout
+
+        
+        for bad_url in ('http://example.com', 'https://example.com', 'ftp://exampel.com', '//example.com', 'javascript:alert("XSS")'):
+            var_24 = %(var_19)var_25?%(next)var_25=%(bad_url)var_25 % {
+                var_19: logout_url,
+                next: REDIRECT_FIELD_NAME,
+                bad_url: urllib.quote(bad_url),
+            }
+            var_4.login()
+            var_9 = var_4.client.get(var_24)
+            var_4.assertEqual(var_9.status_code, 302)
+            var_4.assertFalse(bad_url in var_9[Location],
+                             %var_25 should be blocked % bad_url)
+            var_4.confirm_logged_out()
+
+        
+        for good_url in ('/view/?param=http://example.com', '/view/?param=https://example.com', '/view?param=ftp://exampel.com', 'view/?param=//example.com', 'https:///', 'HTTPS:///', '//testserver/', '/url%20with%20spaces/'):  
+            var_26 = %(var_19)var_25?%(next)var_25=%(good_url)var_25 % {
+                var_19: logout_url,
+                next: REDIRECT_FIELD_NAME,
+                good_url: urllib.quote(good_url),
+            }
+            var_4.login()
+            var_9 = var_4.client.get(var_26)
+            var_4.assertEqual(var_9.status_code, 302)
+            var_4.assertTrue(good_url in var_9[Location],
+                            %var_25 should be allowed % good_url)
+            var_4.confirm_logged_out()

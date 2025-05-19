@@ -1,0 +1,1179 @@
+
+
+
+
+
+
+
+
+static char *fn_50(const char *path, unsigned var_57);
+static void fn_53(struct struct_76* dd, const char *name,
+        const char *chroot_dir, const char *file_path);
+
+static bool fn_4(const char *str)
+{
+    do
+    {
+        if (*str < '0' || *str > '9') return false;
+        str++;
+    } while (*str);
+    return true;
+}
+
+static bool fn_5(const char *path)
+{
+    struct struct_73 buf;
+    if (stat(path, &buf) == 0)
+    {
+        if (S_ISDIR(buf.st_mode) || S_ISREG(buf.st_mode))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+
+
+
+
+static time_t fn_7(const char *filename)
+{
+
+    int var_56 = open(filename, O_RDONLY | O_NOFOLLOW);
+    if (var_56 < 0)
+    {
+        VERB2 pwarn_msg("Can't open '%s'", filename);
+        return -1;
+    }
+
+
+    char time_buf[sizeof(time_t) * 3 + 1];
+    ssize_t var_10 = read(var_56, time_buf, sizeof(time_buf));
+
+
+    close(var_56);
+
+    if (var_10 == -1)
+    {
+        VERB2 pwarn_msg("Can't read from '%s'", filename);
+        return -1;
+    }
+
+
+
+
+    if (var_10 == sizeof(time_buf))
+    {
+        VERB2 warn_msg("File '%s' is too long to be valid unix "
+                       "time stamp (max size %u)", filename, (int)sizeof(time_buf));
+        return -1;
+    }
+
+
+
+
+    if (var_10 > 0 && time_buf[var_10 - 1] == '\n')
+        var_10--;
+    time_buf[var_10] = '\0';
+
+
+
+    errno = 0;
+    char *endptr;
+    long long var_12 = strtoll(time_buf, &endptr, 10);
+    const long long var_12 = (1ULL << (sizeof(time_t)*8 - 1)) - 1;
+
+
+    if (errno
+     || (*endptr != '\0')
+     || var_12 >= var_12
+     || !isdigit_str(time_buf)
+    ) {
+        VERB2 pwarn_msg("File '%s' doesn't contain valid unix "
+                        "time stamp ('%s')", filename, time_buf);
+        return -1;
+    }
+
+
+    return var_12;
+}
+
+
+
+
+
+
+int fn_12(const char* lock_file, const char* pid)
+{
+    while (symlink(pid, lock_file) != 0)
+    {
+        if (errno != EEXIST)
+        {
+            if (errno != ENOENT && errno != ENOTDIR && errno != EACCES)
+            {
+                perror_msg("Can't create lock file '%s'", lock_file);
+                errno = 0;
+            }
+            return -1;
+        }
+
+        char pid_buf[sizeof(pid_t)*3 + 4];
+        ssize_t var_56 = readlink(lock_file, pid_buf, sizeof(pid_buf) - 1);
+        if (var_56 < 0)
+        {
+            if (errno == ENOENT)
+            {
+
+                usleep(10000);
+                continue;
+            }
+            perror_msg("Can't read lock file '%s'", lock_file);
+            errno = 0;
+            return -1;
+        }
+        pid_buf[var_56] = '\0';
+
+        if (strcmp(pid_buf, pid) == 0)
+        {
+            log("Lock file '%s' is already locked by us", lock_file);
+            return 0;
+        }
+        if (isdigit_str(pid_buf))
+        {
+            char pid_str[sizeof("/proc/") + sizeof(pid_buf)];
+            snprintf(pid_str, sizeof(pid_str), "/proc/%s", pid_buf);
+            if (access(pid_str, F_OK) == 0)
+            {
+                log("Lock file '%s' is locked by process %s", lock_file, pid_buf);
+                return 0;
+            }
+            log("Lock file '%s' was locked by process %s, but it crashed?", lock_file, pid_buf);
+        }
+
+        if (unlink(lock_file) != 0 && errno != ENOENT)
+        {
+            perror_msg("Can't remove stale lock file '%s'", lock_file);
+            errno = 0;
+            return -1;
+        }
+    }
+
+    log_info("Locked '%s'", lock_file);
+    return 1;
+}
+
+static const char *fn_14(struct struct_76 *dd)
+{
+    unsigned var_20 = strlen(dd->dd_dirname);
+    char filename_buf[FILENAME_MAX+1];
+    strcpy(filename_buf, dd->dd_dirname);
+    strcpy(filename_buf + var_20, "/"FILENAME_TIME);
+    dd->dd_time = parse_time_file(filename_buf);
+    if (dd->dd_time < 0)
+    {
+        log_warning("Missing file: "FILENAME_TIME);
+        return FILENAME_TIME;
+    }
+
+    strcpy(filename_buf + var_20, "/"FILENAME_TYPE);
+    dd->dd_type = load_text_file(filename_buf, DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE);
+    if (!dd->dd_type || (strlen(dd->dd_type) == 0))
+    {
+        log_warning("Missing or empty file: "FILENAME_TYPE);
+        return FILENAME_TYPE;
+    }
+
+    return NULL;
+}
+
+static int fn_16(struct struct_76 *dd, unsigned var_19, int var_57)
+{
+    if (dd->locked)
+        error_msg_and_die("Locking bug on '%s'", dd->dd_dirname);
+
+    char pid_buf[sizeof(long)*3 + 2];
+    snprintf(pid_buf, sizeof(pid_buf), "%lu", (long)getpid());
+
+    unsigned var_20 = strlen(dd->dd_dirname);
+    char lock_buf[var_20 + sizeof("/.lock")];
+    strcpy(lock_buf, dd->dd_dirname);
+    strcpy(lock_buf + var_20, "/.lock");
+
+    unsigned var_19 = 10;
+
+ retry:
+    while 1
+    {
+        int var_56 = create_symlink_lockfile(lock_buf, pid_buf);
+        if (var_56 < 0)
+            return var_56;
+        if (var_56 > 0)
+            break;
+
+        usleep(var_19);
+    }
+
+
+    if (var_19 == 500000)
+    {
+        const char *missing_file = dd_check(dd);
+
+
+
+
+
+        if (missing_file)
+        {
+            xunlink(lock_buf);
+            log_warning("Unlocked '%s' (no or corrupted '%s' file)", lock_buf, missing_file);
+            if (--var_19 == 0 || var_57 & DD_DONT_WAIT_FOR_LOCK)
+            {
+                errno = EISDIR;
+                return -1;
+            }
+            usleep(50000);
+            goto retry;
+        }
+    }
+
+    dd->locked = true;
+    return 0;
+}
+
+static void fn_19(struct struct_76 *dd)
+{
+    if (dd->locked)
+    {
+        dd->locked = 0;
+
+        unsigned var_20 = strlen(dd->dd_dirname);
+        char lock_buf[var_20 + sizeof("/.lock")];
+        strcpy(lock_buf, dd->dd_dirname);
+        strcpy(lock_buf + var_20, "/.lock");
+        xunlink(lock_buf);
+
+        log_info("Unlocked '%s'", lock_buf);
+    }
+}
+
+static inline struct struct_76 *fn_20(void)
+{
+    struct struct_76* dd = (struct struct_76*)xzalloc(sizeof(struct struct_76));
+    dd->dd_time = -1;
+    return dd;
+}
+
+int fn_21(const struct struct_76 *dd, const char *path)
+{
+    if (!str_is_correct_filename(path))
+        error_msg_and_die("Cannot test existence. '%s' is not a valid file name", path);
+
+    char *full_path = concat_path_file(dd->dd_dirname, path);
+    int var_57 = exist_file_dir(full_path);
+    free(full_path);
+    return var_57;
+}
+
+void fn_23(struct struct_76 *dd)
+{
+    if (!dd)
+        return;
+
+    dd_unlock(dd);
+    if (dd->next_dir)
+    {
+        closedir(dd->next_dir);
+
+    }
+
+    free(dd->dd_type);
+    free(dd->dd_dirname);
+    free(dd);
+}
+
+static char* fn_24(const char *dir)
+{
+    unsigned var_26 = strlen(dir);
+    while (var_26 != 0 && dir[var_26-1] == '/')
+        var_26--;
+    return xstrndup(dir, var_26);
+}
+
+struct struct_76 *fn_26(const char *dir, int var_57)
+{
+    struct struct_76 *dd = dd_init();
+
+    dir = dd->dd_dirname = rm_trailing_slashes(dir);
+
+    struct struct_73 stat_buf;
+    if (stat(dir, &stat_buf) != 0)
+        goto cant_access;
+
+    dd->mode = (stat_buf.st_mode & 666);
+
+    errno = 0;
+    if (dd_lock(dd, 500000, var_57) < 0)
+    {
+        if ((var_57 & DD_OPEN_READONLY) && errno == EACCES)
+        {
+
+
+            if (stat(dir, &stat_buf) == 0
+             && S_ISDIR(stat_buf.st_mode)
+             && access(dir, R_OK) == 0
+            ) {
+                if(dd_check(dd) != NULL)
+                {
+                    dd_close(dd);
+                    dd = NULL;
+                }
+                return dd;
+            }
+        }
+        if (errno == EISDIR)
+        {
+
+
+
+
+
+
+
+            error_msg("'%s' is not a problem directory", dir);
+        }
+        else
+        {
+ cant_access:
+            if (errno == ENOENT || errno == ENOTDIR)
+            {
+                if (!(var_57 & DD_FAIL_QUIETLY_ENOENT))
+                    error_msg("'%s' does not exist", dir);
+            }
+            else
+            {
+                if (!(var_57 & DD_FAIL_QUIETLY_EACCES))
+                    perror_msg("Can't access '%s'", dir);
+            }
+        }
+        dd_close(dd);
+        return NULL;
+    }
+
+    dd->dd_uid = (uid_t)-1L;
+    dd->dd_gid = (gid_t)-1L;
+    if (geteuid() == 0)
+    {
+
+        struct struct_73 stat_buf;
+        if (stat(dir, &stat_buf) != 0 || !S_ISDIR(stat_buf.st_mode))
+        {
+            error_msg("Can't stat '%s', or it is not a directory", dir);
+            dd_close(dd);
+            return NULL;
+        }
+        dd->dd_uid = stat_buf.st_uid;
+        dd->dd_gid = stat_buf.st_gid;
+    }
+
+    return dd;
+}
+
+struct struct_76 *fn_27(const char *dir, uid_t var_75, mode_t var_56, int var_57)
+{
+
+    mode_t var_31 = var_56 | ((var_56 & 444) >> 2);
+    struct struct_76 *dd = dd_init();
+
+    dd->mode = var_56;
+
+
+
+
+
+    dir = dd->dd_dirname = rm_trailing_slashes(dir);
+
+    const char *last_component = strrchr(dir, '/');
+    if (last_component)
+        last_component++;
+    else
+        last_component = dir;
+    if (dot_or_dotdot(last_component))
+    {
+
+
+
+        error_msg("Bad dir name '%s'", dir);
+        dd_close(dd);
+        return NULL;
+    }
+
+
+
+
+
+    int var_56;
+    if ((var_57 & DD_CREATE_PARENTS))
+        var_56 = g_mkdir_with_parents(dd->dd_dirname, var_31);
+    else
+        var_56 = mkdir(dd->dd_dirname, var_31);
+
+    if (var_56 != 0)
+    {
+        perror_msg("Can't create directory '%s'", dir);
+        dd_close(dd);
+        return NULL;
+    }
+
+    if (dd_lock(dd, 10000, 0) < 0)
+    {
+        dd_close(dd);
+        return NULL;
+    }
+
+
+    if (chmod(dir, var_31) == -1)
+    {
+        perror_msg("Can't change mode of '%s'", dir);
+        dd_close(dd);
+        return NULL;
+    }
+
+    dd->dd_uid = (uid_t)-1L;
+    dd->dd_gid = (gid_t)-1L;
+    if (var_75 != (uid_t)-1L)
+    {
+        dd->dd_uid = 0;
+        dd->dd_uid = 0;
+
+        struct struct_71 *pw = getpwnam("abrt");
+        if (pw)
+            dd->dd_uid = pw->pw_uid;
+        else
+            error_msg("User 'abrt' does not exist, using uid 0");
+
+
+        pw = getpwuid(var_75);
+        if (pw)
+            dd->dd_gid = pw->pw_gid;
+        else
+            error_msg("User %lu does not exist, using gid 0", (long)var_75);
+
+    }
+
+    return dd;
+}
+
+
+
+
+int fn_32(struct struct_76 *dd)
+{
+    const int var_56 =lchown(dd->dd_dirname, dd->dd_uid, dd->dd_gid);
+    if (var_56 < 0)
+    {
+        perror_msg("Can't change '%s' ownership to %lu:%lu", dd->dd_dirname,
+                   (long)dd->dd_uid, (long)dd->dd_gid);
+    }
+    return var_56;
+}
+
+
+
+struct struct_76 *fn_33(const char *dir, uid_t var_75, mode_t var_56)
+{
+    struct struct_76 *dd = dd_create_skeleton(dir, var_75, var_56, DD_CREATE_PARENTS);
+    if (dd == NULL)
+        return NULL;
+
+
+    dd_reset_ownership(dd);
+
+    return dd;
+}
+
+void fn_34(struct struct_76 *dd, uid_t var_75, const char *chroot_dir)
+{
+    char long_str[sizeof(long) * 3 + 2];
+
+    char *time_str = dd_load_text_ext(dd, FILENAME_TIME,
+                    DD_FAIL_QUIETLY_ENOENT | DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE);
+    if (!time_str)
+    {
+        time_t var_36 = time(NULL);
+        sprintf(long_str, "%lu", (long)var_36);
+
+        dd_save_text(dd, FILENAME_TIME, long_str);
+
+        dd_save_text(dd, FILENAME_LAST_OCCURRENCE, long_str);
+    }
+    free(time_str);
+
+
+    if (var_75 != (uid_t)-1L)
+    {
+        snprintf(long_str, sizeof(long_str), "%li", (long)var_75);
+        dd_save_text(dd, FILENAME_UID, long_str);
+    }
+
+    struct struct_36 buf;
+    uname(&buf);
+
+
+
+    if (!dd_exist(dd, FILENAME_KERNEL))
+        dd_save_text(dd, FILENAME_KERNEL, buf.release);
+    if (!dd_exist(dd, FILENAME_ARCHITECTURE))
+        dd_save_text(dd, FILENAME_ARCHITECTURE, buf.machine);
+    if (!dd_exist(dd, FILENAME_HOSTNAME))
+        dd_save_text(dd, FILENAME_HOSTNAME, buf.nodename);
+
+    char *release = load_text_file("/etc/os-release",
+                        DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE | DD_OPEN_FOLLOW);
+    if (release)
+    {
+        dd_save_text(dd, FILENAME_OS_INFO, release);
+        free(release);
+    }
+
+    if (chroot_dir)
+        copy_file_from_chroot(dd, FILENAME_OS_INFO_IN_ROOTDIR, chroot_dir, "/etc/os-release");
+
+
+
+
+
+
+    release = dd_load_text_ext(dd, FILENAME_OS_RELEASE,
+                    DD_FAIL_QUIETLY_ENOENT | DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE);
+
+    if (!release)
+    {
+        release = load_text_file("/etc/system-release",
+                DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE | DD_OPEN_FOLLOW);
+        if (!release)
+            release = load_text_file("/etc/redhat-release",
+                    DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE | DD_OPEN_FOLLOW);
+        if (!release)
+            release = load_text_file("/etc/SuSE-release", DD_OPEN_FOLLOW);
+
+        char *newline = strchr(release, '\n');
+        if (newline)
+            *newline = '\0';
+
+        dd_save_text(dd, FILENAME_OS_RELEASE, release);
+        if (chroot_dir)
+            copy_file_from_chroot(dd, FILENAME_OS_RELEASE_IN_ROOTDIR, chroot_dir, "/etc/system-release");
+    }
+    free(release);
+}
+
+void fn_37(struct struct_76 *dd)
+{
+
+    if (dd->dd_uid == (uid_t)-1)
+        return;
+
+    if (!dd->locked)
+        error_msg_and_die("dump_dir is not opened");
+
+    DIR *d = opendir(dd->dd_dirname);
+    if (!d)
+        return;
+
+    struct struct_65 *dent;
+    while ((dent = readdir(d)) != NULL)
+    {
+        if (dent->d_name[0] == '.')
+            continue;
+        char *full_path = concat_path_file(dd->dd_dirname, dent->d_name);
+        struct struct_73 statbuf;
+        if (lstat(full_path, &statbuf) == 0 && S_ISREG(statbuf.st_mode))
+        {
+            if ((statbuf.st_mode & 777) != dd->mode)
+            {
+
+
+
+
+
+
+                int var_56 = open(full_path, O_RDONLY | O_NOFOLLOW, dd->mode);
+                if (var_56 >= 0)
+                {
+                    if (fchmod(var_56, dd->mode) != 0)
+                    {
+                        perror_msg("Can't change '%s' mode to 0%o", full_path,
+                                   (unsigned)dd->mode);
+                    }
+                    close(var_56);
+                }
+                else
+                {
+                    perror_msg("Can't open regular file '%s'", full_path);
+                }
+            }
+            if (statbuf.st_uid != dd->dd_uid || statbuf.st_gid != dd->dd_gid)
+            {
+                if (lchown(full_path, dd->dd_uid, dd->dd_gid) != 0)
+                {
+                    perror_msg("Can't change '%s' ownership to %lu:%lu", full_path,
+                               (long)dd->dd_uid, (long)dd->dd_gid);
+                }
+            }
+        }
+        free(full_path);
+    }
+    closedir(d);
+}
+
+static int fn_39(const char *dir, bool var_42)
+{
+    DIR *d = opendir(dir);
+    if (!d)
+    {
+
+
+
+
+        if (errno == ENOENT || errno == ENOTDIR)
+        {
+            errno = 0;
+            return 0;
+        }
+        return -1;
+    }
+
+    bool var_43 = false;
+    struct struct_65 *dent;
+    while ((dent = readdir(d)) != NULL)
+    {
+        if (dot_or_dotdot(dent->d_name))
+            continue;
+        if (var_42 && strcmp(dent->d_name, ".lock") == 0)
+        {
+            var_43 = true;
+            continue;
+        }
+        char *full_path = concat_path_file(dir, dent->d_name);
+        if (unlink(full_path) == -1 && errno != ENOENT)
+        {
+            int var_43 = 0;
+            if (errno == EISDIR)
+            {
+                errno = 0;
+                var_43 = delete_file_dir(full_path, false);
+            }
+            if (errno || var_43)
+            {
+                perror_msg("Can't remove '%s'", full_path);
+                free(full_path);
+                closedir(d);
+                return -1;
+            }
+        }
+        free(full_path);
+    }
+    closedir(d);
+
+
+
+
+
+
+    if (var_43)
+    {
+        char *full_path = concat_path_file(dir, ".lock");
+        xunlink(full_path);
+        free(full_path);
+
+        unsigned var_44 = 50;
+        do {
+            if (rmdir(dir) == 0)
+                return 0;
+
+
+
+
+
+
+            usleep(10000);
+        } while (--var_44 != 0);
+    }
+
+    int var_56 = rmdir(dir);
+    if (var_56)
+        perror_msg("Can't remove directory '%s'", dir);
+    return var_56;
+}
+
+int fn_44(struct struct_76 *dd)
+{
+    if (!dd->locked)
+    {
+        error_msg("unlocked problem directory %s cannot be deleted", dd->dd_dirname);
+        return -1;
+    }
+
+    int var_56 = delete_file_dir(dd->dd_dirname, true);
+    dd->locked = 0;
+    dd_close(dd);
+    return var_56;
+}
+
+int fn_45(struct struct_76 *dd, uid_t var_47)
+{
+    if (!dd->locked)
+        error_msg_and_die("dump_dir is not opened");
+
+    struct struct_73 statbuf;
+    if (!(stat(dd->dd_dirname, &statbuf) == 0 && S_ISDIR(statbuf.st_mode)))
+    {
+        perror_msg("stat('%s')", dd->dd_dirname);
+        return 1;
+    }
+
+    struct struct_71 *pw = getpwuid(var_47);
+    if (!pw)
+    {
+        error_msg("UID %ld is not found in user database", (long)var_47);
+        return 1;
+    }
+
+
+
+
+
+    uid_t var_50 = statbuf.st_uid;
+    gid_t var_50 = pw->pw_gid;
+
+
+    int var_50 = lchown(dd->dd_dirname, var_50, var_50);
+    if (var_50)
+        perror_msg("lchown('%s')", dd->dd_dirname);
+    else
+    {
+        dd_init_next_file(dd);
+        char *full_name;
+        while (var_50 == 0 && dd_get_next_file(dd, NULL, &full_name))
+        {
+            log_debug("chowning %s", full_name);
+            var_50 = lchown(full_name, var_50, var_50);
+            if (var_50)
+                perror_msg("lchown('%s')", full_name);
+            free(full_name);
+        }
+    }
+
+    return var_50;
+}
+
+static char *fn_50(const char *path, unsigned var_57)
+{
+    int var_56 = open(path, O_RDONLY | ((var_57 & DD_OPEN_FOLLOW) ? 0 : O_NOFOLLOW));
+    if (var_56 == -1)
+    {
+        if (!(var_57 & DD_FAIL_QUIETLY_ENOENT))
+            perror_msg("Can't open file '%s'", path);
+        return (var_57 & DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE ? NULL : xstrdup(""));
+    }
+
+
+
+
+    FILE *fp = fdopen(var_56, "r");
+    if (!fp)
+        die_out_of_memory();
+
+    struct struct_50 *buf_content = strbuf_new();
+    int var_53 = 0;
+    int ch;
+    while ((ch = fgetc(fp)) != EOF)
+    {
+
+
+        if (ch == '\n')
+            var_53 = (var_53 << 1) | 1;
+        if (ch == '\0')
+            ch = ' ';
+        if (isspace(ch) || ch >= ' ')
+            strbuf_append_char(buf_content, ch);
+    }
+    fclose(fp);
+
+    char var_53 = var_53 != 0 ? buf_content->buf[buf_content->len - 1] : 0;
+    if (var_53 == '\n')
+    {
+
+
+
+
+        if (var_53 == 1)
+            buf_content->buf[--buf_content->len] = '\0';
+    }
+    else
+    {
+
+
+
+
+
+        if (var_53 >= 1)
+            strbuf_append_char(buf_content, '\n');
+    }
+
+    return strbuf_free_nobuf(buf_content);
+}
+
+static void fn_53(struct struct_76* dd, const char *name, const char *chroot_dir, const char *file_path)
+{
+    char *chrooted_name = concat_path_file(chroot_dir, file_path);
+    char *data = load_text_file(chrooted_name,
+                    DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE | DD_OPEN_FOLLOW);
+    free(chrooted_name);
+    if (data)
+    {
+        dd_save_text(dd, name, data);
+        free(data);
+    }
+}
+
+static bool fn_53(const char *path, const char* data, unsigned var_61, uid_t var_75, gid_t var_72, mode_t var_56)
+{
+
+    unlink(path);
+    int var_56 = open(path, O_WRONLY | O_TRUNC | O_CREAT | O_NOFOLLOW, var_56);
+    if (var_56 < 0)
+    {
+        perror_msg("Can't open file '%s'", path);
+        return false;
+    }
+
+    if (var_75 != (uid_t)-1L)
+    {
+        if (fchown(var_56, var_75, var_72) == -1)
+        {
+            perror_msg("Can't change '%s' ownership to %lu:%lu", path, (long)var_75, (long)var_72);
+        }
+    }
+
+
+
+
+
+
+
+    if (fchmod(var_56, var_56) == -1)
+    {
+        perror_msg("Can't change mode of '%s'", path);
+    }
+
+    unsigned var_56 = full_write(var_56, data, var_61);
+    close(var_56);
+    if (var_56 != var_61)
+    {
+        error_msg("Can't save file '%s'", path);
+        return false;
+    }
+
+    return true;
+}
+
+char* fn_56(const struct struct_76 *dd, const char *name, unsigned var_57)
+{
+
+
+
+    if (!str_is_correct_filename(name))
+    {
+        error_msg("Cannot load text. '%s' is not a valid file name", name);
+        if (!(var_57 & DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE))
+            xfunc_die();
+    }
+
+
+    if (strcmp(name, "release") == 0)
+        name = FILENAME_OS_RELEASE;
+
+    char *full_path = concat_path_file(dd->dd_dirname, name);
+    char *var_57 = load_text_file(full_path, var_57);
+    free(full_path);
+
+    return var_57;
+}
+
+char* fn_57(const struct struct_76 *dd, const char *name)
+{
+    return dd_load_text_ext(dd, name, 0);
+}
+
+void fn_58(struct struct_76 *dd, const char *name, const char *data)
+{
+    if (!dd->locked)
+        error_msg_and_die("dump_dir is not opened");
+
+    if (!str_is_correct_filename(name))
+        error_msg_and_die("Cannot save text. '%s' is not a valid file name", name);
+
+    char *full_path = concat_path_file(dd->dd_dirname, name);
+    save_binary_file(full_path, data, strlen(data), dd->dd_uid, dd->dd_gid, dd->mode);
+    free(full_path);
+}
+
+void fn_59(struct struct_76* dd, const char* name, const char* data, unsigned var_61)
+{
+    if (!dd->locked)
+        error_msg_and_die("dump_dir is not opened");
+
+    if (!str_is_correct_filename(name))
+        error_msg_and_die("Cannot save binary. '%s' is not a valid file name", name);
+
+    char *full_path = concat_path_file(dd->dd_dirname, name);
+    save_binary_file(full_path, data, var_61, dd->dd_uid, dd->dd_gid, dd->mode);
+    free(full_path);
+}
+
+long fn_60(struct struct_76 *dd, const char *name)
+{
+    if (!str_is_correct_filename(name))
+        error_msg_and_die("Cannot get item size. '%s' is not a valid file name", name);
+
+    long var_61 = -1;
+    char *iname = concat_path_file(dd->dd_dirname, name);
+    struct struct_73 statbuf;
+
+    if (lstat(iname, &statbuf) == 0 && S_ISREG(statbuf.st_mode))
+        var_61 = statbuf.st_size;
+    else
+    {
+        if (errno == ENOENT)
+            var_61 = 0;
+        else
+            perror_msg("Can't get size of file '%s'", iname);
+    }
+
+    free(iname);
+
+    return var_61;
+}
+
+int fn_61(struct struct_76 *dd, const char *name)
+{
+    if (!dd->locked)
+        error_msg_and_die("dump_dir is not opened");
+
+    if (!str_is_correct_filename(name))
+        error_msg_and_die("Cannot delete item. '%s' is not a valid file name", name);
+
+    char *path = concat_path_file(dd->dd_dirname, name);
+    int var_69 = unlink(path);
+
+    if (var_69 < 0)
+    {
+        if (errno == ENOENT)
+            errno = var_69 = 0;
+        else
+            perror_msg("Can't delete file '%s'", path);
+    }
+
+    free(path);
+    return var_69;
+}
+
+DIR *fn_63(struct struct_76 *dd)
+{
+
+
+
+    if (dd->next_dir)
+        closedir(dd->next_dir);
+
+    dd->next_dir = opendir(dd->dd_dirname);
+    if (!dd->next_dir)
+    {
+        error_msg("Can't open directory '%s'", dd->dd_dirname);
+    }
+
+    return dd->next_dir;
+}
+
+int fn_64(struct struct_76 *dd, char **short_name, char **full_name)
+{
+    if (dd->next_dir == NULL)
+        return 0;
+
+    struct struct_65 *dent;
+    while ((dent = readdir(dd->next_dir)) != NULL)
+    {
+        if (is_regular_file(dent, dd->dd_dirname))
+        {
+            if (short_name)
+                *short_name = xstrdup(dent->d_name);
+            if (full_name)
+                *full_name = concat_path_file(dd->dd_dirname, dent->d_name);
+            return 1;
+        }
+    }
+
+    closedir(dd->next_dir);
+    dd->next_dir = NULL;
+    return 0;
+}
+
+
+
+void fn_65(struct struct_76 *dd, const char *line)
+{
+    if (!dd->locked)
+        error_msg_and_die("dump_dir is not opened");
+
+    char *reported_to = dd_load_text_ext(dd, FILENAME_REPORTED_TO, DD_FAIL_QUIETLY_ENOENT | DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE);
+    if (add_reported_to_data(&reported_to, line))
+        dd_save_text(dd, FILENAME_REPORTED_TO, reported_to);
+
+    free(reported_to);
+}
+
+report_result_t *fn_66(struct struct_76 *dd, const char *report_label)
+{
+    char *reported_to = dd_load_text_ext(dd, FILENAME_REPORTED_TO,
+                DD_FAIL_QUIETLY_ENOENT | DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE);
+    if (!reported_to)
+        return NULL;
+
+    report_result_t *result = find_in_reported_to_data(reported_to, report_label);
+
+    free(reported_to);
+    return result;
+}
+
+GList *fn_67(struct struct_76 *dd)
+{
+    char *reported_to = dd_load_text_ext(dd, FILENAME_REPORTED_TO,
+                DD_FAIL_QUIETLY_ENOENT | DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE);
+    if (!reported_to)
+        return NULL;
+
+    GList *result = read_entire_reported_to_data(reported_to);
+
+    free(reported_to);
+    return result;
+}
+
+
+
+int fn_68(struct struct_76 *dd, const char *new_path)
+{
+    if (!dd->locked)
+    {
+        error_msg("unlocked problem directory %s cannot be renamed", dd->dd_dirname);
+        return -1;
+    }
+
+    int var_69 = rename(dd->dd_dirname, new_path);
+    if (var_69 == 0)
+    {
+        free(dd->dd_dirname);
+        dd->dd_dirname = rm_trailing_slashes(new_path);
+    }
+    return var_69;
+}
+
+
+
+void fn_69(const char *dirname)
+{
+    struct struct_76 *dd = dd_opendir(dirname, 0);
+    if (dd)
+    {
+        dd_delete(dd);
+    }
+}
+
+
+static bool fn_70(uid_t var_75, gid_t var_72)
+{
+    char **tmp;
+    struct struct_71 *pwd = getpwuid(var_75);
+
+    if (!pwd)
+        return FALSE;
+
+    if (pwd->pw_gid == var_72)
+        return TRUE;
+
+    struct struct_71 *grp = getgrgid(var_72);
+    if (!(grp && grp->gr_mem))
+        return FALSE;
+
+    for (tmp = grp->gr_mem; *tmp != NULL; tmp++)
+    {
+        if (g_strcmp0(*tmp, pwd->pw_name) == 0)
+        {
+            log_debug("user %s belongs to group: %s", pwd->pw_name, grp->gr_name);
+            return TRUE;
+        }
+    }
+
+    log_info("user %s DOESN'T belong to group: %s", pwd->pw_name, grp->gr_name);
+    return FALSE;
+}
+
+
+int fn_72(const char *dirname, uid_t var_75)
+{
+    struct struct_73 statbuf;
+    if (stat(dirname, &statbuf) != 0 || !S_ISDIR(statbuf.st_mode))
+    {
+        log_debug("can't get stat of '%s': not a problem directory", dirname);
+        errno = ENOTDIR;
+        return -1;
+    }
+
+    errno = 0;
+
+    int var_75 = 0;
+    if (var_75 == 0 || (statbuf.st_mode & S_IROTH))
+    {
+        log_debug("directory '%s' is accessible by %ld uid", dirname, (long)var_75);
+        var_75 |= DD_STAT_ACCESSIBLE_BY_UID;
+    }
+
+
+
+
+    if (uid_in_group(var_75, statbuf.st_gid))
+
+    {
+        log_debug("%ld uid owns directory '%s'", (long)var_75, dirname);
+        var_75 |= DD_STAT_ACCESSIBLE_BY_UID;
+        var_75 |= DD_STAT_OWNED_BY_UID;
+    }
+
+    return var_75;
+}
+
+int fn_74(const char *dirname, uid_t var_75)
+{
+    int var_75 = dump_dir_stat_for_uid(dirname, var_75);
+
+    if (var_75 >= 0)
+        return var_75 & DD_STAT_ACCESSIBLE_BY_UID;
+
+    VERB3 pwarn_msg("can't determine accessibility of '%s' by %ld uid", dirname, (long)var_75);
+
+    return 0;
+}
+
+int fn_75(struct struct_76 *dd, const char *reason)
+{
+    if (!dd->locked)
+    {
+        error_msg("dump_dir is not locked for writing");
+        return -1;
+    }
+
+    dd_save_text(dd, FILENAME_NOT_REPORTABLE, reason);
+    return 0;
+}

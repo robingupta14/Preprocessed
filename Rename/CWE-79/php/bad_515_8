@@ -1,0 +1,897 @@
+<?php
+
+
+
+$var_0 = array(
+	1 => __('Delete'),
+	2 => __('Duplicate')
+);
+
+
+set_default_action();
+
+switch (get_request_var('action')) {
+	case 'save':
+		fn_1();
+
+		break;
+	case 'actions':
+		fn_3();
+
+		break;
+	case 'field_remove_confirm':
+		fn_4();
+
+		break;
+	case 'field_remove':
+		fn_5();
+
+		header('Location: data_input.php?header=false&action=edit&id=' . get_filter_request_var('data_input_id'));
+		break;
+	case 'field_edit':
+		top_header();
+
+		fn_6();
+
+		bottom_footer();
+		break;
+	case 'edit':
+		top_header();
+
+		fn_8();
+
+		bottom_footer();
+		break;
+	default:
+		top_header();
+
+		fn_9();
+
+		bottom_footer();
+		break;
+}
+
+
+
+function fn_0($var_1, $var_2) {
+	$var_3 = db_fetch_row_prepared('SELECT *
+		FROM data_input
+		WHERE id = ?',
+		array($var_1));
+
+	if (cacti_sizeof($var_3)) {
+		unset($var_4);
+		$var_4['id']           = 0;
+		$var_4['hash']         = get_hash_data_input(0);
+		$var_4['name']         = str_replace('<input_title>', $var_3['name'], $var_2);
+		$var_4['input_string'] = $var_3['input_string'];
+		$var_4['type_id']      = $var_3['type_id'];
+
+		$var_5 = sql_save($var_4, 'data_input');
+
+		if (!empty($var_5)) {
+			$var_6 = db_fetch_assoc_prepared('SELECT *
+				FROM data_input_fields
+				WHERE data_input_id = ?',
+				array($var_1));
+
+			if (cacti_sizeof($var_6)) {
+				foreach($var_6 as $var_7) {
+					unset($var_4);
+					$var_4['id']            = 0;
+					$var_4['hash']          = get_hash_data_input(0, 'data_input_field');
+					$var_4['data_input_id'] = $var_5;
+					$var_4['name']          = $var_7['name'];
+					$var_4['data_name']     = $var_7['data_name'];
+					$var_4['input_output']  = $var_7['input_output'];
+					$var_4['update_rra']    = $var_7['update_rra'];
+					$var_4['sequence']      = $var_7['sequence'];
+					$var_4['type_code']     = $var_7['type_code'];
+					$var_4['regexp_match']  = $var_7['regexp_match'];
+					$var_4['allow_nulls']   = $var_7['allow_nulls'];
+
+					$var_8 = sql_save($var_4, 'data_input_fields');
+				}
+			}
+		}
+	}
+}
+
+function fn_1() {
+	global $var_9;
+
+	if (isset_request_var('save_component_data_input')) {
+		
+		get_filter_request_var('id');
+		
+
+		$var_4['id']           = get_nfilter_request_var('id');
+		$var_4['hash']         = get_hash_data_input(get_nfilter_request_var('id'));
+		$var_4['name']         = form_input_validate(get_nfilter_request_var('name'), 'name', '', false, 3);
+		$var_4['input_string'] = form_input_validate(get_nfilter_request_var('input_string'), 'input_string', '', true, 3);
+		$var_4['type_id']      = form_input_validate(get_nfilter_request_var('type_id'), 'type_id', '^[0-9]+$', true, 3);
+
+		if (!is_error_message()) {
+			$var_5 = sql_save($var_4, 'data_input');
+
+			if ($var_5) {
+				fn_2($var_5);
+
+				
+				if (!isempty_request_var('id')) {
+					db_execute_prepared('UPDATE data_input_fields SET sequence = 0 WHERE data_input_id = ?', array(get_nfilter_request_var('id')));
+
+					generate_data_input_field_sequences(get_nfilter_request_var('input_string'), get_nfilter_request_var('id'));
+
+					update_replication_crc(0, 'poller_replicate_data_input_fields_crc');
+				}
+
+				push_out_data_input_method($var_5);
+			} else {
+				raise_message(2);
+			}
+		}
+
+		header('Location: data_input.php?header=false&action=edit&id=' . (empty($var_5) ? get_nfilter_request_var('id') : $var_5));
+	} elseif (isset_request_var('save_component_field')) {
+		
+		get_filter_request_var('id');
+		get_filter_request_var('data_input_id');
+		get_filter_request_var('sequence');
+		get_filter_request_var('input_output', var_10, array('options' => array('regexp' => '/^(in|out)$/')));
+		
+
+		$var_4['id']            = get_request_var('id');
+		$var_4['hash']          = get_hash_data_input(get_nfilter_request_var('id'), 'data_input_field');
+		$var_4['data_input_id'] = get_request_var('data_input_id');
+		$var_4['name']          = form_input_validate(get_nfilter_request_var('name'), 'name', '', false, 3);
+		$var_4['data_name']     = form_input_validate(get_nfilter_request_var('data_name'), 'data_name', '', false, 3);
+		$var_4['input_output']  = get_nfilter_request_var('input_output');
+		$var_4['update_rra']    = form_input_validate((isset_request_var('update_rra') ? get_nfilter_request_var('update_rra') : ''), 'update_rra', '', true, 3);
+		$var_4['sequence']      = get_request_var('sequence');
+		$var_4['type_code']     = form_input_validate((isset_request_var('type_code') ? get_nfilter_request_var('type_code') : ''), 'type_code', '', true, 3);
+		$var_4['regexp_match']  = form_input_validate((isset_request_var('regexp_match') ? get_nfilter_request_var('regexp_match') : ''), 'regexp_match', '', true, 3);
+		$var_4['allow_nulls']   = form_input_validate((isset_request_var('allow_nulls') ? get_nfilter_request_var('allow_nulls') : ''), 'allow_nulls', '', true, 3);
+
+		if (!is_error_message()) {
+			$var_8 = sql_save($var_4, 'data_input_fields');
+
+			if ($var_8) {
+				fn_2(get_request_var('data_input_id'), 'field');
+
+				if ((!empty($var_8)) && (get_request_var('input_output') == 'in')) {
+					generate_data_input_field_sequences(db_fetch_cell_prepared('SELECT input_string FROM data_input WHERE id = ?', array(get_request_var('data_input_id'))), get_request_var('data_input_id'));
+				}
+
+				update_replication_crc(0, 'poller_replicate_data_input_fields_crc');
+			} else {
+				raise_message(2);
+			}
+		}
+
+		if (is_error_message()) {
+			header('Location: data_input.php?header=false&action=field_edit&data_input_id=' . get_request_var('data_input_id') . '&id=' . (empty($var_8) ? get_request_var('id') : $var_8) . (!isempty_request_var('input_output') ? '&type=' . get_request_var('input_output') : ''));
+		} else {
+			header('Location: data_input.php?header=false&action=edit&id=' . get_request_var('data_input_id'));
+		}
+	}
+}
+
+function fn_2($var_5, $var_11 = 'input') {
+	$var_12 = db_fetch_row_prepared("SELECT
+		SUM(CASE WHEN dtd.local_data_id=0 THEN 1 ELSE 0 END) AS templates,
+		SUM(CASE WHEN dtd.local_data_id>0 THEN 1 ELSE 0 END) AS data_sources
+		FROM data_input AS di
+		LEFT JOIN data_template_data AS dtd
+		ON di.id=dtd.data_input_id
+		WHERE di.id = ?",
+		array($var_5));
+
+	if ($var_12['templates'] == 0 && $var_12['data_sources'] == 0) {
+		raise_message(1);
+	} elseif ($var_12['templates'] > 0 && $var_12['data_sources'] == 0) {
+		if ($var_11 == 'input') {
+			raise_message('input_save_wo_ds');
+		} else {
+			raise_message('input_field_save_wo_ds');
+		}
+	} else {
+		if ($var_11 == 'input') {
+			raise_message('input_save_w_ds');
+		} else {
+			raise_message('input_field_save_w_ds');
+		}
+	}
+}
+
+function fn_3() {
+	global $var_0;
+
+	
+	get_filter_request_var('drp_action', var_10, array('options' => array('regexp' => '/^([a-zA-Z0-9_]+)$/')));
+	
+
+	
+	if (isset_request_var('selected_items')) {
+		$var_13 = sanitize_unserialize_selected_items(get_nfilter_request_var('selected_items'));
+
+		if ($var_13 != false) {
+			if (get_request_var('drp_action') == '1') { 
+				for ($var_14=0;($var_14<cacti_count($var_13));$var_14++) {
+					fn_7($var_13[$var_14]);
+				}
+			} elseif (get_request_var('drp_action') == '2') { 
+				for ($var_14=0;($var_14<cacti_count($var_13));$var_14++) {
+					fn_0($var_13[$var_14], get_nfilter_request_var('input_title'));
+				}
+			}
+		}
+
+		header('Location: data_input.php?header=false');
+		var_15;
+	}
+
+	
+	$var_16 = ''; $var_14 = 0;
+
+	
+	foreach ($var_17 as $var_18 => $var_19) {
+		if (preg_match('/^chk_([0-9]+)$/', $var_18, $var_20)) {
+			
+			input_validate_input_number($var_20[1]);
+			
+
+			$var_16 .= '<li>' . html_escape(db_fetch_cell_prepared('SELECT name FROM data_input WHERE id = ?', array($var_20[1]))) . '</li>';
+			$var_21[$var_14] = $var_20[1];
+
+			$var_14++;
+		}
+	}
+
+	top_header();
+
+	form_start('data_input.php');
+
+	html_start_box($var_0[get_nfilter_request_var('drp_action')], '60%', '', '3', 'center', '');
+
+	if (isset($var_21) && cacti_sizeof($var_21)) {
+		if (get_request_var('drp_action') == '1') { 
+			$var_22 = array();
+
+			
+		} elseif (get_request_var('drp_action') == '2') { 
+			 form_text_box('input_title', '<input_title> (1)', '', '255', '30', 'text'); 
+		}
+
+		$var_23 = "<input type='button' class='ui-button ui-corner-all ui-widget' value='" . __esc('Cancel') . "' onClick='cactiReturnTo()'>&nbsp;<input type='submit' class='ui-button ui-corner-all ui-widget' value='" . __esc('Continue') . "' title='" . __n('Delete Data Input Method', 'Delete Data Input Methods', cacti_sizeof($var_21)) . "'>";
+	} else {
+		raise_message(40);
+		header('Location: data_input.php?header=none');
+		var_15;
+	}
+
+	
+
+	html_end_box();
+
+	form_end();
+
+	bottom_footer();
+}
+
+
+
+function fn_4() {
+	
+	get_filter_request_var('id');
+	get_filter_request_var('data_input_id');
+	
+
+	form_start('data_intput.php?action=edit&id' . get_request_var('data_input_id'));
+
+	html_start_box('', '100%', '', '3', 'center', '');
+
+	$var_24 = db_fetch_row_prepared('SELECT *
+		FROM data_input_fields
+		WHERE id = ?',
+		array(get_request_var('id')));
+
+	?>
+	<tr>
+		<td class='topBoxAlt'>
+			<p><?php ?></p>
+			<p><?php ?><br>
+			<p><?php ?><br>
+		</td>
+	</tr>
+	<tr>
+		<td class='right'>
+			<input type='button' class='ui-button ui-corner-all ui-widget' id='cancel' value='<?php ?>' name='cancel'>
+			<input type='button' class='ui-button ui-corner-all ui-widget' id='continue' value='<?php ?>' name='continue' title='<?php ?>'>
+		</td>
+	</tr>
+	<?php
+
+	html_end_box();
+
+	form_end();
+
+	?>
+	<script type='text/javascript'>
+	$(function() {
+		$('
+			$.post('data_input.php?action=field_remove', {
+				__csrf_magic: csrfMagicToken,
+				data_input_id: <?php ?>,
+				id: <?php ?>
+			}, function(data) {
+				loadPageNoHeader('data_input.php?action=edit&header=false&id=<?php ?>');
+			});
+		});
+
+		$('
+			$('
+		});
+	});
+	</script>
+	<?php
+}
+
+function fn_5() {
+	global $var_9;
+
+	
+	get_filter_request_var('id');
+	get_filter_request_var('data_input_id');
+	
+
+	
+	$var_24 = db_fetch_row_prepared('SELECT input_output,data_input_id FROM data_input_fields WHERE id = ?', array(get_request_var('id')));
+
+	db_execute_prepared('DELETE FROM data_input_fields WHERE id = ?', array(get_request_var('id')));
+	db_execute_prepared('DELETE FROM data_input_data WHERE data_input_field_id = ?', array(get_request_var('id')));
+
+	
+	if (($var_24['input_output'] == 'in') && (preg_match_all('/<([_a-zA-Z0-9]+)>/', db_fetch_cell_prepared('SELECT input_string FROM data_input WHERE id = ?', array($var_24['data_input_id'])), $var_20))) {
+		$var_25 = 0;
+		for ($var_14=0; ($var_14 < cacti_count($var_20[1])); $var_14++) {
+			if (in_array($var_20[1][$var_14], $var_9) == false) {
+				$var_25++;
+				db_execute_prepared("UPDATE data_input_fields SET sequence = ? WHERE data_input_id = ? AND input_output = 'in' AND data_name = ?", array($var_25, $var_24['data_input_id'], $var_20[1][$var_14]));
+			}
+		}
+	}
+
+	update_replication_crc(0, 'poller_replicate_data_input_fields_crc');
+}
+
+function fn_6() {
+	global $var_9, $var_26, $var_27, $var_28;
+
+	
+	get_filter_request_var('id');
+	get_filter_request_var('data_input_id');
+	get_filter_request_var('type', var_10, array('options' => array('regexp' => '/^(in|out)$/')));
+	
+
+	if (!isempty_request_var('id')) {
+		$var_24 = db_fetch_row_prepared('SELECT *
+			FROM data_input_fields
+			WHERE id = ?',
+			array(get_request_var('id')));
+	}
+
+	if (!isempty_request_var('type')) {
+		$var_29 = get_request_var('type');
+	} else {
+		$var_29 = $var_24['input_output'];
+	}
+
+	$var_30 = db_fetch_row_prepared('SELECT type_id, name
+		FROM data_input
+		WHERE id = ?',
+		array(get_request_var('data_input_id')));
+
+	
+	if (($var_29 == 'in') && (preg_match_all('/<([_a-zA-Z0-9]+)>/', db_fetch_cell_prepared('SELECT input_string FROM data_input WHERE id = ?', array(!isempty_request_var('data_input_id') ? get_request_var('data_input_id') : $var_24['data_input_id'])), $var_20))) {
+		for ($var_14=0; ($var_14 < cacti_count($var_20[1])); $var_14++) {
+			if (in_array($var_20[1][$var_14], $var_9) == false) {
+				$var_31 = $var_20[1][$var_14];
+				$var_33[$var_31] = $var_31;
+				if (!isset($var_24)) {
+					$var_32 = db_fetch_cell_prepared('SELECT id FROM data_input_fields
+						WHERE data_name = ?
+						AND data_input_id = ?',
+						array($var_31, get_filter_request_var('data_input_id')));
+					if (!$var_32 > 0) {
+						$var_24 = array();
+						$var_24['name'] = ucwords($var_31);
+						$var_24['data_name'] = $var_31;
+					}
+				}
+			}
+		}
+	}
+
+	
+	if ((!isset($var_33)) && (isset_request_var('type') ? get_request_var('type') == 'in' : false) && ($var_30['type_id'] == '1')) {
+		display_custom_error_message(__('This script appears to have no input values, therefore there is nothing to add.'));
+		header('Location: data_input.php?header=false&action=edit&id=' . get_filter_request_var('data_input_id'));
+		var_15;
+	}
+
+	if ($var_29 == 'out') {
+		$var_34 = __('Output Fields [edit: %s]', html_escape($var_30['name']));
+		$var_35      = __('Output Field');
+	} elseif ($var_29 == 'in') {
+		$var_34 = __('Input Fields [edit: %s]', html_escape($var_30['name']));
+		$var_35      = __('Input Field');
+	}
+
+	if (isset($var_24)) {
+		$var_35 .= ' ' . $var_24['data_name'];
+	}
+	form_start('data_input.php', 'data_input');
+
+	html_start_box($var_34, '100%', true, '3', 'center', '');
+
+	$var_36 = array();
+
+	
+	if ((($var_30['type_id'] == '1') || ($var_30['type_id'] == '5')) && ($var_29 == 'in')) { 
+		$var_36 = inject_form_variables($var_26, $var_35, $var_33, (isset($var_24) ? $var_24 : array()));
+	} elseif ($var_29 == 'out' || ($var_30['type_id'] != 1 && $var_30['type_id'] != 5)) {
+		$var_36 = inject_form_variables($var_27, $var_35, (isset($var_24) ? $var_24 : array()));
+	}
+
+	
+	if ($var_29 == 'in') {
+		unset($var_28['update_rra']);
+	} elseif ($var_29 == 'out') {
+		unset($var_28['regexp_match']);
+		unset($var_28['allow_nulls']);
+		unset($var_28['type_code']);
+	}
+
+	draw_edit_form(
+		array(
+			'config' => array('no_form_tag' => true),
+			'fields' => $var_36 + inject_form_variables($var_28, (isset($var_24) ? $var_24 : array()), $var_29, $var_37)
+		)
+	);
+
+	html_end_box(true, true);
+
+	form_save_button('data_input.php?action=edit&id=' . get_request_var('data_input_id'));
+}
+
+
+
+function fn_7($var_38) {
+	$var_6 = db_fetch_assoc_prepared('SELECT id
+		FROM data_input_fields
+		WHERE data_input_id = ?',
+		array($var_38));
+
+	if (is_array($var_6)) {
+		foreach ($var_6 as $var_39) {
+			db_execute_prepared('DELETE FROM data_input_data WHERE data_input_field_id = ?', array($var_39['id']));
+		}
+	}
+
+	db_execute_prepared('DELETE FROM data_input WHERE id = ?', array($var_38));
+	db_execute_prepared('DELETE FROM data_input_fields WHERE data_input_id = ?', array($var_38));
+
+	update_replication_crc(0, 'poller_replicate_data_input_fields_crc');
+	update_replication_crc(0, 'poller_replicate_data_input_crc');
+}
+
+function fn_8() {
+	global $var_40, $var_41;
+
+	
+	get_filter_request_var('id');
+	
+
+	if (!isempty_request_var('id')) {
+		$var_42 = get_nonsystem_data_input(get_request_var('id'));
+		if ($var_42 == 0 || $var_42 == NULL) {
+			header('Location: data_input.php');
+			return;
+		}
+
+		$var_30 = db_fetch_row_prepared('SELECT *
+			FROM data_input
+			WHERE id = ?',
+			array(get_request_var('id')));
+
+		$var_43 = __('Data Input Methods [edit: %s]', html_escape($var_30['name']));
+	} else {
+		$var_30 = array();
+
+		$var_43 = __('Data Input Methods [new]');
+	}
+
+	if (!isset($var_40['input_whitelist'])) {
+		unset($var_41['whitelist_verification']);
+	}
+
+	form_start('data_input.php', 'data_input');
+
+	html_start_box($var_43, '100%', true, '3', 'center', '');
+
+	if (cacti_sizeof($var_30)) {
+		switch ($var_30['type_id']) {
+		case var_44:
+			$var_41['type_id']['array'][var_44] = __('SNMP Get');
+			break;
+		case var_45:
+			$var_41['type_id']['array'][var_45] = __('SNMP Query');
+			break;
+		case var_46:
+			$var_41['type_id']['array'][var_46] = __('Script Query');
+			break;
+		case var_47:
+			$var_41['type_id']['array'][var_47] = __('Script Query - Script Server');
+			break;
+		}
+
+		if (isset($var_40['input_whitelist']) && isset($var_30['hash'])) {
+			$var_48 = verify_data_input_whitelist($var_30['hash'], $var_30['input_string']);
+
+			if ($var_48 === true) {
+				$var_41['whitelist_verification']['value'] = __('White List Verification Succeeded.');
+			} elseif ($var_48 == false) {
+				$var_41['whitelist_verification']['value'] = __('White List Verification Failed.  Run CLI script input_whitelist.php to correct.');
+			} elseif ($var_48 == '-1') {
+				$var_41['whitelist_verification']['value'] = __('Input String does not exist in White List.  Run CLI script input_whitelist.php to correct.');
+			}
+		}
+	}
+
+	draw_edit_form(
+		array(
+			'config' => array('no_form_tag' => true),
+			'fields' => inject_form_variables($var_41, $var_30)
+		)
+	);
+
+	html_end_box(true, true);
+
+	if (!isempty_request_var('id')) {
+		html_start_box(__('Input Fields'), '100%', '', '3', 'center', 'data_input.php?action=field_edit&type=in&data_input_id=' . get_request_var('id'));
+
+		
+		DrawMatrixHeaderItem(__('Name'), '', 1);
+		DrawMatrixHeaderItem(__('Friendly Name'), '', 1);
+		DrawMatrixHeaderItem(__('Field Order'), '', 2);
+		
+
+		$var_49 = db_fetch_assoc_prepared("SELECT id, data_name, name, sequence
+			FROM data_input_fields
+			WHERE data_input_id = ?
+			AND input_output = 'in'
+			ORDER BY sequence, data_name",
+			array(get_request_var('id')));
+
+		$var_12 = db_fetch_row_prepared("SELECT
+			SUM(CASE WHEN dtd.local_data_id=0 THEN 1 ELSE 0 END) AS templates,
+			SUM(CASE WHEN dtd.local_data_id>0 THEN 1 ELSE 0 END) AS data_sources
+			FROM data_input AS di
+			LEFT JOIN data_template_data AS dtd
+			ON di.id=dtd.data_input_id
+			WHERE di.id = ?",
+			array(get_request_var('id')));
+
+		$var_50  = false;
+		$var_51 = false;
+		if (!cacti_sizeof($var_12)) {
+			$var_50  = false;
+			$var_51 = false;
+		} elseif ($var_12['data_sources'] > 0) {
+			$var_50  = true;
+			$var_51 = true;
+		} elseif ($var_12['templates'] > 0) {
+			$var_50  = false;
+			$var_51 = true;
+		}
+
+		$var_14 = 0;
+		if (cacti_sizeof($var_49)) {
+			foreach ($var_49 as $var_24) {
+				form_alternate_row('', true);
+				?>
+				<td>
+					<a class="linkEditMain" href="<?php ?>"><?php ?></a>
+				</td>
+				<td>
+					<?php ?>
+				</td>
+				<td>
+					<?php  if ($var_24['sequence'] == '0') {  }?>
+				</td>
+				<td class="right">
+					<a class='delete deleteMarker fa fa-times' href='<?php ?>' title='<?php ?>'></a>
+				</td>
+				<?php
+				form_end_row();
+			}
+		} else {
+			
+		}
+		html_end_box();
+
+		html_start_box(__('Output Fields'), '100%', '', '3', 'center', 'data_input.php?action=field_edit&type=out&data_input_id=' . get_request_var('id'));
+		
+		DrawMatrixHeaderItem(__('Name'),'',1);
+		DrawMatrixHeaderItem(__('Friendly Name'),'',1);
+		DrawMatrixHeaderItem(__('Update RRA'),'',2);
+		
+
+		$var_49 = db_fetch_assoc_prepared("SELECT id, name, data_name, update_rra, sequence
+			FROM data_input_fields
+			WHERE data_input_id = ?
+			AND input_output = 'out'
+			ORDER BY sequence, data_name",
+			array(get_request_var('id')));
+
+		$var_14 = 0;
+		if (cacti_sizeof($var_49)) {
+			foreach ($var_49 as $var_24) {
+				form_alternate_row('', true);
+				?>
+				<td>
+					<a class='linkEditMain' href='<?php ?>'><?php ?></a>
+				</td>
+				<td>
+					<?php ?>
+				</td>
+				<td>
+					<?php ?>
+				</td>
+				<td class='right'>
+					<?php if ($var_50) {?>
+					<a class='deleteMarkerDisabled fa fa-times' href='
+					<?php } else { ?>
+					<a class='delete deleteMarker fa fa-times' href='<?php ?>' title='<?php ?>'></a>
+					<?php } ?>
+				</td>
+				<?php
+				form_end_row();
+			}
+		} else {
+			
+		}
+
+		html_end_box();
+	}
+
+	form_save_button('data_input.php', 'return');
+
+	?>
+	<script type='text/javascript'>
+
+	$(function() {
+		$('body').append("<div id='cdialog'></div>");
+
+		$('.delete').unbind().click(function (event) {
+			event.preventDefault();
+
+			request = $(this).attr('href');
+			$.get(request)
+				.done(function(data) {
+					$('
+					applySkin();
+					$('
+						title: '<?php ?>',
+						close: function () { $('.delete').blur(); $('.selectable').removeClass('selected'); },
+						modal: false,
+						minHeight: 80,
+						minWidth: 500
+					});
+				})
+				.fail(function(data) {
+					getPresentHTTPError(data);
+				});
+		}).css('cursor', 'pointer');
+	});
+
+	</script>
+	<?php
+}
+
+function fn_9() {
+	global $var_52, $var_0, $var_53;
+
+	
+	$var_54 = array(
+		'rows' => array(
+			'filter' => var_55,
+			'pageset' => true,
+			'default' => '-1'
+			),
+		'page' => array(
+			'filter' => var_55,
+			'default' => '1'
+			),
+		'filter' => array(
+			'filter' => var_56,
+			'pageset' => true,
+			'default' => '',
+			'options' => array('options' => 'sanitize_search_string')
+			),
+		'sort_column' => array(
+			'filter' => var_56,
+			'default' => 'name',
+			'options' => array('options' => 'sanitize_search_string')
+			),
+		'sort_direction' => array(
+			'filter' => var_56,
+			'default' => 'ASC',
+			'options' => array('options' => 'sanitize_search_string')
+			)
+	);
+
+	validate_store_request_vars($var_54, 'sess_data_input');
+	
+
+	if (get_request_var('rows') == '-1') {
+		$var_57 = read_config_option('num_rows_table');
+	} else {
+		$var_57 = get_request_var('rows');
+	}
+
+	html_start_box(__('Data Input Methods'), '100%', '', '3', 'center', 'data_input.php?action=edit');
+
+	?>
+	<tr class='even noprint'>
+		<td class='noprint'>
+		<form id='form_data_input' method='get' action='data_input.php'>
+			<table class='filterTable'>
+				<tr class='noprint'>
+					<td>
+						<?php ?>
+					</td>
+					<td>
+						<input type='text' class='ui-state-default ui-corner-all' id='filter' name='filter' size='25' value='<?php ?>'>
+					</td>
+					<td>
+						<?php ?>
+					</td>
+					<td>
+						<select id='rows' name='rows' onChange='applyFilter()'>
+							<option value='-1'<?php ?></option>
+							<?php
+							if (cacti_sizeof($var_53) > 0) {
+								foreach ($var_53 as $var_58 => $var_59) {
+									 if (get_request_var('rows') == $var_58) {  } 
+								}
+							}
+							?>
+						</select>
+					</td>
+					<td>
+						<span>
+							<input type='button' class='ui-button ui-corner-all ui-widget' id='refresh' value='<?php ?>' title='<?php __esc('Set/Refresh Filters');?>'>
+							<input type='button' class='ui-button ui-corner-all ui-widget' id='clear' value='<?php ?>' title='<?php __esc('Clear Filters');?>'>
+						</span>
+					</td>
+				</tr>
+			</table>
+		</form>
+		<script type='text/javascript'>
+
+		function applyFilter() {
+			strURL  = 'data_input.php?header=false';
+			strURL += '&filter='+$('
+			strURL += '&rows='+$('
+			loadPageNoHeader(strURL);
+		}
+
+		function clearFilter() {
+			strURL = 'data_input.php?clear=1&header=false';
+			loadPageNoHeader(strURL);
+		}
+
+		$(function() {
+			$('
+				applyFilter();
+			});
+
+			$('
+				clearFilter();
+			});
+
+			$('
+				event.preventDefault();
+				applyFilter();
+			});
+		});
+
+		</script>
+		</td>
+	</tr>
+	<?php
+
+	html_end_box();
+
+	
+	if (get_request_var('filter') != '') {
+		$var_60 = "WHERE (di.name like '%" . get_request_var('filter') . "%')";
+	} else {
+		$var_60 = '';
+	}
+
+	$var_60 .= ($var_60 != '' ? ' AND' : 'WHERE') . " (di.hash NOT IN ('3eb92bb845b9660a7445cf9740726522', 'bf566c869ac6443b0c75d1c32b5a350e', '80e9e4c4191a5da189ae26d0e237f015', '332111d8b54ac8ce939af87a7eac0c06'))";
+
+	$var_60  = api_plugin_hook_function('data_input_sql_where', $var_60);
+
+	$var_61 = db_fetch_cell("SELECT count(*)
+		FROM data_input AS di
+		$var_60");
+
+	$var_62 = get_order_string();
+	$var_63 = ' LIMIT ' . ($var_57*(get_request_var('page')-1)) . ',' . $var_57;
+
+	$var_64 = db_fetch_assoc("SELECT di.*,
+		SUM(CASE WHEN dtd.local_data_id=0 THEN 1 ELSE 0 END) AS templates,
+		SUM(CASE WHEN dtd.local_data_id>0 THEN 1 ELSE 0 END) AS data_sources
+		FROM data_input AS di
+		LEFT JOIN data_template_data AS dtd
+		ON di.id=dtd.data_input_id
+		$var_60
+		GROUP BY di.id
+		$var_62
+		$var_63");
+
+	$var_65 = html_nav_bar('data_input.php?filter=' . get_request_var('filter'), var_66, get_request_var('page'), $var_57, $var_61, 6, __('Input Methods'), 'page', 'main');
+
+	form_start('data_input.php', 'chk');
+
+	
+
+	html_start_box('', '100%', '', '3', 'center', '');
+
+	$var_67 = array(
+		'name'         => array('display' => __('Data Input Name'),    'align' => 'left', 'sort' => 'ASC', 'tip' => __('The name of this Data Input Method.')),
+		'nosort'       => array('display' => __('Deletable'),          'align' => 'right', 'tip' => __('Data Inputs that are in use cannot be Deleted. In use is defined as being referenced either by a Data Source or a Data Template.')),
+		'data_sources' => array('display' => __('Data Sources Using'), 'align' => 'right', 'sort' => 'DESC', 'tip' => __('The number of Data Sources that use this Data Input Method.')),
+		'templates'    => array('display' => __('Templates Using'),    'align' => 'right', 'sort' => 'DESC', 'tip' => __('The number of Data Templates that use this Data Input Method.')),
+		'type_id'      => array('display' => __('Data Input Method'),  'align' => 'left', 'sort' => 'ASC', 'tip' => __('The method used to gather information for this Data Input Method.')));
+
+	html_header_sort_checkbox($var_67, get_request_var('sort_column'), get_request_var('sort_direction'), false);
+
+	$var_14 = 0;
+	if (cacti_sizeof($var_64)) {
+		foreach ($var_64 as $var_30) {
+			
+			if ($var_30['templates'] > 0 || $var_30['data_sources'] > 0) {
+				$var_68 = true;
+			} else {
+				$var_68 = false;
+			}
+			form_alternate_row('line' . $var_30['id'], true, $var_68);
+			form_selectable_cell(filter_value($var_30['name'], get_request_var('filter'), 'data_input.php?action=edit&id=' . $var_30['id']), $var_30['id']);
+			form_selectable_cell($var_68 ? __('No'): __('Yes'), $var_30['id'],'', 'text-align:right');
+			form_selectable_cell(number_format_i18n($var_30['data_sources'], '-1'), $var_30['id'],'', 'text-align:right');
+			form_selectable_cell(number_format_i18n($var_30['templates'], '-1'), $var_30['id'],'', 'text-align:right');
+			form_selectable_cell($var_52[$var_30['type_id']], $var_30['id']);
+			form_checkbox_cell($var_30['name'], $var_30['id'], $var_68);
+			form_end_row();
+		}
+	} else {
+		
+	}
+
+	html_end_box(false);
+
+	if (cacti_sizeof($var_64)) {
+		
+	}
+
+	
+	draw_actions_dropdown($var_0);
+
+	form_end();
+}
+

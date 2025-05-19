@@ -1,0 +1,225 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+	 
+
+
+	access_ensure_project_level( config_get( 'view_summary_threshold' ) );
+
+	$var_0 = gpc_get_int( 'width', 600 );
+	$var_1 = plugin_config_get( 'bar_aspect' );
+	$var_2 = new class_0();
+	$var_2->set_period_from_selector( 'interval' );
+	$var_4 = gpc_get_bool( 'show_table', FALSE );
+	$var_5 = gpc_get_bool( 'summary', FALSE );
+
+	$var_6 = $var_2->get_elapsed_days();
+	if ( $var_6 <= 14 ) {
+	    $var_8 = 3600; 
+	} else if ( $var_6 <= 92 ) {
+	    $var_8 = 86400; 
+	} else {
+	    $var_8 = 604800; 
+	}
+
+	$var_9 = 1;
+
+	$var_10 = -1;
+	$var_11 = null;
+	$var_12 = 0;
+
+	$var_13 = current_user_get_bug_filter();
+    $var_13['_view_type']	= 'advanced';
+    $var_13['show_status'] = array(var_14);
+	$var_13['sort'] = '';
+	$var_15 = filter_get_bug_rows( $var_9, $var_10, $var_12, $var_11, $var_13, null, null, true );
+	if ( count($var_15) == 0 ) {
+		
+		exit();
+	}
+
+	$var_16			= db_get_table( 'mantis_bug_table' );
+	$var_17			= db_get_table( 'mantis_bug_history_table' );
+
+	$var_18 = array();
+	$var_19 = array();
+	$var_20 = 0;
+	$var_21 = $var_2->get_end_timestamp();
+	$var_23 = $var_2->get_start_timestamp();
+
+    $var_25 = config_get( 'bug_resolved_status_threshold' );
+    $var_26 = config_get( 'bug_closed_status_threshold' );
+
+    $var_27 = array();
+    $var_28 = array(); 
+    $var_29 = array();
+
+	
+	$var_18[$var_20] = time();
+	$var_19[$var_20] = array();
+	foreach ($var_15 as $var_30) {
+	    
+        $var_31 = category_get_name( $var_30->var_32 );
+        if ($var_31 == '')
+            $var_31 = 'none';
+	    if ( !access_compare_level( $var_30->var_33, $var_25 ) ) {
+	        if (in_array($var_31, $var_29)) {
+                $var_19[$var_20][$var_31] ++;
+            } else {
+                $var_19[$var_20][$var_31] = 1;
+                $var_29[] = $var_31;
+            }
+        }
+        $var_27[] = $var_30->var_34;
+        $var_28[$var_30->var_34] = $var_31;
+	}
+
+    
+    
+    
+    $var_35 = 'SELECT bug_id, type, field_name, old_value, new_value, date_modified FROM '.$var_17.
+        ' WHERE bug_id in ('.implode(',', $var_27).') and '.
+            '( (type='.var_36.' and field_name=\'category\') or '.
+                '(type='.var_36.' and field_name=\'status\') or type='.var_37.' ) and '.
+		'date_modified >= ' . db_param() .
+            ' order by date_modified DESC';
+	$var_38 = db_query_bound( $var_35, array( $var_23 ) );
+	$var_39 = db_fetch_array( $var_38 );
+
+	for ($var_40 = time() - $var_8; $var_40 >= $var_23; $var_40 -= $var_8) {
+	    
+	    while( ( $var_39 !== false ) && ( $var_39['date_modified'] >= $var_40 ) ) {
+	        switch ($var_39['type']) {
+    	        case 0: 
+    	            if ($var_39['field_name'] == 'category') {
+	                    $var_31 = $var_39['new_value'];
+            	        if ($var_31 == '')
+            	            $var_31 = 'none';
+            	        if (in_array($var_31, $var_29)) {
+                            $var_19[$var_20][$var_31] --;
+                        } else {
+                            $var_19[$var_20][$var_31] = 0;
+                            $var_29[] = $var_31;
+                        }
+	                    $var_31 = $var_39['old_value'];
+            	        if ($var_31 == '')
+            	            $var_31 = 'none';
+            	        if (in_array($var_31, $var_29)) {
+                            $var_19[$var_20][$var_31] ++;
+                        } else {
+                            $var_19[$var_20][$var_31] = 1;
+                            $var_29[] = $var_31;
+                        }
+                        
+                        
+                        $var_28[$var_39['bug_id']] = $var_31;
+                    } else { 
+                        if ( access_compare_level( $var_39['new_value'], $var_25 ) &&
+                                !access_compare_level( $var_39['old_value'], $var_25 ) ) {
+                            
+                            $var_31 = $var_28[$var_39['bug_id']];
+            	            if ($var_31 == '')
+            	                $var_31 = 'none';
+            	            if (in_array($var_31, $var_29)) {
+                                $var_19[$var_20][$var_31] ++;
+                            } else {
+                                $var_19[$var_20][$var_31] = 1;
+                                $var_29[] = $var_31;
+                            }
+                        }
+                    }
+                    break;
+    	        case 1: 
+                    $var_31 = $var_28[$var_39['bug_id']];
+    	            if ($var_31 == '')
+    	                $var_31 = 'none';
+    	            if (in_array($var_31, $var_29)) {
+                        $var_19[$var_20][$var_31] --;
+                    } else {
+                        $var_19[$var_20][$var_31] = 0;
+                        $var_29[] = $var_31;
+                    }
+                    break;
+            }
+        	$var_39 = db_fetch_array( $var_38 );
+        }
+
+	    if ($var_40 <= $var_21) {
+    	    $var_18[$var_20] = $var_40;
+	        $var_20++;
+	        foreach ( $var_29 as $var_31 ) {
+	            $var_19[$var_20][$var_31] = $var_19[$var_20-1][$var_31];
+            }
+        }
+	}
+    $var_41 = $var_20;
+
+
+    $var_42 = count( $var_29 );
+    for ( $var_43=0; $var_43<$var_42; $var_43++ ) {
+        $var_31 = $var_29[ $var_43 ];
+        $var_44 = false;
+        for ($var_20=0; $var_20<$var_41; $var_20++) {
+            if ( isset( $var_19[$var_20][$var_31] ) && ( $var_19[$var_20][$var_31] > 0 ) ) {
+                $var_44 = true;
+                break;
+            }
+        }
+        if ( !$var_44 ) {
+            unset( $var_29[ $var_43 ] );
+		}
+    }
+
+    sort($var_29);
+    if ($var_4) {
+		$var_45 = config_get( 'short_date_format' );
+        html_begin();
+        html_head_begin();
+        html_css();
+        html_content_type();
+        html_title( lang_get( 'by_category' ) );
+    	html_head_end();
+    	html_body_begin();
+	    
+        foreach ( $var_29 as $var_31 ) {
+            
+        }
+        
+	    for ($var_20=0; $var_20<$var_41; $var_20++) {
+            
+            foreach ( $var_29 as $var_31 ) {
+                
+            }
+            
+        }
+	    
+    	html_body_end();
+    	html_end();
+	} else {
+	    
+	    $var_46 = array();
+	    for ($var_20=0; $var_20<$var_41; $var_20++) {
+	        $var_43 = $var_41 - $var_20 - 1;
+	        $var_46[0][$var_20] = $var_18[$var_43];
+            $var_47 = 0;
+            foreach ( $var_29 as $var_31 ) {
+        	    $var_46[++$var_47][$var_20] = isset($var_19[$var_43][$var_31]) ? $var_19[$var_43][$var_31] : 0;
+            }
+	    }
+	    array_unshift( $var_29, '' ); 
+	    graph_bydate( $var_46, $var_29, lang_get( 'by_category' ), $var_0, $var_0 * $var_1 );
+    }

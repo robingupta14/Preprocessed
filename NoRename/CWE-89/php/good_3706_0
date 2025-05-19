@@ -1,0 +1,214 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+class Reporters_Controller extends Admin_Controller
+{
+	function __construct()
+	{
+		parent::__construct();
+		$this->template->this_page = 'messages';
+		
+		
+		if ( ! $this->auth->has_permission("messages_reporters"))
+		{
+			url::redirect(url::site().'admin/dashboard');
+		}
+	}
+	
+	public function index($service_id = 1)
+	{
+		$this->template->content = new View('admin/reporters/main');
+		$this->template->content->title = Kohana::lang('ui_admin.reporters');
+		
+		
+		$form = array
+		(
+			'reporter_id' => '',
+			'level_id' => '',
+			'service_name' => '',
+			'service_account' => '',
+			'location_id' => '',
+			'location_name' => '',
+			'latitude' => '',
+			'longitude' => ''
+		);
+		
+		$errors = $form;
+		$form_error = FALSE;
+		$form_saved = FALSE;
+		$form_action = "";
+
+		
+		if ($_POST)
+		{
+			
+			$post = Validation::factory($_POST);
+
+			    
+			$post->pre_filter('trim', TRUE);
+
+			
+			$post->add_rules('action','required', 'alpha', 'length[1,1]');
+			$post->add_rules('reporter_id.*','required','numeric');
+			
+			if ($post->action == 'l')
+			{
+				$post->add_rules('level_id','required','numeric');
+			}
+			elseif ($post->action == 'a')
+			{
+				$post->add_rules('level_id','required','numeric');
+				
+				if ($post->latitude OR $post->longitude OR $post->location_name)
+				{
+					$post->add_rules('latitude','required','between[-90,90]');		
+					$post->add_rules('longitude','required','between[-180,180]');	
+					$post->add_rules('location_name','required', 'length[3,200]');
+				}
+			}
+
+			
+			if ($post->validate())
+			{	
+				if( $post->action == 'd' )				
+				{
+					foreach($post->reporter_id as $item)
+					{
+						
+						ORM::factory('message')
+							->where('reporter_id', $item)
+							->delete_all();
+					
+						
+						$reporter = ORM::factory('reporter')->find($item);
+						$reporter->delete( $item );
+					}
+					
+					$form_saved = TRUE;
+					$form_action = utf8::strtoupper(Kohana::lang('ui_admin.deleted'));
+				}
+				elseif( $post->action == 'l' )			
+				{
+					foreach($post->reporter_id as $item)
+					{
+						
+						$reporter = ORM::factory('reporter')->find($item);
+						if ($reporter->loaded)
+						{
+							$reporter->level_id = $post->level_id;
+							$reporter->save();
+						}
+					}
+					
+					$form_saved = TRUE;
+					$form_action = utf8::strtoupper(Kohana::lang('ui_admin.modified'));
+				}
+				else if( $post->action == 'a' ) 		
+				{
+					foreach($post->reporter_id as $item)
+					{
+						$reporter = ORM::factory('reporter')->find($item);
+					
+						
+						if ($reporter->loaded)
+						{
+							$reporter->level_id = $post->level_id;
+
+							
+							if ($post->latitude AND $post->longitude)
+							{
+								$location = new Location_Model($post->location_id);
+								$location->location_name = $post->location_name;
+								$location->latitude = $post->latitude;
+								$location->longitude = $post->longitude;
+								$location->location_date = date("Y-m-d H:i:s",time());
+								$location->save();
+							
+								$reporter->location_id = $location->id;
+							}
+						
+							$reporter->save();
+
+							$form_saved = TRUE;
+							$form_action = utf8::strtoupper(Kohana::lang('ui_admin.modified'));
+						}
+					}
+				}
+			}
+			
+			else
+			{
+				
+				$form = arr::overwrite($form, $post->as_array());
+				
+				
+				$errors = arr::overwrite($errors, $post->errors('reporters'));
+				$form_error = TRUE;
+			}
+		}
+
+		
+		$filter = '1=1 ';
+		
+		
+		$search_type = ( isset($_GET['s']) ) ? intval($_GET['s']) : intval($service_id);
+		if ($search_type > 0)
+		{
+			$filter .= 'AND service_id = '.intval($search_type).' ';
+		}
+		
+		
+		$keyword = '';
+		if (isset($_GET['k']) AND !empty($_GET['k']))
+		{
+			$keyword = $_GET['k'];
+			$filter .= 'AND service_account LIKE \'%'.Database::instance()->escape_str($_GET['k']).'%\' ';
+		}
+
+		
+		$pagination = new Pagination(array(
+		                    'query_string' => 'page',
+		                    'items_per_page' => $this->items_per_page,
+		                    'total_items' => ORM::factory('reporter')
+								->where($filter)
+								->count_all()
+		                ));
+
+		$reporters = ORM::factory('reporter')
+						->where($filter)
+		                ->orderby('service_account', 'asc')
+		                ->find_all($this->items_per_page,  $pagination->sql_offset);
+
+		$this->template->content->form = $form;
+		$this->template->content->errors = $errors;
+		$this->template->content->form_error = $form_error;
+		$this->template->content->form_saved = $form_saved;
+		$this->template->content->form_action = $form_action;
+		$this->template->content->pagination = $pagination;
+		$this->template->content->total_items = $pagination->total_items;
+		$this->template->content->reporters = $reporters;
+		$this->template->content->service_id = $service_id;
+		$this->template->content->search_type = $search_type;
+		$search_type_array = Service_Model::get_array();
+		$search_type_array[0] = "All";
+		asort($search_type_array);
+		$this->template->content->search_type_array = $search_type_array;
+		$this->template->content->keyword = $keyword;
+		
+		$levels = ORM::factory('level')->orderby('level_weight')->find_all();
+		$this->template->content->levels = $levels;
+
+		
+		$this->template->content->level_array = Level_Model::get_array();
+		$this->template->content->service_array = Service_Model::get_array();
+		
+		
+        $this->template->map_enabled = TRUE;
+        $this->template->js = new View('admin/reporters/reporters_js');
+		$this->template->js->default_map = Kohana::config('settings.default_map');
+		$this->template->js->default_zoom = Kohana::config('settings.default_zoom');
+		$this->template->js->latitude = Kohana::config('settings.default_lat');
+		$this->template->js->longitude = Kohana::config('settings.default_lon');
+		$this->template->js->form_error = $form_error;
+	}
+}

@@ -1,0 +1,6635 @@
+
+
+
+
+
+
+
+
+bool ring_buffer_expanded;
+
+static bool __read_mostly tracing_selftest_running;
+
+
+
+
+bool __read_mostly tracing_selftest_disabled;
+
+
+struct struct_431 *var_435;
+int tracepoint_printk;
+static DEFINE_STATIC_KEY_FALSE(tracepoint_printk_key);
+
+
+static struct struct_397 dummy_tracer_opt[] = {
+ { }
+};
+
+static int
+fn_3(struct struct_431 *tr, u32 var_5, u32 var_6, int var_267)
+{
+ return 0;
+}
+
+
+
+
+
+
+static DEFINE_PER_CPU(bool, trace_taskinfo_save);
+
+
+
+
+
+
+
+static int var_434 = 1;
+
+cpumask_var_t __read_mostly tracing_buffer_mask;
+
+enum enumtype_430 ftrace_dump_on_oops;
+
+
+int __disable_trace_on_warning;
+
+static int fn_312(struct struct_431 *tr, const char *buf);
+
+
+static char bootup_tracer_buf[100] __initdata;
+static char *default_bootup_tracer;
+
+static bool allocate_snapshot;
+
+static int __init fn_11(char *str)
+{
+ strlcpy(bootup_tracer_buf, str, 100);
+ default_bootup_tracer = bootup_tracer_buf;
+
+ ring_buffer_expanded = true;
+ return 1;
+}
+__setup("ftrace=", set_cmdline_ftrace);
+
+static int __init fn_12(char *str)
+{
+ if (*str++ != '=' || !*str) {
+  ftrace_dump_on_oops = DUMP_ALL;
+  return 1;
+ }
+
+ if (!strcmp("orig_cpu", str)) {
+  ftrace_dump_on_oops = DUMP_ORIG;
+                return 1;
+        }
+
+        return 0;
+}
+__setup("ftrace_dump_on_oops", set_ftrace_dump_on_oops);
+
+static int __init fn_13(char *str)
+{
+ if ((strcmp(str, "=0") != 0 && strcmp(str, "=off") != 0))
+  __disable_trace_on_warning = 1;
+ return 1;
+}
+__setup("traceoff_on_warning", stop_trace_on_warning);
+
+static int __init fn_14(char *str)
+{
+ allocate_snapshot = true;
+
+ ring_buffer_expanded = true;
+ return 1;
+}
+__setup("alloc_snapshot", boot_alloc_snapshot);
+
+
+static char var_270[100] __initdata;
+
+static int __init fn_16(char *str)
+{
+ strlcpy(var_270, str, 100);
+ return 0;
+}
+__setup("trace_options=", set_trace_boot_options);
+
+static char trace_boot_clock_buf[100] __initdata;
+static char *trace_boot_clock __initdata;
+
+static int __init fn_17(char *str)
+{
+ strlcpy(trace_boot_clock_buf, str, 100);
+ trace_boot_clock = trace_boot_clock_buf;
+ return 0;
+}
+__setup("trace_clock=", set_trace_boot_clock);
+
+static int __init fn_18(char *str)
+{
+ if ((strcmp(str, "=0") != 0 && strcmp(str, "=off") != 0))
+  tracepoint_printk = 1;
+ return 1;
+}
+__setup("tp_printk", set_tracepoint_printk);
+
+unsigned long long fn_19(u64 var_21)
+{
+ var_21 += 500;
+ do_div(var_21, 1000);
+ return var_21;
+}
+
+static struct struct_431 var_434 = {
+ .trace_flags = (FUNCTION_DEFAULT_FLAGS | TRACE_ITER_PRINT_PARENT | TRACE_ITER_PRINTK | TRACE_ITER_ANNOTATE | TRACE_ITER_CONTEXT_INFO | TRACE_ITER_RECORD_CMD | TRACE_ITER_OVERWRITE | TRACE_ITER_IRQ_INFO | TRACE_ITER_MARKERS),
+};
+
+LIST_HEAD(ftrace_trace_arrays);
+
+int fn_22(struct struct_431 *this_tr)
+{
+ struct struct_431 *tr;
+ int var_434 = -ENODEV;
+
+ mutex_lock(&trace_types_lock);
+ list_for_each_entry(tr, &ftrace_trace_arrays, list) {
+  if (tr == this_tr) {
+   tr->ref++;
+   var_434 = 0;
+   break;
+  }
+ }
+ mutex_unlock(&trace_types_lock);
+
+ return var_434;
+}
+
+static void fn_24(struct struct_431 *this_tr)
+{
+ WARN_ON(!this_tr->ref);
+ this_tr->ref--;
+}
+
+void fn_25(struct struct_431 *this_tr)
+{
+ mutex_lock(&trace_types_lock);
+ __trace_array_put(this_tr);
+ mutex_unlock(&trace_types_lock);
+}
+
+int fn_26(struct struct_181 *call, void *rec,
+         struct struct_402 *buffer,
+         struct struct_345 *var_424)
+{
+ if (unlikely(call->flags & TRACE_EVENT_FL_FILTERED) &&
+     !filter_match_preds(call->filter, rec)) {
+  __trace_event_discard_commit(buffer, var_424);
+  return 1;
+ }
+
+ return 0;
+}
+
+void fn_31(struct struct_47 *pid_list)
+{
+ vfree(pid_list->pids);
+ kfree(pid_list);
+}
+
+bool
+fn_33(struct struct_47 *filtered_pids, pid_t var_35)
+{
+
+
+
+
+ if (var_35 >= filtered_pids->pid_max)
+  return false;
+
+ return test_bit(var_35, filtered_pids->pids);
+}
+
+bool
+fn_35(struct struct_47 *filtered_pids, struct struct_136 *task)
+{
+
+
+
+
+ if (!filtered_pids)
+  return false;
+
+ return !trace_find_filtered_pid(filtered_pids, task->pid);
+}
+
+void fn_37(struct struct_47 *pid_list,
+      struct struct_136 *self,
+      struct struct_136 *task)
+{
+ if (!pid_list)
+  return;
+
+
+ if (self) {
+  if (!trace_find_filtered_pid(pid_list, self->pid))
+   return;
+ }
+
+
+ if (task->pid >= pid_list->pid_max)
+  return;
+
+
+ if (self)
+  set_bit(task->pid, pid_list->pids);
+ else
+  clear_bit(task->pid, pid_list->pids);
+}
+
+void *fn_38(struct struct_47 *pid_list, void *var_351, loff_t *pos)
+{
+ unsigned long var_286 = (unsigned long)var_351;
+
+ (*pos)++;
+
+
+ var_286 = find_next_bit(pid_list->pids, pid_list->pid_max, var_286);
+
+
+ if (var_286 < pid_list->pid_max)
+  return (void *)(var_286 + 1);
+
+ return NULL;
+}
+
+void *fn_41(struct struct_47 *pid_list, loff_t *pos)
+{
+ unsigned long var_286;
+ loff_t var_284 = 0;
+
+ var_286 = find_first_bit(pid_list->pids, pid_list->pid_max);
+ if (var_286 >= pid_list->pid_max)
+  return NULL;
+
+
+ for (var_286++; var_286 && var_284 < *pos;
+      var_286 = (unsigned long)trace_pid_next(pid_list, (void *)var_286, &var_284))
+  ;
+ return (void *)var_286;
+}
+
+int fn_43(struct struct_351 *m, void *var_351)
+{
+ unsigned long var_286 = (unsigned long)var_351 - 1;
+
+ seq_printf(m, "%lu\n", var_286);
+ return 0;
+}
+
+
+
+
+int fn_45(struct struct_47 *filtered_pids,
+      struct struct_47 **new_pid_list,
+      const char __user *ubuf, size_t var_431)
+{
+ struct struct_47 *pid_list;
+ struct struct_97 parser;
+ unsigned long var_426;
+ int var_51 = 0;
+ ssize_t var_97 = 0;
+ ssize_t var_434 = 0;
+ loff_t pos;
+ pid_t var_286;
+
+ if (trace_parser_get_init(&parser, 128))
+  return -ENOMEM;
+
+
+
+
+
+
+
+ pid_list = kmalloc(sizeof(*pid_list), GFP_KERNEL);
+ if (!pid_list)
+  return -ENOMEM;
+
+ pid_list->pid_max = READ_ONCE(pid_max);
+
+
+ if (filtered_pids && filtered_pids->pid_max > pid_list->pid_max)
+  pid_list->pid_max = filtered_pids->pid_max;
+
+ pid_list->pids = vzalloc((pid_list->pid_max + 7) >> 3);
+ if (!pid_list->pids) {
+  kfree(pid_list);
+  return -ENOMEM;
+ }
+
+ if (filtered_pids) {
+
+  for_each_set_bit(var_286, filtered_pids->pids,
+     filtered_pids->pid_max) {
+   set_bit(var_286, pid_list->pids);
+   var_51++;
+  }
+ }
+
+ while (var_431 > 0) {
+
+  pos = 0;
+
+  var_434 = trace_get_user(&parser, ubuf, var_431, &pos);
+  if (var_434 < 0 || !trace_parser_loaded(&parser))
+   break;
+
+  var_97 += var_434;
+  ubuf += var_434;
+  var_431 -= var_434;
+
+  var_434 = -EINVAL;
+  if (kstrtoul(parser.buffer, 0, &var_426))
+   break;
+  if (var_426 >= pid_list->pid_max)
+   break;
+
+  var_286 = (pid_t)var_426;
+
+  set_bit(var_286, pid_list->pids);
+  var_51++;
+
+  trace_parser_clear(&parser);
+  var_434 = 0;
+ }
+ trace_parser_put(&parser);
+
+ if (var_434 < 0) {
+  trace_free_pid_list(pid_list);
+  return var_434;
+ }
+
+ if (!var_51) {
+
+  trace_free_pid_list(pid_list);
+  var_97 = var_434;
+  pid_list = NULL;
+ }
+
+ *new_pid_list = pid_list;
+
+ return var_97;
+}
+
+static u64 fn_51(struct struct_408 *buf, int var_431)
+{
+ u64 ts;
+
+
+ if (!buf->buffer)
+  return trace_clock_local();
+
+ ts = ring_buffer_time_stamp(buf->buffer, var_431);
+ ring_buffer_normalize_time_stamp(buf->buffer, var_431, &ts);
+
+ return ts;
+}
+
+u64 fn_54(int var_431)
+{
+ return buffer_ftrace_now(&var_434.trace_buffer, var_431);
+}
+
+int fn_55(void)
+{
+
+
+
+
+
+ smp_rmb();
+ return !var_434.buffer_disabled;
+}
+
+static unsigned long var_434 = 1441792UL;
+
+
+static struct struct_411 *trace_types __read_mostly;
+
+
+
+
+DEFINE_MUTEX(trace_types_lock);
+
+static DEFINE_MUTEX(access_lock);
+
+static inline void fn_58(int var_431)
+{
+ (void)var_431;
+ mutex_lock(&access_lock);
+}
+
+static inline void fn_59(int var_431)
+{
+ (void)var_431;
+ mutex_unlock(&access_lock);
+}
+
+static inline void fn_60(void)
+{
+}
+
+static inline void fn_61(struct struct_402 *buffer,
+     unsigned long var_431,
+     int var_67, int var_181, struct struct_154 *regs)
+{
+}
+static inline void fn_66(struct struct_431 *tr,
+          struct struct_402 *buffer,
+          unsigned long var_431,
+          int var_67, int var_181, struct struct_154 *regs)
+{
+}
+
+
+
+static __always_inline void
+fn_67(struct struct_345 *var_424,
+    int var_419, unsigned long var_431, int var_181)
+{
+ struct struct_220 *ent = ring_buffer_event_data(var_424);
+
+ tracing_generic_entry_update(ent, var_431, var_181);
+ ent->type = var_419;
+}
+
+static __always_inline struct ring_buffer_event *
+fn_70(struct struct_402 *buffer,
+     int var_419,
+     unsigned long var_421,
+     unsigned long var_431, int var_181)
+{
+ struct struct_345 *var_424;
+
+ var_424 = ring_buffer_lock_reserve(buffer, var_421);
+ if (var_424 != NULL)
+  trace_event_setup(var_424, var_419, var_431, var_181);
+
+ return var_424;
+}
+
+void fn_72(struct struct_431 *tr)
+{
+ if (tr->trace_buffer.buffer)
+  ring_buffer_record_on(tr->trace_buffer.buffer);
+
+ tr->buffer_disabled = 0;
+
+ smp_wmb();
+}
+
+
+
+
+
+
+
+void fn_73(void)
+{
+ tracer_tracing_on(&var_434);
+}
+EXPORT_SYMBOL_GPL(tracing_on);
+
+
+static __always_inline void
+fn_74(struct struct_402 *buffer, struct struct_345 *var_424)
+{
+ __this_cpu_write(trace_taskinfo_save, true);
+
+
+ if (this_cpu_read(trace_buffered_event) == var_424) {
+
+  ring_buffer_write(buffer, var_424->array[0], &var_424->array[1]);
+
+  this_cpu_dec(trace_buffered_event_cnt);
+ } else
+  ring_buffer_unlock_commit(buffer, var_424);
+}
+
+
+
+
+
+
+
+int fn_75(unsigned long var_185, const char *str, int var_433)
+{
+ struct struct_345 *var_424;
+ struct struct_402 *buffer;
+ struct struct_344 *entry;
+ unsigned long irq_flags;
+ int alloc;
+ int var_181;
+
+ if (!(var_434.trace_flags & TRACE_ITER_PRINTK))
+  return 0;
+
+ var_181 = preempt_count();
+
+ if (unlikely(tracing_selftest_running || var_434))
+  return 0;
+
+ alloc = sizeof(*entry) + var_433 + 2;
+
+ local_save_flags(irq_flags);
+ buffer = var_434.trace_buffer.buffer;
+ var_424 = __trace_buffer_lock_reserve(buffer, TRACE_PRINT, alloc,
+         irq_flags, var_181);
+ if (!var_424)
+  return 0;
+
+ entry = ring_buffer_event_data(var_424);
+ entry->ip = var_185;
+
+ memcpy(&entry->buf, str, var_433);
+
+
+ if (entry->buf[var_433 - 1] != '\n') {
+  entry->buf[var_433] = '\n';
+  entry->buf[var_433 + 1] = '\0';
+ } else
+  entry->buf[var_433] = '\0';
+
+ __buffer_unlock_commit(buffer, var_424);
+ ftrace_trace_stack(&var_434, buffer, irq_flags, 4, var_181, NULL);
+
+ return var_433;
+}
+EXPORT_SYMBOL_GPL(__trace_puts);
+
+
+
+
+
+
+int fn_79(unsigned long var_185, const char *str)
+{
+ struct struct_345 *var_424;
+ struct struct_402 *buffer;
+ struct struct_81 *entry;
+ unsigned long irq_flags;
+ int var_433 = sizeof(struct struct_81);
+ int var_181;
+
+ if (!(var_434.trace_flags & TRACE_ITER_PRINTK))
+  return 0;
+
+ var_181 = preempt_count();
+
+ if (unlikely(tracing_selftest_running || var_434))
+  return 0;
+
+ local_save_flags(irq_flags);
+ buffer = var_434.trace_buffer.buffer;
+ var_424 = __trace_buffer_lock_reserve(buffer, TRACE_BPUTS, var_433,
+         irq_flags, var_181);
+ if (!var_424)
+  return 0;
+
+ entry = ring_buffer_event_data(var_424);
+ entry->ip = var_185;
+ entry->str = str;
+
+ __buffer_unlock_commit(buffer, var_424);
+ ftrace_trace_stack(&var_434, buffer, irq_flags, 4, var_181, NULL);
+
+ return 1;
+}
+EXPORT_SYMBOL_GPL(__trace_bputs);
+
+void fn_81(void)
+{
+ WARN_ONCE(1, "Snapshot feature not enabled, but internal snapshot used");
+}
+EXPORT_SYMBOL_GPL(tracing_snapshot);
+int fn_82(void)
+{
+ WARN_ONCE(1, "Snapshot feature not enabled, but snapshot allocation used");
+ return -ENODEV;
+}
+EXPORT_SYMBOL_GPL(tracing_alloc_snapshot);
+void fn_83(void)
+{
+
+ tracing_snapshot();
+}
+EXPORT_SYMBOL_GPL(tracing_snapshot_alloc);
+
+
+void fn_84(struct struct_431 *tr)
+{
+ if (tr->trace_buffer.buffer)
+  ring_buffer_record_off(tr->trace_buffer.buffer);
+
+ tr->buffer_disabled = 1;
+
+ smp_wmb();
+}
+
+void fn_85(void)
+{
+ tracer_tracing_off(&var_434);
+}
+EXPORT_SYMBOL_GPL(tracing_off);
+
+void fn_86(void)
+{
+ if (__disable_trace_on_warning)
+  tracing_off();
+}
+
+
+
+
+
+
+
+int fn_87(struct struct_431 *tr)
+{
+ if (tr->trace_buffer.buffer)
+  return ring_buffer_record_is_on(tr->trace_buffer.buffer);
+ return !tr->buffer_disabled;
+}
+
+
+
+
+int fn_88(void)
+{
+ return tracer_tracing_is_on(&var_434);
+}
+EXPORT_SYMBOL_GPL(tracing_is_on);
+
+static int __init fn_89(char *str)
+{
+ unsigned long buf_size;
+
+ if (!str)
+  return 0;
+ buf_size = memparse(str, &str);
+
+ if (buf_size == 0)
+  return 0;
+ var_434 = buf_size;
+ return 1;
+}
+__setup("trace_buf_size=", set_buf_size);
+
+static int __init fn_90(char *str)
+{
+ unsigned long threshold;
+ int var_434;
+
+ if (!str)
+  return 0;
+ var_434 = kstrtoul(str, 0, &threshold);
+ if (var_434 < 0)
+  return 0;
+ tracing_thresh = threshold * 1000;
+ return 1;
+}
+__setup("tracing_thresh=", set_tracing_thresh);
+
+unsigned long fn_91(unsigned long var_93)
+{
+ return var_93 / 1000;
+}
+
+static const char *trace_options[] = {
+ TRACE_FLAGS
+ NULL
+};
+
+static struct {
+ u64 (*func)(void);
+ const char *name;
+ int in_ns;
+} trace_clocks[] = {
+ { trace_clock_local, "local", 1 },
+ { trace_clock_global, "global", 1 },
+ { trace_clock_counter, "counter", 0 },
+ { trace_clock_jiffies, "uptime", 0 },
+ { trace_clock, "perf", 1 },
+ { ktime_get_mono_fast_ns, "mono", 1 },
+ { ktime_get_raw_fast_ns, "mono_raw", 1 },
+ { ktime_get_boot_fast_ns, "boot", 1 },
+ ARCH_TRACE_CLOCKS
+};
+
+bool fn_93(struct struct_431 *tr)
+{
+ if (trace_clocks[tr->clock_id].in_ns)
+  return true;
+
+ return false;
+}
+
+
+
+
+int fn_94(struct struct_97 *parser, int var_433)
+{
+ memset(parser, 0, sizeof(*parser));
+
+ parser->buffer = kmalloc(var_433, GFP_KERNEL);
+ if (!parser->buffer)
+  return 1;
+
+ parser->size = var_433;
+ return 0;
+}
+
+
+
+
+void fn_95(struct struct_97 *parser)
+{
+ kfree(parser->buffer);
+ parser->buffer = NULL;
+}
+
+int fn_96(struct struct_97 *parser, const char __user *ubuf,
+ size_t var_431, loff_t *ppos)
+{
+ char ch;
+ size_t var_97 = 0;
+ ssize_t var_434;
+
+ if (!*ppos)
+  trace_parser_clear(parser);
+
+ var_434 = get_user(ch, ubuf++);
+ if (var_434)
+  goto out;
+
+ var_97++;
+ var_431--;
+
+
+
+
+
+ if (!parser->cont) {
+
+  while (var_431 && isspace(ch)) {
+   var_434 = get_user(ch, ubuf++);
+   if (var_434)
+    goto out;
+   var_97++;
+   var_431--;
+  }
+
+  parser->idx = 0;
+
+
+  if (isspace(ch) || !ch) {
+   *ppos += var_97;
+   var_434 = var_97;
+   goto out;
+  }
+ }
+
+
+ while (var_431 && !isspace(ch) && ch) {
+  if (parser->idx < parser->size - 1)
+   parser->buffer[parser->idx++] = ch;
+  else {
+   var_434 = -EINVAL;
+   goto out;
+  }
+  var_434 = get_user(ch, ubuf++);
+  if (var_434)
+   goto out;
+  var_97++;
+  var_431--;
+ }
+
+
+ if (isspace(ch) || !ch) {
+  parser->buffer[parser->idx] = 0;
+  parser->cont = false;
+ } else if (parser->idx < parser->size - 1) {
+  parser->cont = true;
+  parser->buffer[parser->idx++] = ch;
+
+  parser->buffer[parser->idx] = 0;
+ } else {
+  var_434 = -EINVAL;
+  goto out;
+ }
+
+ *ppos += var_97;
+ var_434 = var_97;
+
+out:
+ return var_434;
+}
+
+
+static ssize_t fn_97(struct struct_428 *s, void *buf, size_t var_431)
+{
+ int var_421;
+
+ if (trace_seq_used(s) <= s->seq.readpos)
+  return -EBUSY;
+
+ var_421 = trace_seq_used(s) - s->seq.readpos;
+ if (var_431 > var_421)
+  var_431 = var_421;
+ memcpy(buf, s->buffer + s->seq.readpos, var_431);
+
+ s->seq.readpos += var_431;
+ return var_431;
+}
+
+unsigned long __read_mostly tracing_thresh;
+
+static int fn_99(struct struct_431 *iter, bool var_101)
+{
+
+ if (trace_buffer_iter(iter, iter->cpu_file))
+  return 0;
+
+ return ring_buffer_wait(iter->trace_buffer->buffer, iter->cpu_file,
+    var_101);
+}
+
+static inline int fn_101(struct struct_411 *var_419)
+{
+ return 0;
+}
+
+
+static void fn_312(struct struct_431 *tr, struct struct_411 *t);
+
+static void __init fn_270(void);
+
+
+
+
+
+
+
+int __init fn_104(struct struct_411 *var_419)
+{
+ struct struct_411 *t;
+ int var_434 = 0;
+
+ if (!var_419->name) {
+  pr_info("Tracer must have a name\n");
+  return -1;
+ }
+
+ if (strlen(var_419->name) >= 100) {
+  pr_info("Tracer has a name longer than %d\n", 100);
+  return -1;
+ }
+
+ mutex_lock(&trace_types_lock);
+
+ tracing_selftest_running = true;
+
+ for (t = trace_types; t; t = t->next) {
+  if (strcmp(var_419->name, t->name) == 0) {
+
+   pr_info("Tracer %s already registered\n",
+    var_419->name);
+   var_434 = -1;
+   goto out;
+  }
+ }
+
+ if (!var_419->set_flag)
+  var_419->set_flag = &dummy_set_flag;
+ if (!var_419->flags) {
+
+  var_419->flags = kmalloc(sizeof(*var_419->flags), GFP_KERNEL);
+  if (!var_419->flags) {
+   var_434 = -ENOMEM;
+   goto out;
+  }
+  var_419->flags->val = 0;
+  var_419->flags->opts = dummy_tracer_opt;
+ } else
+  if (!var_419->flags->opts)
+   var_419->flags->opts = dummy_tracer_opt;
+
+
+ var_419->flags->trace = var_419;
+
+ var_434 = run_tracer_selftest(var_419);
+ if (var_434 < 0)
+  goto out;
+
+ var_419->next = trace_types;
+ trace_types = var_419;
+ add_tracer_options(&var_434, var_419);
+
+ out:
+ tracing_selftest_running = false;
+ mutex_unlock(&trace_types_lock);
+
+ if (var_434 || !default_bootup_tracer)
+  goto out_unlock;
+
+ if (strncmp(default_bootup_tracer, var_419->name, 100))
+  goto out_unlock;
+
+ printk(KERN_INFO "Starting tracer '%s'\n", var_419->name);
+
+ tracing_set_tracer(&var_434, var_419->name);
+ default_bootup_tracer = NULL;
+
+ apply_trace_boot_options();
+
+
+ tracing_selftest_disabled = true;
+
+
+
+
+
+ out_unlock:
+ return var_434;
+}
+
+void fn_105(struct struct_408 *buf, int var_431)
+{
+ struct struct_402 *buffer = buf->buffer;
+
+ if (!buffer)
+  return;
+
+ ring_buffer_record_disable(buffer);
+
+
+ synchronize_sched();
+ ring_buffer_reset_cpu(buffer, var_431);
+
+ ring_buffer_record_enable(buffer);
+}
+
+void fn_106(struct struct_408 *buf)
+{
+ struct struct_402 *buffer = buf->buffer;
+ int var_431;
+
+ if (!buffer)
+  return;
+
+ ring_buffer_record_disable(buffer);
+
+
+ synchronize_sched();
+
+ buf->time_start = buffer_ftrace_now(buf, buf->cpu);
+
+ for_each_online_cpu(cpu)
+  fn_107(buffer, cpu);
+
+ ring_buffer_record_enable(buffer);
+}
+
+
+void fn_108(void)
+{
+ struct struct_431 *tr;
+
+ list_for_each_entry(tr, &ftrace_trace_arrays, list) {
+  if (!tr->clear_trace)
+   continue;
+  tr->clear_trace = false;
+  tracing_reset_online_cpus(&tr->trace_buffer);
+
+
+
+ }
+}
+
+static int *tgid_map;
+
+
+
+static arch_spinlock_t var_293 = var_434;
+struct struct_293 {
+ unsigned map_pid_to_cmdline[PID_MAX_DEFAULT+1];
+ unsigned *map_cmdline_to_pid;
+ unsigned cmdline_num;
+ int cmdline_idx;
+ char *saved_cmdlines;
+};
+static struct struct_293 *savedcmd;
+
+
+static atomic_t trace_record_taskinfo_disabled __read_mostly;
+
+static inline char *fn_112(int var_327)
+{
+ return &savedcmd->saved_cmdlines[var_327 * TASK_COMM_LEN];
+}
+
+static inline void fn_114(int var_327, const char *cmdline)
+{
+ memcpy(get_saved_cmdlines(var_327), cmdline, TASK_COMM_LEN);
+}
+
+static int fn_115(unsigned int var_426,
+        struct struct_293 *s)
+{
+ s->map_cmdline_to_pid = kmalloc_array(var_426,
+           sizeof(*s->map_cmdline_to_pid),
+           GFP_KERNEL);
+ if (!s->map_cmdline_to_pid)
+  return -ENOMEM;
+
+ s->saved_cmdlines = kmalloc_array(TASK_COMM_LEN, var_426, GFP_KERNEL);
+ if (!s->saved_cmdlines) {
+  kfree(s->map_cmdline_to_pid);
+  return -ENOMEM;
+ }
+
+ s->cmdline_idx = 0;
+ s->cmdline_num = var_426;
+ memset(&s->map_pid_to_cmdline, UINT_MAX,
+        sizeof(s->map_pid_to_cmdline));
+ memset(s->map_cmdline_to_pid, UINT_MAX,
+        var_426 * sizeof(*s->map_cmdline_to_pid));
+
+ return 0;
+}
+
+static int fn_116(void)
+{
+ int var_434;
+
+ savedcmd = kmalloc(sizeof(*savedcmd), GFP_KERNEL);
+ if (!savedcmd)
+  return -ENOMEM;
+
+ var_434 = allocate_cmdlines_buffer(128, savedcmd);
+ if (var_434 < 0) {
+  kfree(savedcmd);
+  savedcmd = NULL;
+  return -ENOMEM;
+ }
+
+ return 0;
+}
+
+int fn_117(void)
+{
+ return var_434.stop_count;
+}
+
+
+
+
+
+
+
+void fn_118(void)
+{
+ struct struct_402 *buffer;
+ unsigned long var_431;
+
+ if (var_434)
+  return;
+
+ raw_spin_lock_irqsave(&var_434.start_lock, var_431);
+ if (--var_434.stop_count) {
+  if (var_434.stop_count < 0) {
+
+   WARN_ON_ONCE(1);
+   var_434.stop_count = 0;
+  }
+  goto out;
+ }
+
+
+ arch_spin_lock(&var_434.max_lock);
+
+ buffer = var_434.trace_buffer.buffer;
+ if (buffer)
+  ring_buffer_record_enable(buffer);
+
+
+
+
+
+
+
+ arch_spin_unlock(&var_434.max_lock);
+
+ out:
+ raw_spin_unlock_irqrestore(&var_434.start_lock, var_431);
+}
+
+static void fn_119(struct struct_431 *tr)
+{
+ struct struct_402 *buffer;
+ unsigned long var_431;
+
+ if (var_434)
+  return;
+
+
+ if (tr->flags & TRACE_ARRAY_FL_GLOBAL)
+  return tracing_start();
+
+ raw_spin_lock_irqsave(&tr->start_lock, var_431);
+
+ if (--tr->stop_count) {
+  if (tr->stop_count < 0) {
+
+   WARN_ON_ONCE(1);
+   tr->stop_count = 0;
+  }
+  goto out;
+ }
+
+ buffer = tr->trace_buffer.buffer;
+ if (buffer)
+  ring_buffer_record_enable(buffer);
+
+ out:
+ raw_spin_unlock_irqrestore(&tr->start_lock, var_431);
+}
+
+
+
+
+
+
+
+void fn_120(void)
+{
+ struct struct_402 *buffer;
+ unsigned long var_431;
+
+ raw_spin_lock_irqsave(&var_434.start_lock, var_431);
+ if (var_434.stop_count++)
+  goto out;
+
+
+ arch_spin_lock(&var_434.max_lock);
+
+ buffer = var_434.trace_buffer.buffer;
+ if (buffer)
+  ring_buffer_record_disable(buffer);
+
+
+
+
+
+
+
+ arch_spin_unlock(&var_434.max_lock);
+
+ out:
+ raw_spin_unlock_irqrestore(&var_434.start_lock, var_431);
+}
+
+static void fn_121(struct struct_431 *tr)
+{
+ struct struct_402 *buffer;
+ unsigned long var_431;
+
+
+ if (tr->flags & TRACE_ARRAY_FL_GLOBAL)
+  return tracing_stop();
+
+ raw_spin_lock_irqsave(&tr->start_lock, var_431);
+ if (tr->stop_count++)
+  goto out;
+
+ buffer = tr->trace_buffer.buffer;
+ if (buffer)
+  ring_buffer_record_disable(buffer);
+
+ out:
+ raw_spin_unlock_irqrestore(&tr->start_lock, var_431);
+}
+
+static int fn_122(struct struct_136 *tsk)
+{
+ unsigned var_286, var_327;
+
+
+ if (!tsk->pid)
+  return 1;
+
+ if (unlikely(tsk->pid > PID_MAX_DEFAULT))
+  return 0;
+
+
+
+
+
+
+
+ if (!arch_spin_trylock(&var_293))
+  return 0;
+
+ var_327 = savedcmd->map_pid_to_cmdline[tsk->pid];
+ if (var_327 == UINT_MAX) {
+  var_327 = (savedcmd->cmdline_idx + 1) % savedcmd->cmdline_num;
+
+
+
+
+
+
+
+  var_286 = savedcmd->map_cmdline_to_pid[var_327];
+  if (var_286 != UINT_MAX)
+   savedcmd->map_pid_to_cmdline[var_286] = UINT_MAX;
+
+  savedcmd->map_cmdline_to_pid[var_327] = tsk->pid;
+  savedcmd->map_pid_to_cmdline[tsk->pid] = var_327;
+
+  savedcmd->cmdline_idx = var_327;
+ }
+
+ set_cmdline(var_327, tsk->comm);
+
+ arch_spin_unlock(&var_293);
+
+ return 1;
+}
+
+static void fn_123(int var_286, char comm[])
+{
+ unsigned map;
+
+ if (!var_286) {
+  strcpy(comm, "<idle>");
+  return;
+ }
+
+ if (WARN_ON_ONCE(var_286 < 0)) {
+  strcpy(comm, "<XXX>");
+  return;
+ }
+
+ if (var_286 > PID_MAX_DEFAULT) {
+  strcpy(comm, "<...>");
+  return;
+ }
+
+ map = savedcmd->map_pid_to_cmdline[var_286];
+ if (map != UINT_MAX)
+  strlcpy(comm, get_saved_cmdlines(map), TASK_COMM_LEN);
+ else
+  strcpy(comm, "<...>");
+}
+
+void fn_124(int var_286, char comm[])
+{
+ preempt_disable();
+ arch_spin_lock(&var_293);
+
+ __trace_find_cmdline(var_286, comm);
+
+ arch_spin_unlock(&var_293);
+ preempt_enable();
+}
+
+int fn_125(int var_286)
+{
+ if (unlikely(!tgid_map || !var_286 || var_286 > PID_MAX_DEFAULT))
+  return 0;
+
+ return tgid_map[var_286];
+}
+
+static int fn_126(struct struct_136 *tsk)
+{
+
+ if (!tsk->pid)
+  return 1;
+
+ if (unlikely(!tgid_map || tsk->pid > PID_MAX_DEFAULT))
+  return 0;
+
+ tgid_map[tsk->pid] = tsk->tgid;
+ return 1;
+}
+
+static bool fn_127(int var_431)
+{
+ if (unlikely(!(var_431 & (TRACE_RECORD_CMDLINE | TRACE_RECORD_TGID))))
+  return true;
+ if (atomic_read(&trace_record_taskinfo_disabled) || !tracing_is_on())
+  return true;
+ if (!__this_cpu_read(trace_taskinfo_save))
+  return true;
+ return false;
+}
+
+void fn_128(struct struct_136 *task, int var_431)
+{
+ bool var_433;
+
+ if (tracing_record_taskinfo_skip(var_431))
+  return;
+
+
+
+
+
+ var_433 = !(var_431 & TRACE_RECORD_CMDLINE) || trace_save_cmdline(task);
+ var_433 &= !(var_431 & TRACE_RECORD_TGID) || trace_save_tgid(task);
+
+
+ if (!var_433)
+  return;
+
+ __this_cpu_write(trace_taskinfo_save, false);
+}
+
+void fn_130(struct struct_136 *prev,
+       struct struct_136 *next, int var_431)
+{
+ bool var_433;
+
+ if (tracing_record_taskinfo_skip(var_431))
+  return;
+
+
+
+
+
+ var_433 = !(var_431 & TRACE_RECORD_CMDLINE) || trace_save_cmdline(prev);
+ var_433 &= !(var_431 & TRACE_RECORD_CMDLINE) || trace_save_cmdline(next);
+ var_433 &= !(var_431 & TRACE_RECORD_TGID) || trace_save_tgid(prev);
+ var_433 &= !(var_431 & TRACE_RECORD_TGID) || trace_save_tgid(next);
+
+
+ if (!var_433)
+  return;
+
+ __this_cpu_write(trace_taskinfo_save, false);
+}
+
+
+void fn_131(struct struct_136 *task)
+{
+ tracing_record_taskinfo(task, TRACE_RECORD_CMDLINE);
+}
+
+void fn_132(struct struct_136 *task)
+{
+ tracing_record_taskinfo(task, TRACE_RECORD_TGID);
+}
+
+
+
+
+
+
+enum enumtype_323 fn_134(struct struct_428 *s)
+{
+ return trace_seq_has_overflowed(s) ?
+  TRACE_TYPE_PARTIAL_LINE : TRACE_TYPE_HANDLED;
+}
+EXPORT_SYMBOL_GPL(trace_handle_return);
+
+void
+fn_135(struct struct_220 *entry, unsigned long var_431,
+        int var_181)
+{
+ struct struct_136 *tsk = var_136;
+
+ entry->preempt_count = var_181 & 0xff;
+ entry->pid = (tsk) ? tsk->pid : 0;
+ entry->flags =
+
+
+
+  TRACE_FLAG_IRQS_NOSUPPORT |
+
+  ((var_181 & NMI_MASK ) ? TRACE_FLAG_NMI : 0) |
+  ((var_181 & HARDIRQ_MASK) ? TRACE_FLAG_HARDIRQ : 0) |
+  ((var_181 & SOFTIRQ_OFFSET) ? TRACE_FLAG_SOFTIRQ : 0) |
+  (tif_need_resched() ? TRACE_FLAG_NEED_RESCHED : 0) |
+  (test_preempt_need_resched() ? TRACE_FLAG_PREEMPT_RESCHED : 0);
+}
+EXPORT_SYMBOL_GPL(tracing_generic_entry_update);
+
+struct struct_345 *
+fn_137(struct struct_402 *buffer,
+     int var_419,
+     unsigned long var_421,
+     unsigned long var_431, int var_181)
+{
+ return __trace_buffer_lock_reserve(buffer, var_419, var_421, var_431, var_181);
+}
+
+DEFINE_PER_CPU(struct struct_345 *, trace_buffered_event);
+DEFINE_PER_CPU(int, trace_buffered_event_cnt);
+static int trace_buffered_event_ref;
+
+void fn_138(void)
+{
+ struct struct_345 *var_424;
+ struct struct_376 *page;
+ int var_431;
+
+ WARN_ON_ONCE(!mutex_is_locked(&event_mutex));
+
+ if (trace_buffered_event_ref++)
+  return;
+
+ for_each_tracing_cpu(var_431) {
+  page = alloc_pages_node(cpu_to_node(var_431),
+     GFP_KERNEL | __GFP_NORETRY, 0);
+  if (!page)
+   goto failed;
+
+  var_424 = page_address(page);
+  memset(var_424, 0, sizeof(*var_424));
+
+  per_cpu(trace_buffered_event, var_431) = var_424;
+
+  preempt_disable();
+  if (var_431 == smp_processor_id() &&
+      this_cpu_read(trace_buffered_event) !=
+      per_cpu(trace_buffered_event, var_431))
+   WARN_ON_ONCE(1);
+  preempt_enable();
+ }
+
+ return;
+ failed:
+ trace_buffered_event_disable();
+}
+
+static void fn_140(void *var_426)
+{
+
+ smp_rmb();
+ this_cpu_dec(trace_buffered_event_cnt);
+}
+
+static void fn_142(void *var_426)
+{
+ this_cpu_inc(trace_buffered_event_cnt);
+}
+
+void fn_143(void)
+{
+ int var_431;
+
+ WARN_ON_ONCE(!mutex_is_locked(&event_mutex));
+
+ if (WARN_ON_ONCE(!trace_buffered_event_ref))
+  return;
+
+ if (--trace_buffered_event_ref)
+  return;
+
+ preempt_disable();
+
+ smp_call_function_many(tracing_buffer_mask,
+          disable_trace_buffered_event, NULL, 1);
+ preempt_enable();
+
+
+ synchronize_sched();
+
+ for_each_tracing_cpu(var_431) {
+  free_page((unsigned long)per_cpu(trace_buffered_event, var_431));
+  per_cpu(trace_buffered_event, var_431) = NULL;
+ }
+
+
+
+
+ smp_wmb();
+
+ preempt_disable();
+
+ smp_call_function_many(tracing_buffer_mask,
+          enable_trace_buffered_event, NULL, 1);
+ preempt_enable();
+}
+
+static struct struct_402 *temp_buffer;
+
+struct struct_345 *
+fn_144(struct struct_402 **current_rb,
+     struct struct_416 *trace_file,
+     int var_419, unsigned long var_421,
+     unsigned long var_431, int var_181)
+{
+ struct struct_345 *entry;
+ int var_426;
+
+ *current_rb = trace_file->tr->trace_buffer.buffer;
+
+ if (!ring_buffer_time_stamp_abs(*current_rb) && (trace_file->flags &
+      (EVENT_FILE_FL_SOFT_DISABLED | EVENT_FILE_FL_FILTERED)) &&
+     (entry = this_cpu_read(trace_buffered_event))) {
+
+  var_426 = this_cpu_inc_return(trace_buffered_event_cnt);
+  if (var_426 == 1) {
+   trace_event_setup(entry, var_419, var_431, var_181);
+   entry->array[0] = var_421;
+   return entry;
+  }
+  this_cpu_dec(trace_buffered_event_cnt);
+ }
+
+ entry = __trace_buffer_lock_reserve(*current_rb,
+         var_419, var_421, var_431, var_181);
+
+
+
+
+
+
+ if (!entry && trace_file->flags & EVENT_FILE_FL_TRIGGER_COND) {
+  *current_rb = temp_buffer;
+  entry = __trace_buffer_lock_reserve(*current_rb,
+          var_419, var_421, var_431, var_181);
+ }
+ return entry;
+}
+EXPORT_SYMBOL_GPL(trace_event_buffer_lock_reserve);
+
+static DEFINE_SPINLOCK(tracepoint_iter_lock);
+static DEFINE_MUTEX(tracepoint_printk_mutex);
+
+static void fn_146(struct struct_153 *fbuffer)
+{
+ struct struct_181 *event_call;
+ struct struct_220 *var_424;
+ unsigned long var_431;
+ struct struct_431 *iter = var_435;
+
+
+ if (WARN_ON_ONCE(!iter))
+  return;
+
+ event_call = fbuffer->trace_file->event_call;
+ if (!event_call || !event_call->event.funcs ||
+     !event_call->event.funcs->trace)
+  return;
+
+ var_424 = &fbuffer->trace_file->event_call->event;
+
+ spin_lock_irqsave(&tracepoint_iter_lock, var_431);
+ trace_seq_init(&iter->seq);
+ iter->ent = fbuffer->entry;
+ event_call->event.funcs->trace(iter, 0, var_424);
+ trace_seq_putc(&iter->seq, 0);
+ printk("%s", iter->seq.buffer);
+
+ spin_unlock_irqrestore(&tracepoint_iter_lock, var_431);
+}
+
+int fn_149(struct struct_150 *table, int var_152,
+        void __user *buffer, size_t *lenp,
+        loff_t *ppos)
+{
+ int save_tracepoint_printk;
+ int var_434;
+
+ mutex_lock(&tracepoint_printk_mutex);
+ save_tracepoint_printk = tracepoint_printk;
+
+ var_434 = proc_dointvec(table, var_152, buffer, lenp, ppos);
+
+
+
+
+
+ if (!var_435)
+  tracepoint_printk = 0;
+
+ if (save_tracepoint_printk == tracepoint_printk)
+  goto out;
+
+ if (tracepoint_printk)
+  static_key_enable(&tracepoint_printk_key.key);
+ else
+  static_key_disable(&tracepoint_printk_key.key);
+
+ out:
+ mutex_unlock(&tracepoint_printk_mutex);
+
+ return var_434;
+}
+
+void fn_152(struct struct_153 *fbuffer)
+{
+ if (static_key_false(&tracepoint_printk_key.key))
+  output_printk(fbuffer);
+
+ event_trigger_unlock_commit(fbuffer->trace_file, fbuffer->buffer,
+        fbuffer->event, fbuffer->entry,
+        fbuffer->flags, fbuffer->pc);
+}
+EXPORT_SYMBOL_GPL(trace_event_buffer_commit);
+
+void fn_153(struct struct_431 *tr,
+         struct struct_402 *buffer,
+         struct struct_345 *var_424,
+         unsigned long var_431, int var_181,
+         struct struct_154 *regs)
+{
+ __buffer_unlock_commit(buffer, var_424);
+
+
+
+
+
+
+
+ ftrace_trace_stack(tr, buffer, var_431, regs ? 0 : 3, var_181, regs);
+ ftrace_trace_userstack(buffer, var_431, var_181);
+}
+
+
+
+
+void
+fn_154(struct struct_402 *buffer,
+       struct struct_345 *var_424)
+{
+ __buffer_unlock_commit(buffer, var_424);
+}
+
+static void
+fn_155(struct struct_166 *export,
+        struct struct_345 *var_424)
+{
+ struct struct_220 *entry;
+ unsigned int var_433 = 0;
+
+ entry = ring_buffer_event_data(var_424);
+ var_433 = ring_buffer_event_length(var_424);
+ export->write(export, entry, var_433);
+}
+
+static DEFINE_MUTEX(ftrace_export_lock);
+
+static struct struct_166 __rcu *ftrace_exports_list __read_mostly;
+
+static DEFINE_STATIC_KEY_FALSE(ftrace_exports_enabled);
+
+static inline void fn_157(void)
+{
+ static_branch_enable(&ftrace_exports_enabled);
+}
+
+static inline void fn_158(void)
+{
+ static_branch_disable(&ftrace_exports_enabled);
+}
+
+void fn_159(struct struct_345 *var_424)
+{
+ struct struct_166 *export;
+
+ preempt_disable_notrace();
+
+ export = rcu_dereference_raw_notrace(ftrace_exports_list);
+ while (export) {
+  trace_process_export(export, var_424);
+  export = rcu_dereference_raw_notrace(export->next);
+ }
+
+ preempt_enable_notrace();
+}
+
+static inline void
+fn_160(struct struct_166 **list, struct struct_166 *export)
+{
+ rcu_assign_pointer(export->next, *list);
+
+
+
+
+
+
+ rcu_assign_pointer(*list, export);
+}
+
+static inline int
+fn_161(struct struct_166 **list, struct struct_166 *export)
+{
+ struct struct_166 **p;
+
+ for (p = list; *p != NULL; p = &(*p)->next)
+  if (*p == export)
+   break;
+
+ if (*p != export)
+  return -1;
+
+ rcu_assign_pointer(*p, (*p)->next);
+
+ return 0;
+}
+
+static inline void
+fn_162(struct struct_166 **list, struct struct_166 *export)
+{
+ if (*list == NULL)
+  ftrace_exports_enable();
+
+ add_trace_export(list, export);
+}
+
+static inline int
+fn_163(struct struct_166 **list, struct struct_166 *export)
+{
+ int var_434;
+
+ var_434 = rm_trace_export(list, export);
+ if (*list == NULL)
+  ftrace_exports_disable();
+
+ return var_434;
+}
+
+int fn_164(struct struct_166 *export)
+{
+ if (WARN_ON_ONCE(!export->write))
+  return -1;
+
+ mutex_lock(&ftrace_export_lock);
+
+ add_ftrace_export(&ftrace_exports_list, export);
+
+ mutex_unlock(&ftrace_export_lock);
+
+ return 0;
+}
+EXPORT_SYMBOL_GPL(register_ftrace_export);
+
+int fn_165(struct struct_166 *export)
+{
+ int var_434;
+
+ mutex_lock(&ftrace_export_lock);
+
+ var_434 = rm_ftrace_export(&ftrace_exports_list, export);
+
+ mutex_unlock(&ftrace_export_lock);
+
+ return var_434;
+}
+EXPORT_SYMBOL_GPL(unregister_ftrace_export);
+
+void
+fn_166(struct struct_431 *tr,
+        unsigned long var_185, unsigned long var_169, unsigned long var_431,
+        int var_181)
+{
+ struct struct_181 *call = &event_function;
+ struct struct_402 *buffer = tr->trace_buffer.buffer;
+ struct struct_345 *var_424;
+ struct struct_168 *entry;
+
+ var_424 = __trace_buffer_lock_reserve(buffer, TRACE_FN, sizeof(*entry),
+         var_431, var_181);
+ if (!var_424)
+  return;
+ entry = ring_buffer_event_data(var_424);
+ entry->ip = var_185;
+ entry->parent_ip = var_169;
+
+ if (!call_filter_check_discard(call, entry, buffer, var_424)) {
+  if (static_branch_unlikely(&ftrace_exports_enabled))
+   ftrace_exports(var_424);
+  __buffer_unlock_commit(buffer, var_424);
+ }
+}
+
+struct struct_173 {
+ int nesting;
+ char buffer[4][TRACE_BUF_SIZE];
+};
+
+static struct struct_173 *trace_percpu_buffer;
+
+
+
+
+
+static char *fn_170(void)
+{
+ struct struct_173 *buffer = this_cpu_ptr(trace_percpu_buffer);
+
+ if (!buffer || buffer->nesting >= 4)
+  return NULL;
+
+ buffer->nesting++;
+
+
+ barrier();
+ return &buffer->buffer[buffer->nesting][0];
+}
+
+static void fn_171(void)
+{
+
+ barrier();
+ this_cpu_dec(trace_percpu_buffer->nesting);
+}
+
+static int fn_172(void)
+{
+ struct struct_173 *buffers;
+
+ buffers = alloc_percpu(struct trace_buffer_struct);
+ if (WARN(!buffers, "Could not allocate percpu trace_printk buffer"))
+  return -ENOMEM;
+
+ trace_percpu_buffer = buffers;
+ return 0;
+}
+
+static int buffers_allocated;
+
+void fn_173(void)
+{
+ if (buffers_allocated)
+  return;
+
+ if (alloc_percpu_trace_buffer())
+  return;
+
+
+
+ pr_warn("\n");
+ pr_warn("**********************************************************\n");
+ pr_warn("**   NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE   **\n");
+ pr_warn("**                                                      **\n");
+ pr_warn("** trace_printk() being used. Allocating extra memory.  **\n");
+ pr_warn("**                                                      **\n");
+ pr_warn("** This means that this is a DEBUG kernel and it is     **\n");
+ pr_warn("** unsafe for production use.                           **\n");
+ pr_warn("**                                                      **\n");
+ pr_warn("** If you see this message and you are not debugging    **\n");
+ pr_warn("** the kernel, report this immediately to your vendor!  **\n");
+ pr_warn("**                                                      **\n");
+ pr_warn("**   NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE   **\n");
+ pr_warn("**********************************************************\n");
+
+
+ tracing_update_buffers();
+
+ buffers_allocated = 1;
+
+
+
+
+
+
+
+ if (var_434.trace_buffer.buffer)
+  tracing_start_cmdline_record();
+}
+
+void fn_174(void)
+{
+
+ if (!buffers_allocated)
+  return;
+ tracing_start_cmdline_record();
+}
+
+static void fn_175(int var_268)
+{
+ if (!buffers_allocated)
+  return;
+
+ if (var_268)
+  tracing_start_cmdline_record();
+ else
+  tracing_stop_cmdline_record();
+}
+
+
+
+
+
+int fn_177(unsigned long var_185, const char *fmt, va_list var_185)
+{
+ struct struct_181 *call = &event_bprint;
+ struct struct_345 *var_424;
+ struct struct_402 *buffer;
+ struct struct_431 *tr = &var_434;
+ struct struct_179 *entry;
+ unsigned long var_431;
+ char *tbuffer;
+ int var_421 = 0, var_433, var_181;
+
+ if (unlikely(tracing_selftest_running || var_434))
+  return 0;
+
+
+ pause_graph_tracing();
+
+ var_181 = preempt_count();
+ preempt_disable_notrace();
+
+ tbuffer = get_trace_buf();
+ if (!tbuffer) {
+  var_421 = 0;
+  goto out_nobuffer;
+ }
+
+ var_421 = vbin_printf((u32 *)tbuffer, TRACE_BUF_SIZE/sizeof(int), fmt, var_185);
+
+ if (var_421 > TRACE_BUF_SIZE/sizeof(int) || var_421 < 0)
+  goto out;
+
+ local_save_flags(var_431);
+ var_433 = sizeof(*entry) + sizeof(u32) * var_421;
+ buffer = tr->trace_buffer.buffer;
+ var_424 = __trace_buffer_lock_reserve(buffer, TRACE_BPRINT, var_433,
+         var_431, var_181);
+ if (!var_424)
+  goto out;
+ entry = ring_buffer_event_data(var_424);
+ entry->ip = var_185;
+ entry->fmt = fmt;
+
+ memcpy(entry->buf, tbuffer, sizeof(u32) * var_421);
+ if (!call_filter_check_discard(call, entry, buffer, var_424)) {
+  __buffer_unlock_commit(buffer, var_424);
+  ftrace_trace_stack(tr, buffer, var_431, 6, var_181, NULL);
+ }
+
+out:
+ put_trace_buf();
+
+out_nobuffer:
+ preempt_enable_notrace();
+ unpause_graph_tracing();
+
+ return var_421;
+}
+EXPORT_SYMBOL_GPL(trace_vbprintk);
+
+static int
+fn_180(struct struct_402 *buffer,
+        unsigned long var_185, const char *fmt, va_list var_185)
+{
+ struct struct_181 *call = &event_print;
+ struct struct_345 *var_424;
+ int var_421 = 0, var_433, var_181;
+ struct struct_344 *entry;
+ unsigned long var_431;
+ char *tbuffer;
+
+ if (var_434 || tracing_selftest_running)
+  return 0;
+
+
+ pause_graph_tracing();
+
+ var_181 = preempt_count();
+ preempt_disable_notrace();
+
+
+ tbuffer = get_trace_buf();
+ if (!tbuffer) {
+  var_421 = 0;
+  goto out_nobuffer;
+ }
+
+ var_421 = vscnprintf(tbuffer, TRACE_BUF_SIZE, fmt, var_185);
+
+ local_save_flags(var_431);
+ var_433 = sizeof(*entry) + var_421 + 1;
+ var_424 = __trace_buffer_lock_reserve(buffer, TRACE_PRINT, var_433,
+         var_431, var_181);
+ if (!var_424)
+  goto out;
+ entry = ring_buffer_event_data(var_424);
+ entry->ip = var_185;
+
+ memcpy(&entry->buf, tbuffer, var_421 + 1);
+ if (!call_filter_check_discard(call, entry, buffer, var_424)) {
+  __buffer_unlock_commit(buffer, var_424);
+  ftrace_trace_stack(&var_434, buffer, var_431, 6, var_181, NULL);
+ }
+
+out:
+ put_trace_buf();
+
+out_nobuffer:
+ preempt_enable_notrace();
+ unpause_graph_tracing();
+
+ return var_421;
+}
+
+int fn_181(struct struct_431 *tr,
+   unsigned long var_185, const char *fmt, va_list var_185)
+{
+ return __trace_array_vprintk(tr->trace_buffer.buffer, var_185, fmt, var_185);
+}
+
+int fn_182(struct struct_431 *tr,
+         unsigned long var_185, const char *fmt, ...)
+{
+ int var_434;
+ va_list ap;
+
+ if (!(var_434.trace_flags & TRACE_ITER_PRINTK))
+  return 0;
+
+ va_start(ap, fmt);
+ var_434 = trace_array_vprintk(tr, var_185, fmt, ap);
+ va_end(ap);
+ return var_434;
+}
+
+int fn_183(struct struct_402 *buffer,
+      unsigned long var_185, const char *fmt, ...)
+{
+ int var_434;
+ va_list ap;
+
+ if (!(var_434.trace_flags & TRACE_ITER_PRINTK))
+  return 0;
+
+ va_start(ap, fmt);
+ var_434 = __trace_array_vprintk(buffer, var_185, fmt, ap);
+ va_end(ap);
+ return var_434;
+}
+
+int fn_184(unsigned long var_185, const char *fmt, va_list var_185)
+{
+ return trace_array_vprintk(&var_434, var_185, fmt, var_185);
+}
+EXPORT_SYMBOL_GPL(trace_vprintk);
+
+static void fn_185(struct struct_431 *iter)
+{
+ struct struct_221 *buf_iter = trace_buffer_iter(iter, iter->cpu);
+
+ iter->idx++;
+ if (buf_iter)
+  ring_buffer_read(buf_iter, NULL);
+}
+
+static struct struct_220 *
+fn_187(struct struct_431 *iter, int var_431, u64 *ts,
+  unsigned long *var_195)
+{
+ struct struct_345 *var_424;
+ struct struct_221 *buf_iter = trace_buffer_iter(iter, var_431);
+
+ if (buf_iter)
+  var_424 = ring_buffer_iter_peek(buf_iter, ts);
+ else
+  var_424 = ring_buffer_peek(iter->trace_buffer->buffer, var_431, ts,
+      var_195);
+
+ if (var_424) {
+  iter->ent_size = ring_buffer_event_length(var_424);
+  return ring_buffer_event_data(var_424);
+ }
+ iter->ent_size = 0;
+ return NULL;
+}
+
+static struct struct_220 *
+fn_189(struct struct_431 *iter, int *ent_cpu,
+    unsigned long *missing_events, u64 *ent_ts)
+{
+ struct struct_402 *buffer = iter->trace_buffer->buffer;
+ struct struct_220 *ent, *next = NULL;
+ unsigned long var_195 = 0, var_195 = 0;
+ int var_203 = iter->cpu_file;
+ u64 var_195 = 0, ts;
+ int var_195 = -1;
+ int var_195 = 0;
+ int var_431;
+
+
+
+
+
+ if (var_203 > RING_BUFFER_ALL_CPUS) {
+  if (ring_buffer_empty_cpu(buffer, var_203))
+   return NULL;
+  ent = peek_next_entry(iter, var_203, ent_ts, missing_events);
+  if (ent_cpu)
+   *ent_cpu = var_203;
+
+  return ent;
+ }
+
+ for_each_tracing_cpu(var_431) {
+
+  if (ring_buffer_empty_cpu(buffer, var_431))
+   continue;
+
+  ent = peek_next_entry(iter, var_431, &ts, &var_195);
+
+
+
+
+  if (ent && (!next || ts < var_195)) {
+   next = ent;
+   var_195 = var_431;
+   var_195 = ts;
+   var_195 = var_195;
+   var_195 = iter->ent_size;
+  }
+ }
+
+ iter->ent_size = var_195;
+
+ if (ent_cpu)
+  *ent_cpu = var_195;
+
+ if (ent_ts)
+  *ent_ts = var_195;
+
+ if (missing_events)
+  *missing_events = var_195;
+
+ return next;
+}
+
+
+struct struct_220 *fn_195(struct struct_431 *iter,
+       int *ent_cpu, u64 *ent_ts)
+{
+ return __find_next_entry(iter, ent_cpu, NULL, ent_ts);
+}
+
+
+void *fn_196(struct struct_431 *iter)
+{
+ iter->ent = __find_next_entry(iter, &iter->cpu,
+          &iter->lost_events, &iter->ts);
+
+ if (iter->ent)
+  trace_iterator_increment(iter);
+
+ return iter->ent ? iter : NULL;
+}
+
+static void fn_197(struct struct_431 *iter)
+{
+ ring_buffer_consume(iter->trace_buffer->buffer, iter->cpu, &iter->ts,
+       &iter->lost_events);
+}
+
+static void *fn_198(struct struct_351 *m, void *var_351, loff_t *pos)
+{
+ struct struct_431 *iter = m->private;
+ int var_415 = (int)*pos;
+ void *ent;
+
+ WARN_ON_ONCE(iter->leftover);
+
+ (*pos)++;
+
+
+ if (iter->idx > var_415)
+  return NULL;
+
+ if (iter->idx < 0)
+  ent = trace_find_next_entry_inc(iter);
+ else
+  ent = iter;
+
+ while (ent && iter->idx < var_415)
+  ent = trace_find_next_entry_inc(iter);
+
+ iter->pos = *pos;
+
+ return ent;
+}
+
+void fn_203(struct struct_431 *iter, int var_431)
+{
+ struct struct_345 *var_424;
+ struct struct_221 *buf_iter;
+ unsigned long var_376 = 0;
+ u64 ts;
+
+ per_cpu_ptr(iter->trace_buffer->data, var_431)->skipped_entries = 0;
+
+ buf_iter = trace_buffer_iter(iter, var_431);
+ if (!buf_iter)
+  return;
+
+ ring_buffer_iter_reset(buf_iter);
+
+
+
+
+
+
+ while ((var_424 = ring_buffer_iter_peek(buf_iter, &ts))) {
+  if (ts >= iter->trace_buffer->time_start)
+   break;
+  var_376++;
+  ring_buffer_read(buf_iter, NULL);
+ }
+
+ per_cpu_ptr(iter->trace_buffer->data, var_431)->skipped_entries = var_376;
+}
+
+
+
+
+
+static void *fn_202(struct struct_351 *m, loff_t *pos)
+{
+ struct struct_431 *iter = m->private;
+ struct struct_431 *tr = iter->tr;
+ int var_203 = iter->cpu_file;
+ void *p = NULL;
+ loff_t var_284 = 0;
+ int var_431;
+
+
+
+
+
+
+
+ mutex_lock(&trace_types_lock);
+ if (unlikely(tr->current_trace && iter->trace->name != tr->current_trace->name))
+  *iter->trace = *tr->current_trace;
+ mutex_unlock(&trace_types_lock);
+
+
+
+
+
+
+ if (!iter->snapshot)
+  atomic_inc(&trace_record_taskinfo_disabled);
+
+ if (*pos != iter->pos) {
+  iter->ent = NULL;
+  iter->cpu = 0;
+  iter->idx = -1;
+
+  if (var_203 == RING_BUFFER_ALL_CPUS) {
+   for_each_tracing_cpu(cpu)
+    fn_203(iter, cpu);
+  } else
+   tracing_iter_reset(iter, var_203);
+
+  iter->leftover = 0;
+  for (p = iter; p && var_284 < *pos; p = s_next(m, p, &var_284))
+   ;
+
+ } else {
+
+
+
+
+  if (iter->leftover)
+   p = iter;
+  else {
+   var_284 = *pos - 1;
+   p = s_next(m, p, &var_284);
+  }
+ }
+
+ trace_event_read_lock();
+ trace_access_lock(var_203);
+ return p;
+}
+
+static void fn_203(struct struct_351 *m, void *p)
+{
+ struct struct_431 *iter = m->private;
+
+
+
+
+
+
+ if (!iter->snapshot)
+  atomic_dec(&trace_record_taskinfo_disabled);
+
+ trace_access_unlock(iter->cpu_file);
+ trace_event_read_unlock();
+}
+
+static void
+fn_204(struct struct_408 *buf,
+    unsigned long *total, unsigned long *var_376)
+{
+ unsigned long var_433;
+ int var_431;
+
+ *total = 0;
+ *var_376 = 0;
+
+ for_each_tracing_cpu(var_431) {
+  var_433 = ring_buffer_entries_cpu(buf->buffer, var_431);
+
+
+
+
+
+  if (per_cpu_ptr(buf->data, var_431)->skipped_entries) {
+   var_433 -= per_cpu_ptr(buf->data, var_431)->skipped_entries;
+
+   *total += var_433;
+  } else
+   *total += var_433 +
+    ring_buffer_overrun_cpu(buf->buffer, var_431);
+  *var_376 += var_433;
+ }
+}
+
+static void fn_206(struct struct_351 *m)
+{
+ seq_puts(m, "#                  _------=> CPU#            \n"
+      "#                 / _-----=> irqs-off        \n"
+      "#                | / _----=> need-resched    \n"
+      "#                || / _---=> hardirq/softirq \n"
+      "#                ||| / _--=> preempt-depth   \n"
+      "#                |||| /     delay            \n"
+      "#  cmd     pid   ||||| time  |   caller      \n"
+      "#     \\   /      |||||  \\    |   /         \n");
+}
+
+static void fn_207(struct struct_408 *buf, struct struct_351 *m)
+{
+ unsigned long total;
+ unsigned long var_376;
+
+ get_total_entries(buf, &total, &var_376);
+ seq_printf(m, "# entries-in-buffer/entries-written: %lu/%lu   #P:%d\n",
+     var_376, total, num_online_cpus());
+ seq_puts(m, "#\n");
+}
+
+static void fn_208(struct struct_408 *buf, struct struct_351 *m,
+       unsigned int var_431)
+{
+ bool var_211 = var_431 & TRACE_ITER_RECORD_TGID;
+
+ print_event_info(buf, m);
+
+ seq_printf(m, "#           TASK-PID   CPU#   %s  TIMESTAMP  FUNCTION\n", var_211 ? "TGID     " : "");
+ seq_printf(m, "#              | |       |    %s     |         |\n", var_211 ? "  |      " : "");
+}
+
+static void fn_210(struct struct_408 *buf, struct struct_351 *m,
+           unsigned int var_431)
+{
+ bool var_211 = var_431 & TRACE_ITER_RECORD_TGID;
+ const char tgid_space[] = "          ";
+ const char space[] = "  ";
+
+ seq_printf(m, "#                          %s  _-----=> irqs-off\n",
+     var_211 ? tgid_space : space);
+ seq_printf(m, "#                          %s / _----=> need-resched\n",
+     var_211 ? tgid_space : space);
+ seq_printf(m, "#                          %s| / _---=> hardirq/softirq\n",
+     var_211 ? tgid_space : space);
+ seq_printf(m, "#                          %s|| / _--=> preempt-depth\n",
+     var_211 ? tgid_space : space);
+ seq_printf(m, "#                          %s||| /     delay\n",
+     var_211 ? tgid_space : space);
+ seq_printf(m, "#           TASK-PID   CPU#%s||||    TIMESTAMP  FUNCTION\n",
+     var_211 ? "   TGID   " : space);
+ seq_printf(m, "#              | |       | %s||||       |         |\n",
+     var_211 ? "     |    " : space);
+}
+
+void
+fn_211(struct struct_351 *m, struct struct_431 *iter)
+{
+ unsigned long var_216 = (var_434.trace_flags & TRACE_ITER_SYM_MASK);
+ struct struct_408 *buf = iter->trace_buffer;
+ struct struct_213 *var_426 = per_cpu_ptr(buf->data, buf->cpu);
+ struct struct_411 *var_419 = iter->trace;
+ unsigned long var_376;
+ unsigned long total;
+ const char *name = "preemption";
+
+ name = var_419->name;
+
+ get_total_entries(buf, &total, &var_376);
+
+ seq_printf(m, "# %s latency trace v1.1.5 on %s\n",
+     name, UTS_RELEASE);
+ seq_puts(m, "# -----------------------------------"
+   "---------------------------------\n");
+ seq_printf(m, "# latency: %lu us, #%lu/%lu, CPU#%d |"
+     " (M:%s VP:%d, KP:%d, SP:%d HP:%d",
+     nsecs_to_usecs(var_426->saved_latency),
+     var_376,
+     total,
+     buf->cpu,
+
+
+
+
+
+
+
+     "unknown",
+
+
+     0, 0, 0, 0);
+
+
+
+ seq_puts(m, ")\n");
+
+ seq_puts(m, "#    -----------------\n");
+ seq_printf(m, "#    | task: %.16s-%d "
+     "(uid:%d nice:%ld policy:%ld rt_prio:%ld)\n",
+     var_426->comm, var_426->pid,
+     from_kuid_munged(seq_user_ns(m), var_426->uid), var_426->nice,
+     var_426->policy, var_426->rt_priority);
+ seq_puts(m, "#    -----------------\n");
+
+ if (var_426->critical_start) {
+  seq_puts(m, "#  => started at: ");
+  seq_print_ip_sym(&iter->seq, var_426->critical_start, var_216);
+  trace_print_seq(m, &iter->seq);
+  seq_puts(m, "\n#  => ended at:   ");
+  seq_print_ip_sym(&iter->seq, var_426->critical_end, var_216);
+  trace_print_seq(m, &iter->seq);
+  seq_puts(m, "\n#\n");
+ }
+
+ seq_puts(m, "#\n");
+}
+
+static void fn_214(struct struct_431 *iter)
+{
+ struct struct_428 *s = &iter->seq;
+ struct struct_431 *tr = iter->tr;
+
+ if (!(tr->trace_flags & TRACE_ITER_ANNOTATE))
+  return;
+
+ if (!(iter->iter_flags & TRACE_FILE_ANNOTATE))
+  return;
+
+ if (cpumask_available(iter->started) &&
+     cpumask_test_cpu(iter->cpu, iter->started))
+  return;
+
+ if (per_cpu_ptr(iter->trace_buffer->data, iter->cpu)->skipped_entries)
+  return;
+
+ if (cpumask_available(iter->started))
+  cpumask_set_cpu(iter->cpu, iter->started);
+
+
+ if (iter->idx > 1)
+  trace_seq_printf(s, "##### CPU %u buffer started ####\n",
+    iter->cpu);
+}
+
+static enum enumtype_323 fn_215(struct struct_431 *iter)
+{
+ struct struct_431 *tr = iter->tr;
+ struct struct_428 *s = &iter->seq;
+ unsigned long var_216 = (tr->trace_flags & TRACE_ITER_SYM_MASK);
+ struct struct_220 *entry;
+ struct struct_220 *var_424;
+
+ entry = iter->ent;
+
+ test_cpu_buff_start(iter);
+
+ var_424 = ftrace_find_event(entry->type);
+
+ if (tr->trace_flags & TRACE_ITER_CONTEXT_INFO) {
+  if (iter->iter_flags & TRACE_FILE_LAT_FMT)
+   trace_print_lat_context(iter);
+  else
+   trace_print_context(iter);
+ }
+
+ if (trace_seq_has_overflowed(s))
+  return TRACE_TYPE_PARTIAL_LINE;
+
+ if (var_424)
+  return var_424->funcs->trace(iter, var_216, var_424);
+
+ trace_seq_printf(s, "Unknown type %d\n", entry->type);
+
+ return trace_handle_return(s);
+}
+
+static enum enumtype_323 fn_216(struct struct_431 *iter)
+{
+ struct struct_431 *tr = iter->tr;
+ struct struct_428 *s = &iter->seq;
+ struct struct_220 *entry;
+ struct struct_220 *var_424;
+
+ entry = iter->ent;
+
+ if (tr->trace_flags & TRACE_ITER_CONTEXT_INFO)
+  trace_seq_printf(s, "%d %d %llu ",
+     entry->pid, iter->cpu, iter->ts);
+
+ if (trace_seq_has_overflowed(s))
+  return TRACE_TYPE_PARTIAL_LINE;
+
+ var_424 = ftrace_find_event(entry->type);
+ if (var_424)
+  return var_424->funcs->raw(iter, 0, var_424);
+
+ trace_seq_printf(s, "%d ?\n", entry->type);
+
+ return trace_handle_return(s);
+}
+
+static enum enumtype_323 fn_217(struct struct_431 *iter)
+{
+ struct struct_431 *tr = iter->tr;
+ struct struct_428 *s = &iter->seq;
+ unsigned char var_219 = '\n';
+ struct struct_220 *entry;
+ struct struct_220 *var_424;
+
+ entry = iter->ent;
+
+ if (tr->trace_flags & TRACE_ITER_CONTEXT_INFO) {
+  SEQ_PUT_HEX_FIELD(s, entry->pid);
+  SEQ_PUT_HEX_FIELD(s, iter->cpu);
+  SEQ_PUT_HEX_FIELD(s, iter->ts);
+  if (trace_seq_has_overflowed(s))
+   return TRACE_TYPE_PARTIAL_LINE;
+ }
+
+ var_424 = ftrace_find_event(entry->type);
+ if (var_424) {
+  enum enumtype_323 var_434 = var_424->funcs->hex(iter, 0, var_424);
+  if (var_434 != TRACE_TYPE_HANDLED)
+   return var_434;
+ }
+
+ SEQ_PUT_FIELD(s, var_219);
+
+ return trace_handle_return(s);
+}
+
+static enum enumtype_323 fn_219(struct struct_431 *iter)
+{
+ struct struct_431 *tr = iter->tr;
+ struct struct_428 *s = &iter->seq;
+ struct struct_220 *entry;
+ struct struct_220 *var_424;
+
+ entry = iter->ent;
+
+ if (tr->trace_flags & TRACE_ITER_CONTEXT_INFO) {
+  SEQ_PUT_FIELD(s, entry->pid);
+  SEQ_PUT_FIELD(s, iter->cpu);
+  SEQ_PUT_FIELD(s, iter->ts);
+  if (trace_seq_has_overflowed(s))
+   return TRACE_TYPE_PARTIAL_LINE;
+ }
+
+ var_424 = ftrace_find_event(entry->type);
+ return var_424 ? var_424->funcs->binary(iter, 0, var_424) :
+  TRACE_TYPE_HANDLED;
+}
+
+int fn_220(struct struct_431 *iter)
+{
+ struct struct_221 *buf_iter;
+ int var_431;
+
+
+ if (iter->cpu_file != RING_BUFFER_ALL_CPUS) {
+  var_431 = iter->cpu_file;
+  buf_iter = trace_buffer_iter(iter, var_431);
+  if (buf_iter) {
+   if (!ring_buffer_iter_empty(buf_iter))
+    return 0;
+  } else {
+   if (!ring_buffer_empty_cpu(iter->trace_buffer->buffer, var_431))
+    return 0;
+  }
+  return 1;
+ }
+
+ for_each_tracing_cpu(var_431) {
+  buf_iter = trace_buffer_iter(iter, var_431);
+  if (buf_iter) {
+   if (!ring_buffer_iter_empty(buf_iter))
+    return 0;
+  } else {
+   if (!ring_buffer_empty_cpu(iter->trace_buffer->buffer, var_431))
+    return 0;
+  }
+ }
+
+ return 1;
+}
+
+
+enum enumtype_323 fn_221(struct struct_431 *iter)
+{
+ struct struct_431 *tr = iter->tr;
+ unsigned long var_225 = tr->trace_flags;
+ enum enumtype_323 var_434;
+
+ if (iter->lost_events) {
+  trace_seq_printf(&iter->seq, "CPU:%d [LOST %lu EVENTS]\n",
+     iter->cpu, iter->lost_events);
+  if (trace_seq_has_overflowed(&iter->seq))
+   return TRACE_TYPE_PARTIAL_LINE;
+ }
+
+ if (iter->trace && iter->trace->print_line) {
+  var_434 = iter->trace->print_line(iter);
+  if (var_434 != TRACE_TYPE_UNHANDLED)
+   return var_434;
+ }
+
+ if (iter->ent->type == TRACE_BPUTS &&
+   var_225 & TRACE_ITER_PRINTK &&
+   var_225 & TRACE_ITER_PRINTK_MSGONLY)
+  return trace_print_bputs_msg_only(iter);
+
+ if (iter->ent->type == TRACE_BPRINT &&
+   var_225 & TRACE_ITER_PRINTK &&
+   var_225 & TRACE_ITER_PRINTK_MSGONLY)
+  return trace_print_bprintk_msg_only(iter);
+
+ if (iter->ent->type == TRACE_PRINT &&
+   var_225 & TRACE_ITER_PRINTK &&
+   var_225 & TRACE_ITER_PRINTK_MSGONLY)
+  return trace_print_printk_msg_only(iter);
+
+ if (var_225 & TRACE_ITER_BIN)
+  return print_bin_fmt(iter);
+
+ if (var_225 & TRACE_ITER_HEX)
+  return print_hex_fmt(iter);
+
+ if (var_225 & TRACE_ITER_RAW)
+  return print_raw_fmt(iter);
+
+ return print_trace_fmt(iter);
+}
+
+void fn_223(struct struct_351 *m)
+{
+ struct struct_431 *iter = m->private;
+ struct struct_431 *tr = iter->tr;
+
+
+ if (trace_empty(iter))
+  return;
+
+ if (iter->iter_flags & TRACE_FILE_LAT_FMT)
+  print_trace_header(m, iter);
+
+ if (!(tr->trace_flags & TRACE_ITER_VERBOSE))
+  print_lat_help_header(m);
+}
+
+void fn_224(struct struct_351 *m)
+{
+ struct struct_431 *iter = m->private;
+ struct struct_431 *tr = iter->tr;
+ unsigned long var_225 = tr->trace_flags;
+
+ if (!(var_225 & TRACE_ITER_CONTEXT_INFO))
+  return;
+
+ if (iter->iter_flags & TRACE_FILE_LAT_FMT) {
+
+  if (trace_empty(iter))
+   return;
+  print_trace_header(m, iter);
+  if (!(var_225 & TRACE_ITER_VERBOSE))
+   print_lat_help_header(m);
+ } else {
+  if (!(var_225 & TRACE_ITER_VERBOSE)) {
+   if (var_225 & TRACE_ITER_IRQ_INFO)
+    print_func_help_header_irq(iter->trace_buffer,
+          m, var_225);
+   else
+    print_func_help_header(iter->trace_buffer, m,
+             var_225);
+  }
+ }
+}
+
+static void fn_225(struct struct_351 *m)
+{
+ if (!ftrace_is_dead())
+  return;
+ seq_puts(m, "# WARNING: FUNCTION TRACING IS CORRUPTED\n"
+      "#          MAY BE MISSING FUNCTION EVENTS\n");
+}
+
+static inline void fn_226(struct struct_351 *m, struct struct_431 *iter) { }
+
+
+static int fn_227(struct struct_351 *m, void *var_351)
+{
+ struct struct_431 *iter = var_351;
+ int var_434;
+
+ if (iter->ent == NULL) {
+  if (iter->tr) {
+   seq_printf(m, "# tracer: %s\n", iter->trace->name);
+   seq_puts(m, "#\n");
+   test_ftrace_alive(m);
+  }
+  if (iter->snapshot && trace_empty(iter))
+   print_snapshot_help(m, iter);
+  else if (iter->trace && iter->trace->print_header)
+   iter->trace->print_header(m);
+  else
+   trace_default_header(m);
+
+ } else if (iter->leftover) {
+
+
+
+
+  var_434 = trace_print_seq(m, &iter->seq);
+
+
+  iter->leftover = var_434;
+
+ } else {
+  print_trace_line(iter);
+  var_434 = trace_print_seq(m, &iter->seq);
+
+
+
+
+
+
+
+  iter->leftover = var_434;
+ }
+
+ return 0;
+}
+
+
+
+
+
+static inline int fn_228(struct struct_378 *inode)
+{
+ if (inode->i_cdev)
+  return (long)inode->i_cdev - 1;
+ return RING_BUFFER_ALL_CPUS;
+}
+
+static const struct struct_286 var_235 = {
+ .start = s_start,
+ .next = s_next,
+ .stop = s_stop,
+ .show = s_show,
+};
+
+static struct struct_431 *
+fn_232(struct struct_378 *inode, struct struct_433 *file, bool var_235)
+{
+ struct struct_431 *tr = inode->i_private;
+ struct struct_431 *iter;
+ int var_431;
+
+ if (var_434)
+  return ERR_PTR(-ENODEV);
+
+ iter = __seq_open_private(file, &var_235, sizeof(*iter));
+ if (!iter)
+  return ERR_PTR(-ENOMEM);
+
+ iter->buffer_iter = kcalloc(nr_cpu_ids, sizeof(*iter->buffer_iter),
+        GFP_KERNEL);
+ if (!iter->buffer_iter)
+  goto release;
+
+
+
+
+
+ mutex_lock(&trace_types_lock);
+ iter->trace = kzalloc(sizeof(*iter->trace), GFP_KERNEL);
+ if (!iter->trace)
+  goto fail;
+
+ *iter->trace = *tr->current_trace;
+
+ if (!zalloc_cpumask_var(&iter->started, GFP_KERNEL))
+  goto fail;
+
+ iter->tr = tr;
+
+
+
+
+
+
+
+  iter->trace_buffer = &tr->trace_buffer;
+ iter->snapshot = var_235;
+ iter->pos = -1;
+ iter->cpu_file = tracing_get_cpu(inode);
+ mutex_init(&iter->mutex);
+
+
+ if (iter->trace && iter->trace->open)
+  iter->trace->open(iter);
+
+
+ if (ring_buffer_overruns(iter->trace_buffer->buffer))
+  iter->iter_flags |= TRACE_FILE_ANNOTATE;
+
+
+ if (trace_clocks[tr->clock_id].in_ns)
+  iter->iter_flags |= TRACE_FILE_TIME_IN_NS;
+
+
+ if (!iter->snapshot)
+  tracing_stop_tr(tr);
+
+ if (iter->cpu_file == RING_BUFFER_ALL_CPUS) {
+  for_each_tracing_cpu(var_431) {
+   iter->buffer_iter[var_431] =
+    ring_buffer_read_prepare(iter->trace_buffer->buffer, var_431);
+  }
+  ring_buffer_read_prepare_sync();
+  for_each_tracing_cpu(var_431) {
+   ring_buffer_read_start(iter->buffer_iter[var_431]);
+   tracing_iter_reset(iter, var_431);
+  }
+ } else {
+  var_431 = iter->cpu_file;
+  iter->buffer_iter[var_431] =
+   ring_buffer_read_prepare(iter->trace_buffer->buffer, var_431);
+  ring_buffer_read_prepare_sync();
+  ring_buffer_read_start(iter->buffer_iter[var_431]);
+  tracing_iter_reset(iter, var_431);
+ }
+
+ mutex_unlock(&trace_types_lock);
+
+ return iter;
+
+ fail:
+ mutex_unlock(&trace_types_lock);
+ kfree(iter->trace);
+ kfree(iter->buffer_iter);
+release:
+ seq_release_private(inode, file);
+ return ERR_PTR(-ENOMEM);
+}
+
+int fn_235(struct struct_378 *inode, struct struct_433 *filp)
+{
+ if (var_434)
+  return -ENODEV;
+
+ filp->private_data = inode->i_private;
+ return 0;
+}
+
+bool fn_236(void)
+{
+ return (var_434) ? true: false;
+}
+
+
+
+
+
+static int fn_237(struct struct_378 *inode, struct struct_433 *filp)
+{
+ struct struct_431 *tr = inode->i_private;
+
+ if (var_434)
+  return -ENODEV;
+
+ if (trace_array_get(tr) < 0)
+  return -ENODEV;
+
+ filp->private_data = inode->i_private;
+
+ return 0;
+}
+
+static int fn_238(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+ struct struct_351 *m = file->private_data;
+ struct struct_431 *iter;
+ int var_431;
+
+ if (!(file->f_mode & FMODE_READ)) {
+  trace_array_put(tr);
+  return 0;
+ }
+
+
+ iter = m->private;
+ mutex_lock(&trace_types_lock);
+
+ for_each_tracing_cpu(var_431) {
+  if (iter->buffer_iter[var_431])
+   ring_buffer_read_finish(iter->buffer_iter[var_431]);
+ }
+
+ if (iter->trace && iter->trace->close)
+  iter->trace->close(iter);
+
+ if (!iter->snapshot)
+
+  tracing_start_tr(tr);
+
+ __trace_array_put(tr);
+
+ mutex_unlock(&trace_types_lock);
+
+ mutex_destroy(&iter->mutex);
+ free_cpumask_var(iter->started);
+ kfree(iter->trace);
+ kfree(iter->buffer_iter);
+ seq_release_private(inode, file);
+
+ return 0;
+}
+
+static int fn_239(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+
+ trace_array_put(tr);
+ return 0;
+}
+
+static int fn_240(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+
+ trace_array_put(tr);
+
+ return single_release(inode, file);
+}
+
+static int fn_241(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+ struct struct_431 *iter;
+ int var_434 = 0;
+
+ if (trace_array_get(tr) < 0)
+  return -ENODEV;
+
+
+ if ((file->f_mode & FMODE_WRITE) && (file->f_flags & O_TRUNC)) {
+  int var_431 = tracing_get_cpu(inode);
+  struct struct_408 *trace_buf = &tr->trace_buffer;
+
+
+
+
+
+
+  if (var_431 == RING_BUFFER_ALL_CPUS)
+   tracing_reset_online_cpus(trace_buf);
+  else
+   tracing_reset(trace_buf, var_431);
+ }
+
+ if (file->f_mode & FMODE_READ) {
+  iter = __tracing_open(inode, file, false);
+  if (IS_ERR(iter))
+   var_434 = PTR_ERR(iter);
+  else if (tr->trace_flags & TRACE_ITER_LATENCY_FMT)
+   iter->iter_flags |= TRACE_FILE_LAT_FMT;
+ }
+
+ if (var_434 < 0)
+  trace_array_put(tr);
+
+ return var_434;
+}
+
+
+
+
+
+
+static bool
+fn_242(struct struct_411 *t, struct struct_431 *tr)
+{
+ return (tr->flags & TRACE_ARRAY_FL_GLOBAL) || t->allow_instances;
+}
+
+
+static struct struct_411 *
+fn_243(struct struct_431 *tr, struct struct_411 *t)
+{
+ while (t && !trace_ok_for_array(t, tr))
+  t = t->next;
+
+ return t;
+}
+
+static void *
+fn_244(struct struct_351 *m, void *var_351, loff_t *pos)
+{
+ struct struct_431 *tr = m->private;
+ struct struct_411 *t = var_351;
+
+ (*pos)++;
+
+ if (t)
+  t = get_tracer_for_array(tr, t->next);
+
+ return t;
+}
+
+static void *fn_245(struct struct_351 *m, loff_t *pos)
+{
+ struct struct_431 *tr = m->private;
+ struct struct_411 *t;
+ loff_t var_284 = 0;
+
+ mutex_lock(&trace_types_lock);
+
+ t = get_tracer_for_array(tr, trace_types);
+ for (; t && var_284 < *pos; t = t_next(m, t, &var_284))
+   ;
+
+ return t;
+}
+
+static void fn_246(struct struct_351 *m, void *p)
+{
+ mutex_unlock(&trace_types_lock);
+}
+
+static int fn_247(struct struct_351 *m, void *var_351)
+{
+ struct struct_411 *t = var_351;
+
+ if (!t)
+  return 0;
+
+ seq_puts(m, t->name);
+ if (t->next)
+  seq_putc(m, ' ');
+ else
+  seq_putc(m, '\n');
+
+ return 0;
+}
+
+static const struct struct_286 var_250 = {
+ .start = t_start,
+ .next = t_next,
+ .stop = t_stop,
+ .show = t_show,
+};
+
+static int fn_249(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+ struct struct_351 *m;
+ int var_434;
+
+ if (var_434)
+  return -ENODEV;
+
+ var_434 = seq_open(file, &var_250);
+ if (var_434)
+  return var_434;
+
+ m = file->private_data;
+ m->private = tr;
+
+ return 0;
+}
+
+static ssize_t
+fn_250(struct struct_433 *filp, const char __user *ubuf,
+     size_t var_433, loff_t *ppos)
+{
+ return var_433;
+}
+
+loff_t fn_251(struct struct_433 *file, loff_t var_254, int var_254)
+{
+ int var_434;
+
+ if (file->f_mode & FMODE_READ)
+  var_434 = seq_lseek(file, var_254, var_254);
+ else
+  file->f_pos = var_434 = 0;
+
+ return var_434;
+}
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open,
+ .read = seq_read,
+ .write = tracing_write_stub,
+ .llseek = tracing_lseek,
+ .release = tracing_release,
+};
+
+static const struct struct_402 var_416 = {
+ .open = show_traces_open,
+ .read = seq_read,
+ .release = seq_release,
+ .llseek = seq_lseek,
+};
+
+static ssize_t
+fn_257(struct struct_433 *filp, char __user *ubuf,
+       size_t var_433, loff_t *ppos)
+{
+ struct struct_431 *tr = file_inode(filp)->i_private;
+ char *mask_str;
+ int var_421;
+
+ var_421 = snprintf(NULL, 0, "%*pb\n",
+         cpumask_pr_args(tr->tracing_cpumask)) + 1;
+ mask_str = kmalloc(var_421, GFP_KERNEL);
+ if (!mask_str)
+  return -ENOMEM;
+
+ var_421 = snprintf(mask_str, var_421, "%*pb\n",
+         cpumask_pr_args(tr->tracing_cpumask));
+ if (var_421 >= var_433) {
+  var_433 = -EINVAL;
+  goto out_err;
+ }
+ var_433 = simple_read_from_buffer(ubuf, var_433, ppos, mask_str, var_421);
+
+out_err:
+ kfree(mask_str);
+
+ return var_433;
+}
+
+static ssize_t
+fn_258(struct struct_433 *filp, const char __user *ubuf,
+        size_t var_433, loff_t *ppos)
+{
+ struct struct_431 *tr = file_inode(filp)->i_private;
+ cpumask_var_t tracing_cpumask_new;
+ int err, var_431;
+
+ if (!alloc_cpumask_var(&tracing_cpumask_new, GFP_KERNEL))
+  return -ENOMEM;
+
+ err = cpumask_parse_user(ubuf, var_433, tracing_cpumask_new);
+ if (err)
+  goto err_unlock;
+
+ local_irq_disable();
+ arch_spin_lock(&tr->max_lock);
+ for_each_tracing_cpu(var_431) {
+
+
+
+
+  if (cpumask_test_cpu(var_431, tr->tracing_cpumask) &&
+    !cpumask_test_cpu(var_431, tracing_cpumask_new)) {
+   atomic_inc(&per_cpu_ptr(tr->trace_buffer.data, var_431)->disabled);
+   ring_buffer_record_disable_cpu(tr->trace_buffer.buffer, var_431);
+  }
+  if (!cpumask_test_cpu(var_431, tr->tracing_cpumask) &&
+    cpumask_test_cpu(var_431, tracing_cpumask_new)) {
+   atomic_dec(&per_cpu_ptr(tr->trace_buffer.data, var_431)->disabled);
+   ring_buffer_record_enable_cpu(tr->trace_buffer.buffer, var_431);
+  }
+ }
+ arch_spin_unlock(&tr->max_lock);
+ local_irq_enable();
+
+ cpumask_copy(tr->tracing_cpumask, tracing_cpumask_new);
+ free_cpumask_var(tracing_cpumask_new);
+
+ return var_433;
+
+err_unlock:
+ free_cpumask_var(tracing_cpumask_new);
+
+ return err;
+}
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic_tr,
+ .read = tracing_cpumask_read,
+ .write = tracing_cpumask_write,
+ .release = tracing_release_generic_tr,
+ .llseek = generic_file_llseek,
+};
+
+static int fn_260(struct struct_351 *m, void *var_351)
+{
+ struct struct_397 *trace_opts;
+ struct struct_431 *tr = m->private;
+ u32 tracer_flags;
+ int var_415;
+
+ mutex_lock(&trace_types_lock);
+ tracer_flags = tr->current_trace->flags->val;
+ trace_opts = tr->current_trace->flags->opts;
+
+ for (var_415 = 0; trace_options[var_415]; var_415++) {
+  if (tr->trace_flags & (1 << var_415))
+   seq_printf(m, "%s\n", trace_options[var_415]);
+  else
+   seq_printf(m, "no%s\n", trace_options[var_415]);
+ }
+
+ for (var_415 = 0; trace_opts[var_415].name; var_415++) {
+  if (tracer_flags & trace_opts[var_415].bit)
+   seq_printf(m, "%s\n", trace_opts[var_415].name);
+  else
+   seq_printf(m, "no%s\n", trace_opts[var_415].name);
+ }
+ mutex_unlock(&trace_types_lock);
+
+ return 0;
+}
+
+static int fn_261(struct struct_431 *tr,
+          struct struct_397 *tracer_flags,
+          struct struct_397 *opts, int var_270)
+{
+ struct struct_411 *trace = tracer_flags->trace;
+ int var_434;
+
+ var_434 = trace->set_flag(tr, tracer_flags->val, opts->bit, !var_270);
+ if (var_434)
+  return var_434;
+
+ if (var_270)
+  tracer_flags->val &= ~opts->bit;
+ else
+  tracer_flags->val |= opts->bit;
+ return 0;
+}
+
+
+static int fn_264(struct struct_431 *tr, char *cmp, int var_270)
+{
+ struct struct_411 *trace = tr->current_trace;
+ struct struct_397 *tracer_flags = trace->flags;
+ struct struct_397 *opts = NULL;
+ int var_415;
+
+ for (var_415 = 0; tracer_flags->opts[var_415].name; var_415++) {
+  opts = &tracer_flags->opts[var_415];
+
+  if (strcmp(cmp, opts->name) == 0)
+   return __set_tracer_option(tr, trace->flags, opts, var_270);
+ }
+
+ return -EINVAL;
+}
+
+
+int fn_265(struct struct_411 *tracer, u32 var_268, int var_267)
+{
+ if (tracer->enabled && (var_268 & TRACE_ITER_OVERWRITE) && !var_267)
+  return -1;
+
+ return 0;
+}
+
+int fn_267(struct struct_431 *tr, unsigned int var_268, int var_268)
+{
+
+ if (!!(tr->trace_flags & var_268) == !!var_268)
+  return 0;
+
+
+ if (tr->current_trace->flag_changed)
+  if (tr->current_trace->flag_changed(tr, var_268, !!var_268))
+   return -EINVAL;
+
+ if (var_268)
+  tr->trace_flags |= var_268;
+ else
+  tr->trace_flags &= ~var_268;
+
+ if (var_268 == TRACE_ITER_RECORD_CMD)
+  trace_event_enable_cmd_record(var_268);
+
+ if (var_268 == TRACE_ITER_RECORD_TGID) {
+  if (!tgid_map)
+   tgid_map = kcalloc(PID_MAX_DEFAULT + 1,
+        sizeof(*tgid_map),
+        GFP_KERNEL);
+  if (!tgid_map) {
+   tr->trace_flags &= ~TRACE_ITER_RECORD_TGID;
+   return -ENOMEM;
+  }
+
+  trace_event_enable_tgid_record(var_268);
+ }
+
+ if (var_268 == TRACE_ITER_EVENT_FORK)
+  trace_event_follow_fork(tr, var_268);
+
+ if (var_268 == TRACE_ITER_FUNC_FORK)
+  ftrace_pid_follow_fork(tr, var_268);
+
+ if (var_268 == TRACE_ITER_OVERWRITE) {
+  ring_buffer_change_overwrite(tr->trace_buffer.buffer, var_268);
+
+
+
+ }
+
+ if (var_268 == TRACE_ITER_PRINTK) {
+  trace_printk_start_stop_comm(var_268);
+  trace_printk_control(var_268);
+ }
+
+ return 0;
+}
+
+static int fn_268(struct struct_431 *tr, char *option)
+{
+ char *cmp;
+ int var_270 = 0;
+ int var_434;
+ size_t var_270 = strlen(option);
+
+ cmp = strstrip(option);
+
+ if (strncmp(cmp, "no", 2) == 0) {
+  var_270 = 1;
+  cmp += 2;
+ }
+
+ mutex_lock(&trace_types_lock);
+
+ var_434 = match_string(trace_options, -1, cmp);
+
+ if (var_434 < 0)
+  var_434 = set_tracer_option(tr, cmp, var_270);
+ else
+  var_434 = set_tracer_flag(tr, 1 << var_434, !var_270);
+
+ mutex_unlock(&trace_types_lock);
+
+
+
+
+
+ if (var_270 > strlen(option))
+  option[strlen(option)] = ' ';
+
+ return var_434;
+}
+
+static void __init fn_270(void)
+{
+ char *buf = var_270;
+ char *option;
+
+ while (true) {
+  option = strsep(&buf, ",");
+
+  if (!option)
+   break;
+
+  if (*option)
+   trace_set_options(&var_434, option);
+
+
+  if (buf)
+   *(buf - 1) = ',';
+ }
+}
+
+static ssize_t
+fn_270(struct struct_433 *filp, const char __user *ubuf,
+   size_t var_431, loff_t *ppos)
+{
+ struct struct_351 *m = filp->private_data;
+ struct struct_431 *tr = m->private;
+ char buf[64];
+ int var_434;
+
+ if (var_431 >= sizeof(buf))
+  return -EINVAL;
+
+ if (copy_from_user(buf, ubuf, var_431))
+  return -EFAULT;
+
+ buf[var_431] = 0;
+
+ var_434 = trace_set_options(tr, buf);
+ if (var_434 < 0)
+  return var_434;
+
+ *ppos += var_431;
+
+ return var_431;
+}
+
+static int fn_271(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+ int var_434;
+
+ if (var_434)
+  return -ENODEV;
+
+ if (trace_array_get(tr) < 0)
+  return -ENODEV;
+
+ var_434 = single_open(file, tracing_trace_options_show, inode->i_private);
+ if (var_434 < 0)
+  trace_array_put(tr);
+
+ return var_434;
+}
+
+static const struct struct_402 var_416 = {
+ .open = tracing_trace_options_open,
+ .read = seq_read,
+ .llseek = seq_lseek,
+ .release = tracing_single_release_tr,
+ .write = tracing_trace_options_write,
+};
+
+static const char readme_msg[] =
+ "tracing mini-HOWTO:\n\n"
+ "# echo 0 > tracing_on : quick way to disable tracing\n"
+ "# echo 1 > tracing_on : quick way to re-enable tracing\n\n"
+ " Important files:\n"
+ "  trace\t\t\t- The static contents of the buffer\n"
+ "\t\t\t  To clear the buffer write into this file: echo > trace\n"
+ "  trace_pipe\t\t- A consuming read to see the contents of the buffer\n"
+ "  current_tracer\t- function and latency tracers\n"
+ "  available_tracers\t- list of configured tracers for current_tracer\n"
+ "  buffer_size_kb\t- view and modify size of per cpu buffer\n"
+ "  buffer_total_size_kb  - view total size of all cpu buffers\n\n"
+ "  trace_clock\t\t-change the clock used to order events\n"
+ "       local:   Per cpu clock but may not be synced across CPUs\n"
+ "      global:   Synced across CPUs but slows tracing down.\n"
+ "     counter:   Not a clock, but just an increment\n"
+ "      uptime:   Jiffy counter from time of boot\n"
+ "        perf:   Same clock that perf events use\n"
+
+
+
+ "\n  timestamp_mode\t-view the mode used to timestamp events\n"
+ "       delta:   Delta difference against a buffer-wide timestamp\n"
+ "    absolute:   Absolute (standalone) timestamp\n"
+ "\n  trace_marker\t\t- Writes into this file writes into the kernel buffer\n"
+ "\n  trace_marker_raw\t\t- Writes into this file writes binary data into the kernel buffer\n"
+ "  tracing_cpumask\t- Limit which CPUs to trace\n"
+ "  instances\t\t- Make sub-buffers with: mkdir instances/foo\n"
+ "\t\t\t  Remove sub-buffer with rmdir\n"
+ "  trace_options\t\t- Set format or modify how tracing happens\n"
+ "\t\t\t  Disable an option by adding a suffix 'no' to the\n"
+ "\t\t\t  option name\n"
+ "  saved_cmdlines_size\t- echo command number in here to store comm-pid list\n"
+
+ "  events/\t\t- Directory containing all trace event subsystems:\n"
+ "      enable\t\t- Write 0/1 to enable/disable tracing of all events\n"
+ "  events/<system>/\t- Directory containing all trace events for <system>:\n"
+ "      enable\t\t- Write 0/1 to enable/disable tracing of all <system>\n"
+ "\t\t\t  events\n"
+ "      filter\t\t- If set, only events passing filter are traced\n"
+ "  events/<system>/<event>/\t- Directory containing control files for\n"
+ "\t\t\t  <event>:\n"
+ "      enable\t\t- Write 0/1 to enable/disable tracing of <event>\n"
+ "      filter\t\t- If set, only events passing filter are traced\n"
+ "      trigger\t\t- If set, a command to perform when event is hit\n"
+ "\t    Format: <trigger>[:count][if <filter>]\n"
+ "\t   trigger: traceon, traceoff\n"
+ "\t            enable_event:<system>:<event>\n"
+ "\t            disable_event:<system>:<event>\n"
+
+ "\t   example: echo traceoff > events/block/block_unplug/trigger\n"
+ "\t            echo traceoff:3 > events/block/block_unplug/trigger\n"
+ "\t            echo 'enable_event:kmem:kmalloc:3 if nr_rq > 1' > \\\n"
+ "\t                  events/block/block_unplug/trigger\n"
+ "\t   The first disables tracing every time block_unplug is hit.\n"
+ "\t   The second disables tracing the first 3 times block_unplug is hit.\n"
+ "\t   The third enables the kmalloc event the first 3 times block_unplug\n"
+ "\t     is hit and has value of greater than 1 for the 'nr_rq' event field.\n"
+ "\t   Like function triggers, the counter is only decremented if it\n"
+ "\t    enabled or disabled tracing.\n"
+ "\t   To remove a trigger without a count:\n"
+ "\t     echo '!<trigger> > <system>/<event>/trigger\n"
+ "\t   To remove a trigger with a count:\n"
+ "\t     echo '!<trigger>:0 > <system>/<event>/trigger\n"
+ "\t   Filters can be ignored when removing a trigger.\n"
+
+;
+
+static ssize_t
+fn_273(struct struct_433 *filp, char __user *ubuf,
+         size_t var_431, loff_t *ppos)
+{
+ return simple_read_from_buffer(ubuf, var_431, ppos,
+     readme_msg, strlen(readme_msg));
+}
+
+static const struct struct_402 var_422 = {
+ .open = tracing_open_generic,
+ .read = tracing_readme_read,
+ .llseek = generic_file_llseek,
+};
+
+static void *fn_275(struct struct_351 *m, void *var_351, loff_t *pos)
+{
+ int *ptr = var_351;
+
+ if (*pos || m->count)
+  ptr++;
+
+ (*pos)++;
+
+ for (; ptr <= &tgid_map[PID_MAX_DEFAULT]; ptr++) {
+  if (trace_find_tgid(*ptr))
+   return ptr;
+ }
+
+ return NULL;
+}
+
+static void *fn_276(struct struct_351 *m, loff_t *pos)
+{
+ void *var_351;
+ loff_t var_284 = 0;
+
+ if (!tgid_map)
+  return NULL;
+
+ var_351 = &tgid_map[0];
+ while (var_284 <= *pos) {
+  var_351 = saved_tgids_next(m, var_351, &var_284);
+  if (!var_351)
+   return NULL;
+ }
+
+ return var_351;
+}
+
+static void fn_277(struct struct_351 *m, void *var_351)
+{
+}
+
+static int fn_278(struct struct_351 *m, void *var_351)
+{
+ int var_286 = (int *)var_351 - tgid_map;
+
+ seq_printf(m, "%d %d\n", var_286, trace_find_tgid(var_286));
+ return 0;
+}
+
+static const struct struct_286 var_281 = {
+ .start = saved_tgids_start,
+ .stop = saved_tgids_stop,
+ .next = saved_tgids_next,
+ .show = saved_tgids_show,
+};
+
+static int fn_280(struct struct_378 *inode, struct struct_433 *filp)
+{
+ if (var_434)
+  return -ENODEV;
+
+ return seq_open(filp, &var_281);
+}
+
+
+static const struct struct_402 var_422 = {
+ .open = tracing_saved_tgids_open,
+ .read = seq_read,
+ .llseek = seq_lseek,
+ .release = seq_release,
+};
+
+static void *fn_282(struct struct_351 *m, void *var_351, loff_t *pos)
+{
+ unsigned int *ptr = var_351;
+
+ if (*pos || m->count)
+  ptr++;
+
+ (*pos)++;
+
+ for (; ptr < &savedcmd->map_cmdline_to_pid[savedcmd->cmdline_num];
+      ptr++) {
+  if (*ptr == -1 || *ptr == UINT_MAX)
+   continue;
+
+  return ptr;
+ }
+
+ return NULL;
+}
+
+static void *fn_283(struct struct_351 *m, loff_t *pos)
+{
+ void *var_351;
+ loff_t var_284 = 0;
+
+ preempt_disable();
+ arch_spin_lock(&var_293);
+
+ var_351 = &savedcmd->map_cmdline_to_pid[0];
+ while (var_284 <= *pos) {
+  var_351 = saved_cmdlines_next(m, var_351, &var_284);
+  if (!var_351)
+   return NULL;
+ }
+
+ return var_351;
+}
+
+static void fn_284(struct struct_351 *m, void *var_351)
+{
+ arch_spin_unlock(&var_293);
+ preempt_enable();
+}
+
+static int fn_285(struct struct_351 *m, void *var_351)
+{
+ char buf[TASK_COMM_LEN];
+ unsigned int *var_286 = var_351;
+
+ __trace_find_cmdline(*var_286, buf);
+ seq_printf(m, "%d %s\n", *var_286, buf);
+ return 0;
+}
+
+static const struct struct_286 var_288 = {
+ .start = saved_cmdlines_start,
+ .next = saved_cmdlines_next,
+ .stop = saved_cmdlines_stop,
+ .show = saved_cmdlines_show,
+};
+
+static int fn_287(struct struct_378 *inode, struct struct_433 *filp)
+{
+ if (var_434)
+  return -ENODEV;
+
+ return seq_open(filp, &var_288);
+}
+
+static const struct struct_402 var_422 = {
+ .open = tracing_saved_cmdlines_open,
+ .read = seq_read,
+ .llseek = seq_lseek,
+ .release = seq_release,
+};
+
+static ssize_t
+fn_289(struct struct_433 *filp, char __user *ubuf,
+     size_t var_431, loff_t *ppos)
+{
+ char buf[64];
+ int var_401;
+
+ arch_spin_lock(&var_293);
+ var_401 = scnprintf(buf, sizeof(buf), "%u\n", savedcmd->cmdline_num);
+ arch_spin_unlock(&var_293);
+
+ return simple_read_from_buffer(ubuf, var_431, ppos, buf, var_401);
+}
+
+static void fn_291(struct struct_293 *s)
+{
+ kfree(s->saved_cmdlines);
+ kfree(s->map_cmdline_to_pid);
+ kfree(s);
+}
+
+static int fn_292(unsigned int var_426)
+{
+ struct struct_293 *s, *savedcmd_temp;
+
+ s = kmalloc(sizeof(*s), GFP_KERNEL);
+ if (!s)
+  return -ENOMEM;
+
+ if (allocate_cmdlines_buffer(var_426, s) < 0) {
+  kfree(s);
+  return -ENOMEM;
+ }
+
+ arch_spin_lock(&var_293);
+ savedcmd_temp = savedcmd;
+ savedcmd = s;
+ arch_spin_unlock(&var_293);
+ free_saved_cmdlines_buffer(savedcmd_temp);
+
+ return 0;
+}
+
+static ssize_t
+fn_293(struct struct_433 *filp, const char __user *ubuf,
+      size_t var_431, loff_t *ppos)
+{
+ unsigned long var_426;
+ int var_434;
+
+ var_434 = kstrtoul_from_user(ubuf, var_431, 10, &var_426);
+ if (var_434)
+  return var_434;
+
+
+ if (!var_426 || var_426 > PID_MAX_DEFAULT)
+  return -EINVAL;
+
+ var_434 = tracing_resize_saved_cmdlines((unsigned int)var_426);
+ if (var_434 < 0)
+  return var_434;
+
+ *ppos += var_431;
+
+ return var_431;
+}
+
+static const struct struct_402 var_422 = {
+ .open = tracing_open_generic,
+ .read = tracing_saved_cmdlines_size_read,
+ .write = tracing_saved_cmdlines_size_write,
+};
+
+static inline void fn_295(struct struct_422 *d_tracer) { }
+static inline void fn_297(struct struct_301 *mod,
+         struct struct_420 **start, int var_421) { }
+
+
+static void fn_300(struct struct_301 *mod,
+      struct struct_420 **start, int var_421)
+{
+ struct struct_420 **map;
+
+ if (var_421 <= 0)
+  return;
+
+ map = start;
+
+ trace_event_eval_update(map, var_421);
+
+ trace_insert_eval_map_file(mod, start, var_421);
+}
+
+static ssize_t
+fn_301(struct struct_433 *filp, char __user *ubuf,
+         size_t var_431, loff_t *ppos)
+{
+ struct struct_431 *tr = filp->private_data;
+ char buf[102];
+ int var_401;
+
+ mutex_lock(&trace_types_lock);
+ var_401 = sprintf(buf, "%s\n", tr->current_trace->name);
+ mutex_unlock(&trace_types_lock);
+
+ return simple_read_from_buffer(ubuf, var_431, ppos, buf, var_401);
+}
+
+int fn_302(struct struct_411 *t, struct struct_431 *tr)
+{
+ tracing_reset_online_cpus(&tr->trace_buffer);
+ return t->init(tr);
+}
+
+static void fn_303(struct struct_408 *buf, unsigned long var_426)
+{
+ int var_431;
+
+ for_each_tracing_cpu(cpu)
+  fn_304(buf->var_426, cpu)->var_376 = var_426;
+}
+
+static int fn_305(struct struct_431 *tr,
+     unsigned long var_433, int var_431)
+{
+ int var_434;
+
+
+
+
+
+
+ ring_buffer_expanded = true;
+
+
+ if (!tr->trace_buffer.buffer)
+  return 0;
+
+ var_434 = ring_buffer_resize(tr->trace_buffer.buffer, var_433, var_431);
+ if (var_434 < 0)
+  return var_434;
+
+ if (var_431 == RING_BUFFER_ALL_CPUS)
+  set_buffer_entries(&tr->trace_buffer, var_433);
+ else
+  per_cpu_ptr(tr->trace_buffer.data, var_431)->entries = var_433;
+
+ return var_434;
+}
+
+static ssize_t fn_306(struct struct_431 *tr,
+       unsigned long var_433, int var_308)
+{
+ int var_434 = var_433;
+
+ mutex_lock(&trace_types_lock);
+
+ if (var_308 != RING_BUFFER_ALL_CPUS) {
+
+  if (!cpumask_test_cpu(var_308, tracing_buffer_mask)) {
+   var_434 = -EINVAL;
+   goto out;
+  }
+ }
+
+ var_434 = __tracing_resize_ring_buffer(tr, var_433, var_308);
+ if (var_434 < 0)
+  var_434 = -ENOMEM;
+
+out:
+ mutex_unlock(&trace_types_lock);
+
+ return var_434;
+}
+
+int fn_308(void)
+{
+ int var_434 = 0;
+
+ mutex_lock(&trace_types_lock);
+ if (!ring_buffer_expanded)
+  var_434 = __tracing_resize_ring_buffer(&var_434, var_434,
+      RING_BUFFER_ALL_CPUS);
+ mutex_unlock(&trace_types_lock);
+
+ return var_434;
+}
+
+struct struct_396;
+
+static void
+fn_396(struct struct_431 *tr, struct struct_411 *tracer);
+
+
+
+
+
+static void fn_311(struct struct_431 *tr)
+{
+ if (tr->current_trace == &nop_trace)
+  return;
+
+ tr->current_trace->enabled--;
+
+ if (tr->current_trace->reset)
+  tr->current_trace->reset(tr);
+
+ tr->current_trace = &nop_trace;
+}
+
+static void fn_312(struct struct_431 *tr, struct struct_411 *t)
+{
+
+ if (!tr->dir)
+  return;
+
+ create_trace_option_files(tr, t);
+}
+
+static int fn_312(struct struct_431 *tr, const char *buf)
+{
+ struct struct_411 *t;
+
+
+
+ int var_434 = 0;
+
+ mutex_lock(&trace_types_lock);
+
+ if (!ring_buffer_expanded) {
+  var_434 = __tracing_resize_ring_buffer(tr, var_434,
+      RING_BUFFER_ALL_CPUS);
+  if (var_434 < 0)
+   goto out;
+  var_434 = 0;
+ }
+
+ for (t = trace_types; t; t = t->next) {
+  if (strcmp(t->name, buf) == 0)
+   break;
+ }
+ if (!t) {
+  var_434 = -EINVAL;
+  goto out;
+ }
+ if (t == tr->current_trace)
+  goto out;
+
+
+ if (system_state < SYSTEM_RUNNING && t->noboot) {
+  pr_warn("Tracer '%s' is not allowed on command line, ignored\n",
+   t->name);
+  goto out;
+ }
+
+
+ if (!trace_ok_for_array(t, tr)) {
+  var_434 = -EINVAL;
+  goto out;
+ }
+
+
+ if (tr->current_trace->ref) {
+  var_434 = -EBUSY;
+  goto out;
+ }
+
+ trace_branch_disable();
+
+ tr->current_trace->enabled--;
+
+ if (tr->current_trace->reset)
+  tr->current_trace->reset(tr);
+
+
+ tr->current_trace = &nop_trace;
+
+ if (t->init) {
+  var_434 = tracer_init(t, tr);
+  if (var_434)
+   goto out;
+ }
+
+ tr->current_trace = t;
+ tr->current_trace->enabled++;
+ trace_branch_enable(tr);
+ out:
+ mutex_unlock(&trace_types_lock);
+
+ return var_434;
+}
+
+static ssize_t
+fn_312(struct struct_433 *filp, const char __user *ubuf,
+   size_t var_431, loff_t *ppos)
+{
+ struct struct_431 *tr = filp->private_data;
+ char buf[101];
+ int var_415;
+ size_t var_434;
+ int err;
+
+ var_434 = var_431;
+
+ if (var_431 > 100)
+  var_431 = 100;
+
+ if (copy_from_user(buf, ubuf, var_431))
+  return -EFAULT;
+
+ buf[var_431] = 0;
+
+
+ for (var_415 = var_431 - 1; var_415 > 0 && isspace(buf[var_415]); var_415--)
+  buf[var_415] = 0;
+
+ err = tracing_set_tracer(tr, buf);
+ if (err)
+  return err;
+
+ *ppos += var_434;
+
+ return var_434;
+}
+
+static ssize_t
+fn_313(unsigned long *ptr, char __user *ubuf,
+     size_t var_431, loff_t *ppos)
+{
+ char buf[64];
+ int var_401;
+
+ var_401 = snprintf(buf, sizeof(buf), "%ld\n",
+       *ptr == (unsigned long)-1 ? -1 : nsecs_to_usecs(*ptr));
+ if (var_401 > sizeof(buf))
+  var_401 = sizeof(buf);
+ return simple_read_from_buffer(ubuf, var_431, ppos, buf, var_401);
+}
+
+static ssize_t
+fn_314(unsigned long *ptr, const char __user *ubuf,
+      size_t var_431, loff_t *ppos)
+{
+ unsigned long var_426;
+ int var_434;
+
+ var_434 = kstrtoul_from_user(ubuf, var_431, 10, &var_426);
+ if (var_434)
+  return var_434;
+
+ *ptr = var_426 * 1000;
+
+ return var_431;
+}
+
+static ssize_t
+fn_315(struct struct_433 *filp, char __user *ubuf,
+      size_t var_431, loff_t *ppos)
+{
+ return tracing_nsecs_read(&tracing_thresh, ubuf, var_431, ppos);
+}
+
+static ssize_t
+fn_316(struct struct_433 *filp, const char __user *ubuf,
+       size_t var_431, loff_t *ppos)
+{
+ struct struct_431 *tr = filp->private_data;
+ int var_434;
+
+ mutex_lock(&trace_types_lock);
+ var_434 = tracing_nsecs_write(&tracing_thresh, ubuf, var_431, ppos);
+ if (var_434 < 0)
+  goto out;
+
+ if (tr->current_trace->update_thresh) {
+  var_434 = tr->current_trace->update_thresh(tr);
+  if (var_434 < 0)
+   goto out;
+ }
+
+ var_434 = var_431;
+out:
+ mutex_unlock(&trace_types_lock);
+
+ return var_434;
+}
+
+static int fn_317(struct struct_378 *inode, struct struct_433 *filp)
+{
+ struct struct_431 *tr = inode->i_private;
+ struct struct_431 *iter;
+ int var_434 = 0;
+
+ if (var_434)
+  return -ENODEV;
+
+ if (trace_array_get(tr) < 0)
+  return -ENODEV;
+
+ mutex_lock(&trace_types_lock);
+
+
+ iter = kzalloc(sizeof(*iter), GFP_KERNEL);
+ if (!iter) {
+  var_434 = -ENOMEM;
+  __trace_array_put(tr);
+  goto out;
+ }
+
+ trace_seq_init(&iter->seq);
+ iter->trace = tr->current_trace;
+
+ if (!alloc_cpumask_var(&iter->started, GFP_KERNEL)) {
+  var_434 = -ENOMEM;
+  goto fail;
+ }
+
+
+ cpumask_setall(iter->started);
+
+ if (tr->trace_flags & TRACE_ITER_LATENCY_FMT)
+  iter->iter_flags |= TRACE_FILE_LAT_FMT;
+
+
+ if (trace_clocks[tr->clock_id].in_ns)
+  iter->iter_flags |= TRACE_FILE_TIME_IN_NS;
+
+ iter->tr = tr;
+ iter->trace_buffer = &tr->trace_buffer;
+ iter->cpu_file = tracing_get_cpu(inode);
+ mutex_init(&iter->mutex);
+ filp->private_data = iter;
+
+ if (iter->trace->pipe_open)
+  iter->trace->pipe_open(iter);
+
+ nonseekable_open(inode, filp);
+
+ tr->current_trace->ref++;
+out:
+ mutex_unlock(&trace_types_lock);
+ return var_434;
+
+fail:
+ kfree(iter->trace);
+ kfree(iter);
+ __trace_array_put(tr);
+ mutex_unlock(&trace_types_lock);
+ return var_434;
+}
+
+static int fn_318(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *iter = file->private_data;
+ struct struct_431 *tr = inode->i_private;
+
+ mutex_lock(&trace_types_lock);
+
+ tr->current_trace->ref--;
+
+ if (iter->trace->pipe_close)
+  iter->trace->pipe_close(iter);
+
+ mutex_unlock(&trace_types_lock);
+
+ free_cpumask_var(iter->started);
+ mutex_destroy(&iter->mutex);
+ kfree(iter);
+
+ trace_array_put(tr);
+
+ return 0;
+}
+
+static __poll_t
+fn_319(struct struct_431 *iter, struct struct_433 *filp, poll_table *poll_table)
+{
+ struct struct_431 *tr = iter->tr;
+
+
+ if (trace_buffer_iter(iter, iter->cpu_file))
+  return EPOLLIN | EPOLLRDNORM;
+
+ if (tr->trace_flags & TRACE_ITER_BLOCK)
+
+
+
+  return EPOLLIN | EPOLLRDNORM;
+ else
+  return ring_buffer_poll_wait(iter->trace_buffer->buffer, iter->cpu_file,
+          filp, poll_table);
+}
+
+static __poll_t
+fn_320(struct struct_433 *filp, poll_table *poll_table)
+{
+ struct struct_431 *iter = filp->private_data;
+
+ return trace_poll(iter, filp, poll_table);
+}
+
+
+static int fn_321(struct struct_433 *filp)
+{
+ struct struct_431 *iter = filp->private_data;
+ int var_434;
+
+ while (trace_empty(iter)) {
+
+  if ((filp->f_flags & O_NONBLOCK)) {
+   return -EAGAIN;
+  }
+
+  if (!tracer_tracing_is_on(iter->tr) && iter->pos)
+   break;
+
+  mutex_unlock(&iter->mutex);
+
+  var_434 = wait_on_pipe(iter, false);
+
+  mutex_lock(&iter->mutex);
+
+  if (var_434)
+   return var_434;
+ }
+
+ return 1;
+}
+
+
+
+
+static ssize_t
+fn_322(struct struct_433 *filp, char __user *ubuf,
+    size_t var_431, loff_t *ppos)
+{
+ struct struct_431 *iter = filp->private_data;
+ ssize_t sret;
+
+
+
+
+
+
+ mutex_lock(&iter->mutex);
+
+
+ sret = trace_seq_to_user(&iter->seq, ubuf, var_431);
+ if (sret != -EBUSY)
+  goto out;
+
+ trace_seq_init(&iter->seq);
+
+ if (iter->trace->read) {
+  sret = iter->trace->read(iter, filp, ubuf, var_431, ppos);
+  if (sret)
+   goto out;
+ }
+
+waitagain:
+ sret = tracing_wait_pipe(filp);
+ if (sret <= 0)
+  goto out;
+
+
+ if (trace_empty(iter)) {
+  sret = 0;
+  goto out;
+ }
+
+ if (var_431 >= PAGE_SIZE)
+  var_431 = PAGE_SIZE - 1;
+
+
+ memset(&iter->seq, 0,
+        sizeof(struct struct_431) -
+        offsetof(struct struct_431, seq));
+ cpumask_clear(iter->started);
+ iter->pos = -1;
+
+ trace_event_read_lock();
+ trace_access_lock(iter->cpu_file);
+ while (trace_find_next_entry_inc(iter) != NULL) {
+  enum enumtype_323 var_434;
+  int var_331 = iter->seq.seq.len;
+
+  var_434 = print_trace_line(iter);
+  if (var_434 == TRACE_TYPE_PARTIAL_LINE) {
+
+   iter->seq.seq.len = var_331;
+   break;
+  }
+  if (var_434 != TRACE_TYPE_NO_CONSUME)
+   trace_consume(iter);
+
+  if (trace_seq_used(&iter->seq) >= var_431)
+   break;
+
+
+
+
+
+
+  WARN_ONCE(iter->seq.full, "full flag set for trace type %d",
+     iter->ent->type);
+ }
+ trace_access_unlock(iter->cpu_file);
+ trace_event_read_unlock();
+
+
+ sret = trace_seq_to_user(&iter->seq, ubuf, var_431);
+ if (iter->seq.seq.readpos >= trace_seq_used(&iter->seq))
+  trace_seq_init(&iter->seq);
+
+
+
+
+
+ if (sret == -EBUSY)
+  goto waitagain;
+
+out:
+ mutex_unlock(&iter->mutex);
+
+ return sret;
+}
+
+static void fn_324(struct struct_376 *var_376,
+         unsigned int var_327)
+{
+ __free_page(var_376->pages[var_327]);
+}
+
+static const struct struct_373 var_334 = {
+ .can_merge = 0,
+ .confirm = generic_pipe_buf_confirm,
+ .release = generic_pipe_buf_release,
+ .steal = generic_pipe_buf_steal,
+ .get = generic_pipe_buf_get,
+};
+
+static size_t
+fn_329(size_t var_334, struct struct_431 *iter)
+{
+ size_t var_433;
+ int var_331;
+ int var_434;
+
+
+ for (;;) {
+  var_331 = iter->seq.seq.len;
+  var_434 = print_trace_line(iter);
+
+  if (trace_seq_has_overflowed(&iter->seq)) {
+   iter->seq.seq.len = var_331;
+   break;
+  }
+
+
+
+
+
+
+  if (var_434 == TRACE_TYPE_PARTIAL_LINE) {
+   iter->seq.seq.len = var_331;
+   break;
+  }
+
+  var_433 = trace_seq_used(&iter->seq) - var_331;
+  if (var_334 < var_433) {
+   var_334 = 0;
+   iter->seq.seq.len = var_331;
+   break;
+  }
+
+  if (var_434 != TRACE_TYPE_NO_CONSUME)
+   trace_consume(iter);
+  var_334 -= var_433;
+  if (!trace_find_next_entry_inc(iter)) {
+   var_334 = 0;
+   iter->ent = NULL;
+   break;
+  }
+ }
+
+ return var_334;
+}
+
+static ssize_t fn_331(struct struct_433 *filp,
+     loff_t *ppos,
+     struct struct_376 *pipe,
+     size_t var_421,
+     unsigned int var_431)
+{
+ struct struct_376 *pages_def[PIPE_DEF_BUFFERS];
+ struct struct_376 partial_def[PIPE_DEF_BUFFERS];
+ struct struct_431 *iter = filp->private_data;
+ struct struct_376 var_376 = {
+  .pages = pages_def,
+  .partial = partial_def,
+  .nr_pages = 0,
+  .nr_pages_max = PIPE_DEF_BUFFERS,
+  .ops = &var_334,
+  .spd_release = tracing_spd_release_pipe,
+ };
+ ssize_t var_434;
+ size_t var_334;
+ unsigned int var_415;
+
+ if (splice_grow_spd(pipe, &var_376))
+  return -ENOMEM;
+
+ mutex_lock(&iter->mutex);
+
+ if (iter->trace->splice_read) {
+  var_434 = iter->trace->splice_read(iter, filp,
+            ppos, pipe, var_421, var_431);
+  if (var_434)
+   goto out_err;
+ }
+
+ var_434 = tracing_wait_pipe(filp);
+ if (var_434 <= 0)
+  goto out_err;
+
+ if (!iter->ent && !trace_find_next_entry_inc(iter)) {
+  var_434 = -EFAULT;
+  goto out_err;
+ }
+
+ trace_event_read_lock();
+ trace_access_lock(iter->cpu_file);
+
+
+ for (var_415 = 0, var_334 = var_421; var_415 < var_376.nr_pages_max && var_334; var_415++) {
+  var_376.pages[var_415] = alloc_page(GFP_KERNEL);
+  if (!var_376.pages[var_415])
+   break;
+
+  var_334 = tracing_fill_pipe_page(var_334, iter);
+
+
+  var_434 = trace_seq_to_buffer(&iter->seq,
+       page_address(var_376.pages[var_415]),
+       trace_seq_used(&iter->seq));
+  if (var_434 < 0) {
+   __free_page(var_376.pages[var_415]);
+   break;
+  }
+  var_376.partial[var_415].offset = 0;
+  var_376.partial[var_415].len = trace_seq_used(&iter->seq);
+
+  trace_seq_init(&iter->seq);
+ }
+
+ trace_access_unlock(iter->cpu_file);
+ trace_event_read_unlock();
+ mutex_unlock(&iter->mutex);
+
+ var_376.nr_pages = var_415;
+
+ if (var_415)
+  var_434 = splice_to_pipe(pipe, &var_376);
+ else
+  var_434 = 0;
+out:
+ splice_shrink_spd(&var_376);
+ return var_434;
+
+out_err:
+ mutex_unlock(&iter->mutex);
+ goto out;
+}
+
+static ssize_t
+fn_334(struct struct_433 *filp, char __user *ubuf,
+       size_t var_431, loff_t *ppos)
+{
+ struct struct_378 *inode = file_inode(filp);
+ struct struct_431 *tr = inode->i_private;
+ int var_431 = tracing_get_cpu(inode);
+ char buf[64];
+ int var_401 = 0;
+ ssize_t var_434;
+
+ mutex_lock(&trace_types_lock);
+
+ if (var_431 == RING_BUFFER_ALL_CPUS) {
+  int var_431, buf_size_same;
+  unsigned long var_433;
+
+  var_433 = 0;
+  buf_size_same = 1;
+
+  for_each_tracing_cpu(var_431) {
+
+   if (var_433 == 0)
+    var_433 = per_cpu_ptr(tr->trace_buffer.data, var_431)->entries;
+   if (var_433 != per_cpu_ptr(tr->trace_buffer.data, var_431)->entries) {
+    buf_size_same = 0;
+    break;
+   }
+  }
+
+  if (buf_size_same) {
+   if (!ring_buffer_expanded)
+    var_401 = sprintf(buf, "%lu (expanded: %lu)\n",
+         var_433 >> 10,
+         var_434 >> 10);
+   else
+    var_401 = sprintf(buf, "%lu\n", var_433 >> 10);
+  } else
+   var_401 = sprintf(buf, "X\n");
+ } else
+  var_401 = sprintf(buf, "%lu\n", per_cpu_ptr(tr->trace_buffer.data, var_431)->entries >> 10);
+
+ mutex_unlock(&trace_types_lock);
+
+ var_434 = simple_read_from_buffer(ubuf, var_431, ppos, buf, var_401);
+ return var_434;
+}
+
+static ssize_t
+fn_335(struct struct_433 *filp, const char __user *ubuf,
+        size_t var_431, loff_t *ppos)
+{
+ struct struct_378 *inode = file_inode(filp);
+ struct struct_431 *tr = inode->i_private;
+ unsigned long var_426;
+ int var_434;
+
+ var_434 = kstrtoul_from_user(ubuf, var_431, 10, &var_426);
+ if (var_434)
+  return var_434;
+
+
+ if (!var_426)
+  return -EINVAL;
+
+
+ var_426 <<= 10;
+ var_434 = tracing_resize_ring_buffer(tr, var_426, tracing_get_cpu(inode));
+ if (var_434 < 0)
+  return var_434;
+
+ *ppos += var_431;
+
+ return var_431;
+}
+
+static ssize_t
+fn_336(struct struct_433 *filp, char __user *ubuf,
+    size_t var_431, loff_t *ppos)
+{
+ struct struct_431 *tr = filp->private_data;
+ char buf[64];
+ int var_401, var_431;
+ unsigned long var_433 = 0, var_338 = 0;
+
+ mutex_lock(&trace_types_lock);
+ for_each_tracing_cpu(var_431) {
+  var_433 += per_cpu_ptr(tr->trace_buffer.data, var_431)->entries >> 10;
+  if (!ring_buffer_expanded)
+   var_338 += var_434 >> 10;
+ }
+ if (ring_buffer_expanded)
+  var_401 = sprintf(buf, "%lu\n", var_433);
+ else
+  var_401 = sprintf(buf, "%lu (expanded: %lu)\n", var_433, var_338);
+ mutex_unlock(&trace_types_lock);
+
+ return simple_read_from_buffer(ubuf, var_431, ppos, buf, var_401);
+}
+
+static ssize_t
+fn_338(struct struct_433 *filp, const char __user *ubuf,
+     size_t var_431, loff_t *ppos)
+{
+
+
+
+
+
+ *ppos += var_431;
+
+ return var_431;
+}
+
+static int
+fn_339(struct struct_378 *inode, struct struct_433 *filp)
+{
+ struct struct_431 *tr = inode->i_private;
+
+
+ if (tr->trace_flags & TRACE_ITER_STOP_ON_FREE)
+  tracer_tracing_off(tr);
+
+ tracing_resize_ring_buffer(tr, 0, RING_BUFFER_ALL_CPUS);
+
+ trace_array_put(tr);
+
+ return 0;
+}
+
+static ssize_t
+fn_340(struct struct_433 *filp, const char __user *ubuf,
+     size_t var_431, loff_t *fpos)
+{
+ struct struct_431 *tr = filp->private_data;
+ struct struct_345 *var_424;
+ enum enumtype_341 var_344 = var_343;
+ struct struct_402 *buffer;
+ struct struct_344 *entry;
+ unsigned long irq_flags;
+ const char faulted[] = "<faulted>";
+ ssize_t written;
+ int var_433;
+ int var_421;
+
+
+
+
+ if (var_434)
+  return -EINVAL;
+
+ if (!(tr->trace_flags & TRACE_ITER_MARKERS))
+  return -EINVAL;
+
+ if (var_431 > TRACE_BUF_SIZE)
+  var_431 = TRACE_BUF_SIZE;
+
+ BUILD_BUG_ON(TRACE_BUF_SIZE >= PAGE_SIZE);
+
+ local_save_flags(irq_flags);
+ var_433 = sizeof(*entry) + var_431 + 2;
+
+
+ if (var_431 < (sizeof(faulted) - 1))
+  var_433 += (sizeof(faulted) - 1) - var_431;
+
+ buffer = tr->trace_buffer.buffer;
+ var_424 = __trace_buffer_lock_reserve(buffer, TRACE_PRINT, var_433,
+         irq_flags, preempt_count());
+ if (unlikely(!var_424))
+
+  return -EBADF;
+
+ entry = ring_buffer_event_data(var_424);
+ entry->ip = _THIS_IP_;
+
+ var_421 = __copy_from_user_inatomic(&entry->buf, ubuf, var_431);
+ if (var_421) {
+  memcpy(&entry->buf, faulted, (sizeof(faulted) - 1));
+  var_431 = (sizeof(faulted) - 1);
+  written = -EFAULT;
+ } else
+  written = var_431;
+ var_421 = var_431;
+
+ if (tr->trace_marker_file && !list_empty(&tr->trace_marker_file->triggers)) {
+
+  entry->buf[var_431] = '\0';
+  var_344 = event_triggers_call(tr->trace_marker_file, entry, var_424);
+ }
+
+ if (entry->buf[var_431 - 1] != '\n') {
+  entry->buf[var_431] = '\n';
+  entry->buf[var_431 + 1] = '\0';
+ } else
+  entry->buf[var_431] = '\0';
+
+ __buffer_unlock_commit(buffer, var_424);
+
+ if (var_344)
+  event_triggers_post_call(tr->trace_marker_file, var_344);
+
+ if (written > 0)
+  *fpos += written;
+
+ return written;
+}
+
+
+
+
+static ssize_t
+fn_344(struct struct_433 *filp, const char __user *ubuf,
+     size_t var_431, loff_t *fpos)
+{
+ struct struct_431 *tr = filp->private_data;
+ struct struct_345 *var_424;
+ struct struct_402 *buffer;
+ struct struct_345 *entry;
+ const char faulted[] = "<faulted>";
+ unsigned long irq_flags;
+ ssize_t written;
+ int var_433;
+ int var_421;
+
+
+
+ if (var_434)
+  return -EINVAL;
+
+ if (!(tr->trace_flags & TRACE_ITER_MARKERS))
+  return -EINVAL;
+
+
+ if (var_431 < sizeof(unsigned int) || var_431 > 3072)
+  return -EINVAL;
+
+ if (var_431 > TRACE_BUF_SIZE)
+  var_431 = TRACE_BUF_SIZE;
+
+ BUILD_BUG_ON(TRACE_BUF_SIZE >= PAGE_SIZE);
+
+ local_save_flags(irq_flags);
+ var_433 = sizeof(*entry) + var_431;
+ if (var_431 < ((sizeof(faulted) - 1) + sizeof(int)))
+  var_433 += ((sizeof(faulted) - 1) + sizeof(int)) - var_431;
+
+ buffer = tr->trace_buffer.buffer;
+ var_424 = __trace_buffer_lock_reserve(buffer, TRACE_RAW_DATA, var_433,
+         irq_flags, preempt_count());
+ if (!var_424)
+
+  return -EBADF;
+
+ entry = ring_buffer_event_data(var_424);
+
+ var_421 = __copy_from_user_inatomic(&entry->id, ubuf, var_431);
+ if (var_421) {
+  entry->id = -1;
+  memcpy(&entry->buf, faulted, (sizeof(faulted) - 1));
+  written = -EFAULT;
+ } else
+  written = var_431;
+
+ __buffer_unlock_commit(buffer, var_424);
+
+ if (written > 0)
+  *fpos += written;
+
+ return written;
+}
+
+static int fn_346(struct struct_351 *m, void *var_351)
+{
+ struct struct_431 *tr = m->private;
+ int var_415;
+
+ for (var_415 = 0; var_415 < ARRAY_SIZE(trace_clocks); var_415++)
+  seq_printf(m,
+   "%s%s%s%s", var_415 ? " " : "",
+   var_415 == tr->clock_id ? "[" : "", trace_clocks[var_415].name,
+   var_415 == tr->clock_id ? "]" : "");
+ seq_putc(m, '\n');
+
+ return 0;
+}
+
+int fn_347(struct struct_431 *tr, const char *clockstr)
+{
+ int var_415;
+
+ for (var_415 = 0; var_415 < ARRAY_SIZE(trace_clocks); var_415++) {
+  if (strcmp(trace_clocks[var_415].name, clockstr) == 0)
+   break;
+ }
+ if (var_415 == ARRAY_SIZE(trace_clocks))
+  return -EINVAL;
+
+ mutex_lock(&trace_types_lock);
+
+ tr->clock_id = var_415;
+
+ ring_buffer_set_clock(tr->trace_buffer.buffer, trace_clocks[var_415].func);
+
+
+
+
+
+ tracing_reset_online_cpus(&tr->trace_buffer);
+
+
+
+
+
+
+
+ mutex_unlock(&trace_types_lock);
+
+ return 0;
+}
+
+static ssize_t fn_348(struct struct_433 *filp, const char __user *ubuf,
+       size_t var_431, loff_t *fpos)
+{
+ struct struct_351 *m = filp->private_data;
+ struct struct_431 *tr = m->private;
+ char buf[64];
+ const char *clockstr;
+ int var_434;
+
+ if (var_431 >= sizeof(buf))
+  return -EINVAL;
+
+ if (copy_from_user(buf, ubuf, var_431))
+  return -EFAULT;
+
+ buf[var_431] = 0;
+
+ clockstr = strstrip(buf);
+
+ var_434 = tracing_set_clock(tr, clockstr);
+ if (var_434)
+  return var_434;
+
+ *fpos += var_431;
+
+ return var_431;
+}
+
+static int fn_349(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+ int var_434;
+
+ if (var_434)
+  return -ENODEV;
+
+ if (trace_array_get(tr))
+  return -ENODEV;
+
+ var_434 = single_open(file, tracing_clock_show, inode->i_private);
+ if (var_434 < 0)
+  trace_array_put(tr);
+
+ return var_434;
+}
+
+static int fn_350(struct struct_351 *m, void *var_351)
+{
+ struct struct_431 *tr = m->private;
+
+ mutex_lock(&trace_types_lock);
+
+ if (ring_buffer_time_stamp_abs(tr->trace_buffer.buffer))
+  seq_puts(m, "delta [absolute]\n");
+ else
+  seq_puts(m, "[delta] absolute\n");
+
+ mutex_unlock(&trace_types_lock);
+
+ return 0;
+}
+
+static int fn_351(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_431 *tr = inode->i_private;
+ int var_434;
+
+ if (var_434)
+  return -ENODEV;
+
+ if (trace_array_get(tr))
+  return -ENODEV;
+
+ var_434 = single_open(file, tracing_time_stamp_mode_show, inode->i_private);
+ if (var_434 < 0)
+  trace_array_put(tr);
+
+ return var_434;
+}
+
+int fn_352(struct struct_431 *tr, bool var_354)
+{
+ int var_434 = 0;
+
+ mutex_lock(&trace_types_lock);
+
+ if (var_354 && tr->time_stamp_abs_ref++)
+  goto out;
+
+ if (!var_354) {
+  if (WARN_ON_ONCE(!tr->time_stamp_abs_ref)) {
+   var_434 = -EINVAL;
+   goto out;
+  }
+
+  if (--tr->time_stamp_abs_ref)
+   goto out;
+ }
+
+ ring_buffer_set_time_stamp_abs(tr->trace_buffer.buffer, var_354);
+
+
+
+
+
+ out:
+ mutex_unlock(&trace_types_lock);
+
+ return var_434;
+}
+
+struct struct_376 {
+ struct struct_431 iter;
+ void *spare;
+ unsigned int spare_cpu;
+ unsigned int read;
+};
+
+static const struct struct_402 var_422 = {
+ .open = tracing_open_generic,
+ .read = tracing_thresh_read,
+ .write = tracing_thresh_write,
+ .llseek = generic_file_llseek,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic,
+ .read = tracing_set_trace_read,
+ .write = tracing_set_trace_write,
+ .llseek = generic_file_llseek,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_pipe,
+ .poll = tracing_poll_pipe,
+ .read = tracing_read_pipe,
+ .splice_read = tracing_splice_read_pipe,
+ .release = tracing_release_pipe,
+ .llseek = no_llseek,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic_tr,
+ .read = tracing_entries_read,
+ .write = tracing_entries_write,
+ .llseek = generic_file_llseek,
+ .release = tracing_release_generic_tr,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic_tr,
+ .read = tracing_total_entries_read,
+ .llseek = generic_file_llseek,
+ .release = tracing_release_generic_tr,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic_tr,
+ .write = tracing_free_buffer_write,
+ .release = tracing_free_buffer_release,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic_tr,
+ .write = tracing_mark_write,
+ .llseek = generic_file_llseek,
+ .release = tracing_release_generic_tr,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic_tr,
+ .write = tracing_mark_raw_write,
+ .llseek = generic_file_llseek,
+ .release = tracing_release_generic_tr,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_clock_open,
+ .read = seq_read,
+ .llseek = seq_lseek,
+ .release = tracing_single_release_tr,
+ .write = tracing_clock_write,
+};
+
+static const struct struct_402 var_416 = {
+ .open = tracing_time_stamp_mode_open,
+ .read = seq_read,
+ .llseek = seq_lseek,
+ .release = tracing_single_release_tr,
+};
+
+static int fn_365(struct struct_378 *inode, struct struct_433 *filp)
+{
+ struct struct_431 *tr = inode->i_private;
+ struct struct_376 *info;
+ int var_434;
+
+ if (var_434)
+  return -ENODEV;
+
+ if (trace_array_get(tr) < 0)
+  return -ENODEV;
+
+ info = kzalloc(sizeof(*info), GFP_KERNEL);
+ if (!info) {
+  trace_array_put(tr);
+  return -ENOMEM;
+ }
+
+ mutex_lock(&trace_types_lock);
+
+ info->iter.tr = tr;
+ info->iter.cpu_file = tracing_get_cpu(inode);
+ info->iter.trace = tr->current_trace;
+ info->iter.trace_buffer = &tr->trace_buffer;
+ info->spare = NULL;
+
+ info->read = (unsigned int)-1;
+
+ filp->private_data = info;
+
+ tr->current_trace->ref++;
+
+ mutex_unlock(&trace_types_lock);
+
+ var_434 = nonseekable_open(inode, filp);
+ if (var_434 < 0)
+  trace_array_put(tr);
+
+ return var_434;
+}
+
+static __poll_t
+fn_366(struct struct_433 *filp, poll_table *poll_table)
+{
+ struct struct_376 *info = filp->private_data;
+ struct struct_431 *iter = &info->iter;
+
+ return trace_poll(iter, filp, poll_table);
+}
+
+static ssize_t
+fn_367(struct struct_433 *filp, char __user *ubuf,
+       size_t var_433, loff_t *ppos)
+{
+ struct struct_376 *info = filp->private_data;
+ struct struct_431 *iter = &info->iter;
+ ssize_t var_434 = 0;
+ ssize_t var_433;
+
+ if (!var_433)
+  return 0;
+
+
+
+
+
+
+ if (!info->spare) {
+  info->spare = ring_buffer_alloc_read_page(iter->trace_buffer->buffer,
+         iter->cpu_file);
+  if (IS_ERR(info->spare)) {
+   var_434 = PTR_ERR(info->spare);
+   info->spare = NULL;
+  } else {
+   info->spare_cpu = iter->cpu_file;
+  }
+ }
+ if (!info->spare)
+  return var_434;
+
+
+ if (info->read < PAGE_SIZE)
+  goto read;
+
+ again:
+ trace_access_lock(iter->cpu_file);
+ var_434 = ring_buffer_read_page(iter->trace_buffer->buffer,
+        &info->spare,
+        var_433,
+        iter->cpu_file, 0);
+ trace_access_unlock(iter->cpu_file);
+
+ if (var_434 < 0) {
+  if (trace_empty(iter)) {
+   if ((filp->f_flags & O_NONBLOCK))
+    return -EAGAIN;
+
+   var_434 = wait_on_pipe(iter, false);
+   if (var_434)
+    return var_434;
+
+   goto again;
+  }
+  return 0;
+ }
+
+ info->read = 0;
+ read:
+ var_433 = PAGE_SIZE - info->read;
+ if (var_433 > var_433)
+  var_433 = var_433;
+
+ var_434 = copy_to_user(ubuf, info->spare + info->read, var_433);
+ if (var_434 == var_433)
+  return -EFAULT;
+
+ var_433 -= var_434;
+
+ *ppos += var_433;
+ info->read += var_433;
+
+ return var_433;
+}
+
+static int fn_368(struct struct_378 *inode, struct struct_433 *file)
+{
+ struct struct_376 *info = file->private_data;
+ struct struct_431 *iter = &info->iter;
+
+ mutex_lock(&trace_types_lock);
+
+ iter->tr->current_trace->ref--;
+
+ __trace_array_put(iter->tr);
+
+ if (info->spare)
+  ring_buffer_free_read_page(iter->trace_buffer->buffer,
+        info->spare_cpu, info->spare);
+ kfree(info);
+
+ mutex_unlock(&trace_types_lock);
+
+ return 0;
+}
+
+struct struct_376 {
+ struct struct_402 *buffer;
+ void *page;
+ int cpu;
+ int ref;
+};
+
+static void fn_370(struct struct_376 *pipe,
+        struct struct_373 *buf)
+{
+ struct struct_376 *ref = (struct struct_376 *)buf->private;
+
+ if (--ref->ref)
+  return;
+
+ ring_buffer_free_read_page(ref->buffer, ref->cpu, ref->page);
+ kfree(ref);
+ buf->private = 0;
+}
+
+static void fn_372(struct struct_376 *pipe,
+    struct struct_373 *buf)
+{
+ struct struct_376 *ref = (struct struct_376 *)buf->private;
+
+ ref->ref++;
+}
+
+
+static const struct struct_373 var_376 = {
+ .can_merge = 0,
+ .confirm = generic_pipe_buf_confirm,
+ .release = buffer_pipe_buf_release,
+ .steal = generic_pipe_buf_steal,
+ .get = buffer_pipe_buf_get,
+};
+
+
+
+
+
+static void fn_374(struct struct_376 *var_376, unsigned int var_415)
+{
+ struct struct_376 *ref =
+  (struct struct_376 *)var_376->partial[var_415].private;
+
+ if (--ref->ref)
+  return;
+
+ ring_buffer_free_read_page(ref->buffer, ref->cpu, ref->page);
+ kfree(ref);
+ var_376->partial[var_415].private = 0;
+}
+
+static ssize_t
+fn_375(struct struct_433 *file, loff_t *ppos,
+       struct struct_376 *pipe, size_t var_421,
+       unsigned int var_431)
+{
+ struct struct_376 *info = file->private_data;
+ struct struct_431 *iter = &info->iter;
+ struct struct_376 partial_def[PIPE_DEF_BUFFERS];
+ struct struct_376 *pages_def[PIPE_DEF_BUFFERS];
+ struct struct_376 var_376 = {
+  .pages = pages_def,
+  .partial = partial_def,
+  .nr_pages_max = PIPE_DEF_BUFFERS,
+  .ops = &var_376,
+  .spd_release = buffer_spd_release,
+ };
+ struct struct_376 *ref;
+ int var_376, var_415;
+ ssize_t var_434 = 0;
+
+
+
+
+
+
+ if (*ppos & (PAGE_SIZE - 1))
+  return -EINVAL;
+
+ if (var_421 & (PAGE_SIZE - 1)) {
+  if (var_421 < PAGE_SIZE)
+   return -EINVAL;
+  var_421 &= PAGE_MASK;
+ }
+
+ if (splice_grow_spd(pipe, &var_376))
+  return -ENOMEM;
+
+ again:
+ trace_access_lock(iter->cpu_file);
+ var_376 = ring_buffer_entries_cpu(iter->trace_buffer->buffer, iter->cpu_file);
+
+ for (var_415 = 0; var_415 < var_376.nr_pages_max && var_421 && var_376; var_415++, var_421 -= PAGE_SIZE) {
+  struct struct_376 *page;
+  int var_401;
+
+  ref = kzalloc(sizeof(*ref), GFP_KERNEL);
+  if (!ref) {
+   var_434 = -ENOMEM;
+   break;
+  }
+
+  ref->ref = 1;
+  ref->buffer = iter->trace_buffer->buffer;
+  ref->page = ring_buffer_alloc_read_page(ref->buffer, iter->cpu_file);
+  if (IS_ERR(ref->page)) {
+   var_434 = PTR_ERR(ref->page);
+   ref->page = NULL;
+   kfree(ref);
+   break;
+  }
+  ref->cpu = iter->cpu_file;
+
+  var_401 = ring_buffer_read_page(ref->buffer, &ref->page,
+       var_421, iter->cpu_file, 1);
+  if (var_401 < 0) {
+   ring_buffer_free_read_page(ref->buffer, ref->cpu,
+         ref->page);
+   kfree(ref);
+   break;
+  }
+
+  page = virt_to_page(ref->page);
+
+  var_376.pages[var_415] = page;
+  var_376.partial[var_415].len = PAGE_SIZE;
+  var_376.partial[var_415].offset = 0;
+  var_376.partial[var_415].private = (unsigned long)ref;
+  var_376.nr_pages++;
+  *ppos += PAGE_SIZE;
+
+  var_376 = ring_buffer_entries_cpu(iter->trace_buffer->buffer, iter->cpu_file);
+ }
+
+ trace_access_unlock(iter->cpu_file);
+ var_376.nr_pages = var_415;
+
+
+ if (!var_376.nr_pages) {
+  if (var_434)
+   goto out;
+
+  var_434 = -EAGAIN;
+  if ((file->f_flags & O_NONBLOCK) || (var_431 & SPLICE_F_NONBLOCK))
+   goto out;
+
+  var_434 = wait_on_pipe(iter, true);
+  if (var_434)
+   goto out;
+
+  goto again;
+ }
+
+ var_434 = splice_to_pipe(pipe, &var_376);
+out:
+ splice_shrink_spd(&var_376);
+
+ return var_434;
+}
+
+static const struct struct_402 var_385 = {
+ .open = tracing_buffers_open,
+ .read = tracing_buffers_read,
+ .poll = tracing_buffers_poll,
+ .release = tracing_buffers_release,
+ .splice_read = tracing_buffers_splice_read,
+ .llseek = no_llseek,
+};
+
+static ssize_t
+fn_377(struct struct_433 *filp, char __user *ubuf,
+     size_t var_433, loff_t *ppos)
+{
+ struct struct_378 *inode = file_inode(filp);
+ struct struct_431 *tr = inode->i_private;
+ struct struct_408 *trace_buf = &tr->trace_buffer;
+ int var_431 = tracing_get_cpu(inode);
+ struct struct_428 *s;
+ unsigned long var_431;
+ unsigned long long t;
+ unsigned long usec_rem;
+
+ s = kmalloc(sizeof(*s), GFP_KERNEL);
+ if (!s)
+  return -ENOMEM;
+
+ trace_seq_init(s);
+
+ var_431 = ring_buffer_entries_cpu(trace_buf->buffer, var_431);
+ trace_seq_printf(s, "entries: %ld\n", var_431);
+
+ var_431 = ring_buffer_overrun_cpu(trace_buf->buffer, var_431);
+ trace_seq_printf(s, "overrun: %ld\n", var_431);
+
+ var_431 = ring_buffer_commit_overrun_cpu(trace_buf->buffer, var_431);
+ trace_seq_printf(s, "commit overrun: %ld\n", var_431);
+
+ var_431 = ring_buffer_bytes_cpu(trace_buf->buffer, var_431);
+ trace_seq_printf(s, "bytes: %ld\n", var_431);
+
+ if (trace_clocks[tr->clock_id].in_ns) {
+
+  t = ns2usecs(ring_buffer_oldest_event_ts(trace_buf->buffer, var_431));
+  usec_rem = do_div(t, USEC_PER_SEC);
+  trace_seq_printf(s, "oldest event ts: %5llu.%06lu\n",
+        t, usec_rem);
+
+  t = ns2usecs(ring_buffer_time_stamp(trace_buf->buffer, var_431));
+  usec_rem = do_div(t, USEC_PER_SEC);
+  trace_seq_printf(s, "now ts: %5llu.%06lu\n", t, usec_rem);
+ } else {
+
+  trace_seq_printf(s, "oldest event ts: %llu\n",
+    ring_buffer_oldest_event_ts(trace_buf->buffer, var_431));
+
+  trace_seq_printf(s, "now ts: %llu\n",
+    ring_buffer_time_stamp(trace_buf->buffer, var_431));
+ }
+
+ var_431 = ring_buffer_dropped_events_cpu(trace_buf->buffer, var_431);
+ trace_seq_printf(s, "dropped events: %ld\n", var_431);
+
+ var_431 = ring_buffer_read_events_cpu(trace_buf->buffer, var_431);
+ trace_seq_printf(s, "read events: %ld\n", var_431);
+
+ var_433 = simple_read_from_buffer(ubuf, var_433, ppos,
+     s->buffer, trace_seq_used(s));
+
+ kfree(s);
+
+ return var_433;
+}
+
+static const struct struct_402 var_385 = {
+ .open = tracing_open_generic_tr,
+ .read = tracing_stats_read,
+ .llseek = generic_file_llseek,
+ .release = tracing_release_generic_tr,
+};
+
+static inline __init int fn_379(void) { return 0; }
+
+
+static struct struct_422 *fn_380(struct struct_431 *tr)
+{
+ if (WARN_ON(!tr->dir))
+  return ERR_PTR(-ENODEV);
+
+
+ if (tr->flags & TRACE_ARRAY_FL_GLOBAL)
+  return NULL;
+
+
+ return tr->dir;
+}
+
+static struct struct_422 *fn_381(struct struct_431 *tr, int var_431)
+{
+ struct struct_422 *d_tracer;
+
+ if (tr->percpu_dir)
+  return tr->percpu_dir;
+
+ d_tracer = tracing_get_dentry(tr);
+ if (IS_ERR(d_tracer))
+  return NULL;
+
+ tr->percpu_dir = tracefs_create_dir("per_cpu", d_tracer);
+
+ WARN_ONCE(!tr->percpu_dir,
+    "Could not create tracefs directory 'per_cpu/%d'\n", var_431);
+
+ return tr->percpu_dir;
+}
+
+static struct struct_422 *
+fn_382(const char *name, umode_t var_394, struct struct_422 *parent,
+        void *var_426, long var_431, const struct struct_402 *fops)
+{
+ struct struct_422 *var_434 = trace_create_file(name, var_394, parent, var_426, fops);
+
+ if (var_434)
+  d_inode(var_434)->i_cdev = (void *)(var_431 + 1);
+ return var_434;
+}
+
+static void
+fn_416(struct struct_431 *tr, long var_431)
+{
+ struct struct_422 *d_percpu = tracing_dentry_percpu(tr, var_431);
+ struct struct_422 *d_cpu;
+ char cpu_dir[30];
+
+ if (!d_percpu)
+  return;
+
+ snprintf(cpu_dir, 30, "cpu%ld", var_431);
+ d_cpu = tracefs_create_dir(cpu_dir, d_percpu);
+ if (!d_cpu) {
+  pr_warn("Could not create tracefs '%s' entry\n", cpu_dir);
+  return;
+ }
+
+
+ trace_create_cpu_file("trace_pipe", 444, d_cpu,
+    tr, var_431, &var_416);
+
+
+ trace_create_cpu_file("trace", 644, d_cpu,
+    tr, var_431, &var_416);
+
+ trace_create_cpu_file("trace_pipe_raw", 444, d_cpu,
+    tr, var_431, &var_385);
+
+ trace_create_cpu_file("stats", 444, d_cpu,
+    tr, var_431, &var_385);
+
+ trace_create_cpu_file("buffer_size_kb", 444, d_cpu,
+    tr, var_431, &var_416);
+
+}
+
+
+
+
+
+
+static ssize_t
+fn_385(struct struct_433 *filp, char __user *ubuf, size_t var_431,
+   loff_t *ppos)
+{
+ struct struct_396 *topt = filp->private_data;
+ char *buf;
+
+ if (topt->flags->val & topt->opt->bit)
+  buf = "1\n";
+ else
+  buf = "0\n";
+
+ return simple_read_from_buffer(ubuf, var_431, ppos, buf, 2);
+}
+
+static ssize_t
+fn_386(struct struct_433 *filp, const char __user *ubuf, size_t var_431,
+    loff_t *ppos)
+{
+ struct struct_396 *topt = filp->private_data;
+ unsigned long var_426;
+ int var_434;
+
+ var_434 = kstrtoul_from_user(ubuf, var_431, 10, &var_426);
+ if (var_434)
+  return var_434;
+
+ if (var_426 != 0 && var_426 != 1)
+  return -EINVAL;
+
+ if (!!(topt->flags->val & topt->opt->bit) != var_426) {
+  mutex_lock(&trace_types_lock);
+  var_434 = __set_tracer_option(topt->tr, topt->flags,
+       topt->opt, !var_426);
+  mutex_unlock(&trace_types_lock);
+  if (var_434)
+   return var_434;
+ }
+
+ *ppos += var_431;
+
+ return var_431;
+}
+
+
+static const struct struct_402 var_396 = {
+ .open = tracing_open_generic,
+ .read = trace_options_read,
+ .write = trace_options_write,
+ .llseek = generic_file_llseek,
+};
+
+static void fn_388(void *var_426, struct struct_431 **ptr,
+    unsigned int *pindex)
+{
+ *pindex = *(unsigned char *)var_426;
+
+ *ptr = container_of(var_426 - *pindex, struct trace_array,
+       trace_flags_index);
+}
+
+static ssize_t
+fn_389(struct struct_433 *filp, char __user *ubuf, size_t var_431,
+   loff_t *ppos)
+{
+ void *tr_index = filp->private_data;
+ struct struct_431 *tr;
+ unsigned int var_398;
+ char *buf;
+
+ get_tr_index(tr_index, &tr, &var_398);
+
+ if (tr->trace_flags & (1 << var_398))
+  buf = "1\n";
+ else
+  buf = "0\n";
+
+ return simple_read_from_buffer(ubuf, var_431, ppos, buf, 2);
+}
+
+static ssize_t
+fn_391(struct struct_433 *filp, const char __user *ubuf, size_t var_431,
+    loff_t *ppos)
+{
+ void *tr_index = filp->private_data;
+ struct struct_431 *tr;
+ unsigned int var_398;
+ unsigned long var_426;
+ int var_434;
+
+ get_tr_index(tr_index, &tr, &var_398);
+
+ var_434 = kstrtoul_from_user(ubuf, var_431, 10, &var_426);
+ if (var_434)
+  return var_434;
+
+ if (var_426 != 0 && var_426 != 1)
+  return -EINVAL;
+
+ mutex_lock(&trace_types_lock);
+ var_434 = set_tracer_flag(tr, 1 << var_398, var_426);
+ mutex_unlock(&trace_types_lock);
+
+ if (var_434 < 0)
+  return var_434;
+
+ *ppos += var_431;
+
+ return var_431;
+}
+
+static const struct struct_402 var_398 = {
+ .open = tracing_open_generic,
+ .read = trace_options_core_read,
+ .write = trace_options_core_write,
+ .llseek = generic_file_llseek,
+};
+
+struct struct_422 *fn_393(const char *name,
+     umode_t var_394,
+     struct struct_422 *parent,
+     void *var_426,
+     const struct struct_402 *fops)
+{
+ struct struct_422 *var_434;
+
+ var_434 = tracefs_create_file(name, var_394, parent, var_426, fops);
+ if (!var_434)
+  pr_warn("Could not create tracefs '%s' entry\n", name);
+
+ return var_434;
+}
+
+
+static struct struct_422 *fn_394(struct struct_431 *tr)
+{
+ struct struct_422 *d_tracer;
+
+ if (tr->options)
+  return tr->options;
+
+ d_tracer = tracing_get_dentry(tr);
+ if (IS_ERR(d_tracer))
+  return NULL;
+
+ tr->options = tracefs_create_dir("options", d_tracer);
+ if (!tr->options) {
+  pr_warn("Could not create tracefs directory 'options'\n");
+  return NULL;
+ }
+
+ return tr->options;
+}
+
+static void
+fn_395(struct struct_431 *tr,
+    struct struct_396 *topt,
+    struct struct_397 *var_431,
+    struct struct_397 *opt)
+{
+ struct struct_422 *t_options;
+
+ t_options = trace_options_init_dentry(tr);
+ if (!t_options)
+  return;
+
+ topt->flags = var_431;
+ topt->opt = opt;
+ topt->tr = tr;
+
+ topt->entry = trace_create_file(opt->name, 644, t_options, topt,
+        &var_396);
+
+}
+
+static void
+fn_396(struct struct_431 *tr, struct struct_411 *tracer)
+{
+ struct struct_396 *topts;
+ struct struct_396 *tr_topts;
+ struct struct_397 *var_431;
+ struct struct_397 *opts;
+ int var_431;
+ int var_415;
+
+ if (!tracer)
+  return;
+
+ var_431 = tracer->flags;
+
+ if (!var_431 || !var_431->opts)
+  return;
+
+
+
+
+
+ if (!trace_ok_for_array(tracer, tr))
+  return;
+
+ for (var_415 = 0; var_415 < tr->nr_topts; var_415++) {
+
+  if (WARN_ON_ONCE(tr->topts[var_415].tracer->flags == tracer->flags))
+   return;
+ }
+
+ opts = var_431->opts;
+
+ for (var_431 = 0; opts[var_431].name; var_431++)
+  ;
+
+ topts = kcalloc(var_431 + 1, sizeof(*topts), GFP_KERNEL);
+ if (!topts)
+  return;
+
+ tr_topts = krealloc(tr->topts, sizeof(*tr->topts) * (tr->nr_topts + 1),
+       GFP_KERNEL);
+ if (!tr_topts) {
+  kfree(topts);
+  return;
+ }
+
+ tr->topts = tr_topts;
+ tr->topts[tr->nr_topts].tracer = tracer;
+ tr->topts[tr->nr_topts].topts = topts;
+ tr->nr_topts++;
+
+ for (var_431 = 0; opts[var_431].name; var_431++) {
+  create_trace_option_file(tr, &topts[var_431], var_431,
+      &opts[var_431]);
+  WARN_ONCE(topts[var_431].entry == NULL,
+     "Failed to create trace option: %s",
+     opts[var_431].name);
+ }
+}
+
+static struct struct_422 *
+fn_397(struct struct_431 *tr,
+         const char *option, long var_398)
+{
+ struct struct_422 *t_options;
+
+ t_options = trace_options_init_dentry(tr);
+ if (!t_options)
+  return NULL;
+
+ return trace_create_file(option, 644, t_options,
+     (void *)&tr->trace_flags_index[var_398],
+     &var_398);
+}
+
+static void fn_398(struct struct_431 *tr)
+{
+ struct struct_422 *t_options;
+ bool var_400 = tr == &var_434;
+ int var_415;
+
+ t_options = trace_options_init_dentry(tr);
+ if (!t_options)
+  return;
+
+ for (var_415 = 0; trace_options[var_415]; var_415++) {
+  if (var_400 ||
+      !((1 << var_415) & (TRACE_ITER_PRINTK | TRACE_ITER_PRINTK_MSGONLY | TRACE_ITER_RECORD_CMD)))
+   create_trace_option_core_file(tr, trace_options[var_415], var_415);
+ }
+}
+
+static ssize_t
+fn_400(struct struct_433 *filp, char __user *ubuf,
+        size_t var_431, loff_t *ppos)
+{
+ struct struct_431 *tr = filp->private_data;
+ char buf[64];
+ int var_401;
+
+ var_401 = tracer_tracing_is_on(tr);
+ var_401 = sprintf(buf, "%d\n", var_401);
+
+ return simple_read_from_buffer(ubuf, var_431, ppos, buf, var_401);
+}
+
+static ssize_t
+fn_401(struct struct_433 *filp, const char __user *ubuf,
+  size_t var_431, loff_t *ppos)
+{
+ struct struct_431 *tr = filp->private_data;
+ struct struct_402 *buffer = tr->trace_buffer.buffer;
+ unsigned long var_426;
+ int var_434;
+
+ var_434 = kstrtoul_from_user(ubuf, var_431, 10, &var_426);
+ if (var_434)
+  return var_434;
+
+ if (buffer) {
+  mutex_lock(&trace_types_lock);
+  if (var_426) {
+   tracer_tracing_on(tr);
+   if (tr->current_trace->start)
+    tr->current_trace->start(tr);
+  } else {
+   tracer_tracing_off(tr);
+   if (tr->current_trace->stop)
+    tr->current_trace->stop(tr);
+  }
+  mutex_unlock(&trace_types_lock);
+ }
+
+ (*ppos)++;
+
+ return var_431;
+}
+
+static const struct struct_402 var_416 = {
+ .open = tracing_open_generic_tr,
+ .read = rb_simple_read,
+ .write = rb_simple_write,
+ .release = tracing_release_generic_tr,
+ .llseek = default_llseek,
+};
+
+struct struct_422 *trace_instance_dir;
+
+static void
+fn_416(struct struct_431 *tr, struct struct_422 *d_tracer);
+
+static int
+fn_404(struct struct_431 *tr, struct struct_408 *buf, int var_433)
+{
+ enum enumtype_405 rb_flags;
+
+ rb_flags = tr->trace_flags & TRACE_ITER_OVERWRITE ? RB_FL_OVERWRITE : 0;
+
+ buf->tr = tr;
+
+ buf->buffer = ring_buffer_alloc(var_433, rb_flags);
+ if (!buf->buffer)
+  return -ENOMEM;
+
+ buf->data = alloc_percpu(struct trace_array_cpu);
+ if (!buf->data) {
+  ring_buffer_free(buf->buffer);
+  buf->buffer = NULL;
+  return -ENOMEM;
+ }
+
+
+ set_buffer_entries(&tr->trace_buffer,
+      ring_buffer_size(tr->trace_buffer.buffer, 0));
+
+ return 0;
+}
+
+static int fn_406(struct struct_431 *tr, int var_433)
+{
+ int var_434;
+
+ var_434 = allocate_trace_buffer(tr, &tr->trace_buffer, var_433);
+ if (var_434)
+  return var_434;
+
+ return 0;
+}
+
+static void fn_407(struct struct_408 *buf)
+{
+ if (buf->buffer) {
+  ring_buffer_free(buf->buffer);
+  buf->buffer = NULL;
+  free_percpu(buf->data);
+  buf->data = NULL;
+ }
+}
+
+static void fn_408(struct struct_431 *tr)
+{
+ if (!tr)
+  return;
+
+ free_trace_buffer(&tr->trace_buffer);
+
+
+
+
+}
+
+static void fn_409(struct struct_431 *tr)
+{
+ int var_415;
+
+
+ for (var_415 = 0; var_415 < TRACE_FLAGS_MAX_SIZE; var_415++)
+  tr->trace_flags_index[var_415] = var_415;
+}
+
+static void fn_410(struct struct_431 *tr)
+{
+ struct struct_411 *t;
+
+ for (t = trace_types; t; t = t->next)
+  add_tracer_options(tr, t);
+}
+
+static void fn_411(struct struct_431 *tr)
+{
+ mutex_lock(&trace_types_lock);
+ __update_tracer_options(tr);
+ mutex_unlock(&trace_types_lock);
+}
+
+static int fn_412(const char *name)
+{
+ struct struct_431 *tr;
+ int var_434;
+
+ mutex_lock(&event_mutex);
+ mutex_lock(&trace_types_lock);
+
+ var_434 = -EEXIST;
+ list_for_each_entry(tr, &ftrace_trace_arrays, list) {
+  if (tr->name && strcmp(tr->name, name) == 0)
+   goto out_unlock;
+ }
+
+ var_434 = -ENOMEM;
+ tr = kzalloc(sizeof(*tr), GFP_KERNEL);
+ if (!tr)
+  goto out_unlock;
+
+ tr->name = kstrdup(name, GFP_KERNEL);
+ if (!tr->name)
+  goto out_free_tr;
+
+ if (!alloc_cpumask_var(&tr->tracing_cpumask, GFP_KERNEL))
+  goto out_free_tr;
+
+ tr->trace_flags = var_434.trace_flags & ~(TRACE_ITER_EVENT_FORK | TRACE_ITER_FUNC_FORK);
+
+ cpumask_copy(tr->tracing_cpumask, cpu_all_mask);
+
+ raw_spin_lock_init(&tr->start_lock);
+
+ tr->max_lock = (arch_spinlock_t)var_434;
+
+ tr->current_trace = &nop_trace;
+
+ INIT_LIST_HEAD(&tr->systems);
+ INIT_LIST_HEAD(&tr->events);
+ INIT_LIST_HEAD(&tr->hist_vars);
+
+ if (allocate_trace_buffers(tr, var_434) < 0)
+  goto out_free_tr;
+
+ tr->dir = tracefs_create_dir(name, trace_instance_dir);
+ if (!tr->dir)
+  goto out_free_tr;
+
+ var_434 = event_trace_add_tracer(tr->dir, tr);
+ if (var_434) {
+  tracefs_remove_recursive(tr->dir);
+  goto out_free_tr;
+ }
+
+ ftrace_init_trace_array(tr);
+
+ init_tracer_tracefs(tr, tr->dir);
+ init_trace_flags_index(tr);
+ __update_tracer_options(tr);
+
+ list_add(&tr->list, &ftrace_trace_arrays);
+
+ mutex_unlock(&trace_types_lock);
+ mutex_unlock(&event_mutex);
+
+ return 0;
+
+ out_free_tr:
+ free_trace_buffers(tr);
+ free_cpumask_var(tr->tracing_cpumask);
+ kfree(tr->name);
+ kfree(tr);
+
+ out_unlock:
+ mutex_unlock(&trace_types_lock);
+ mutex_unlock(&event_mutex);
+
+ return var_434;
+
+}
+
+static int fn_413(const char *name)
+{
+ struct struct_431 *tr;
+ int var_415 = 0;
+ int var_434;
+ int var_415;
+
+ mutex_lock(&event_mutex);
+ mutex_lock(&trace_types_lock);
+
+ var_434 = -ENODEV;
+ list_for_each_entry(tr, &ftrace_trace_arrays, list) {
+  if (tr->name && strcmp(tr->name, name) == 0) {
+   var_415 = 1;
+   break;
+  }
+ }
+ if (!var_415)
+  goto out_unlock;
+
+ var_434 = -EBUSY;
+ if (tr->ref || (tr->current_trace && tr->current_trace->ref))
+  goto out_unlock;
+
+ list_del(&tr->list);
+
+
+ for (var_415 = 0; var_415 < TRACE_FLAGS_MAX_SIZE; var_415++) {
+  if ((1 << var_415) & (TRACE_ITER_EVENT_FORK | TRACE_ITER_FUNC_FORK))
+   set_tracer_flag(tr, 1 << var_415, 0);
+ }
+
+ tracing_set_nop(tr);
+ clear_ftrace_function_probes(tr);
+ event_trace_del_tracer(tr);
+ ftrace_clear_pids(tr);
+ ftrace_destroy_function_files(tr);
+ tracefs_remove_recursive(tr->dir);
+ free_trace_buffers(tr);
+
+ for (var_415 = 0; var_415 < tr->nr_topts; var_415++) {
+  kfree(tr->topts[var_415].topts);
+ }
+ kfree(tr->topts);
+
+ free_cpumask_var(tr->tracing_cpumask);
+ kfree(tr->name);
+ kfree(tr);
+
+ var_434 = 0;
+
+ out_unlock:
+ mutex_unlock(&trace_types_lock);
+ mutex_unlock(&event_mutex);
+
+ return var_434;
+}
+
+static __init void fn_415(struct struct_422 *d_tracer)
+{
+ trace_instance_dir = tracefs_create_instance_dir("instances", d_tracer,
+        instance_mkdir,
+        instance_rmdir);
+ if (WARN_ON(!trace_instance_dir))
+  return;
+}
+
+static void
+fn_416(struct struct_431 *tr, struct struct_422 *d_tracer)
+{
+ struct struct_416 *file;
+ int var_431;
+
+ trace_create_file("available_tracers", 444, d_tracer,
+   tr, &var_416);
+
+ trace_create_file("current_tracer", 644, d_tracer,
+   tr, &var_416);
+
+ trace_create_file("tracing_cpumask", 644, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("trace_options", 644, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("trace", 644, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("trace_pipe", 444, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("buffer_size_kb", 644, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("buffer_total_size_kb", 444, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("free_buffer", 200, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("trace_marker", 220, d_tracer,
+     tr, &var_416);
+
+ file = __find_event_file(tr, "ftrace", "print");
+ if (file && file->dir)
+  trace_create_file("trigger", 644, file->dir, file,
+      &event_trigger_fops);
+ tr->trace_marker_file = file;
+
+ trace_create_file("trace_marker_raw", 220, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("trace_clock", 644, d_tracer, tr,
+     &var_416);
+
+ trace_create_file("tracing_on", 644, d_tracer,
+     tr, &var_416);
+
+ trace_create_file("timestamp_mode", 444, d_tracer, tr,
+     &var_416);
+
+ create_trace_options_dir(tr);
+
+
+
+
+
+
+ if (ftrace_create_function_files(tr, d_tracer))
+  WARN(1, "Could not allocate function filter files");
+
+
+
+
+
+
+ for_each_tracing_cpu(cpu)
+  fn_416(tr, cpu);
+
+ ftrace_init_tracefs(tr, d_tracer);
+}
+
+static struct struct_418 *fn_417(struct struct_422 *mntpt, void *ingore)
+{
+ struct struct_418 *mnt;
+ struct struct_418 *var_419;
+
+
+
+
+
+
+ var_419 = get_fs_type("tracefs");
+ if (!var_419)
+  return NULL;
+ mnt = vfs_submount(mntpt, var_419, "tracefs", NULL);
+ put_filesystem(var_419);
+ if (IS_ERR(mnt))
+  return NULL;
+ mntget(mnt);
+
+ return mnt;
+}
+
+struct struct_422 *fn_419(void)
+{
+ struct struct_431 *tr = &var_434;
+
+
+ if (tr->dir)
+  return NULL;
+
+ if (WARN_ON(!tracefs_initialized()) ||
+  (IS_ENABLED(CONFIG_DEBUG_FS) &&
+   WARN_ON(!debugfs_initialized())))
+  return ERR_PTR(-ENODEV);
+
+
+
+
+
+
+
+ tr->dir = debugfs_create_automount("tracing", NULL,
+        trace_automount, NULL);
+ if (!tr->dir) {
+  pr_warn_once("Could not create debugfs directory 'tracing'\n");
+  return ERR_PTR(-ENOMEM);
+ }
+
+ return NULL;
+}
+
+extern struct struct_420 *__start_ftrace_eval_maps[];
+extern struct struct_420 *__stop_ftrace_eval_maps[];
+
+static void __init fn_420(void)
+{
+ int var_421;
+
+ var_421 = __stop_ftrace_eval_maps - __start_ftrace_eval_maps;
+ trace_insert_eval_map(NULL, __start_ftrace_eval_maps, var_421);
+}
+
+static __init int fn_421(void)
+{
+ struct struct_422 *d_tracer;
+
+ trace_access_lock_init();
+
+ d_tracer = tracing_init_dentry();
+ if (IS_ERR(d_tracer))
+  return 0;
+
+ event_trace_init();
+
+ init_tracer_tracefs(&var_434, d_tracer);
+ ftrace_init_tracefs_toplevel(&var_434, d_tracer);
+
+ trace_create_file("tracing_thresh", 644, d_tracer,
+   &var_434, &var_422);
+
+ trace_create_file("README", 444, d_tracer,
+   NULL, &var_422);
+
+ trace_create_file("saved_cmdlines", 444, d_tracer,
+   NULL, &var_422);
+
+ trace_create_file("saved_cmdlines_size", 644, d_tracer,
+     NULL, &var_422);
+
+ trace_create_file("saved_tgids", 444, d_tracer,
+   NULL, &var_422);
+
+ trace_eval_init();
+
+ trace_create_eval_file(d_tracer);
+
+ create_trace_instances(d_tracer);
+
+ update_tracer_options(&var_434);
+
+ return 0;
+}
+
+static int fn_422(struct struct_426 *this,
+          unsigned long var_424, void *unused)
+{
+ if (ftrace_dump_on_oops)
+  ftrace_dump(ftrace_dump_on_oops);
+ return NOTIFY_OK;
+}
+
+static struct struct_426 var_434 = {
+ .notifier_call = trace_panic_handler,
+ .next = NULL,
+ .priority = 150
+};
+
+static int fn_425(struct struct_426 *self,
+        unsigned long var_426,
+        void *var_426)
+{
+ switch (var_426) {
+ case DIE_OOPS:
+  if (ftrace_dump_on_oops)
+   ftrace_dump(ftrace_dump_on_oops);
+  break;
+ default:
+  break;
+ }
+ return NOTIFY_OK;
+}
+
+static struct struct_426 var_434 = {
+ .notifier_call = trace_die_handler,
+ .priority = 200
+};
+
+void
+fn_427(struct struct_428 *s)
+{
+
+ if (s->seq.len >= 1000)
+  s->seq.len = 1000;
+
+
+
+
+
+
+ if (WARN_ON_ONCE(s->seq.len >= s->seq.size))
+  s->seq.len = s->seq.size - 1;
+
+
+ s->buffer[s->seq.len] = 0;
+
+ printk(KERN_EMERG "%s", s->buffer);
+
+ trace_seq_init(s);
+}
+
+void fn_428(struct struct_431 *iter)
+{
+ iter->tr = &var_434;
+ iter->trace = iter->tr->current_trace;
+ iter->cpu_file = RING_BUFFER_ALL_CPUS;
+ iter->trace_buffer = &var_434.trace_buffer;
+
+ if (iter->trace && iter->trace->open)
+  iter->trace->open(iter);
+
+
+ if (ring_buffer_overruns(iter->trace_buffer->buffer))
+  iter->iter_flags |= TRACE_FILE_ANNOTATE;
+
+
+ if (trace_clocks[iter->tr->clock_id].in_ns)
+  iter->iter_flags |= TRACE_FILE_TIME_IN_NS;
+}
+
+void fn_429(enum enumtype_430 var_431)
+{
+
+ static struct struct_431 iter;
+ static atomic_t dump_running;
+ struct struct_431 *tr = &var_434;
+ unsigned int old_userobj;
+ unsigned long var_431;
+ int var_431 = 0, var_431;
+
+
+ if (atomic_inc_return(&dump_running) != 1) {
+  atomic_dec(&dump_running);
+  return;
+ }
+
+ tracing_off();
+
+ local_irq_save(var_431);
+
+
+ trace_init_global_iter(&iter);
+
+ for_each_tracing_cpu(var_431) {
+  atomic_inc(&per_cpu_ptr(iter.trace_buffer->data, var_431)->disabled);
+ }
+
+ old_userobj = tr->trace_flags & TRACE_ITER_SYM_USEROBJ;
+
+
+ tr->trace_flags &= ~TRACE_ITER_SYM_USEROBJ;
+
+ switch (var_431) {
+ case DUMP_ALL:
+  iter.cpu_file = RING_BUFFER_ALL_CPUS;
+  break;
+ case DUMP_ORIG:
+  iter.cpu_file = raw_smp_processor_id();
+  break;
+ case DUMP_NONE:
+  goto out_enable;
+ default:
+  printk(KERN_EMERG "Bad dumping mode, switching to all CPUs dump\n");
+  iter.cpu_file = RING_BUFFER_ALL_CPUS;
+ }
+
+ printk(KERN_EMERG "Dumping ftrace buffer:\n");
+
+
+ if (ftrace_is_dead()) {
+  printk("# WARNING: FUNCTION TRACING IS CORRUPTED\n");
+  printk("#          MAY BE MISSING FUNCTION EVENTS\n");
+ }
+
+ while (!trace_empty(&iter)) {
+
+  if (!var_431)
+   printk(KERN_EMERG "---------------------------------\n");
+
+  var_431++;
+
+
+  memset(&iter.seq, 0,
+         sizeof(struct struct_431) -
+         offsetof(struct struct_431, seq));
+  iter.iter_flags |= TRACE_FILE_LAT_FMT;
+  iter.pos = -1;
+
+  if (trace_find_next_entry_inc(&iter) != NULL) {
+   int var_434;
+
+   var_434 = print_trace_line(&iter);
+   if (var_434 != TRACE_TYPE_NO_CONSUME)
+    trace_consume(&iter);
+  }
+  touch_nmi_watchdog();
+
+  trace_printk_seq(&iter.seq);
+ }
+
+ if (!var_431)
+  printk(KERN_EMERG "   (ftrace buffer empty)\n");
+ else
+  printk(KERN_EMERG "---------------------------------\n");
+
+ out_enable:
+ tr->trace_flags |= old_userobj;
+
+ for_each_tracing_cpu(var_431) {
+  atomic_dec(&per_cpu_ptr(iter.trace_buffer->data, var_431)->disabled);
+ }
+  atomic_dec(&dump_running);
+ local_irq_restore(var_431);
+}
+EXPORT_SYMBOL_GPL(ftrace_dump);
+
+int fn_431(const char *buf, int (*createfn)(int, char **))
+{
+ char **argv;
+ int argc, var_434;
+
+ argc = 0;
+ var_434 = 0;
+ argv = argv_split(GFP_KERNEL, buf, &argc);
+ if (!argv)
+  return -ENOMEM;
+
+ if (argc)
+  var_434 = createfn(argc, argv);
+
+ argv_free(argv);
+
+ return var_434;
+}
+
+
+
+ssize_t fn_432(struct struct_433 *file, const char __user *buffer,
+    size_t var_433, loff_t *ppos,
+    int (*createfn)(int, char **))
+{
+ char *kbuf, *buf, *tmp;
+ int var_434 = 0;
+ size_t var_433 = 0;
+ size_t var_433;
+
+ kbuf = kmalloc(4096, GFP_KERNEL);
+ if (!kbuf)
+  return -ENOMEM;
+
+ while (var_433 < var_433) {
+  var_433 = var_433 - var_433;
+
+  if (var_433 >= 4096)
+   var_433 = 4095;
+
+  if (copy_from_user(kbuf, buffer + var_433, var_433)) {
+   var_434 = -EFAULT;
+   goto out;
+  }
+  kbuf[var_433] = '\0';
+  buf = kbuf;
+  do {
+   tmp = strchr(buf, '\n');
+   if (tmp) {
+    *tmp = '\0';
+    var_433 = tmp - buf + 1;
+   } else {
+    var_433 = strlen(buf);
+    if (var_433 + var_433 < var_433) {
+     if (buf != kbuf)
+      break;
+
+     pr_warn("Line length is too long: Should be less than %d\n",
+      4094);
+     var_434 = -EINVAL;
+     goto out;
+    }
+   }
+   var_433 += var_433;
+
+
+   tmp = strchr(buf, '#');
+
+   if (tmp)
+    *tmp = '\0';
+
+   var_434 = trace_run_command(buf, createfn);
+   if (var_434)
+    goto out;
+   buf += var_433;
+
+  } while (var_433 < var_433);
+ }
+ var_434 = var_433;
+
+out:
+ kfree(kbuf);
+
+ return var_434;
+}
+
+__init static int fn_433(void)
+{
+ int ring_buf_size;
+ int var_434 = -ENOMEM;
+
+
+
+
+
+ BUILD_BUG_ON(TRACE_ITER_LAST_BIT > TRACE_FLAGS_MAX_SIZE);
+
+ if (!alloc_cpumask_var(&tracing_buffer_mask, GFP_KERNEL))
+  goto out;
+
+ if (!alloc_cpumask_var(&var_434.tracing_cpumask, GFP_KERNEL))
+  goto out_free_buffer_mask;
+
+
+ if (__stop___trace_bprintk_fmt != __start___trace_bprintk_fmt)
+
+  trace_printk_init_buffers();
+
+
+ if (ring_buffer_expanded)
+  ring_buf_size = var_434;
+ else
+  ring_buf_size = 1;
+
+ cpumask_copy(tracing_buffer_mask, cpu_possible_mask);
+ cpumask_copy(var_434.tracing_cpumask, cpu_all_mask);
+
+ raw_spin_lock_init(&var_434.start_lock);
+
+
+
+
+
+
+
+ var_434 = cpuhp_setup_state_multi(CPUHP_TRACE_RB_PREPARE,
+          "trace/RB:preapre", trace_rb_cpu_prepare,
+          NULL);
+ if (var_434 < 0)
+  goto out_free_cpumask;
+
+ var_434 = -ENOMEM;
+ temp_buffer = ring_buffer_alloc(PAGE_SIZE, RB_FL_OVERWRITE);
+ if (!temp_buffer)
+  goto out_rm_hp_state;
+
+ if (trace_create_savedcmd() < 0)
+  goto out_free_temp_buffer;
+
+
+ if (allocate_trace_buffers(&var_434, ring_buf_size) < 0) {
+  printk(KERN_ERR "tracer: failed to allocate ring buffer!\n");
+  WARN_ON(1);
+  goto out_free_savedcmd;
+ }
+
+ if (var_434.buffer_disabled)
+  tracing_off();
+
+ if (trace_boot_clock) {
+  var_434 = tracing_set_clock(&var_434, trace_boot_clock);
+  if (var_434 < 0)
+   pr_warn("Trace clock %s not defined, going back to default\n",
+    trace_boot_clock);
+ }
+
+
+
+
+
+
+ var_434.current_trace = &nop_trace;
+
+ var_434.max_lock = (arch_spinlock_t)var_434;
+
+ ftrace_init_global_array_ops(&var_434);
+
+ init_trace_flags_index(&var_434);
+
+ register_tracer(&nop_trace);
+
+
+ init_function_trace();
+
+
+ var_434 = 0;
+
+ atomic_notifier_chain_register(&panic_notifier_list,
+           &var_434);
+
+ register_die_notifier(&var_434);
+
+ var_434.flags = TRACE_ARRAY_FL_GLOBAL;
+
+ INIT_LIST_HEAD(&var_434.systems);
+ INIT_LIST_HEAD(&var_434.events);
+ INIT_LIST_HEAD(&var_434.hist_vars);
+ list_add(&var_434.list, &ftrace_trace_arrays);
+
+ apply_trace_boot_options();
+
+ register_snapshot_cmd();
+
+ return 0;
+
+out_free_savedcmd:
+ free_saved_cmdlines_buffer(savedcmd);
+out_free_temp_buffer:
+ ring_buffer_free(temp_buffer);
+out_rm_hp_state:
+ cpuhp_remove_multi_state(CPUHP_TRACE_RB_PREPARE);
+out_free_cpumask:
+ free_cpumask_var(var_434.tracing_cpumask);
+out_free_buffer_mask:
+ free_cpumask_var(tracing_buffer_mask);
+out:
+ return var_434;
+}
+
+void __init fn_434(void)
+{
+ if (tracepoint_printk) {
+  var_435 =
+   kmalloc(sizeof(*var_435), GFP_KERNEL);
+  if (WARN_ON(!var_435))
+   tracepoint_printk = 0;
+  else
+   static_key_enable(&tracepoint_printk_key.key);
+ }
+ tracer_alloc_buffers();
+}
+
+void __init fn_435(void)
+{
+ trace_event_init();
+}
+
+__init static int fn_436(void)
+{
+
+
+
+
+
+
+
+ if (!default_bootup_tracer)
+  return 0;
+
+ printk(KERN_INFO "ftrace bootup tracer '%s' not registered.\n",
+        default_bootup_tracer);
+ default_bootup_tracer = NULL;
+
+ return 0;
+}
+
+fs_initcall(tracer_init_tracefs);
+late_initcall_sync(clear_boot_tracer);

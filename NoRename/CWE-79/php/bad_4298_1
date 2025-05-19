@@ -1,0 +1,179 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if ( !canView('Events') ) {
+  $view = 'error';
+  return;
+}
+
+if ( isset($_SESSION['export']) ) {
+  if ( isset($_SESSION['export']['detail']) )
+    $_REQUEST['exportDetail'] = $_SESSION['export']['detail'];
+  if ( isset($_SESSION['export']['frames']) )
+    $_REQUEST['exportFrames'] = $_SESSION['export']['frames'];
+  if ( isset($_SESSION['export']['images']) )
+    $_REQUEST['exportImages'] = $_SESSION['export']['images'];
+  if ( isset($_SESSION['export']['video']) )
+    $_REQUEST['exportVideo'] = $_SESSION['export']['video'];
+  if ( isset($_SESSION['export']['misc']) )
+    $_REQUEST['exportMisc'] = $_SESSION['export']['misc'];
+  if ( isset($_SESSION['export']['format']) )
+    $_REQUEST['exportFormat'] = $_SESSION['export']['format'];
+  if ( isset($_SESSION['export']['compress']) )
+    $_REQUEST['exportCompress'] = $_SESSION['export']['compress'];
+} else {
+  $_REQUEST['exportDetail'] =
+  $_REQUEST['exportFrames'] =
+  $_REQUEST['exportImages'] =
+  $_REQUEST['exportVideo'] =
+  $_REQUEST['exportMisc'] = 1;
+  $_REQUEST['exportCompress'] = 0;
+}
+
+if (isset($_REQUEST['exportFormat'])) {
+  if (!in_array($_REQUEST['exportFormat'], array('zip', 'tar'))) {
+    ZM\Error('Invalid exportFormat');
+    return;
+  }
+}
+
+$focusWindow = true;
+$connkey = isset($_REQUEST['connkey']) ? $_REQUEST['connkey'] : generateConnKey();
+
+xhtmlHeaders(__FILE__, translate('Export'));
+?>
+<body>
+  <div id="page">
+    <?php  ?>"/>
+<?php
+
+$eventsSql = 'SELECT E.*,M.Name AS MonitorName FROM Monitors AS M INNER JOIN Events AS E on (M.Id = E.MonitorId) WHERE';
+$eventsValues = array();
+$filterQuery = '';
+$sortColumn = '';
+$sortOrder = '';
+$limitQuery = '';
+
+if ( $user['MonitorIds'] ) {
+  $user_monitor_ids = ' M.Id in ('.$user['MonitorIds'].')';
+  $eventsSql .= $user_monitor_ids;
+} else {
+  $eventsSql .= ' 1';
+}
+
+if ( isset($_REQUEST['eid']) and $_REQUEST['eid'] ) {
+  ZM\Logger::Debug('Loading events by single eid');
+  $eventsSql .= ' AND E.Id=?';
+  $eventsValues[] = $_REQUEST['eid'];
+} elseif ( isset($_REQUEST['eids']) and count($_REQUEST['eids']) > 0 ) {
+  ZM\Logger::Debug('Loading events by eids');
+  $eventsSql .= ' AND E.Id IN ('.implode(',', array_map(function(){return '?';}, $_REQUEST['eids'])). ')';
+  $eventsValues += $_REQUEST['eids'];
+} else if ( isset($_REQUEST['filter']) ) {
+  parseSort();
+  parseFilter($_REQUEST['filter']);
+  $filterQuery = $_REQUEST['filter']['query'];
+
+  if ( $_REQUEST['filter']['sql'] ) {
+    $eventsSql .= $_REQUEST['filter']['sql'];
+  }
+  $eventsSql .= " ORDER BY $sortColumn $sortOrder";
+  if ( isset($_REQUEST['filter']['Query']['limit']) )
+    $eventsSql .= ' LIMIT '.validInt($_REQUEST['filter']['Query']['limit']);
+} 
+
+$results = dbQuery($eventsSql, $eventsValues);
+
+
+$disk_space_total = 0;
+?>
+        <table id="contentTable" class="major">
+          <thead>
+            <tr>
+              <th class="colId"><a href="<?php 
+while ( $event_row = dbFetchNext($results) ) {
+  $event = new ZM\Event($event_row);
+  $scale = max(reScale(SCALE_BASE, $event->Monitor()->DefaultScale(), ZM_WEB_DEFAULT_SCALE), SCALE_BASE);
+?>
+          <tr<?php eid=<?php page=1"><?php eid=<?php page=1"><?php mid='.$event->MonitorId(), 'zmMonitor'.$event->MonitorId(), 'monitor', $event->MonitorName(), canEdit( 'Monitors' ) ) ?></td>
+              <td class="colCause"><?php eid='.$event->Id(), 'zmEventDetail', 'eventdetail', validHtmlStr($event->Cause()), canEdit( 'Events' ), 'title="'.htmlspecialchars($event->Notes()).'"' ) ?></td>
+              <td class="colTime"><?php eid='.$event->Id(), 'zmFrames', 'frames', $event->Frames() ) ?></td>
+              <td class="colAlarmFrames"><?php eid='.$event->Id(), 'zmFrames', 'frames', $event->AlarmFrames() ) ?></td>
+              <td class="colTotScore"><?php 
+ 
+<?php
+  if ( ZM_WEB_EVENT_DISK_SPACE ) {
+    $disk_space_total += $event->DiskSpace();
+		$event_count += 1;
+    
+  }
+  unset($event);
+  
+} 
+?>
+        </tbody>
+				<tfoot>
+          <tr>
+            <td colspan="11"><?php ?></td>
+<?php
+  }
+?>
+          </tr>
+				</tfoot>
+      </table>
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-md-3">
+      <div class="form-group">
+        <label for="exportDetail"><?php  ?>
+        </label>
+      </div>
+      <div class="form-group">
+        <label for="exportCompress"><?php  ?>
+        </label>
+      </div>
+    </div>
+  </div><!--row-->
+  <button type="button" id="exportButton" name="exportButton" value="Export" disabled="disabled"><?php 
+              else
+                
+            } else {
+              
+            }
+        ?>">
+            <span id="exportProgressText">
+              <?php
+                if ( isset($_REQUEST['generated']) ) {
+                  if ( $_REQUEST['generated'] )
+                    
+                  else
+                    
+                }
+            ?></span>
+            <span id="exportProgressTicker"></span>
+          </h2>
+          <button type="button" data-on-click-this="startDownload"<?php echo empty($_REQUEST['generated'])? ' class="hidden"' : '' ?>><?php echo translate('Download') ?></button>
+          <input type="hidden" name="exportFile" value="<?php echo isset($_REQUEST['exportFile']) ? validHtmlStr($_REQUEST['exportFile']) : '' ?>"/>
+          <input type="hidden" name="generated" value="<?php echo isset($_REQUEST['generated']) ? validHtmlStr($_REQUEST['generated']) : '' ?>"/>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

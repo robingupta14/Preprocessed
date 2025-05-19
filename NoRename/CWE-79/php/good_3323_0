@@ -1,0 +1,424 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (empty($user->id))
+    exit();
+
+if (DEVELOPMENT) {
+    set_time_limit(0);
+} 
+
+ini_set('max_file_uploads', FM_SIMLIMIT); 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+define('ELFINDER_IMG_PARENT_URL', PATH_RELATIVE . 'external/elFinder/');
+
+
+
+
+
+
+
+
+
+
+function debug($o)
+{
+    
+    print_r($o);
+}
+
+
+function logger($cmd, $result, $args, $elfinder)
+{
+    if (DEVELOPMENT && LOGGER) {
+        $log = sprintf("[%s] %s: %s \n", date('r'), strtoupper($cmd), var_export($result, true));
+        $logfile = BASE . 'tmp/elfinder.log';
+        $dir = dirname($logfile);
+        if (!is_dir($dir) && !mkdir($dir, octdec(DIR_DEFAULT_MODE_STR + 0))) {
+            return;
+        }
+        if (($fp = fopen($logfile, 'a'))) {
+            fwrite($fp, $log);
+            fclose($fp);
+        }
+        return;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    }
+}
+
+
+class elFinderSimpleLogger
+{
+
+    
+    protected $file = '';
+
+    
+    public function __construct($path)
+    {
+        $this->file = $path;
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, octdec(DIR_DEFAULT_MODE_STR + 0));
+        }
+    }
+
+    
+    public function log($cmd, $result, $args, $elfinder)
+    {
+        if (DEVELOPMENT && LOGGER) {
+            $log = $cmd . ' [' . date('d.m H:s') . "]\n";
+
+            if (!empty($result['error'])) {
+                $log .= "\tERROR: " . implode(' ', $result['error']) . "\n";
+            }
+
+            if (!empty($result['warning'])) {
+                $log .= "\tWARNING: " . implode(' ', $result['warning']) . "\n";
+            }
+
+            if (!empty($result['removed'])) {
+                foreach ($result['removed'] as $file) {
+                    
+                    $log .= "\tREMOVED: " . $file['realpath'] . "\n";
+                }
+            }
+
+            if (!empty($result['added'])) {
+                foreach ($result['added'] as $file) {
+                    $log .= "\tADDED: " . $elfinder->realpath($file['hash']) . "\n";
+                }
+            }
+
+            if (!empty($result['changed'])) {
+                foreach ($result['changed'] as $file) {
+                    $log .= "\tCHANGED: " . $elfinder->realpath($file['hash']) . "\n";
+                }
+            }
+
+            $this->write($log);
+            $this->write(var_export($result, true), true);
+        }
+    }
+
+    
+    protected function write($log, $eol=false)
+    {
+        if ($eol)
+            $eol = "\n";
+        if (($fp = @fopen($this->file, 'a'))) {
+            fwrite($fp, $log . $eol);
+            fclose($fp);
+        }
+    }
+
+} 
+
+
+
+function access($attr, $path, $data, $volume, $isDir) {
+	return strpos(basename($path), '.') === 0       
+		? !($attr == 'read' || $attr == 'write')    
+		:  null;                                    
+}
+
+
+class elFinderTestACL
+{
+
+    
+    public function fsAccess($attr, $path, $data, $volume)
+    {
+
+        if ($volume->name() == 'localfilesystem') {
+            return strpos(basename($path), '.') === 0
+                ? !($attr == 'read' || $attr == 'write')
+                : $attr == 'read' || $attr == 'write';
+        }
+
+        return true;
+    }
+
+} 
+
+
+
+function validName($name)
+{
+    return strpos($name, '.') !== 0;
+}
+
+$opts = array(
+    'locale' => LOCALE . '.' . LANG_CHARSET,
+    'bind'   => array(
+        
+        'mkdir mkfile rename duplicate upload rm paste' => 'logger', 
+
+
+
+
+
+
+
+
+
+        'upload.presave'                                => array(
+            'Plugin.AutoResize.onUpLoadPreSave',
+
+
+
+
+        ),
+    ),
+    
+    'plugin' => array(
+        'AutoResize' => array(
+            'enable'     => UPLOAD_WIDTH, 
+            'maxWidth'   => UPLOAD_WIDTH,
+            'maxHeight'  => UPLOAD_WIDTH,
+            'quality'    => THUMB_QUALITY, 
+            'targetType' => IMG_GIF | IMG_JPG | IMG_PNG | IMG_WBMP, 
+
+
+        ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ),
+    'debug'  => DEVELOPMENT,
+
+    'callbackWindowURL' => makeLink(array('controller'=>'file','action'=>'picker','ajax_action'=>1)),
+
+    'roots'  => array(
+        array(
+            
+            'driver'          => 'Exponent',
+            'path'            => BASE . 'files/',
+            'URL'             => URL_FULL . 'files/',
+            'dirMode'         => octdec(DIR_DEFAULT_MODE_STR + 0),    
+            'fileMode'        => octdec(FILE_DEFAULT_MODE_STR + 0),   
+            'detectDirIcon'   => '.foldericon.png',       
+            'keepTimestamp'   => array('copy', 'move'),   
+            
+            'alias'           => 'files',
+            'disabled'        => array('netmount'),
+
+            'accessControl'   => 'access',
+            
+            
+            'uploadAllow'     => array(
+                'application/arj',
+                'application/excel',
+                'application/gnutar',
+                'application/mspowerpoint',
+                'application/msword',
+                'application/octet-stream',
+                'application/onenote',
+                'application/pdf',
+                'application/plain',
+                'application/postscript',
+                'application/powerpoint',
+                'application/rar',
+                'application/rtf',
+                'application/vnd.ms-excel',
+                'application/vnd.ms-excel.addin.macroEnabled.12',
+                'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+                'application/vnd.ms-excel.sheet.macroEnabled.12',
+                'application/vnd.ms-excel.template.macroEnabled.12',
+                'application/vnd.ms-office',
+                'application/vnd.ms-officetheme',
+                'application/vnd.ms-powerpoint',
+                'application/vnd.ms-powerpoint.addin.macroEnabled.12',
+                'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+                'application/vnd.ms-powerpoint.slide.macroEnabled.12',
+                'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
+                'application/vnd.ms-powerpoint.template.macroEnabled.12',
+                'application/vnd.ms-word',
+                'application/vnd.ms-word.document.macroEnabled.12',
+                'application/vnd.ms-word.template.macroEnabled.12',
+                'application/vnd.oasis.opendocument.chart',
+                'application/vnd.oasis.opendocument.database',
+                'application/vnd.oasis.opendocument.formula',
+                'application/vnd.oasis.opendocument.graphics',
+                'application/vnd.oasis.opendocument.graphics-template',
+                'application/vnd.oasis.opendocument.image',
+                'application/vnd.oasis.opendocument.presentation',
+                'application/vnd.oasis.opendocument.presentation-template',
+                'application/vnd.oasis.opendocument.spreadsheet',
+                'application/vnd.oasis.opendocument.spreadsheet-template',
+                'application/vnd.oasis.opendocument.text',
+                'application/vnd.oasis.opendocument.text-master',
+                'application/vnd.oasis.opendocument.text-template',
+                'application/vnd.oasis.opendocument.text-web',
+                'application/vnd.openofficeorg.extension',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'application/vnd.openxmlformats-officedocument.presentationml.slide',
+                'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+                'application/vnd.openxmlformats-officedocument.presentationml.template',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+                'application/vocaltec-media-file',
+                'application/wordperfect',
+                'application/x-bittorrent',
+                'application/x-bzip',
+                'application/x-bzip2',
+                'application/x-compressed',
+                'application/x-excel',
+                'application/x-gzip',
+                'application/x-latex',
+                'application/x-midi',
+                'application/xml',
+                'application/x-msexcel',
+                'application/x-rar',
+                'application/x-rar-compressed',
+                'application/x-rtf',
+                'application/x-shockwave-flash',
+                'application/x-sit',
+                'application/x-stuffit',
+                'application/x-troff-msvideo',
+                'application/x-zip',
+                'application/x-zip-compressed',
+                'application/zip',
+                'audio',
+                'image',
+                'multipart/x-gzip',
+                'multipart/x-zip',
+                'text/plain',
+                'text/rtf',
+                'text/richtext',
+                'text/xml',
+                'video',
+                'text/csv'
+            ),
+            'uploadDeny'      => array(
+                'application/x-shockwave-flash'
+            ),
+            'uploadOrder'     => 'allow,deny',
+            'uploadOverwrite' => true,
+
+            
+            'copyJoin'        => true,
+
+
+            'tmbCrop'         => false,
+
+            'tmbPath'         => BASE . 'tmp' . DIRECTORY_SEPARATOR . 'elfinder',
+            'tmbURL'          => URL_FULL . 'tmp/elfinder/',
+            'tmbPathMode'     => octdec(DIR_DEFAULT_MODE_STR + 0),
+            'tmbBgColor'      => 'transparent',
+            'tmbSize'         => FM_THUMB_SIZE,
+            'quarantine'      => '..' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'elfinder' . DIRECTORY_SEPARATOR . '.quarantine',
+            'acceptedName'    => '/^[^\.].*$/',
+            
+            
+            'utf8fix'         => false,
+
+            'attributes'      => array(
+                array(
+                    'pattern' => '/^\/\./', 
+                    'read'    => false,
+                    'write'   => false,
+                    'hidden'  => true,
+                    'locked'  => true
+                )
+            )
+        )
+    )
+);
+
+
+$connector = new elFinderConnector(new elFinderExponent($opts));
+$connector->run();

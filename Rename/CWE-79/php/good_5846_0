@@ -1,0 +1,770 @@
+<?php
+
+
+define("IN_MYBB", 1);
+define('THIS_SCRIPT', 'misc.php');
+
+$var_0 = "misc_rules_forum,misc_help_helpdoc,misc_whoposted_poster,misc_whoposted,misc_smilies_popup_smilie,misc_smilies_popup,misc_syndication_feedurl,misc_syndication";
+$var_0 .= ",misc_buddypopup,misc_buddypopup_user_online,misc_buddypopup_user_offline,misc_buddypopup_user_sendpm";
+$var_0 .= ",misc_smilies,misc_smilies_smilie,misc_help_section_bit,misc_help_section,misc_help,forumdisplay_password_wrongpass,forumdisplay_password";
+
+
+$var_1->load("misc");
+
+$var_3->run_hooks("misc_start");
+
+if($var_5->input['action'] == "dstswitch" && $var_5->var_6 == "post" && $var_5->var_90['uid'] > 0)
+{
+	if($var_5->var_90['dstcorrection'] == 2)
+	{
+		if($var_5->var_90['dst'] == 1)
+		{
+			$var_7 = array("dst" => 0);
+		}
+		else
+		{
+			$var_7 = array("dst" => 1);
+		}
+	}
+	$var_8->update_query("users", $var_7, "uid='{$var_5->var_90['uid']}'");
+	if(!$var_5->input['ajax'])
+	{
+		redirect("index.php", $var_1->var_10);
+	}
+	else
+	{
+		
+		var_11;
+	}
+}
+if($var_5->input['action'] == "markread")
+{
+	if($var_5->var_90['uid'] && verify_post_check($var_5->input['my_post_key'], true) !== true)
+	{
+		
+		error($var_1->var_12);
+	}
+
+	if($var_5->input['fid'])
+	{
+		$var_5->input['fid'] = intval($var_5->input['fid']);
+		$var_13 = get_forum($var_5->input['fid']);
+		if(!$var_13)
+		{
+			if(!$var_5->input['ajax'])
+			{
+				error($var_1->var_14);
+			}
+			else
+			{
+				
+				var_11;
+			}
+		}
+
+		mark_forum_read($var_5->input['fid']);
+
+		$var_3->run_hooks("misc_markread_forum");
+
+		if(!$var_5->input['ajax'])
+		{
+			redirect(get_forum_link($var_5->input['fid']), $var_1->var_15);
+		}
+		else
+		{
+			
+			var_11;
+		}
+	}
+	else
+	{
+
+		$var_3->run_hooks("misc_markread_end");
+		mark_all_forums_read();
+		redirect("index.php", $var_1->var_16);
+	}
+}
+elseif($var_5->input['action'] == "clearpass")
+{
+	$var_3->run_hooks("misc_clearpass");
+
+	if($var_5->input['fid'])
+	{
+		if(!verify_post_check($var_5->input['my_post_key']))
+		{
+			error($var_1->var_12);
+		}
+
+		my_unsetcookie("forumpass[".intval($var_5->input['fid'])."]");
+		redirect("index.php", $var_1->var_17);
+	}
+}
+elseif($var_5->input['action'] == "rules")
+{
+	if($var_5->input['fid'])
+	{
+		$var_3->run_hooks("misc_rules_start");
+
+		$var_18 = intval($var_5->input['fid']);
+
+		$var_19 = get_forum($var_18);
+		if(!$var_19 || $var_19['type'] != "f" || $var_19['rules'] == '')
+		{
+			error($var_1->var_14);
+		}
+
+		$var_20 = forum_permissions($var_19['fid']);
+		if($var_20['canview'] != 1)
+		{
+			error_no_permission();
+		}
+
+		if(!$var_19['rulestitle'])
+		{
+			$var_19['rulestitle'] = $var_1->sprintf($var_1->var_22, $var_19['name']);
+		}
+
+		$var_23 = new class_0();
+		$var_24 = array(
+			"allow_html" => 1,
+			"allow_mycode" => 1,
+			"allow_smilies" => 1,
+			"allow_imgcode" => 1,
+			"filter_badwords" => 1
+		);
+
+		$var_19['rules'] = $var_23->parse_message($var_19['rules'], $var_24);
+
+		
+		build_forum_breadcrumb($var_5->input['fid']);
+		add_breadcrumb($var_19['rulestitle']);
+
+		$var_3->run_hooks("misc_rules_end");
+
+		eval("\$rules = \"".$var_26->get("misc_rules_forum")."\";");
+		output_page($var_28);
+	}
+
+}
+elseif($var_5->input['action'] == "help")
+{
+	$var_1->load("helpdocs");
+	$var_1->load("helpsections");
+	$var_1->load("customhelpdocs");
+	$var_1->load("customhelpsections");
+
+	add_breadcrumb($var_1->var_29, "misc.php?action=help");
+
+	$var_30 = $var_8->query("
+		SELECT h.*, s.enabled AS section
+		FROM ".var_31."helpdocs h
+		LEFT JOIN ".var_31."helpsections s ON (s.sid=h.sid)
+		WHERE h.hid='".intval($var_5->input['hid'])."'
+	");
+	$var_32 = $var_8->fetch_array($var_30);
+	if($var_32['hid'])
+	{
+		if($var_32['section'] != 0 && $var_32['enabled'] != 0)
+		{
+			$var_3->run_hooks("misc_help_helpdoc_start");
+
+			if($var_32['usetranslation'] == 1)
+			{
+				$var_34 = "d".$var_32['hid']."_name";
+				$var_35 = "d".$var_32['hid']."_desc";
+				$var_36 = "d".$var_32['hid']."_document";
+				if($var_1->$var_34)
+				{
+					$var_32['name'] = $var_1->$var_34;
+				}
+				if($var_1->$var_35)
+				{
+					$var_32['description'] = $var_1->$var_35;
+				}
+				if($var_1->$var_36)
+				{
+					$var_32['document'] = $var_1->$var_36;
+					
+					if($var_36 == "d3_document")
+					{
+						$var_32['document'] = $var_1->sprintf($var_32['document'], $var_5->var_90['logoutkey']);
+					}
+				}
+			}
+			add_breadcrumb($var_32['name']);
+
+			$var_3->run_hooks("misc_help_helpdoc_end");
+
+			eval("\$helppage = \"".$var_26->get("misc_help_helpdoc")."\";");
+			output_page($var_37);
+		}
+		else
+		{
+			error($var_1->var_38);
+		}
+	}
+	else
+	{
+		$var_3->run_hooks("misc_help_section_start");
+
+		$var_30 = $var_8->simple_select("helpdocs", "*", "", array('order_by' => 'sid, disporder'));
+		while($var_32 = $var_8->fetch_array($var_30))
+		{
+			$helpdocs[$var_32['sid']][$var_32['disporder']][$var_32['hid']] = $var_32;
+		}
+		unset($var_32);
+		$var_40 = '';
+		$var_30 = $var_8->simple_select("helpsections", "*", "enabled != 0", array('order_by' => 'disporder'));
+		while($var_41 = $var_8->fetch_array($var_30))
+		{
+			if($var_41['usetranslation'] == 1)
+			{
+				$var_34 = "s".$var_41['sid']."_name";
+				$var_35 = "s".$var_41['sid']."_desc";
+				if($var_1->$var_34)
+				{
+					$var_41['name'] = $var_1->$var_34;
+				}
+				if($var_1->$var_35)
+				{
+					$var_41['description'] = $var_1->$var_35;
+				}
+			}
+			if(is_array($helpdocs[$var_41['sid']]))
+			{
+				$var_42 = '';
+				
+				if($var_5->input['action'] == "expand")
+				{
+					my_setcookie("fcollapse[{$var_41['sid']}]", '');
+					$scollapse[$var_41['sid']] = '';
+				}
+				elseif($var_5->input['action'] == "collapse")
+				{
+					my_setcookie("fcollapse[{$var_41['sid']}]", "y");
+					$scollapse[$var_41['sid']] = "y";
+				}
+				foreach($helpdocs[$var_41['sid']] as $var_43 => $var_44)
+				{
+					foreach($var_44 as $var_43 => $var_32)
+					{
+						if($var_32['enabled'] != 0)
+						{
+							if($var_32['usetranslation'] == 1)
+							{
+								$var_34 = "d".$var_32['hid'].'_name';
+								$var_35 = "d".$var_32['hid'].'_desc';
+								if($var_1->$var_34)
+								{
+									$var_32['name'] = $var_1->$var_34;
+								}
+								if($var_1->$var_35)
+								{
+									$var_32['description'] = $var_1->$var_35;
+								}
+							}
+							$var_45 = alt_trow();
+							eval("\$helpbits .= \"".$var_26->get("misc_help_section_bit")."\";");
+						}
+					}
+					$var_46 = '';
+					$var_47 = "sid_".$var_41['sid']."_c";
+					if($collapsed[$var_47] == "display: show;")
+					{
+						$var_48 = "collapse_collapsed.gif";
+						$var_46 = "display: none;";
+					}
+					else
+					{
+						$var_48 = "collapse.gif";
+					}
+				}
+				eval("\$sections .= \"".$var_26->get("misc_help_section")."\";");
+			}
+		}
+
+		$var_3->run_hooks("misc_help_section_end");
+
+		eval("\$help = \"".$var_26->get("misc_help")."\";");
+		output_page($var_49);
+	}
+}
+elseif($var_5->input['action'] == "buddypopup")
+{
+	$var_3->run_hooks("misc_buddypopup_start");
+
+	if($var_5->var_90['uid'] == 0)
+	{
+		error_no_permission();
+	}
+	if($var_5->input['removebuddy'] && verify_post_check($var_5->input['my_post_key']))
+	{
+		$var_50 = $var_5->var_90['buddylist'];
+		$var_51 = explode(",",$var_50);
+		if(is_array($var_51))
+		{
+			foreach($var_51 as $var_43 => $var_52)
+			{
+				if($var_52 == $var_5->input['removebuddy'])
+				{
+					unset($var_51[$var_43]);
+				}
+			}
+			$var_53 = implode(',', $var_51);
+			$var_8->update_query("users", array('buddylist' => $var_53), "uid='".$var_5->var_90['uid']."'");
+			$var_5->var_90['buddylist'] = $var_53;
+		}
+	}
+	
+	if($var_5->var_90['buddylist'] != "")
+	{
+		$var_54 = var_55 - $var_5->settings['wolcutoff'];
+		$var_30 = $var_8->simple_select("users", "*", "uid IN ({$var_5->var_90['buddylist']})", array('order_by' => 'lastactive'));
+
+		while($var_56 = $var_8->fetch_array($var_30))
+		{
+			$var_57 = format_name($var_56['username'], $var_56['usergroup'], $var_56['displaygroup']);
+			$var_58 = build_profile_link($var_57, $var_56['uid'], '_blank', 'if(window.opener) { window.opener.location = this.href; return false; }');
+
+			if($var_5->var_90['receivepms'] != 0 && $var_56['receivepms'] != 0 && $groupscache[$var_56['usergroup']]['canusepms'] != 0)
+			{
+				eval("\$send_pm = \"".$var_26->get("misc_buddypopup_user_sendpm")."\";");
+			}
+			else
+			{
+				$var_59 = '';
+			}
+			if($var_56['lastactive'])
+			{
+				$var_60 = $var_1->sprintf($var_1->var_60, my_date($var_5->settings['dateformat'], $var_56['lastactive']).", ".my_date($var_5->settings['timeformat'], $var_56['lastactive']));
+			}
+			else
+			{
+				$var_60 = $var_1->sprintf($var_1->var_60, $var_1->var_61);
+			}
+
+			if($var_56['avatar'])
+			{
+				$var_56['avatar'] = htmlspecialchars_uni($var_56['avatar']);
+				if($var_56['avatardimensions'])
+				{
+					list($var_62, $var_63) = explode("|", $var_56['avatardimensions']);
+					$var_64 = scale_image($var_62, $var_63, 44, 44);
+				}
+				else
+				{
+					$var_64 = array(
+						"width" => 44,
+						"height" => 44
+					);
+				}
+			}
+			else
+			{
+				$var_56['avatar'] = $var_131['imgdir'] . "/default_avatar.gif";
+				$var_64 = array(
+					"width" => 44,
+					"height" => 44
+				);
+			}
+			$var_65 = ceil((50-$var_64['height'])/2);
+			if($var_56['lastactive'] > $var_54 && ($var_56['invisible'] == 0 || $var_5->var_90['usergroup'] == 4) && $var_56['lastvisit'] != $var_56['lastactive'])
+			{
+				eval("\$buddys['online'] .= \"".$var_26->get("misc_buddypopup_user_online")."\";");
+			}
+			else
+			{
+				eval("\$buddys['offline'] .= \"".$var_26->get("misc_buddypopup_user_offline")."\";");
+			}
+		}
+	}
+	else
+	{
+		
+		$buddys['offline'] = $var_1->var_66;
+	}
+
+	$var_3->run_hooks("misc_buddypopup_end");
+
+	eval("\$buddylist = \"".$var_26->get("misc_buddypopup")."\";");
+	output_page($var_53);
+}
+elseif($var_5->input['action'] == "whoposted")
+{
+	$var_67 = 0;
+	$var_45 = alt_trow();
+	$var_68 = '';
+	$var_69 = intval($var_5->input['tid']);
+	$var_70 = get_thread($var_69);
+	
+	if(is_moderator($var_70['fid']))
+	{
+		$var_71 = true;
+		$var_72 = "(p.visible = '1' OR p.visible = '0')";
+	}
+	else
+	{
+		$var_71 = false;
+		$var_72 = "p.visible = '1'";
+	}
+	
+	
+	if(!$var_70 || ($var_70['visible'] != 1 && $var_71 == false) || ($var_70['visible'] > 1 && $var_71 == true))
+	{
+		error($var_1->var_73);
+	}
+	
+	$var_19 = get_forum($var_70['fid']);
+	if(!$var_19 || $var_19['type'] != "f")
+	{
+		error($var_1->var_14);
+	}
+	
+	
+	$var_20 = forum_permissions($var_19['fid']);
+	
+	if($var_20['canview'] == 0 || $var_20['canviewthreads'] == 0 || ($var_20['canonlyviewownthreads'] != 0 && $var_70['uid'] != $var_5->var_90['uid']))
+	{
+		error_no_permission();
+	}
+	
+	
+	check_forum_password($var_19['fid']);
+	
+	if($var_5->input['sort'] != 'username')
+	{
+		$var_74 = ' ORDER BY posts DESC';
+	}
+	else
+	{
+		$var_74 = ' ORDER BY p.username ASC';
+	}
+	$var_30 = $var_8->query("
+		SELECT COUNT(p.pid) AS posts, p.username AS postusername, u.uid, u.username, u.usergroup, u.displaygroup
+		FROM ".var_31."posts p
+		LEFT JOIN ".var_31."users u ON (u.uid=p.uid)
+		WHERE tid='".$var_69."' AND $var_72
+		GROUP BY u.uid, p.username, u.uid, u.username, u.usergroup, u.displaygroup
+		".$var_74."
+	");
+	while($var_75 = $var_8->fetch_array($var_30))
+	{
+		if($var_75['username'] == '')
+		{
+			$var_75['username'] = $var_75['postusername'];
+		}
+		$var_76 = format_name($var_75['username'], $var_75['usergroup'], $var_75['displaygroup']);
+		if($var_75['uid'])
+		{
+			$var_77 = "opener.location.href='".get_profile_link($var_75['uid'])."'; return false;";
+		}
+		$var_58 = build_profile_link($var_76, $var_75['uid'], '_blank', $var_77);
+		$var_67 += $var_75['posts'];
+		eval("\$whoposted .= \"".$var_26->get("misc_whoposted_poster")."\";");
+		$var_45 = alt_trow();
+	}
+	$var_67 = my_number_format($var_67);
+	eval("\$whop = \"".$var_26->get("misc_whoposted")."\";");
+	output_page($var_78);
+}
+elseif($var_5->input['action'] == "smilies")
+{
+	$var_79 = '';
+	if($var_5->input['popup'])
+	{ 
+		$var_80 = preg_replace('
+		$e = 1;
+		$class = "trow1";
+		$smilies = "<tr>";
+		$query = $db->simple_select("smilies", "*", "", array('var_81' => 'var_82'));
+		while($var_83 = $var_8->fetch_array($var_30))
+		{
+			$var_83['insert'] = addslashes($var_83['find']);
+			$var_83['find'] = htmlspecialchars_uni($var_83['find']);
+			eval("\$smilies .= \"".$var_26->get("misc_smilies_popup_smilie")."\";");
+			if($var_84 == 2)
+			{
+				$var_79 .= "</tr><tr>";
+				$var_84 = 1;
+				$var_85 = alt_trow();
+			}
+			else
+			{
+				$var_84 = 2;
+			}
+		}
+		if($var_84 == 2)
+		{
+			$var_79 .= "<td colspan=\"2\" class=\"$var_85\">&nbsp;</td>";
+		}
+		eval("\$smiliespage = \"".$var_26->get("misc_smilies_popup")."\";");
+		output_page($var_86);
+	}
+	else
+	{
+		add_breadcrumb($var_1->var_87);
+		$var_85 = "trow1";
+		$var_30 = $var_8->simple_select("smilies", "*", "", array('order_by' => 'disporder'));
+		while($var_83 = $var_8->fetch_array($var_30))
+		{
+			$var_83['find'] = htmlspecialchars_uni($var_83['find']);
+			eval("\$smilies .= \"".$var_26->get("misc_smilies_smilie")."\";");
+			$var_85 = alt_trow();
+		}
+		eval("\$smiliespage = \"".$var_26->get("misc_smilies")."\";");
+		output_page($var_86);
+	}
+}
+elseif($var_5->input['action'] == "imcenter")
+{
+	if($var_5->input['imtype'] != "aim" && $var_5->input['imtype'] != "msn" && $var_5->input['imtype'] != "yahoo")
+	{
+		error($var_1->var_88);
+	}
+	$var_89 = $var_5->input['uid'];
+	$var_90 = get_user($var_89);
+
+	if(!$var_90['username'])
+	{
+		error($var_1->var_91);
+	}
+	if(!$var_90[$var_5->input['imtype']])
+	{
+		error($var_1->var_88);
+	}
+
+	
+	$var_92 = $var_93 = '';
+	if($var_90['aim'])
+	{
+		$var_92 .= "<a href=\"misc.php?action=imcenter&amp;imtype=aim&amp;uid=$var_89\">$var_1->var_94</a>";
+		$var_93 = ' - ';
+	}
+	if($var_90['msn'])
+	{
+		$var_92 .= "$var_93<a href=\"misc.php?action=imcenter&amp;imtype=msn&amp;uid=$var_89\">$var_1->var_95</a>";
+		$var_93 = ' - ';
+	}
+	if($var_90['yahoo'])
+	{
+		$var_92 .= "$var_93<a href=\"misc.php?action=imcenter&amp;imtype=yahoo&amp;uid=$var_89\">$var_1->var_96</a>";
+	}
+	$var_1->var_97 = $var_1->sprintf($var_1->var_97, $var_90['username']);
+	$var_1->var_98 = $var_1->sprintf($var_1->var_98, $var_90['username']);
+	$var_1->var_99 = $var_1->sprintf($var_1->var_99, $var_90['username']);
+	
+	$var_100 = "misc_imcenter_".$var_5->input['imtype'];
+	eval("\$imcenter = \"".$var_26->get($var_100)."\";");
+	output_page($var_101);
+}
+elseif($var_5->input['action'] == "syndication")
+{
+	$var_3->run_hooks("misc_syndication_start");
+
+	$var_18 = $var_5->input['fid'];
+	$var_102 = $var_5->input['version'];
+	$var_103 = $var_5->input['limit'];
+	$var_104 = $var_5->input['forums'];
+
+	add_breadcrumb($var_1->var_105);
+	$var_106 = get_unviewable_forums();
+	if(is_array($var_104))
+	{
+		$var_107 = explode(",", $var_106);
+		foreach($var_107 as $var_18)
+		{
+			$unview[$var_18] = 1;
+		}
+		$var_108 = '';
+		$var_109 = '';
+		foreach($var_104 as $var_18)
+		{
+			if($var_18 == "all")
+			{
+				$var_110 = 1;
+				break;
+			}
+			elseif(is_numeric($var_18))
+			{
+				if(!$unview[$var_18])
+				{
+					$var_108 .= $var_109.$var_18;
+					$var_109 = ",";
+					$var_132[$var_18] = 1;
+				}
+			}
+		}
+		$var_111 = $var_5->settings['bburl']."/syndication.php";
+		if(!$var_110)
+		{
+			$var_111 .= "?fid=$var_108";
+			$var_112 = 1;
+		}
+
+		
+		if($var_102 != "rss2.0")
+		{
+			if(!$var_112)
+			{
+				$var_111 .= "?";
+			}
+			else
+			{
+				$var_111 .= "&";
+			}
+			$var_111 .= "type=atom1.0";
+			$var_112 = 1;
+		}
+		if(intval($var_103) > 0)
+		{
+			if($var_103 > 100)
+			{
+				$var_103 = 100;
+			}
+			if(!$var_112)
+			{
+				$var_111 .= "?";
+			}
+			else
+			{
+				$var_111 .= "&";
+			}
+			if(is_numeric($var_103))
+			{
+				$var_111 .= "limit=$var_103";
+			}
+		}
+		$var_103 = intval($_POST['limit']);
+		eval("\$feedurl = \"".$var_26->get("misc_syndication_feedurl")."\";");
+	}
+	unset($GLOBALS['forumcache']);
+	if(!$var_103 || !is_numeric($var_103))
+	{
+		$var_103 = 15;
+	}
+
+	
+	if($var_102 == "atom1.0")
+	{
+		$var_113 = "checked=\"checked\"";
+		$var_114 = '';
+	}
+	else
+	{
+		$var_113 = '';
+		$var_114 = "checked=\"checked\"";
+	}
+	$var_115 = fn_0();
+
+	$var_3->run_hooks("misc_syndication_end");
+
+	eval("\$syndication = \"".$var_26->get("misc_syndication")."\";");
+	output_page($var_116);
+}
+
+
+if($var_5->input['action'] == "clearcookies")
+{
+	$var_3->run_hooks("misc_clearcookies");
+	
+	if($var_5->input['key'] != $var_5->var_90['logoutkey'])
+	{
+		error($var_1->var_117);
+	}
+
+	$var_118 = array('mybb', 'mybbuser', 'mybb[password]', 'mybb[lastvisit]', 'mybb[lastactive]', 'collapsed', 'mybb[forumread]', 'mybb[threadsread]', 'mybbadmin');
+
+	if($var_5->settings['cookiedomain'])
+	{
+		foreach($var_118 as $var_119)
+		{
+			@my_setcookie($var_119, '', var_55-1, $var_5->settings['cookiepath'], $var_5->settings['cookiedomain']);
+		}
+	}
+	else
+	{
+		foreach($var_118 as $var_119)
+		{
+			@my_setcookie($var_119, '', var_55-1, $var_5->settings['cookiepath']);
+		}
+	}
+	redirect("index.php", $var_1->var_120);
+}
+
+function fn_0($var_121="0", $var_122="", $var_123="1", $var_124="", $var_125="")
+{
+	global $var_8, $var_126, $var_127, $var_5, $var_128, $var_129, $var_130, $var_131, $var_26, $var_132, $var_1, $var_106;
+	static $var_133;
+
+	$var_121 = intval($var_121);
+	if(!$var_125)
+	{
+		$var_125 = $var_5->var_134;
+	}
+
+	if(!is_array($var_126))
+	{
+		
+		$var_30 = $var_8->simple_select("forums", "*", "linkto = '' AND active!=0", array('order_by' => 'pid, disporder'));
+		while($var_19 = $var_8->fetch_array($var_30))
+		{
+			$var_126[$var_19['pid']][$var_19['disporder']][$var_19['fid']] = $var_19;
+		}
+	}
+
+	if(!is_array($var_127))
+	{
+		$var_127 = forum_permissions();
+	}
+
+	if(!$var_133)
+	{
+		
+		$var_133 = explode(",", str_replace("'", "", $var_106));
+	}
+
+	if(is_array($var_126[$var_121]))
+	{
+		foreach($var_126[$var_121] as $var_43 => $var_135)
+		{
+			foreach($var_135 as $var_43 => $var_19)
+			{
+				$var_136 = $var_127[$var_19['fid']];
+				if($var_136['canview'] == 1 || $var_5->settings['hideprivateforums'] == 0)
+				{
+					if($var_132[$var_19['fid']])
+					{
+						$var_137 = "selected=\"selected\"";
+						$var_128 = "1";
+					}
+					else
+					{
+						$var_137 = '';
+					}
+
+					if($var_19['password'] == '' && !in_array($var_19['fid'], $var_133) || $var_19['password'] && $var_5->cookies['forumpass'][$var_19['fid']] == md5($var_5->var_90['uid'].$var_19['password']))
+					{
+						$var_130 .= "<option value=\"{$var_19['fid']}\" $var_137>$var_124 {$var_19['name']}</option>\n";
+					}
+
+					if($var_126[$var_19['fid']])
+					{
+						$var_138 = $var_124."&nbsp;&nbsp;&nbsp;&nbsp;";
+						$var_130 .= fn_0($var_19['fid'], $var_122, 0, $var_138, $var_136);
+					}
+				}
+			}
+		}
+	}
+	if($var_123)
+	{
+		if(!$var_128)
+		{
+			$var_139 = " selected=\"selected\"";
+		}
+		$var_129 = "<select name=\"forums[]\" size=\"10\" multiple=\"multiple\">\n<option value=\"all\" $var_139>$var_1->var_140</option>\n<option value=\"all\">----------------------</option>\n$var_130\n</select>";
+	}
+	return $var_129;
+}
+
+?>

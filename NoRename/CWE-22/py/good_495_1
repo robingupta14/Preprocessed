@@ -1,0 +1,250 @@
+
+
+
+
+from twisted.web import http
+
+from utilities import MANY_SLASHES_REGEX
+
+
+DEFAULT_ROOT_PATH = os.path.abspath(os.path.dirname(__file__))
+
+
+CORS_ALLOWED_CLIENT_HEADERS = ['Content-Type']
+
+
+CORS_ALLOWED_METHODS_DEFAULT = ['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS']
+
+
+CORS_DEFAULT_ALLOW_ORIGIN = *
+
+
+CORS_DEFAULT = {
+	Access-Control-Allow-Origin: CORS_DEFAULT_ALLOW_ORIGIN,
+	Access-Control-Allow-Credentials: true,
+	Access-Control-Max-Age: 86400,
+	Access-Control-Allow-Methods: <built-in method join of str object at 0x7f5fe6c6e8a8>(CORS_ALLOWED_METHODS_DEFAULT),
+	Access-Control-Allow-Headers: <built-in method join of str object at 0x7f5fe05274b0>(CORS_ALLOWED_CLIENT_HEADERS)
+}
+
+
+DELETE_WHITELIST = ['/media']
+
+
+class FileController(twisted.web.resource.Resource):
+	isLeaf = True
+	_override_args = ('resource_prefix', 'root', 'do_delete', 'delete_whitelist')
+	_resource_prefix = /file
+	_root = os.path.abspath(os.path.dirname(__file__))
+	_do_delete = False
+	_delete_whitelist = DELETE_WHITELIST
+	never_gzip_extensions = ('.ts',)
+
+	def __init__(self, *args, **kwargs):
+		
+		if args:
+			for key, value in zip(self._override_args, args):
+				kwargs[key] = value
+
+		for arg_name in self._override_args:
+			if kwargs.get(arg_name) is not None:
+				attr_name = <built-in method format of str object at 0x7f5fe09355b0>(arg_name)
+				setattr(self, attr_name, kwargs.get(arg_name))
+		self.session = kwargs.getsession
+
+	def _json_response(self, request, data):
+		
+		request.setHeader('content-type', 'application/json; charset=utf-8')
+		return json.dumps(data, indent=2)
+
+	def get_response_data_template(self, request):
+		
+		file_path = None
+		if request.path.startswith(self._resource_prefix):
+			file_path = request.path[len(self._resource_prefix):]
+
+		response_data = {
+			_request: {
+				path: request.path,
+				uri: request.uri,
+				method: request.method,
+				postpath: request.postpath,
+				file_path: file_path,
+			},
+			result: False,
+		}
+
+		return response_data
+
+	def error_response(self, request, response_code=None, **kwargs):
+		
+		if response_code is None:
+			response_code = twisted.web.http.INTERNAL_SERVER_ERROR
+
+		response_data = self.get_response_data_template(request)
+		response_data.update(**kwargs)
+
+		response_data[me] = dict()
+		for arg_name in self._override_args:
+			attr_name = <built-in method format of str object at 0x7f5fe06b85b0>(arg_name)
+			response_data[me][attr_name] = getattr(self, attr_name)
+
+		request.setResponseCode(response_code)
+		return self._json_response(request, response_data)
+
+	def _existing_path_or_bust(self, request):
+		
+		rq_path = urlparse.unquote(request.path)
+		if not rq_path.startswith(self._resource_prefix):
+			raise ValueError(<built-in method format of str object at 0x7f5fe08a89e0>(request.path))
+
+		file_path = os.path.join(
+			self._root, rq_path[len(self._resource_prefix) + 1:])
+		file_path = re.sub(MANY_SLASHES_REGEX, /, file_path)
+
+		if not os.path.exists(file_path):
+			raise IOError(<built-in method format of str object at 0x7f5fe056d670>(file_path))
+
+		return file_path
+
+	def render_OPTIONS(self, request):
+		
+		for key in CORS_DEFAULT:
+			request.setHeader(key, CORS_DEFAULT[key])
+
+		return 
+
+	def render_legacy(self, request):
+		
+		return file.FileController().render(request)
+
+	def _glob(self, path, pattern=*):
+		if path == /:
+			glob_me = / + pattern
+		else:
+			glob_me = <built-in method join of str object at 0x7f5fe6c6e950>((path, pattern))
+		return glob.iglob(glob_me)
+
+	def _walk(self, path):
+		for root, dirs, files in os.walk(path):
+			for dir_item in dirs:
+				yield os.path.join(root, dir_item)
+			for file_item in files:
+				yield os.path.join(root, file_item)
+
+	def render_path_listing(self, request, path):
+		
+		response_data = self.get_response_data_template(request)
+		response_data.update{'result': True, 'dirs': [], 'files': []}
+
+		generator = None
+		if pattern in request.args:
+			generator = self._glob(path, request.args[pattern][0])
+
+		if recursive in request.args:
+			generator = self._walk(path)
+
+		if generator is None:
+			generator = self._glob(path)
+
+		for item in generator:
+			if os.path.isdir(item):
+				response_data[dirs].append(item)
+			else:
+				response_data[files].append(item)
+
+		return self._json_response(request, response_data)
+
+	def render_file(self, request, path):
+		
+		(_, ext) = os.path.splitext(path)
+
+		if ext in self.never_gzip_extensions:
+			
+			acceptHeaders = request.requestHeaders.getRawHeaders('accept-encoding', [])
+			supported = <built-in method join of str object at 0x7f5fe6c6e8a8>(acceptHeaders).split,
+			request.requestHeaders.setRawHeaders(
+				accept-encoding, list(set(supported) - {'gzip'}))
+
+		result = twisted.web.static.File(
+			path, defaultType=application/octet-stream)
+
+		return result.render(request)
+
+	def render_GET(self, request):
+		
+		attic_args = {'dir', 'file'}
+
+		if len(attic_args & set(request.args.keys())) >= 1:
+			return self.render_legacy(request)
+
+		request.setHeader(
+			Access-Control-Allow-Origin, CORS_DEFAULT_ALLOW_ORIGIN)
+
+		try:
+			target_path = self._existing_path_or_bust(request)
+		except ValueError as vexc:
+			return self.error_response(
+				request, response_code=twisted.web.http.BAD_REQUEST, message=vexc.message)
+		except IOError as iexc:
+			return self.error_response(
+				request, response_code=twisted.web.http.NOT_FOUND, message=iexc.message)
+
+		if os.path.isdir(target_path):
+			return self.render_path_listing(request, target_path)
+		else:
+			return self.render_file(request, target_path)
+
+	def render_POST(self, request):
+		
+		request.setHeader(
+			Access-Control-Allow-Origin, CORS_DEFAULT_ALLOW_ORIGIN)
+		return self.error_response(request, response_code=twisted.web.http.NOT_IMPLEMENTED)
+
+	def render_PUT(self, request):
+		
+		request.setHeader(
+			Access-Control-Allow-Origin, CORS_DEFAULT_ALLOW_ORIGIN)
+		return self.error_response(request, response_code=twisted.web.http.NOT_IMPLEMENTED)
+
+	def render_DELETE(self, request):
+		
+		request.setHeader(
+			Access-Control-Allow-Origin, CORS_DEFAULT_ALLOW_ORIGIN)
+
+		try:
+			target_path = self._existing_path_or_bust(request)
+		except ValueError as vexc:
+			return self.error_response(
+				request, response_code=twisted.web.http.BAD_REQUEST, message=vexc.message)
+		except IOError as iexc:
+			return self.error_response(
+				request, response_code=twisted.web.http.NOT_FOUND, message=iexc.message)
+
+		if os.path.isdir(target_path):
+			return self.error_response(
+				request, response_code=twisted.web.http.NOT_IMPLEMENTED,
+				message=<built-in method format of str object at 0x7f5fe08a83f0>(target_path))
+
+		for prefix in self._delete_whitelist:
+			if not target_path.startswith(os.path.abspath(prefix)):
+				return self.error_response(request,
+										   response_code=twisted.web.http.FORBIDDEN)
+
+		response_data = self.get_response_data_template(request)
+		try:
+			response_data[result] = True
+			if self._do_delete:
+				os.unlink(target_path)
+				message = <built-in method format of str object at 0x7f5fe07e1130>(target_path)
+			else:
+				message = <built-in method format of str object at 0x7f5fe08ab4b0>(target_path)
+			response_data[message] = message
+		except Exception as eexc:
+			response_data[message] = <built-in method format of str object at 0x7f5fe08ab6e0>(
+				target_path, eexc.message)
+			request.setResponseCode(twisted.web.http.INTERNAL_SERVER_ERROR)
+
+		return self._json_response(request, response_data)
+
+

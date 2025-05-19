@@ -1,0 +1,1775 @@
+<?php
+
+
+
+
+
+class Sql
+{
+    
+    private $relation;
+
+    
+    public function __construct()
+    {
+        $this->relation = new Relation();
+    }
+
+    
+    public function parseAndAnalyze($sql_query, $db = null)
+    {
+        if (is_null($db) && isset($GLOBALS['db']) && strlen($GLOBALS['db'])) {
+            $db = $GLOBALS['db'];
+        }
+        list($analyzed_sql_results,,) = PhpMyAdmin\ParseAnalyze::sqlQuery($sql_query, $db);
+        return $analyzed_sql_results;
+    }
+
+    
+    private function handleSortOrder(
+        $db, $table, array &$analyzed_sql_results, &$full_sql_query
+    ) {
+        $pmatable = new Table($table, $db);
+
+        if (empty($analyzed_sql_results['order'])) {
+
+            
+            $sortCol = $pmatable->getUiProp(PhpMyAdmin\Table::PROP_SORTED_COLUMN);
+            if (empty($sortCol)) {
+                return;
+            }
+
+            
+            $sortCol = str_replace(
+                PhpMyAdmin\Util::backquote($table) . '.',
+                '',
+                $sortCol
+            );
+
+            
+            $full_sql_query = PhpMyAdmin\SqlParser\Utils\Query::replaceClause(
+                $analyzed_sql_results['statement'],
+                $analyzed_sql_results['parser']->list,
+                'ORDER BY ' . $sortCol
+            );
+
+            
+            $analyzed_sql_results = PhpMyAdmin\SqlParser\Utils\Query::getAll($full_sql_query);
+        } else {
+            
+            $pmatable->setUiProp(
+                PhpMyAdmin\Table::PROP_SORTED_COLUMN,
+                PhpMyAdmin\SqlParser\Utils\Query::getClause(
+                    $analyzed_sql_results['statement'],
+                    $analyzed_sql_results['parser']->list,
+                    'ORDER BY'
+                )
+            );
+        }
+    }
+
+    
+    private function getSqlWithLimitClause(array &$analyzed_sql_results)
+    {
+        return PhpMyAdmin\SqlParser\Utils\Query::replaceClause(
+            $analyzed_sql_results['statement'],
+            $analyzed_sql_results['parser']->list,
+            'LIMIT ' . $_SESSION['tmpval']['pos'] . ', '
+            . $_SESSION['tmpval']['max_rows']
+        );
+    }
+
+    
+    private function resultSetHasJustOneTable(array $fields_meta)
+    {
+        $just_one_table = true;
+        $prev_table = '';
+        foreach ($fields_meta as $one_field_meta) {
+            if ($one_field_meta->table != ''
+                && $prev_table != ''
+                && $one_field_meta->table != $prev_table
+            ) {
+                $just_one_table = false;
+            }
+            if ($one_field_meta->table != '') {
+                $prev_table = $one_field_meta->table;
+            }
+        }
+        return $just_one_table && $prev_table != '';
+    }
+
+    
+    private function resultSetContainsUniqueKey($db, $table, array $fields_meta)
+    {
+        $resultSetColumnNames = array();
+        foreach ($fields_meta as $oneMeta) {
+            $resultSetColumnNames[] = $oneMeta->name;
+        }
+        foreach (PhpMyAdmin\Index::getFromTable($table, $db) as $index) {
+            if ($index->isUnique()) {
+                $indexColumns = $index->getColumns();
+                $numberFound = 0;
+                foreach ($indexColumns as $indexColumnName => $dummy) {
+                    if (in_array($indexColumnName, $resultSetColumnNames)) {
+                        $numberFound++;
+                    }
+                }
+                if ($numberFound == count($indexColumns)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    
+    private function getHtmlForRelationalColumnDropdown($db, $table, $column, $curr_value)
+    {
+        $foreigners = $this->relation->getForeigners($db, $table, $column);
+
+        $foreignData = $this->relation->getForeignData($foreigners, $column, false, '', '');
+
+        if ($foreignData['disp_row'] == null) {
+            
+            
+            $_url_params = array(
+                    'db' => $db,
+                    'table' => $table,
+                    'field' => $column
+            );
+
+            $dropdown = '<span class="curr_value">'
+                . htmlspecialchars($_REQUEST['curr_value'])
+                . '</span>'
+                . '<a href="browse_foreigners.php'
+                . PhpMyAdmin\Url::getCommon($_url_params) . '"'
+                . 'class="ajax browse_foreign" ' . '>'
+                . __('Browse foreign values')
+                . '</a>';
+        } else {
+            $dropdown = $this->relation->foreignDropdown(
+                $foreignData['disp_row'],
+                $foreignData['foreign_field'],
+                $foreignData['foreign_display'],
+                $curr_value,
+                $GLOBALS['cfg']['ForeignKeyMaxLimit']
+            );
+            $dropdown = '<select>' . $dropdown . '</select>';
+        }
+
+        return $dropdown;
+    }
+
+    
+    private function getHtmlForProfilingChart($url_query, $db, $profiling_results)
+    {
+        if (! empty($profiling_results)) {
+            $url_query = isset($url_query)
+                ? $url_query
+                : PhpMyAdmin\Url::getCommon(array('db' => $db));
+
+            $profiling_table = '';
+            $profiling_table .= '<fieldset><legend>' . __('Profiling')
+                . '</legend>' . "\n";
+            $profiling_table .= '<div class="floatleft">';
+            $profiling_table .= '<h3>' . __('Detailed profile') . '</h3>';
+            $profiling_table .= '<table id="profiletable"><thead>' . "\n";
+            $profiling_table .= ' <tr>' . "\n";
+            $profiling_table .= '  <th>' . __('Order')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= '  <th>' . __('State')
+                . PhpMyAdmin\Util::showMySQLDocu('general-thread-states')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= '  <th>' . __('Time')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= ' </tr></thead><tbody>' . "\n";
+            list($detailed_table, $chart_json, $profiling_stats)
+                = $this->analyzeAndGetTableHtmlForProfilingResults($profiling_results);
+            $profiling_table .= $detailed_table;
+            $profiling_table .= '</tbody></table>' . "\n";
+            $profiling_table .= '</div>';
+
+            $profiling_table .= '<div class="floatleft">';
+            $profiling_table .= '<h3>' . __('Summary by state') . '</h3>';
+            $profiling_table .= '<table id="profilesummarytable"><thead>' . "\n";
+            $profiling_table .= ' <tr>' . "\n";
+            $profiling_table .= '  <th>' . __('State')
+                . PhpMyAdmin\Util::showMySQLDocu('general-thread-states')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= '  <th>' . __('Total Time')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= '  <th>' . __('% Time')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= '  <th>' . __('Calls')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= '  <th>' . __('ø Time')
+                . '<div class="sorticon"></div></th>' . "\n";
+            $profiling_table .= ' </tr></thead><tbody>' . "\n";
+            $profiling_table .= $this->getTableHtmlForProfilingSummaryByState(
+                $profiling_stats
+            );
+            $profiling_table .= '</tbody></table>' . "\n";
+
+            $profiling_table .= <<<EOT
+<script type="text/javascript">
+    url_query = '$url_query';
+</script>
+EOT;
+            $profiling_table .= "</div>";
+            $profiling_table .= "<div class='clearfloat'></div>";
+
+            
+            $profiling_table .= '<div id="profilingChartData" class="hide">';
+            $profiling_table .= json_encode($chart_json);
+            $profiling_table .= '</div>';
+            $profiling_table .= '<div id="profilingchart" class="hide">';
+            $profiling_table .= '</div>';
+            $profiling_table .= '<script type="text/javascript">';
+            $profiling_table .= "AJAX.registerOnload('sql.js', function () {";
+            $profiling_table .= 'makeProfilingChart();';
+            $profiling_table .= 'initProfilingTables();';
+            $profiling_table .= '});';
+            $profiling_table .= '</script>';
+            $profiling_table .= '</fieldset>' . "\n";
+        } else {
+            $profiling_table = null;
+        }
+        return $profiling_table;
+    }
+
+    
+    private function analyzeAndGetTableHtmlForProfilingResults(
+        $profiling_results
+    ) {
+        $profiling_stats = array(
+            'total_time' => 0,
+            'states' => array(),
+        );
+        $chart_json = Array();
+        $i = 1;
+        $table = '';
+        foreach ($profiling_results as $one_result) {
+            if (isset($profiling_stats['states'][ucwords($one_result['Status'])])) {
+                $states = $profiling_stats['states'];
+                $states[ucwords($one_result['Status'])]['total_time']
+                    += $one_result['Duration'];
+                $states[ucwords($one_result['Status'])]['calls']++;
+            } else {
+                $profiling_stats['states'][ucwords($one_result['Status'])] = array(
+                    'total_time' => $one_result['Duration'],
+                    'calls' => 1,
+                );
+            }
+            $profiling_stats['total_time'] += $one_result['Duration'];
+
+            $table .= ' <tr>' . "\n";
+            $table .= '<td>' . $i++ . '</td>' . "\n";
+            $table .= '<td>' . ucwords($one_result['Status'])
+                . '</td>' . "\n";
+            $table .= '<td class="right">'
+                . (PhpMyAdmin\Util::formatNumber($one_result['Duration'], 3, 1))
+                . 's<span class="rawvalue hide">'
+                . $one_result['Duration'] . '</span></td>' . "\n";
+            if (isset($chart_json[ucwords($one_result['Status'])])) {
+                $chart_json[ucwords($one_result['Status'])]
+                    += $one_result['Duration'];
+            } else {
+                $chart_json[ucwords($one_result['Status'])]
+                    = $one_result['Duration'];
+            }
+        }
+        return array($table, $chart_json, $profiling_stats);
+    }
+
+    
+    private function getTableHtmlForProfilingSummaryByState(array $profiling_stats)
+    {
+        $table = '';
+        foreach ($profiling_stats['states'] as $name => $stats) {
+            $table .= ' <tr>' . "\n";
+            $table .= '<td>' . $name . '</td>' . "\n";
+            $table .= '<td align="right">'
+                . PhpMyAdmin\Util::formatNumber($stats['total_time'], 3, 1)
+                . 's<span class="rawvalue hide">'
+                . $stats['total_time'] . '</span></td>' . "\n";
+            $table .= '<td align="right">'
+                . PhpMyAdmin\Util::formatNumber(
+                    100 * ($stats['total_time'] / $profiling_stats['total_time']),
+                    0, 2
+                )
+            . '%</td>' . "\n";
+            $table .= '<td align="right">' . $stats['calls'] . '</td>'
+                . "\n";
+            $table .= '<td align="right">'
+                . PhpMyAdmin\Util::formatNumber(
+                    $stats['total_time'] / $stats['calls'], 3, 1
+                )
+                . 's<span class="rawvalue hide">'
+                . number_format($stats['total_time'] / $stats['calls'], 8, '.', '')
+                . '</span></td>' . "\n";
+            $table .= ' </tr>' . "\n";
+        }
+        return $table;
+    }
+
+    
+    private function getHtmlForEnumColumnDropdown($db, $table, $column, $curr_value)
+    {
+        $values = $this->getValuesForColumn($db, $table, $column);
+        $dropdown = '<option value="">&nbsp;</option>';
+        $dropdown .= $this->getHtmlForOptionsList($values, array($curr_value));
+        $dropdown = '<select>' . $dropdown . '</select>';
+        return $dropdown;
+    }
+
+    
+    private function getFullValuesForSetColumn($db, $table, $column, $where_clause)
+    {
+        $result = $GLOBALS['dbi']->fetchSingleRow(
+            "SELECT `$column` FROM `$db`.`$table` WHERE $where_clause"
+        );
+
+        return $result[$column];
+    }
+
+    
+    private function getHtmlForSetColumn($db, $table, $column, $curr_value)
+    {
+        $values = $this->getValuesForColumn($db, $table, $column);
+        $dropdown = '';
+        $full_values =
+            isset($_REQUEST['get_full_values']) ? $_REQUEST['get_full_values'] : false;
+        $where_clause =
+            isset($_REQUEST['where_clause']) ? $_REQUEST['where_clause'] : null;
+
+        
+        
+        if ($full_values && ! empty($where_clause)) {
+            $curr_value = $this->getFullValuesForSetColumn(
+                $db, $table, $column, $where_clause
+            );
+        }
+
+        
+        $converted_curr_value = htmlentities(
+            $curr_value, ENT_COMPAT, "UTF-8"
+        );
+
+        $selected_values = explode(',', $converted_curr_value);
+
+        $dropdown .= $this->getHtmlForOptionsList($values, $selected_values);
+
+        $select_size = (sizeof($values) > 10) ? 10 : sizeof($values);
+        $dropdown = '<select multiple="multiple" size="' . $select_size . '">'
+            . $dropdown . '</select>';
+
+        return $dropdown;
+    }
+
+    
+    private function getValuesForColumn($db, $table, $column)
+    {
+        $field_info_query = $GLOBALS['dbi']->getColumnsSql($db, $table, $column);
+
+        $field_info_result = $GLOBALS['dbi']->fetchResult(
+            $field_info_query,
+            null,
+            null,
+            PhpMyAdmin\DatabaseInterface::CONNECT_USER,
+            PhpMyAdmin\DatabaseInterface::QUERY_STORE
+        );
+
+        $values = PhpMyAdmin\Util::parseEnumSetValues($field_info_result[0]['Type']);
+
+        return $values;
+    }
+
+    
+    private function getHtmlForOptionsList(array $values, array $selected_values)
+    {
+        $options = '';
+        foreach ($values as $value) {
+            $options .= '<option value="' . $value . '"';
+            if (in_array($value, $selected_values, true)) {
+                $options .= ' selected="selected" ';
+            }
+            $options .= '>' . $value . '</option>';
+        }
+        return $options;
+    }
+
+    
+    public function getHtmlForBookmark(array $displayParts, array $cfgBookmark, $sql_query, $db,
+        $table, $complete_query, $bkm_user
+    ) {
+        if ($displayParts['bkm_form'] == '1'
+            && (! empty($cfgBookmark) && empty($_GET['id_bookmark']))
+            && ! empty($sql_query)
+        ) {
+            $goto = 'sql.php'
+                . PhpMyAdmin\Url::getCommon(
+                    array(
+                        'db' => $db,
+                        'table' => $table,
+                        'sql_query' => $sql_query,
+                        'id_bookmark'=> 1,
+                    )
+                );
+            $bkm_sql_query = isset($complete_query) ? $complete_query : $sql_query;
+            $html = '<form action="sql.php" method="post"'
+                . ' onsubmit="return ! emptyCheckTheField(this,'
+                . '\'bkm_fields[bkm_label]\');"'
+                . ' class="bookmarkQueryForm print_ignore">';
+            $html .= PhpMyAdmin\Url::getHiddenInputs();
+            $html .= '<input type="hidden" name="db"'
+                . ' value="' . htmlspecialchars($db) . '" />';
+            $html .= '<input type="hidden" name="goto" value="' . $goto . '" />';
+            $html .= '<input type="hidden" name="bkm_fields[bkm_database]"'
+                . ' value="' . htmlspecialchars($db) . '" />';
+            $html .= '<input type="hidden" name="bkm_fields[bkm_user]"'
+                . ' value="' . $bkm_user . '" />';
+            $html .= '<input type="hidden" name="bkm_fields[bkm_sql_query]"'
+                . ' value="'
+                . htmlspecialchars($bkm_sql_query)
+                . '" />';
+            $html .= '<fieldset>';
+            $html .= '<legend>';
+            $html .= PhpMyAdmin\Util::getIcon(
+                'b_bookmark', __('Bookmark this SQL query'), true
+            );
+            $html .= '</legend>';
+            $html .= '<div class="formelement">';
+            $html .= '<label>' . __('Label:');
+            $html .= '<input type="text" name="bkm_fields[bkm_label]" value="" />' .
+                '</label>';
+            $html .= '</div>';
+            $html .= '<div class="formelement">';
+            $html .= '<label>' .
+                '<input type="checkbox" name="bkm_all_users" value="true" />';
+            $html .=  __('Let every user access this bookmark') . '</label>';
+            $html .= '</div>';
+            $html .= '<div class="clearfloat"></div>';
+            $html .= '</fieldset>';
+            $html .= '<fieldset class="tblFooters">';
+            $html .= '<input type="hidden" name="store_bkm" value="1" />';
+            $html .= '<input type="submit"'
+                . ' value="' . __('Bookmark this SQL query') . '" />';
+            $html .= '</fieldset>';
+            $html .= '</form>';
+
+        } else {
+            $html = null;
+        }
+
+        return $html;
+    }
+
+    
+    private function isRememberSortingOrder(array $analyzed_sql_results)
+    {
+        return $GLOBALS['cfg']['RememberSorting']
+            && ! ($analyzed_sql_results['is_count']
+                || $analyzed_sql_results['is_export']
+                || $analyzed_sql_results['is_func']
+                || $analyzed_sql_results['is_analyse'])
+            && $analyzed_sql_results['select_from']
+            && isset($analyzed_sql_results['select_expr'])
+            && isset($analyzed_sql_results['select_tables'])
+            && ((empty($analyzed_sql_results['select_expr']))
+                || ((count($analyzed_sql_results['select_expr']) == 1)
+                    && ($analyzed_sql_results['select_expr'][0] == '*')))
+            && count($analyzed_sql_results['select_tables']) == 1;
+    }
+
+    
+    private function isAppendLimitClause(array $analyzed_sql_results)
+    {
+        
+        
+        
+
+        return (isset($analyzed_sql_results['parser'])
+            && count($analyzed_sql_results['parser']->errors) === 0)
+            && ($_SESSION['tmpval']['max_rows'] != 'all')
+            && ! ($analyzed_sql_results['is_export']
+            || $analyzed_sql_results['is_analyse'])
+            && ($analyzed_sql_results['select_from']
+                || $analyzed_sql_results['is_subquery'])
+            && empty($analyzed_sql_results['limit']);
+    }
+
+    
+    public function isJustBrowsing(array $analyzed_sql_results, $find_real_end)
+    {
+        return ! $analyzed_sql_results['is_group']
+            && ! $analyzed_sql_results['is_func']
+            && empty($analyzed_sql_results['union'])
+            && empty($analyzed_sql_results['distinct'])
+            && $analyzed_sql_results['select_from']
+            && (count($analyzed_sql_results['select_tables']) === 1)
+            && (empty($analyzed_sql_results['statement']->where)
+                || (count($analyzed_sql_results['statement']->where) == 1
+                    && $analyzed_sql_results['statement']->where[0]->expr ==='1'))
+            && empty($analyzed_sql_results['group'])
+            && ! isset($find_real_end)
+            && ! $analyzed_sql_results['is_subquery']
+            && ! $analyzed_sql_results['join']
+            && empty($analyzed_sql_results['having']);
+    }
+
+    
+    private function isDeleteTransformationInfo(array $analyzed_sql_results)
+    {
+        return !empty($analyzed_sql_results['querytype'])
+            && (($analyzed_sql_results['querytype'] == 'ALTER')
+                || ($analyzed_sql_results['querytype'] == 'DROP'));
+    }
+
+    
+    public function hasNoRightsToDropDatabase(array $analyzed_sql_results,
+        $allowUserDropDatabase, $is_superuser
+    ) {
+        return ! $allowUserDropDatabase
+            && isset($analyzed_sql_results['drop_database'])
+            && $analyzed_sql_results['drop_database']
+            && ! $is_superuser;
+    }
+
+    
+    private function setColumnProperty($pmatable, $request_index)
+    {
+        $property_value = array_map('intval', explode(',', $_REQUEST[$request_index]));
+        switch($request_index) {
+        case 'col_order':
+            $property_to_set = PhpMyAdmin\Table::PROP_COLUMN_ORDER;
+            break;
+        case 'col_visib':
+            $property_to_set = PhpMyAdmin\Table::PROP_COLUMN_VISIB;
+            break;
+        default:
+            $property_to_set = '';
+        }
+        $retval = $pmatable->setUiProp(
+            $property_to_set,
+            $property_value,
+            $_REQUEST['table_create_time']
+        );
+        if (gettype($retval) != 'boolean') {
+            $response = PhpMyAdmin\Response::getInstance();
+            $response->setRequestStatus(false);
+            $response->addJSON('message', $retval->getString());
+            exit;
+        }
+
+        return $retval;
+    }
+
+    
+    public function setColumnOrderOrVisibility($table, $db)
+    {
+        $pmatable = new Table($table, $db);
+        $retval = false;
+
+        
+        if (isset($_REQUEST['col_order'])) {
+            $retval = $this->setColumnProperty($pmatable, 'col_order');
+        }
+
+        
+        if ($retval === true && isset($_REQUEST['col_visib'])) {
+            $retval = $this->setColumnProperty($pmatable, 'col_visib');
+        }
+
+        $response = PhpMyAdmin\Response::getInstance();
+        $response->setRequestStatus($retval == true);
+        exit;
+    }
+
+    
+    public function addBookmark($goto)
+    {
+        $bookmark = PhpMyAdmin\Bookmark::createBookmark(
+            $GLOBALS['dbi'],
+            $GLOBALS['cfg']['Server']['user'],
+            $_POST['bkm_fields'],
+            (isset($_POST['bkm_all_users'])
+                && $_POST['bkm_all_users'] == 'true' ? true : false
+            )
+        );
+        $result = $bookmark->save();
+        $response = PhpMyAdmin\Response::getInstance();
+        if ($response->isAjax()) {
+            if ($result) {
+                $msg = PhpMyAdmin\Message::success(__('Bookmark %s has been created.'));
+                $msg->addParam($_POST['bkm_fields']['bkm_label']);
+                $response->addJSON('message', $msg);
+            } else {
+                $msg = PhpMyAdmin\Message::error(__('Bookmark not created!'));
+                $response->setRequestStatus(false);
+                $response->addJSON('message', $msg);
+            }
+            exit;
+        } else {
+            
+            
+            PhpMyAdmin\Core::sendHeaderLocation(
+                './' . $goto
+                . '&label=' . $_POST['bkm_fields']['bkm_label']
+            );
+        }
+    }
+
+    
+    public function findRealEndOfRows($db, $table)
+    {
+        $unlim_num_rows = $GLOBALS['dbi']->getTable($db, $table)->countRecords(true);
+        $_SESSION['tmpval']['pos'] = $this->getStartPosToDisplayRow($unlim_num_rows);
+
+        return $unlim_num_rows;
+    }
+
+    
+    public function getRelationalValues($db, $table)
+    {
+        $column = $_REQUEST['column'];
+        if ($_SESSION['tmpval']['relational_display'] == 'D'
+            && isset($_REQUEST['relation_key_or_display_column'])
+            && $_REQUEST['relation_key_or_display_column']
+        ) {
+            $curr_value = $_REQUEST['relation_key_or_display_column'];
+        } else {
+            $curr_value = $_REQUEST['curr_value'];
+        }
+        $dropdown = $this->getHtmlForRelationalColumnDropdown(
+            $db, $table, $column, $curr_value
+        );
+        $response = PhpMyAdmin\Response::getInstance();
+        $response->addJSON('dropdown', $dropdown);
+        exit;
+    }
+
+    
+    public function getEnumOrSetValues($db, $table, $columnType)
+    {
+        $column = $_REQUEST['column'];
+        $curr_value = $_REQUEST['curr_value'];
+        $response = PhpMyAdmin\Response::getInstance();
+        if ($columnType == "enum") {
+            $dropdown = $this->getHtmlForEnumColumnDropdown(
+                $db, $table, $column, $curr_value
+            );
+            $response->addJSON('dropdown', $dropdown);
+        } else {
+            $select = $this->getHtmlForSetColumn(
+                $db, $table, $column, $curr_value
+            );
+            $response->addJSON('select', $select);
+        }
+        exit;
+    }
+
+    
+    public function getDefaultSqlQueryForBrowse($db, $table)
+    {
+        $bookmark = PhpMyAdmin\Bookmark::get(
+            $GLOBALS['dbi'],
+            $GLOBALS['cfg']['Server']['user'],
+            $db,
+            $table,
+            'label',
+            false,
+            true
+        );
+
+        if (! empty($bookmark) && ! empty($bookmark->getQuery())) {
+            $GLOBALS['using_bookmark_message'] = PhpMyAdmin\Message::notice(
+                __('Using bookmark "%s" as default browse query.')
+            );
+            $GLOBALS['using_bookmark_message']->addParam($table);
+            $GLOBALS['using_bookmark_message']->addHtml(
+                PhpMyAdmin\Util::showDocu('faq', 'faq6-22')
+            );
+            $sql_query = $bookmark->getQuery();
+        } else {
+
+            $defaultOrderByClause = '';
+
+            if (isset($GLOBALS['cfg']['TablePrimaryKeyOrder'])
+                && ($GLOBALS['cfg']['TablePrimaryKeyOrder'] !== 'NONE')
+            ) {
+
+                $primaryKey     = null;
+                $primary        = PhpMyAdmin\Index::getPrimary($table, $db);
+
+                if ($primary !== false) {
+
+                    $primarycols    = $primary->getColumns();
+
+                    foreach ($primarycols as $col) {
+                        $primaryKey = $col->getName();
+                        break;
+                    }
+
+                    if ($primaryKey != null) {
+                        $defaultOrderByClause = ' ORDER BY '
+                            . PhpMyAdmin\Util::backquote($table) . '.'
+                            . PhpMyAdmin\Util::backquote($primaryKey) . ' '
+                            . $GLOBALS['cfg']['TablePrimaryKeyOrder'];
+                    }
+
+                }
+
+            }
+
+            $sql_query = 'SELECT * FROM ' . PhpMyAdmin\Util::backquote($table)
+                . $defaultOrderByClause;
+
+        }
+
+        return $sql_query;
+    }
+
+    
+    private function handleQueryExecuteError($is_gotofile, $error, $full_sql_query)
+    {
+        if ($is_gotofile) {
+            $message = PhpMyAdmin\Message::rawError($error);
+            $response = PhpMyAdmin\Response::getInstance();
+            $response->setRequestStatus(false);
+            $response->addJSON('message', $message);
+        } else {
+            PhpMyAdmin\Util::mysqlDie($error, $full_sql_query, '', '');
+        }
+        exit;
+    }
+
+    
+    public function storeTheQueryAsBookmark($db, $bkm_user, $sql_query_for_bookmark,
+        $bkm_label, $bkm_replace
+    ) {
+        $bfields = array(
+            'bkm_database' => $db,
+            'bkm_user'  => $bkm_user,
+            'bkm_sql_query' => $sql_query_for_bookmark,
+            'bkm_label' => $bkm_label,
+        );
+
+        
+        if (isset($bkm_replace)) {
+            $bookmarks = PhpMyAdmin\Bookmark::getList(
+                $GLOBALS['dbi'],
+                $GLOBALS['cfg']['Server']['user'],
+                $db
+            );
+            foreach ($bookmarks as $bookmark) {
+                if ($bookmark->getLabel() == $bkm_label) {
+                    $bookmark->delete();
+                }
+            }
+        }
+
+        $bookmark = PhpMyAdmin\Bookmark::createBookmark(
+            $GLOBALS['dbi'],
+            $GLOBALS['cfg']['Server']['user'],
+            $bfields,
+            isset($_POST['bkm_all_users'])
+        );
+        $bookmark->save();
+    }
+
+    
+    private function executeQueryAndMeasureTime($full_sql_query)
+    {
+        
+        session_write_close();
+
+        
+        $querytime_before = array_sum(explode(' ', microtime()));
+
+        $result = @$GLOBALS['dbi']->tryQuery(
+            $full_sql_query, PhpMyAdmin\DatabaseInterface::CONNECT_USER, PhpMyAdmin\DatabaseInterface::QUERY_STORE
+        );
+        $querytime_after = array_sum(explode(' ', microtime()));
+
+        
+        session_start();
+
+        return array($result, $querytime_after - $querytime_before);
+    }
+
+    
+    private function getNumberOfRowsAffectedOrChanged($is_affected, $result)
+    {
+        if (! $is_affected) {
+            $num_rows = ($result) ? @$GLOBALS['dbi']->numRows($result) : 0;
+        } else {
+            $num_rows = @$GLOBALS['dbi']->affectedRows();
+        }
+
+        return $num_rows;
+    }
+
+    
+    private function hasCurrentDbChanged($db)
+    {
+        if (strlen($db) > 0) {
+            $current_db = $GLOBALS['dbi']->fetchValue('SELECT DATABASE()');
+            
+            return ($current_db != false) && ($db !== $current_db);
+        }
+
+        return false;
+    }
+
+    
+    private function cleanupRelations($db, $table, $column, $purge)
+    {
+        if (! empty($purge) && strlen($db) > 0) {
+            if (strlen($table) > 0) {
+                if (isset($column) && strlen($column) > 0) {
+                    PhpMyAdmin\RelationCleanup::column($db, $table, $column);
+                } else {
+                    PhpMyAdmin\RelationCleanup::table($db, $table);
+                }
+            } else {
+                PhpMyAdmin\RelationCleanup::database($db);
+            }
+        }
+    }
+
+    
+    private function countQueryResults(
+        $num_rows, $justBrowsing, $db, $table, array $analyzed_sql_results
+    ) {
+
+        
+        if (empty($analyzed_sql_results)) {
+            return 0;
+        }
+
+        if (!$this->isAppendLimitClause($analyzed_sql_results)) {
+            
+            
+            
+            $unlim_num_rows = $num_rows;
+        } elseif ($analyzed_sql_results['querytype'] == 'SELECT'
+            || $analyzed_sql_results['is_subquery']
+        ) {
+            
+
+            
+            
+            
+            
+
+            
+            
+            if ($justBrowsing) {
+                
+                $unlim_num_rows = $GLOBALS['dbi']->getTable($db, $table)->countRecords();
+                
+                if ($unlim_num_rows < $GLOBALS['cfg']['MaxExactCount']) {
+                    
+                    
+                    
+                    $unlim_num_rows = $GLOBALS['dbi']->getTable($db, $table)
+                        ->countRecords(true);
+                }
+
+            } else {
+
+                
+
+                
+                
+
+                $count_query = PhpMyAdmin\SqlParser\Utils\Query::replaceClause(
+                    $analyzed_sql_results['statement'],
+                    $analyzed_sql_results['parser']->list,
+                    'SELECT SQL_CALC_FOUND_ROWS',
+                    null,
+                    true
+                );
+
+                
+                
+                
+                
+
+                if (empty($analyzed_sql_results['union'])) {
+                    $count_query .= ' LIMIT 1';
+                }
+
+                
+                $GLOBALS['dbi']->tryQuery($count_query);
+
+                $unlim_num_rows = $GLOBALS['dbi']->fetchValue('SELECT FOUND_ROWS()');
+            } 
+        } else {
+            $unlim_num_rows = 0;
+        }
+
+        return $unlim_num_rows;
+    }
+
+    
+    private function executeTheQuery(array $analyzed_sql_results, $full_sql_query, $is_gotofile,
+        $db, $table, $find_real_end, $sql_query_for_bookmark, $extra_data
+    ) {
+        $response = PhpMyAdmin\Response::getInstance();
+        $response->getHeader()->getMenu()->setTable($table);
+
+        
+        if (isset($GLOBALS['show_as_php'])) {
+            $result = null;
+            $num_rows = 0;
+            $unlim_num_rows = 0;
+        } else { 
+            if (isset($_SESSION['profiling'])
+                && PhpMyAdmin\Util::profilingSupported()
+            ) {
+                $GLOBALS['dbi']->query('SET PROFILING=1;');
+            }
+
+            list(
+                $result,
+                $GLOBALS['querytime']
+            ) = $this->executeQueryAndMeasureTime($full_sql_query);
+
+            
+            $error = $GLOBALS['dbi']->getError();
+            if ($error && $GLOBALS['cfg']['IgnoreMultiSubmitErrors']) {
+                $extra_data['error'] = $error;
+            } elseif ($error) {
+                $this->handleQueryExecuteError($is_gotofile, $error, $full_sql_query);
+            }
+
+            
+            
+            if (! empty($_POST['bkm_label']) && ! empty($sql_query_for_bookmark)) {
+                $cfgBookmark = PhpMyAdmin\Bookmark::getParams($GLOBALS['cfg']['Server']['user']);
+                $this->storeTheQueryAsBookmark(
+                    $db, $cfgBookmark['user'],
+                    $sql_query_for_bookmark, $_POST['bkm_label'],
+                    isset($_POST['bkm_replace']) ? $_POST['bkm_replace'] : null
+                );
+            } 
+
+            
+            
+            
+            $num_rows = $this->getNumberOfRowsAffectedOrChanged(
+                $analyzed_sql_results['is_affected'], $result
+            );
+
+            
+            if (isset($_SESSION['profiling'])
+                && PhpMyAdmin\Util::profilingSupported()
+            ) {
+                $profiling_results = $GLOBALS['dbi']->fetchResult('SHOW PROFILE;');
+            }
+
+            $justBrowsing = $this->isJustBrowsing(
+                $analyzed_sql_results, isset($find_real_end) ? $find_real_end : null
+            );
+
+            $unlim_num_rows = $this->countQueryResults(
+                $num_rows, $justBrowsing, $db, $table, $analyzed_sql_results
+            );
+
+            $this->cleanupRelations(
+                isset($db) ? $db : '',
+                isset($table) ? $table : '',
+                isset($_REQUEST['dropped_column']) ? $_REQUEST['dropped_column'] : null,
+                isset($_REQUEST['purge']) ? $_REQUEST['purge'] : null
+            );
+
+            if (isset($_REQUEST['dropped_column'])
+                && strlen($db) > 0
+                && strlen($table) > 0
+            ) {
+                
+                $extra_data['indexes_list'] = PhpMyAdmin\Index::getHtmlForIndexes(
+                    $table,
+                    $db
+                );
+            }
+        }
+
+        return array($result, $num_rows, $unlim_num_rows,
+            isset($profiling_results) ? $profiling_results : null, $extra_data
+        );
+    }
+    
+    private function deleteTransformationInfo($db, $table, array $analyzed_sql_results)
+    {
+        if (! isset($analyzed_sql_results['statement'])) {
+            return;
+        }
+        $statement = $analyzed_sql_results['statement'];
+        if ($statement instanceof AlterStatement) {
+            if (!empty($statement->altered[0])
+                && $statement->altered[0]->options->has('DROP')
+            ) {
+                if (!empty($statement->altered[0]->field->column)) {
+                    PhpMyAdmin\Transformations::clear(
+                        $db,
+                        $table,
+                        $statement->altered[0]->field->column
+                    );
+                }
+            }
+        } elseif ($statement instanceof DropStatement) {
+            PhpMyAdmin\Transformations::clear($db, $table);
+        }
+    }
+
+    
+    private function getMessageForNoRowsReturned($message_to_show,
+        array $analyzed_sql_results, $num_rows
+    ) {
+        if ($analyzed_sql_results['querytype'] == 'DELETE"') {
+            $message = PhpMyAdmin\Message::getMessageForDeletedRows($num_rows);
+        } elseif ($analyzed_sql_results['is_insert']) {
+            if ($analyzed_sql_results['querytype'] == 'REPLACE') {
+                
+                
+                $message = PhpMyAdmin\Message::getMessageForAffectedRows($num_rows);
+            } else {
+                $message = PhpMyAdmin\Message::getMessageForInsertedRows($num_rows);
+            }
+            $insert_id = $GLOBALS['dbi']->insertId();
+            if ($insert_id != 0) {
+                
+                
+                $message->addText('[br]');
+                
+                
+                
+                $_inserted = PhpMyAdmin\Message::notice(__('Inserted row id: %1$d'));
+                $_inserted->addParam($insert_id + $num_rows - 1);
+                $message->addMessage($_inserted);
+            }
+        } elseif ($analyzed_sql_results['is_affected']) {
+            $message = PhpMyAdmin\Message::getMessageForAffectedRows($num_rows);
+
+            
+            
+            
+            
+            
+            
+            
+        } elseif (! empty($message_to_show)
+            && $analyzed_sql_results['querytype'] != 'SELECT'
+        ) {
+            $message = PhpMyAdmin\Message::rawSuccess(htmlspecialchars($message_to_show));
+        } elseif (! empty($GLOBALS['show_as_php'])) {
+            $message = PhpMyAdmin\Message::success(__('Showing as PHP code'));
+        } elseif (isset($GLOBALS['show_as_php'])) {
+            
+            $message = PhpMyAdmin\Message::notice(__('Showing SQL query'));
+        } else {
+            $message = PhpMyAdmin\Message::success(
+                __('MySQL returned an empty result set (i.e. zero rows).')
+            );
+        }
+
+        if (isset($GLOBALS['querytime'])) {
+            $_querytime = PhpMyAdmin\Message::notice(
+                '(' . __('Query took %01.4f seconds.') . ')'
+            );
+            $_querytime->addParam($GLOBALS['querytime']);
+            $message->addMessage($_querytime);
+        }
+
+        
+        if (isset($_REQUEST['rollback_query'])) {
+            $message->addText(__('[ROLLBACK occurred.]'));
+        }
+
+        return $message;
+    }
+
+    
+    private function getQueryResponseForNoResultsReturned(array $analyzed_sql_results, $db,
+        $table, $message_to_show, $num_rows, $displayResultsObject, $extra_data,
+        $pmaThemeImage, $result, $sql_query, $complete_query
+    ) {
+        if ($this->isDeleteTransformationInfo($analyzed_sql_results)) {
+            $this->deleteTransformationInfo($db, $table, $analyzed_sql_results);
+        }
+
+        if (isset($extra_data['error'])) {
+            $message = PhpMyAdmin\Message::rawError($extra_data['error']);
+        } else {
+            $message = $this->getMessageForNoRowsReturned(
+                isset($message_to_show) ? $message_to_show : null,
+                $analyzed_sql_results, $num_rows
+            );
+        }
+
+        $html_output = '';
+        $html_message = PhpMyAdmin\Util::getMessage(
+            $message, $GLOBALS['sql_query'], 'success'
+        );
+        $html_output .= $html_message;
+        if (!isset($GLOBALS['show_as_php'])) {
+
+            if (! empty($GLOBALS['reload'])) {
+                $extra_data['reload'] = 1;
+                $extra_data['db'] = $GLOBALS['db'];
+            }
+
+            
+            if (empty($_REQUEST['ajax_page_request'])) {
+                $extra_data['message'] = $message;
+                if ($GLOBALS['cfg']['ShowSQL']) {
+                    $extra_data['sql_query'] = $html_message;
+                }
+            }
+
+            $response = PhpMyAdmin\Response::getInstance();
+            $response->addJSON(isset($extra_data) ? $extra_data : array());
+
+            if (!empty($analyzed_sql_results['is_select']) &&
+                    !isset($extra_data['error'])) {
+                $url_query = isset($url_query) ? $url_query : null;
+
+                $displayParts = array(
+                    'edit_lnk' => null,
+                    'del_lnk' => null,
+                    'sort_lnk' => '1',
+                    'nav_bar'  => '0',
+                    'bkm_form' => '1',
+                    'text_btn' => '1',
+                    'pview_lnk' => '1'
+                );
+
+                $html_output .= $this->getHtmlForSqlQueryResultsTable(
+                    $displayResultsObject,
+                    $pmaThemeImage, $url_query, $displayParts,
+                    false, 0, $num_rows, true, $result,
+                    $analyzed_sql_results, true
+                );
+
+                $html_output .= $displayResultsObject->getCreateViewQueryResultOp(
+                    $analyzed_sql_results
+                );
+
+                $cfgBookmark = PhpMyAdmin\Bookmark::getParams($GLOBALS['cfg']['Server']['user']);
+                if ($cfgBookmark) {
+                    $html_output .= $this->getHtmlForBookmark(
+                        $displayParts,
+                        $cfgBookmark,
+                        $sql_query, $db, $table,
+                        isset($complete_query) ? $complete_query : $sql_query,
+                        $cfgBookmark['user']
+                    );
+                }
+            }
+        }
+
+        return $html_output;
+    }
+
+    
+    private function sendResponseForGridEdit($result)
+    {
+        $row = $GLOBALS['dbi']->fetchRow($result);
+        $field_flags = $GLOBALS['dbi']->fieldFlags($result, 0);
+        if (stristr($field_flags, PhpMyAdmin\Display\Results::BINARY_FIELD)) {
+            $row[0] = bin2hex($row[0]);
+        }
+        $response = PhpMyAdmin\Response::getInstance();
+        $response->addJSON('value', $row[0]);
+        exit;
+    }
+
+    
+    private function getHtmlForSqlQueryResults($previous_update_query_html,
+        $profiling_chart_html, $missing_unique_column_msg, $bookmark_created_msg,
+        $table_html, $indexes_problems_html, $bookmark_support_html
+    ) {
+        
+        $html_output = '<div class="sqlqueryresults ajax">';
+        $html_output .= isset($previous_update_query_html)
+            ? $previous_update_query_html : '';
+        $html_output .= isset($profiling_chart_html) ? $profiling_chart_html : '';
+        $html_output .= isset($missing_unique_column_msg)
+            ? $missing_unique_column_msg->getDisplay() : '';
+        $html_output .= isset($bookmark_created_msg)
+            ? $bookmark_created_msg->getDisplay() : '';
+        $html_output .= $table_html;
+        $html_output .= isset($indexes_problems_html) ? $indexes_problems_html : '';
+        $html_output .= isset($bookmark_support_html) ? $bookmark_support_html : '';
+        $html_output .= '</div>'; 
+
+        return $html_output;
+    }
+
+    
+    private function getBookmarkCreatedMessage()
+    {
+        if (isset($_GET['label'])) {
+            $bookmark_created_msg = PhpMyAdmin\Message::success(
+                __('Bookmark %s has been created.')
+            );
+            $bookmark_created_msg->addParam($_GET['label']);
+        } else {
+            $bookmark_created_msg = null;
+        }
+
+        return $bookmark_created_msg;
+    }
+
+    
+    private function getHtmlForSqlQueryResultsTable($displayResultsObject,
+        $pmaThemeImage, $url_query, array $displayParts,
+        $editable, $unlim_num_rows, $num_rows, $showtable, $result,
+        array $analyzed_sql_results, $is_limited_display = false
+    ) {
+        $printview = isset($_REQUEST['printview']) && $_REQUEST['printview'] == '1' ? '1' : null;
+        $table_html = '';
+        $browse_dist = ! empty($_REQUEST['is_browse_distinct']);
+
+        if ($analyzed_sql_results['is_procedure']) {
+
+            do {
+                if (! isset($result)) {
+                    $result = $GLOBALS['dbi']->storeResult();
+                }
+                $num_rows = $GLOBALS['dbi']->numRows($result);
+
+                if ($result !== false && $num_rows > 0) {
+
+                    $fields_meta = $GLOBALS['dbi']->getFieldsMeta($result);
+                    if (! is_array($fields_meta)) {
+                        $fields_cnt = 0;
+                    } else {
+                        $fields_cnt  = count($fields_meta);
+                    }
+
+                    $displayResultsObject->setProperties(
+                        $num_rows,
+                        $fields_meta,
+                        $analyzed_sql_results['is_count'],
+                        $analyzed_sql_results['is_export'],
+                        $analyzed_sql_results['is_func'],
+                        $analyzed_sql_results['is_analyse'],
+                        $num_rows,
+                        $fields_cnt,
+                        $GLOBALS['querytime'],
+                        $pmaThemeImage,
+                        $GLOBALS['text_dir'],
+                        $analyzed_sql_results['is_maint'],
+                        $analyzed_sql_results['is_explain'],
+                        $analyzed_sql_results['is_show'],
+                        $showtable,
+                        $printview,
+                        $url_query,
+                        $editable,
+                        $browse_dist
+                    );
+
+                    $displayParts = array(
+                        'edit_lnk' => $displayResultsObject::NO_EDIT_OR_DELETE,
+                        'del_lnk' => $displayResultsObject::NO_EDIT_OR_DELETE,
+                        'sort_lnk' => '1',
+                        'nav_bar'  => '1',
+                        'bkm_form' => '1',
+                        'text_btn' => '1',
+                        'pview_lnk' => '1'
+                    );
+
+                    $table_html .= $displayResultsObject->getTable(
+                        $result,
+                        $displayParts,
+                        $analyzed_sql_results,
+                        $is_limited_display
+                    );
+                }
+
+                $GLOBALS['dbi']->freeResult($result);
+                unset($result);
+
+            } while ($GLOBALS['dbi']->moreResults() && $GLOBALS['dbi']->nextResult());
+
+        } else {
+            if (isset($result) && $result !== false) {
+                $fields_meta = $GLOBALS['dbi']->getFieldsMeta($result);
+                $fields_cnt  = count($fields_meta);
+            }
+            $_SESSION['is_multi_query'] = false;
+            $displayResultsObject->setProperties(
+                $unlim_num_rows,
+                $fields_meta,
+                $analyzed_sql_results['is_count'],
+                $analyzed_sql_results['is_export'],
+                $analyzed_sql_results['is_func'],
+                $analyzed_sql_results['is_analyse'],
+                $num_rows,
+                $fields_cnt, $GLOBALS['querytime'],
+                $pmaThemeImage, $GLOBALS['text_dir'],
+                $analyzed_sql_results['is_maint'],
+                $analyzed_sql_results['is_explain'],
+                $analyzed_sql_results['is_show'],
+                $showtable,
+                $printview,
+                $url_query,
+                $editable,
+                $browse_dist
+            );
+
+            $table_html .= $displayResultsObject->getTable(
+                $result,
+                $displayParts,
+                $analyzed_sql_results,
+                $is_limited_display
+            );
+            $GLOBALS['dbi']->freeResult($result);
+        }
+
+        return $table_html;
+    }
+
+    
+    private function getHtmlForPreviousUpdateQuery($disp_query, $showSql, $sql_data,
+        $disp_message
+    ) {
+        
+        if (isset($disp_query) && ($showSql == true) && empty($sql_data)) {
+            $previous_update_query_html = PhpMyAdmin\Util::getMessage(
+                $disp_message, $disp_query, 'success'
+            );
+        } else {
+            $previous_update_query_html = null;
+        }
+
+        return $previous_update_query_html;
+    }
+
+    
+    private function getMessageIfMissingColumnIndex($table, $db, $editable, $has_unique)
+    {
+        if (!empty($table) && ($GLOBALS['dbi']->isSystemSchema($db) || !$editable)) {
+            $missing_unique_column_msg = PhpMyAdmin\Message::notice(
+                sprintf(
+                    __(
+                        'Current selection does not contain a unique column.'
+                        . ' Grid edit, checkbox, Edit, Copy and Delete features'
+                        . ' are not available. %s'
+                    ),
+                    PhpMyAdmin\Util::showDocu(
+                        'config',
+                        'cfg_RowActionLinksWithoutUnique'
+                    )
+                )
+            );
+        } elseif (! empty($table) && ! $has_unique) {
+            $missing_unique_column_msg = PhpMyAdmin\Message::notice(
+                sprintf(
+                    __(
+                        'Current selection does not contain a unique column.'
+                        . ' Grid edit, Edit, Copy and Delete features may result in'
+                        . ' undesired behavior. %s'
+                    ),
+                    PhpMyAdmin\Util::showDocu(
+                        'config',
+                        'cfg_RowActionLinksWithoutUnique'
+                    )
+                )
+            );
+        } else {
+            $missing_unique_column_msg = null;
+        }
+
+        return $missing_unique_column_msg;
+    }
+
+    
+    private function getHtmlForIndexesProblems($query_type, $selectedTables, $db)
+    {
+        
+        if (isset($query_type)
+            && $query_type == 'check_tbl'
+            && isset($selectedTables)
+            && is_array($selectedTables)
+        ) {
+            $indexes_problems_html = '';
+            foreach ($selectedTables as $tbl_name) {
+                $check = PhpMyAdmin\Index::findDuplicates($tbl_name, $db);
+                if (! empty($check)) {
+                    $indexes_problems_html .= sprintf(
+                        __('Problems with indexes of table `%s`'), $tbl_name
+                    );
+                    $indexes_problems_html .= $check;
+                }
+            }
+        } else {
+            $indexes_problems_html = null;
+        }
+
+        return $indexes_problems_html;
+    }
+
+    
+    private function getQueryResponseForResultsReturned($result, array $analyzed_sql_results,
+        $db, $table, $message, $sql_data, $displayResultsObject, $pmaThemeImage,
+        $unlim_num_rows, $num_rows, $disp_query, $disp_message, $profiling_results,
+        $query_type, $selectedTables, $sql_query, $complete_query
+    ) {
+        
+        
+        if (isset($_REQUEST['grid_edit']) && $_REQUEST['grid_edit'] == true) {
+            $this->sendResponseForGridEdit($result);
+            
+        }
+
+        
+        if (isset($result) && $result) {
+            $fields_meta = $GLOBALS['dbi']->getFieldsMeta($result);
+        }
+
+        
+        $showtable = isset($showtable) ? $showtable : null;
+        $url_query = isset($url_query) ? $url_query : null;
+
+        $response = PhpMyAdmin\Response::getInstance();
+        $header   = $response->getHeader();
+        $scripts  = $header->getScripts();
+
+        $just_one_table = $this->resultSetHasJustOneTable($fields_meta);
+
+        
+        
+        
+        
+        
+
+        $updatableView = false;
+
+        $statement = isset($analyzed_sql_results['statement']) ? $analyzed_sql_results['statement'] : null;
+        if ($statement instanceof SelectStatement) {
+            if (!empty($statement->expr)) {
+                if ($statement->expr[0]->expr === '*') {
+                    $_table = new Table($table, $db);
+                    $updatableView = $_table->isUpdatableView();
+                }
+            }
+
+            if ($analyzed_sql_results['join']
+                || $analyzed_sql_results['is_subquery']
+                || count($analyzed_sql_results['select_tables']) !== 1
+            ) {
+                $just_one_table = false;
+            }
+        }
+
+        $has_unique = $this->resultSetContainsUniqueKey(
+            $db, $table, $fields_meta
+        );
+
+        $editable = ($has_unique
+            || $GLOBALS['cfg']['RowActionLinksWithoutUnique']
+            || $updatableView)
+            && $just_one_table;
+
+        $_SESSION['tmpval']['possible_as_geometry'] = $editable;
+
+        $displayParts = array(
+            'edit_lnk' => $displayResultsObject::UPDATE_ROW,
+            'del_lnk' => $displayResultsObject::DELETE_ROW,
+            'sort_lnk' => '1',
+            'nav_bar'  => '1',
+            'bkm_form' => '1',
+            'text_btn' => '0',
+            'pview_lnk' => '1'
+        );
+
+        if ($GLOBALS['dbi']->isSystemSchema($db) || !$editable) {
+            $displayParts = array(
+                'edit_lnk' => $displayResultsObject::NO_EDIT_OR_DELETE,
+                'del_lnk' => $displayResultsObject::NO_EDIT_OR_DELETE,
+                'sort_lnk' => '1',
+                'nav_bar'  => '1',
+                'bkm_form' => '1',
+                'text_btn' => '1',
+                'pview_lnk' => '1'
+            );
+
+        }
+        if (isset($_REQUEST['printview']) && $_REQUEST['printview'] == '1') {
+            $displayParts = array(
+                'edit_lnk' => $displayResultsObject::NO_EDIT_OR_DELETE,
+                'del_lnk' => $displayResultsObject::NO_EDIT_OR_DELETE,
+                'sort_lnk' => '0',
+                'nav_bar'  => '0',
+                'bkm_form' => '0',
+                'text_btn' => '0',
+                'pview_lnk' => '0'
+            );
+        }
+
+        if (isset($_REQUEST['table_maintenance'])) {
+            $scripts->addFile('makegrid.js');
+            $scripts->addFile('sql.js');
+            $table_maintenance_html = '';
+            if (isset($message)) {
+                $message = PhpMyAdmin\Message::success($message);
+                $table_maintenance_html = PhpMyAdmin\Util::getMessage(
+                    $message, $GLOBALS['sql_query'], 'success'
+                );
+            }
+            $table_maintenance_html .= $this->getHtmlForSqlQueryResultsTable(
+                $displayResultsObject,
+                $pmaThemeImage, $url_query, $displayParts,
+                false, $unlim_num_rows, $num_rows, $showtable, $result,
+                $analyzed_sql_results
+            );
+            if (empty($sql_data) || ($sql_data['valid_queries'] = 1)) {
+                $response->addHTML($table_maintenance_html);
+                exit();
+            }
+        }
+
+        if (!isset($_REQUEST['printview']) || $_REQUEST['printview'] != '1') {
+            $scripts->addFile('makegrid.js');
+            $scripts->addFile('sql.js');
+            unset($GLOBALS['message']);
+            
+            
+            $GLOBALS['buffer_message'] = false;
+        }
+
+        $previous_update_query_html = $this->getHtmlForPreviousUpdateQuery(
+            isset($disp_query) ? $disp_query : null,
+            $GLOBALS['cfg']['ShowSQL'], isset($sql_data) ? $sql_data : null,
+            isset($disp_message) ? $disp_message : null
+        );
+
+        $profiling_chart_html = $this->getHtmlForProfilingChart(
+            $url_query, $db, isset($profiling_results) ? $profiling_results :array()
+        );
+
+        $missing_unique_column_msg = $this->getMessageIfMissingColumnIndex(
+            $table, $db, $editable, $has_unique
+        );
+
+        $bookmark_created_msg = $this->getBookmarkCreatedMessage();
+
+        $table_html = $this->getHtmlForSqlQueryResultsTable(
+            $displayResultsObject,
+            $pmaThemeImage, $url_query, $displayParts,
+            $editable, $unlim_num_rows, $num_rows, $showtable, $result,
+            $analyzed_sql_results
+        );
+
+        $indexes_problems_html = $this->getHtmlForIndexesProblems(
+            isset($query_type) ? $query_type : null,
+            isset($selectedTables) ? $selectedTables : null, $db
+        );
+
+        $cfgBookmark = PhpMyAdmin\Bookmark::getParams($GLOBALS['cfg']['Server']['user']);
+        if ($cfgBookmark) {
+            $bookmark_support_html = $this->getHtmlForBookmark(
+                $displayParts,
+                $cfgBookmark,
+                $sql_query, $db, $table,
+                isset($complete_query) ? $complete_query : $sql_query,
+                $cfgBookmark['user']
+            );
+        } else {
+            $bookmark_support_html = '';
+        }
+
+        $html_output = isset($table_maintenance_html) ? $table_maintenance_html : '';
+
+        $html_output .= $this->getHtmlForSqlQueryResults(
+            $previous_update_query_html, $profiling_chart_html,
+            $missing_unique_column_msg, $bookmark_created_msg,
+            $table_html, $indexes_problems_html, $bookmark_support_html
+        );
+
+        return $html_output;
+    }
+
+    
+    public function executeQueryAndSendQueryResponse($analyzed_sql_results,
+        $is_gotofile, $db, $table, $find_real_end, $sql_query_for_bookmark,
+        $extra_data, $message_to_show, $message, $sql_data, $goto, $pmaThemeImage,
+        $disp_query, $disp_message, $query_type, $sql_query, $selectedTables,
+        $complete_query
+    ) {
+        if ($analyzed_sql_results == null) {
+            
+            list(
+                $analyzed_sql_results,
+                $db,
+                $table_from_sql
+            ) = PhpMyAdmin\ParseAnalyze::sqlQuery($sql_query, $db);
+            
+            extract($analyzed_sql_results);
+
+            if ($table != $table_from_sql && !empty($table_from_sql)) {
+                $table = $table_from_sql;
+            }
+        }
+
+        $html_output = $this->executeQueryAndGetQueryResponse(
+            $analyzed_sql_results, 
+            $is_gotofile, 
+            $db, 
+            $table, 
+            $find_real_end, 
+            $sql_query_for_bookmark, 
+            $extra_data, 
+            $message_to_show, 
+            $message, 
+            $sql_data, 
+            $goto, 
+            $pmaThemeImage, 
+            $disp_query, 
+            $disp_message, 
+            $query_type, 
+            $sql_query, 
+            $selectedTables, 
+            $complete_query 
+        );
+
+        $response = PhpMyAdmin\Response::getInstance();
+        $response->addHTML($html_output);
+    }
+
+    
+    public function executeQueryAndGetQueryResponse(array $analyzed_sql_results,
+        $is_gotofile, $db, $table, $find_real_end, $sql_query_for_bookmark,
+        $extra_data, $message_to_show, $message, $sql_data, $goto, $pmaThemeImage,
+        $disp_query, $disp_message, $query_type, $sql_query, $selectedTables,
+        $complete_query
+    ) {
+        
+        $default_fk_check = PhpMyAdmin\Util::handleDisableFKCheckInit();
+
+        
+        
+        
+        
+        
+        if (! empty($analyzed_sql_results)
+            && $this->isRememberSortingOrder($analyzed_sql_results)
+            && empty($analyzed_sql_results['union'])
+            && ! isset($_REQUEST['sort_by_key'])
+        ) {
+            if (! isset($_SESSION['sql_from_query_box'])) {
+                $this->handleSortOrder($db, $table, $analyzed_sql_results, $sql_query);
+            } else {
+                unset($_SESSION['sql_from_query_box']);
+            }
+
+        }
+
+        $displayResultsObject = new DisplayResults(
+            $GLOBALS['db'], $GLOBALS['table'], $goto, $sql_query
+        );
+        $displayResultsObject->setConfigParamsForDisplayTable();
+
+        
+        $full_sql_query = $sql_query;
+
+        
+        if ($this->isAppendLimitClause($analyzed_sql_results)) {
+            $full_sql_query = $this->getSqlWithLimitClause($analyzed_sql_results);
+        }
+
+        $GLOBALS['reload'] = $this->hasCurrentDbChanged($db);
+        $GLOBALS['dbi']->selectDb($db);
+
+        
+        list($result, $num_rows, $unlim_num_rows, $profiling_results, $extra_data)
+            = $this->executeTheQuery(
+                $analyzed_sql_results,
+                $full_sql_query,
+                $is_gotofile,
+                $db,
+                $table,
+                isset($find_real_end) ? $find_real_end : null,
+                isset($sql_query_for_bookmark) ? $sql_query_for_bookmark : null,
+                isset($extra_data) ? $extra_data : null
+            );
+
+        $operations = new Operations();
+        $warning_messages = $operations->getWarningMessagesArray();
+
+        
+        if ((0 == $num_rows && 0 == $unlim_num_rows)
+            || $analyzed_sql_results['is_affected']
+        ) {
+            $html_output = $this->getQueryResponseForNoResultsReturned(
+                $analyzed_sql_results, $db, $table,
+                isset($message_to_show) ? $message_to_show : null,
+                $num_rows, $displayResultsObject, $extra_data,
+                $pmaThemeImage, isset($result) ? $result : null,
+                $sql_query, isset($complete_query) ? $complete_query : null
+            );
+        } else {
+            
+            $html_output = $this->getQueryResponseForResultsReturned(
+                isset($result) ? $result : null,
+                $analyzed_sql_results,
+                $db,
+                $table,
+                isset($message) ? $message : null,
+                isset($sql_data) ? $sql_data : null,
+                $displayResultsObject,
+                $pmaThemeImage,
+                $unlim_num_rows,
+                $num_rows,
+                isset($disp_query) ? $disp_query : null,
+                isset($disp_message) ? $disp_message : null,
+                $profiling_results,
+                isset($query_type) ? $query_type : null,
+                isset($selectedTables) ? $selectedTables : null,
+                $sql_query,
+                isset($complete_query) ? $complete_query : null
+            );
+        }
+
+        
+        PhpMyAdmin\Util::handleDisableFKCheckCleanup($default_fk_check);
+
+        foreach ($warning_messages as $warning) {
+            $message = PhpMyAdmin\Message::notice($warning);
+            $html_output .= $message->getDisplay();
+        }
+
+        return $html_output;
+    }
+
+    
+    private function getStartPosToDisplayRow($number_of_line, $max_rows = null)
+    {
+        if (null === $max_rows) {
+            $max_rows = $_SESSION['tmpval']['max_rows'];
+        }
+
+        return @((ceil($number_of_line / $max_rows) - 1) * $max_rows);
+    }
+
+    
+    public function calculatePosForLastPage($db, $table, $pos)
+    {
+        if (null === $pos) {
+            $pos = $_SESSION['tmpval']['pos'];
+        }
+
+        $_table = new Table($table, $db);
+        $unlim_num_rows = $_table->countRecords(true);
+        
+        if ($unlim_num_rows <= $pos && 0 != $pos) {
+            $pos = $this->getStartPosToDisplayRow($unlim_num_rows);
+        }
+
+        return $pos;
+    }
+}

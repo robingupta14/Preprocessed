@@ -1,0 +1,122 @@
+<?php
+
+
+
+
+define('AtLogin', 1);
+
+if (isset($_SESSION['LOGIN_MESSAGE'])) {
+    $var_0 = $_SESSION['LOGIN_MESSAGE'];
+    unset($_SESSION['LOGIN_MESSAGE']);
+}
+
+if (isset($_POST['action']) && isset($_POST['username']) && isset($_POST['password'])) {
+    $var_1 = new class_0(8, false);
+    $var_2 = "SELECT id, hash, suspended, password, password_type FROM " . $var_3 . "users WHERE nick = :nick OR email = :email";
+    $var_4 = array();
+    $var_4[] = array(':nick', $var_5->cleanvars($_POST['username']), 'str');
+    $var_4[] = array(':email', $var_5->cleanvars($_POST['username']), 'str');
+    $var_7->query($var_2, $var_4);
+    $var_8 = $var_7->result();
+
+    if ($var_8['password_type'] == 0 && $var_8['password'] == md5($var_10 . $_POST['password'])) {
+        $var_2 = "UPDATE " . $var_3 . "users SET password = :password, password_type = 1 WHERE id = :user_id";
+        $var_4 = array();
+        $var_4[] = array(':password', $var_1->HashPassword($_POST['password']), 'int');
+        $var_4[] = array(':user_id', $var_8['id'], 'int');
+        $var_7->query($var_2, $var_4);
+
+        $var_2 = "SELECT id, hash, suspended, password, password_type FROM " . $var_3 . "users WHERE nick = :nick OR email = :email";
+        $var_4 = array();
+        $var_4[] = array(':nick', $var_5->cleanvars($_POST['username']), 'str');
+        $var_4[] = array(':email', $var_5->cleanvars($_POST['username']), 'str');
+        $var_7->query($var_2, $var_4);
+        $var_8 = $var_7->result();
+    }
+
+    if ($var_1->CheckPassword($_POST['password'], $var_8['password'])) {
+        
+        $_SESSION['csrftoken'] = md5(uniqid(rand(), true));
+
+        if ($var_8['suspended'] == 9) {
+            $_SESSION['signup_id'] = $var_8['id'];
+            header('location: pay.php?a=3');
+            var_13;
+        }
+
+        if ($var_8['suspended'] == 1) {
+            $var_0 = $var_14;
+        } elseif ($var_8['suspended'] == 8) {
+            $var_0 = $var_15;
+        } elseif ($var_8['suspended'] == 10) {
+            $var_0 = $var_16;
+        } else {
+            $_SESSION['WEBID_LOGGED_IN']        = $var_8['id'];
+            $_SESSION['WEBID_LOGGED_NUMBER']    = strspn($var_8['password'], $var_8['hash']);
+            $_SESSION['WEBID_LOGGED_PASS']        = $var_8['password'];
+            
+            $var_2 = "UPDATE " . $var_3 . "users SET lastlogin = CURRENT_TIMESTAMP WHERE id = :user_id";
+            $var_4 = array();
+            $var_4[] = array(':user_id', $var_8['id'], 'int');
+            $var_7->query($var_2, $var_4);
+            
+            if (isset($_POST['rememberme'])) {
+                $var_17 = md5(time());
+                $var_2 = "INSERT INTO " . $var_3 . "rememberme VALUES (:user_id, :remember_key)";
+                $var_4 = array();
+                $var_4[] = array(':remember_key', $var_17, 'str');
+                $var_4[] = array(':user_id', $var_8['id'], 'int');
+                $var_7->query($var_2, $var_4);
+                setcookie('WEBID_RM_ID', $var_17, time() + 31536000);
+            }
+            $var_2 = "SELECT id FROM " . $var_3 . "usersips WHERE USER = :user_id AND ip = :user_ip";
+            $var_4 = array();
+            $var_4[] = array(':user_ip', $_SERVER['REMOTE_ADDR'], 'str');
+            $var_4[] = array(':user_id', $var_8['id'], 'int');
+            $var_7->query($var_2, $var_4);
+            if ($var_7->numrows() == 0) {
+                $var_2 = "INSERT INTO " . $var_3 . "usersips (user, ip, type, action)
+						VALUES (:user_id, :user_ip, 'login', 'accept')";
+                $var_4 = array();
+                $var_4[] = array(':user_ip', $_SERVER['REMOTE_ADDR'], 'str');
+                $var_4[] = array(':user_id', $var_8['id'], 'int');
+                $var_7->query($var_2, $var_4);
+            }
+
+            
+            if (isset($_COOKIE['WEBID_ONLINE'])) {
+                $var_2 = "DELETE from " . $var_3 . "online WHERE SESSION = :SESSION";
+                $var_4 = array();
+                $var_4[] = array(':SESSION', alphanumeric($_COOKIE['WEBID_ONLINE']), 'str');
+                $var_7->query($var_2, $var_4);
+            }
+
+            if (in_array($var_8['suspended'], array(5, 6, 7))) {
+                header('location: message.php');
+                var_13;
+            }
+
+            if (isset($_SESSION['REDIRECT_AFTER_LOGIN'])) {
+                $var_19 = str_replace('\r', '', str_replace('\n', '', $_SESSION['REDIRECT_AFTER_LOGIN']));
+                unset($_SESSION['REDIRECT_AFTER_LOGIN']);
+            } else {
+                $var_19 = 'user_menu.php';
+            }
+
+            header('location: ' . $var_19);
+            var_13;
+        }
+    } else {
+        $var_0 = $var_20;
+    }
+}
+
+$var_21->assign_vars(array(
+        'ERROR' => (isset($var_0)) ? $var_0 : '',
+        'USER' => (isset($_POST['username'])) ? $_POST['username'] : ''
+        ));
+
+$var_21->set_filenames(array(
+        'body' => 'user_login.tpl'
+        ));
+$var_21->display('body');

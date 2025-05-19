@@ -1,0 +1,128 @@
+<?php
+
+
+class class_0 extends var_0
+{
+
+    function fn_0()
+    {
+        global $var_1;
+
+        $var_2  = array();
+        $var_3   = '';
+        $var_4     = Jojo::getFormData('type', 'reset');
+        $var_5   = Jojo::getFormData('search', '');
+        $var_6    = Jojo::getFormData('reset', '');
+        $var_7 = array();;
+        $var_8   = array();
+
+
+        
+        if ($var_6 != '') {
+            $var_9 = Jojo::selectQuery("SELECT userid, us_email, us_login, us_reminder FROM {user} WHERE us_reset= ? LIMIT 1", array($var_6));
+
+            if (!count($var_9)) {
+                $var_8[] = 'This password reset code has expired. Please use the form below to generate another reset code.';
+            } else {
+                $var_10 = $var_9[0]['userid'];
+                $var_11 = Jojo::makepassword();
+                
+                Jojo::updateQuery("UPDATE {user} SET us_password = ?, us_salt='', us_reminder='', us_reset='' WHERE userid = ? LIMIT 1", array(sha1($var_11), $var_10));
+                $var_7[] = "Your password has been reset to <b>$var_11</b>";
+                $var_1->assign('changed', true);
+                $var_1->assign('newpassword', $var_11);
+            }
+
+        
+        } elseif ($var_5 != '') {
+            $var_9 = Jojo::selectQuery("SELECT userid, us_email, us_login, us_reminder FROM {user} WHERE us_email = ? OR us_login = ?", array($var_5, $var_5));
+
+            if (!count($var_9)) {
+                $var_8[] = 'There is no user in our system with email address or username: '.htmlentities($var_5);
+            }
+            
+            foreach ($var_9 as $var_13) {
+                
+                $var_14 = $var_13['us_email'];
+    
+    
+                if (($var_4 == 'reminder') && ($var_13['us_reminder'] == '')) {
+                    $var_3 = 'reset';
+                    $var_7[] = 'There is no password reminder for this account - sending password reset link instead.';
+                } else  {
+                    $var_3 = $var_4;
+                }
+                
+    
+                if (empty($var_14) && !count($var_8)) {
+                    $var_8[] = 'There is no email address stored against this user account, so the password is unable to be reset. Please contact the webmaster ('.var_15.') to manually reset your password.';
+                } elseif ($var_3 == 'reminder') {
+                    
+                    $var_16 = $var_13['us_reminder'];
+                    $var_17    = $var_13['us_login'];
+                    $var_10   = $var_13['userid'];
+    
+                    $var_18 = new class_1();
+    
+                    $var_1->assign('email',    $var_14);
+                    $var_1->assign('login',    $var_17);
+                    $var_1->assign('reminder', $var_16);
+                    $var_19 = $var_1->fetch('forgot-password-reminder.tpl');
+    
+                    $var_18->setText($var_19);
+                    $var_18->setFrom(var_23.' <'.var_15.'>');
+                    $var_18->setSubject('Password Reminder');
+                    $var_25 = $var_18->send(array($var_14));
+                    $var_7[] = $var_25 ? 'Password reminder has been sent to the email address associated with username '.$var_17 : 'There was an error sending the reminder email. Please contact the webmaster for further help '.var_15;
+                } else if ($var_3 == 'reset') {
+                    $var_10 = $var_13['userid'];
+                    $var_17  = $var_13['us_login'];
+                    
+    
+                    
+                    while (empty($var_27)) {
+                        $var_27 = strtolower(Jojo::randomstring(16));
+                        $var_28 = Jojo::selectQuery("SELECT COUNT(*) AS num FROM {user} WHERE us_reset = ?", array($var_27));
+                        if ($var_28[0]['num'] > 0) unset($var_27);
+                    }
+                    Jojo::updateQuery("UPDATE {user} SET us_reset = ? WHERE userid = ? LIMIT 1", array($var_27, $var_10));
+    
+                    
+                    $var_18 = new class_1();
+                    $var_1->assign('email', $var_14);
+                    $var_1->assign('login', $var_17);
+                    $var_1->assign('auth',  $var_27);
+                    $var_19 = $var_1->fetch('forgot-password-reset.tpl');
+                    $var_18->setText($var_19);
+                    $var_18->setFrom(var_23.' <'.var_15.'>');
+                    $var_18->setSubject('Password Reset Link');
+                    $var_25  = $var_18->send(array($var_14));
+                    $var_7[] = $var_25 ? 'Password reset link has been sent to '.$var_14 : 'There was an error sending the Reset email. Please contact the webmaster for further help '.var_15;
+                }
+            }
+        }
+
+        $var_1->assign('search', $var_5);
+        $var_1->assign('type',   $var_4);
+        if (!count($var_8)) $var_1->assign('messages', $var_7);
+        $var_1->assign('errors', $var_8);
+        $var_2['content'] = $var_1->fetch('forgot-password.tpl');
+
+        return $var_2;
+    }
+
+    function fn_1()
+    {
+        $var_29      = Jojo::getFormData('u', '');
+        $var_5 = Jojo::getGet('search', '');
+        $var_6  = Jojo::getGet('reset',  '');
+        if (!empty($var_5)) {
+            return parent::fn_1().'email/'.$var_5.'/';
+        } elseif (!empty($var_6)) {
+            return parent::fn_1().'reset/'.$var_6.'/';
+        } else {
+            return parent::fn_1();
+        }
+    }
+
+}

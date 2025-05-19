@@ -1,0 +1,820 @@
+
+
+
+
+
+
+
+
+static unsigned int fn_0(struct struct_44 *vec)
+{
+ if ((vec->addr + vec->bytes <= vec->addr) ||
+     (vec->bytes > (u64)UINT_MAX))
+  return 0;
+
+ return ((vec->addr + vec->bytes + PAGE_SIZE - 1) >> PAGE_SHIFT) -
+  (vec->addr >> PAGE_SHIFT);
+}
+
+static struct struct_47 *fn_3(struct struct_4 *root, u64 var_7,
+           struct struct_47 *insert)
+{
+ struct struct_11 **p = &root->rb_node;
+ struct struct_11 *parent = NULL;
+ struct struct_47 *mr;
+
+ while (*p) {
+  parent = *p;
+  mr = rb_entry(parent, struct rds_mr, r_rb_node);
+
+  if (var_7 < mr->r_key)
+   p = &(*p)->rb_left;
+  else if (var_7 > mr->r_key)
+   p = &(*p)->rb_right;
+  else
+   return mr;
+ }
+
+ if (insert) {
+  rb_link_node(&insert->r_rb_node, parent, p);
+  rb_insert_color(&insert->r_rb_node, root);
+  refcount_inc(&insert->r_refcount);
+ }
+ return NULL;
+}
+
+
+
+
+static void fn_7(struct struct_47 *mr)
+{
+ struct struct_50 *rs = mr->r_sock;
+ void *trans_private = NULL;
+ unsigned long flags;
+
+ rdsdebug("RDS: destroy mr key is %x refcnt %u\n",
+   mr->r_key, refcount_read(&mr->r_refcount));
+
+ if (test_and_set_bit(RDS_MR_DEAD, &mr->r_state))
+  return;
+
+ spin_lock_irqsave(&rs->rs_rdma_lock, flags);
+ if (!RB_EMPTY_NODE(&mr->r_rb_node))
+  rb_erase(&mr->r_rb_node, &rs->rs_rdma_keys);
+ trans_private = mr->r_trans_private;
+ mr->r_trans_private = NULL;
+ spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+
+ if (trans_private)
+  mr->r_trans->free_mr(trans_private, mr->r_invalidate);
+}
+
+void fn_9(struct struct_47 *mr)
+{
+ rds_destroy_mr(mr);
+ kfree(mr);
+}
+
+
+
+
+
+void fn_10(struct struct_50 *rs)
+{
+ struct struct_47 *mr;
+ struct struct_11 *node;
+ unsigned long flags;
+
+
+ spin_lock_irqsave(&rs->rs_rdma_lock, flags);
+ while ((node = rb_first(&rs->rs_rdma_keys))) {
+  mr = rb_entry(node, struct rds_mr, r_rb_node);
+  if (mr->r_trans == rs->rs_transport)
+   mr->r_invalidate = 0;
+  rb_erase(&mr->r_rb_node, &rs->rs_rdma_keys);
+  RB_CLEAR_NODE(&mr->r_rb_node);
+  spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+  rds_destroy_mr(mr);
+  rds_mr_put(mr);
+  spin_lock_irqsave(&rs->rs_rdma_lock, flags);
+ }
+ spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+
+ if (rs->rs_transport && rs->rs_transport->flush_mrs)
+  rs->rs_transport->flush_mrs();
+}
+
+
+
+
+static int fn_11(unsigned long var_17, unsigned int var_43,
+   struct struct_50 **pages, int var_17)
+{
+ int var_51;
+
+ var_51 = get_user_pages_fast(var_17, var_43, var_17, pages);
+
+ if (var_51 >= 0 && var_51 < var_43) {
+  while (var_51--)
+   put_page(pages[var_51]);
+  var_51 = -EFAULT;
+ }
+
+ return var_51;
+}
+
+static int fn_17(struct struct_50 *rs, struct struct_49 *args,
+    u64 *cookie_ret, struct struct_47 **mr_ret)
+{
+ struct struct_47 *mr = NULL, *found;
+ unsigned int var_43;
+ struct struct_50 **pages = NULL;
+ struct struct_46 *sg;
+ void *trans_private;
+ unsigned long flags;
+ rds_rdma_cookie_t cookie;
+ unsigned int nents;
+ long i;
+ int var_51;
+
+ if (rs->rs_bound_addr == 0 || !rs->rs_transport) {
+  var_51 = -ENOTCONN;
+  goto out;
+ }
+
+ if (!rs->rs_transport->get_mr) {
+  var_51 = -EOPNOTSUPP;
+  goto out;
+ }
+
+ var_43 = rds_pages_in_vec(&args->vec);
+ if (var_43 == 0) {
+  var_51 = -EINVAL;
+  goto out;
+ }
+
+
+
+
+ if ((var_43 - 1) > (RDS_MAX_MSG_SIZE >> PAGE_SHIFT)) {
+  var_51 = -EMSGSIZE;
+  goto out;
+ }
+
+ rdsdebug("RDS: get_mr addr %llx len %llu nr_pages %u\n",
+  args->vec.addr, args->vec.bytes, var_43);
+
+
+ pages = kcalloc(var_43, sizeof(struct struct_50 *), GFP_KERNEL);
+ if (!pages) {
+  var_51 = -ENOMEM;
+  goto out;
+ }
+
+ mr = kzalloc(sizeof(struct struct_47), GFP_KERNEL);
+ if (!mr) {
+  var_51 = -ENOMEM;
+  goto out;
+ }
+
+ refcount_set(&mr->r_refcount, 1);
+ RB_CLEAR_NODE(&mr->r_rb_node);
+ mr->r_trans = rs->rs_transport;
+ mr->r_sock = rs;
+
+ if (args->flags & RDS_RDMA_USE_ONCE)
+  mr->r_use_once = 1;
+ if (args->flags & RDS_RDMA_INVALIDATE)
+  mr->r_invalidate = 1;
+ if (args->flags & RDS_RDMA_READWRITE)
+  mr->r_write = 1;
+
+ var_51 = rds_pin_pages(args->vec.addr, var_43, pages, 1);
+ if (var_51 < 0)
+  goto out;
+
+ nents = var_51;
+ sg = kcalloc(nents, sizeof(*sg), GFP_KERNEL);
+ if (!sg) {
+  var_51 = -ENOMEM;
+  goto out;
+ }
+ WARN_ON(!nents);
+ sg_init_table(sg, nents);
+
+
+ for (i = 0 ; i < nents; i++)
+  sg_set_page(&sg[i], pages[i], PAGE_SIZE, 0);
+
+ rdsdebug("RDS: trans_private nents is %u\n", nents);
+
+
+
+
+
+ trans_private = rs->rs_transport->get_mr(sg, nents, rs,
+       &mr->r_key);
+
+ if (IS_ERR(trans_private)) {
+  for (i = 0 ; i < nents; i++)
+   put_page(sg_page(&sg[i]));
+  kfree(sg);
+  var_51 = PTR_ERR(trans_private);
+  goto out;
+ }
+
+ mr->r_trans_private = trans_private;
+
+ rdsdebug("RDS: get_mr put_user key is %x cookie_addr %p\n",
+        mr->r_key, (void *)(unsigned long) args->cookie_addr);
+
+
+
+
+
+ cookie = rds_rdma_make_cookie(mr->r_key, args->vec.addr & ~PAGE_MASK);
+ if (cookie_ret)
+  *cookie_ret = cookie;
+
+ if (args->cookie_addr && put_user(cookie, (u64 __user *)(unsigned long) args->cookie_addr)) {
+  var_51 = -EFAULT;
+  goto out;
+ }
+
+
+
+ spin_lock_irqsave(&rs->rs_rdma_lock, flags);
+ found = rds_mr_tree_walk(&rs->rs_rdma_keys, mr->r_key, mr);
+ spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+
+ BUG_ON(found && found != mr);
+
+ rdsdebug("RDS: get_mr key is %x\n", mr->r_key);
+ if (mr_ret) {
+  refcount_inc(&mr->r_refcount);
+  *mr_ret = mr;
+ }
+
+ var_51 = 0;
+out:
+ kfree(pages);
+ if (mr)
+  rds_mr_put(mr);
+ return var_51;
+}
+
+int fn_20(struct struct_50 *rs, char __user *optval, int var_26)
+{
+ struct struct_49 args;
+
+ if (var_26 != sizeof(struct struct_49))
+  return -EINVAL;
+
+ if (copy_from_user(&args, (struct struct_49 __user *)optval,
+      sizeof(struct struct_49)))
+  return -EFAULT;
+
+ return __rds_rdma_map(rs, &args, NULL, NULL);
+}
+
+int fn_22(struct struct_50 *rs, char __user *optval, int var_26)
+{
+ struct struct_24 args;
+ struct struct_49 new_args;
+
+ if (var_26 != sizeof(struct struct_24))
+  return -EINVAL;
+
+ if (copy_from_user(&args, (struct struct_24 __user *)optval,
+      sizeof(struct struct_24)))
+  return -EFAULT;
+
+
+
+
+
+
+ new_args.vec = args.vec;
+ new_args.cookie_addr = args.cookie_addr;
+ new_args.flags = args.flags;
+
+ return __rds_rdma_map(rs, &new_args, NULL, NULL);
+}
+
+
+
+
+int fn_24(struct struct_50 *rs, char __user *optval, int var_26)
+{
+ struct struct_26 args;
+ struct struct_47 *mr;
+ unsigned long flags;
+
+ if (var_26 != sizeof(struct struct_26))
+  return -EINVAL;
+
+ if (copy_from_user(&args, (struct struct_26 __user *)optval,
+      sizeof(struct struct_26)))
+  return -EFAULT;
+
+
+ if (args.cookie == 0) {
+  if (!rs->rs_transport || !rs->rs_transport->flush_mrs)
+   return -EINVAL;
+  rs->rs_transport->flush_mrs();
+  return 0;
+ }
+
+
+
+
+
+ spin_lock_irqsave(&rs->rs_rdma_lock, flags);
+ mr = rds_mr_tree_walk(&rs->rs_rdma_keys, rds_rdma_cookie_key(args.cookie), NULL);
+ if (mr) {
+  rb_erase(&mr->r_rb_node, &rs->rs_rdma_keys);
+  RB_CLEAR_NODE(&mr->r_rb_node);
+  if (args.flags & RDS_RDMA_INVALIDATE)
+   mr->r_invalidate = 1;
+ }
+ spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+
+ if (!mr)
+  return -EINVAL;
+
+
+
+
+
+
+ rds_destroy_mr(mr);
+ rds_mr_put(mr);
+ return 0;
+}
+
+
+
+
+
+
+void fn_26(struct struct_50 *rs, u32 var_48, int var_30)
+{
+ struct struct_47 *mr;
+ unsigned long flags;
+ int var_30 = 0;
+
+ spin_lock_irqsave(&rs->rs_rdma_lock, flags);
+ mr = rds_mr_tree_walk(&rs->rs_rdma_keys, var_48, NULL);
+ if (!mr) {
+  pr_debug("rds: trying to unuse MR with unknown r_key %u!\n",
+    var_48);
+  spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+  return;
+ }
+
+ if (mr->r_use_once || var_30) {
+  rb_erase(&mr->r_rb_node, &rs->rs_rdma_keys);
+  RB_CLEAR_NODE(&mr->r_rb_node);
+  var_30 = 1;
+ }
+ spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+
+
+
+
+ if (mr->r_trans->sync_mr)
+  mr->r_trans->sync_mr(mr->r_trans_private, DMA_FROM_DEVICE);
+
+
+
+ if (var_30) {
+  rds_destroy_mr(mr);
+  rds_mr_put(mr);
+ }
+}
+
+void fn_30(struct struct_42 *ro)
+{
+ unsigned int i;
+
+ for (i = 0; i < ro->op_nents; i++) {
+  struct struct_50 *page = sg_page(&ro->op_sg[i]);
+
+
+
+
+  if (!ro->op_write) {
+   WARN_ON(!page->mapping && irqs_disabled());
+   set_page_dirty(page);
+  }
+  put_page(page);
+ }
+
+ kfree(ro->op_notifier);
+ ro->op_notifier = NULL;
+ ro->op_active = 0;
+}
+
+void fn_32(struct struct_33 *ao)
+{
+ struct struct_50 *page = sg_page(ao->op_sg);
+
+
+
+
+ set_page_dirty(page);
+ put_page(page);
+
+ kfree(ao->op_notifier);
+ ao->op_notifier = NULL;
+ ao->op_active = 0;
+}
+
+
+
+
+
+static int fn_34(struct struct_44 iov[], int var_37)
+{
+ int var_39 = 0;
+ unsigned int var_43;
+ unsigned int i;
+
+
+ for (i = 0; i < var_37; i++) {
+  var_43 = rds_pages_in_vec(&iov[i]);
+  if (var_43 == 0)
+   return -EINVAL;
+
+  var_39 += var_43;
+
+
+
+
+
+  if (var_39 < 0)
+   return -EINVAL;
+ }
+
+ return var_39;
+}
+
+int fn_37(struct struct_43 *args)
+{
+ struct struct_44 vec;
+ struct struct_44 __user *local_vec;
+ int var_39 = 0;
+ unsigned int var_43;
+ unsigned int i;
+
+ local_vec = (struct struct_44 __user *)(unsigned long) args->local_vec_addr;
+
+ if (args->nr_local == 0)
+  return -EINVAL;
+
+
+ for (i = 0; i < args->nr_local; i++) {
+  if (copy_from_user(&vec, &local_vec[i],
+       sizeof(struct struct_44)))
+   return -EFAULT;
+
+  var_43 = rds_pages_in_vec(&vec);
+  if (var_43 == 0)
+   return -EINVAL;
+
+  var_39 += var_43;
+
+
+
+
+
+  if (var_39 < 0)
+   return -EINVAL;
+ }
+
+ return var_39 * sizeof(struct struct_46);
+}
+
+
+
+
+
+int fn_39(struct struct_50 *rs, struct struct_50 *rm,
+     struct struct_50 *cmsg)
+{
+ struct struct_43 *args;
+ struct struct_42 *op = &rm->rdma;
+ int var_43;
+ unsigned int nr_bytes;
+ struct struct_50 **pages = NULL;
+ struct struct_44 var_46[UIO_FASTIOV], *iovs = var_46;
+ int iov_size;
+ unsigned int i, j;
+ int var_51 = 0;
+
+ if (cmsg->cmsg_len < CMSG_LEN(sizeof(struct struct_43))
+     || rm->rdma.op_active)
+  return -EINVAL;
+
+ args = CMSG_DATA(cmsg);
+
+ if (rs->rs_bound_addr == 0) {
+  var_51 = -ENOTCONN;
+  goto out_ret;
+ }
+
+ if (args->nr_local > UIO_MAXIOV) {
+  var_51 = -EMSGSIZE;
+  goto out_ret;
+ }
+
+
+ iov_size = args->nr_local * sizeof(struct struct_44);
+ if (args->nr_local > UIO_FASTIOV) {
+  iovs = sock_kmalloc(rds_rs_to_sk(rs), iov_size, GFP_KERNEL);
+  if (!iovs) {
+   var_51 = -ENOMEM;
+   goto out_ret;
+  }
+ }
+
+ if (copy_from_user(iovs, (struct struct_44 __user *)(unsigned long) args->local_vec_addr, iov_size)) {
+  var_51 = -EFAULT;
+  goto out;
+ }
+
+ var_43 = rds_rdma_pages(iovs, args->nr_local);
+ if (var_43 < 0) {
+  var_51 = -EINVAL;
+  goto out;
+ }
+
+ pages = kcalloc(var_43, sizeof(struct struct_50 *), GFP_KERNEL);
+ if (!pages) {
+  var_51 = -ENOMEM;
+  goto out;
+ }
+
+ op->op_write = !!(args->flags & RDS_RDMA_READWRITE);
+ op->op_fence = !!(args->flags & RDS_RDMA_FENCE);
+ op->op_notify = !!(args->flags & RDS_RDMA_NOTIFY_ME);
+ op->op_silent = !!(args->flags & RDS_RDMA_SILENT);
+ op->op_active = 1;
+ op->op_recverr = rs->rs_recverr;
+ WARN_ON(!var_43);
+ op->op_sg = rds_message_alloc_sgs(rm, var_43);
+ if (!op->op_sg) {
+  var_51 = -ENOMEM;
+  goto out;
+ }
+
+ if (op->op_notify || op->op_recverr) {
+
+
+
+
+
+  op->op_notifier = kmalloc(sizeof(struct struct_43), GFP_KERNEL);
+  if (!op->op_notifier) {
+   var_51 = -ENOMEM;
+   goto out;
+  }
+  op->op_notifier->n_user_token = args->user_token;
+  op->op_notifier->n_status = RDS_RDMA_SUCCESS;
+
+
+
+
+
+
+  if (rm->data.op_sg) {
+   rm->rdma.op_notify = 0;
+   rm->data.op_notify = !!(args->flags & RDS_RDMA_NOTIFY_ME);
+  }
+ }
+
+ op->op_rkey = rds_rdma_cookie_key(args->cookie);
+ op->op_remote_addr = args->remote_vec.addr + rds_rdma_cookie_offset(args->cookie);
+
+ nr_bytes = 0;
+
+ rdsdebug("RDS: rdma prepare nr_local %llu rva %llx rkey %x\n",
+        (unsigned long long)args->nr_local,
+        (unsigned long long)args->remote_vec.addr,
+        op->op_rkey);
+
+ for (i = 0; i < args->nr_local; i++) {
+  struct struct_44 *iov = &iovs[i];
+
+  unsigned int var_46 = rds_pages_in_vec(iov);
+
+  rs->rs_user_addr = iov->addr;
+  rs->rs_user_bytes = iov->bytes;
+
+
+
+
+  var_51 = rds_pin_pages(iov->addr, var_46, pages, !op->op_write);
+  if (var_51 < 0)
+   goto out;
+  else
+   var_51 = 0;
+
+  rdsdebug("RDS: nr_bytes %u nr %u iov->bytes %llu iov->addr %llx\n",
+    nr_bytes, var_46, iov->bytes, iov->addr);
+
+  nr_bytes += iov->bytes;
+
+  for (j = 0; j < var_46; j++) {
+   unsigned int var_46 = iov->addr & ~PAGE_MASK;
+   struct struct_46 *sg;
+
+   sg = &op->op_sg[op->op_nents + j];
+   sg_set_page(sg, pages[j],
+     min_t(unsigned int, iov->bytes, PAGE_SIZE - var_46),
+     var_46);
+
+   rdsdebug("RDS: sg->offset %x sg->len %x iov->addr %llx iov->bytes %llu\n",
+          sg->offset, sg->length, iov->addr, iov->bytes);
+
+   iov->addr += sg->length;
+   iov->bytes -= sg->length;
+  }
+
+  op->op_nents += var_46;
+ }
+
+ if (nr_bytes > args->remote_vec.bytes) {
+  rdsdebug("RDS nr_bytes %u remote_bytes %u do not match\n",
+    nr_bytes,
+    (unsigned int) args->remote_vec.bytes);
+  var_51 = -EINVAL;
+  goto out;
+ }
+ op->op_bytes = nr_bytes;
+
+out:
+ if (iovs != var_46)
+  sock_kfree_s(rds_rs_to_sk(rs), iovs, iov_size);
+ kfree(pages);
+out_ret:
+ if (var_51)
+  rds_rdma_free_op(op);
+ else
+  rds_stats_inc(s_send_rdma);
+
+ return var_51;
+}
+
+
+
+
+
+int fn_46(struct struct_50 *rs, struct struct_50 *rm,
+     struct struct_50 *cmsg)
+{
+ unsigned long flags;
+ struct struct_47 *mr;
+ u32 var_48;
+ int var_48 = 0;
+
+ if (cmsg->cmsg_len < CMSG_LEN(sizeof(rds_rdma_cookie_t)) ||
+     rm->m_rdma_cookie != 0)
+  return -EINVAL;
+
+ memcpy(&rm->m_rdma_cookie, CMSG_DATA(cmsg), sizeof(rm->m_rdma_cookie));
+
+
+
+
+
+
+ var_48 = rds_rdma_cookie_key(rm->m_rdma_cookie);
+
+ spin_lock_irqsave(&rs->rs_rdma_lock, flags);
+ mr = rds_mr_tree_walk(&rs->rs_rdma_keys, var_48, NULL);
+ if (!mr)
+  var_48 = -EINVAL;
+ else
+  refcount_inc(&mr->r_refcount);
+ spin_unlock_irqrestore(&rs->rs_rdma_lock, flags);
+
+ if (mr) {
+  mr->r_trans->sync_mr(mr->r_trans_private, DMA_TO_DEVICE);
+  rm->rdma.op_rdma_mr = mr;
+ }
+ return var_48;
+}
+
+
+
+
+
+
+
+int fn_48(struct struct_50 *rs, struct struct_50 *rm,
+     struct struct_50 *cmsg)
+{
+ if (cmsg->cmsg_len < CMSG_LEN(sizeof(struct struct_49)) ||
+     rm->m_rdma_cookie != 0)
+  return -EINVAL;
+
+ return __rds_rdma_map(rs, CMSG_DATA(cmsg), &rm->m_rdma_cookie, &rm->rdma.op_rdma_mr);
+}
+
+
+
+
+int fn_49(struct struct_50 *rs, struct struct_50 *rm,
+      struct struct_50 *cmsg)
+{
+ struct struct_50 *page = NULL;
+ struct struct_51 *args;
+ int var_51 = 0;
+
+ if (cmsg->cmsg_len < CMSG_LEN(sizeof(struct struct_51))
+  || rm->atomic.op_active)
+  return -EINVAL;
+
+ args = CMSG_DATA(cmsg);
+
+
+ switch (cmsg->cmsg_type) {
+ case RDS_CMSG_ATOMIC_FADD:
+  rm->atomic.op_type = RDS_ATOMIC_TYPE_FADD;
+  rm->atomic.op_m_fadd.add = args->fadd.add;
+  rm->atomic.op_m_fadd.nocarry_mask = 0;
+  break;
+ case RDS_CMSG_MASKED_ATOMIC_FADD:
+  rm->atomic.op_type = RDS_ATOMIC_TYPE_FADD;
+  rm->atomic.op_m_fadd.add = args->m_fadd.add;
+  rm->atomic.op_m_fadd.nocarry_mask = args->m_fadd.nocarry_mask;
+  break;
+ case RDS_CMSG_ATOMIC_CSWP:
+  rm->atomic.op_type = RDS_ATOMIC_TYPE_CSWP;
+  rm->atomic.op_m_cswp.compare = args->cswp.compare;
+  rm->atomic.op_m_cswp.swap = args->cswp.swap;
+  rm->atomic.op_m_cswp.compare_mask = ~0;
+  rm->atomic.op_m_cswp.swap_mask = ~0;
+  break;
+ case RDS_CMSG_MASKED_ATOMIC_CSWP:
+  rm->atomic.op_type = RDS_ATOMIC_TYPE_CSWP;
+  rm->atomic.op_m_cswp.compare = args->m_cswp.compare;
+  rm->atomic.op_m_cswp.swap = args->m_cswp.swap;
+  rm->atomic.op_m_cswp.compare_mask = args->m_cswp.compare_mask;
+  rm->atomic.op_m_cswp.swap_mask = args->m_cswp.swap_mask;
+  break;
+ default:
+  BUG();
+ }
+
+ rm->atomic.op_notify = !!(args->flags & RDS_RDMA_NOTIFY_ME);
+ rm->atomic.op_silent = !!(args->flags & RDS_RDMA_SILENT);
+ rm->atomic.op_active = 1;
+ rm->atomic.op_recverr = rs->rs_recverr;
+ rm->atomic.op_sg = rds_message_alloc_sgs(rm, 1);
+ if (!rm->atomic.op_sg) {
+  var_51 = -ENOMEM;
+  goto err;
+ }
+
+
+ if (args->local_addr & 0x7) {
+  var_51 = -EFAULT;
+  goto err;
+ }
+
+ var_51 = rds_pin_pages(args->local_addr, 1, &page, 1);
+ if (var_51 != 1)
+  goto err;
+ var_51 = 0;
+
+ sg_set_page(rm->atomic.op_sg, page, 8, offset_in_page(args->local_addr));
+
+ if (rm->atomic.op_notify || rm->atomic.op_recverr) {
+
+
+
+
+
+  rm->atomic.op_notifier = kmalloc(sizeof(*rm->atomic.op_notifier), GFP_KERNEL);
+  if (!rm->atomic.op_notifier) {
+   var_51 = -ENOMEM;
+   goto err;
+  }
+
+  rm->atomic.op_notifier->n_user_token = args->user_token;
+  rm->atomic.op_notifier->n_status = RDS_RDMA_SUCCESS;
+ }
+
+ rm->atomic.op_rkey = rds_rdma_cookie_key(args->cookie);
+ rm->atomic.op_remote_addr = args->remote_addr + rds_rdma_cookie_offset(args->cookie);
+
+ return var_51;
+err:
+ if (page)
+  put_page(page);
+ kfree(rm->atomic.op_notifier);
+
+ return var_51;
+}

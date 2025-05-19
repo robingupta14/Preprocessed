@@ -1,0 +1,793 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class expRouter {
+
+    private $maps = array();
+    public  $url_parts = '';
+    public  $current_url = '';
+    
+    public  $url_type = '';
+    
+    public  $url_style = '';
+    public  $params = array();
+    public  $sefPath = null;
+    
+    function __construct() {
+        self::getRouterMaps();
+    }
+
+    
+    public static function cleanLink($fulllink)
+    {           
+        if(substr($fulllink, -1) == '/') $fulllink = substr($fulllink, 0, -1);  
+        return $fulllink;                                   
+    }
+    
+    
+    public function makeLink($params, $force_old_school=false, $secure=false, $no_map=false) {
+        $secure = ENABLE_SSL == 1 ? $secure : false;  
+        $linkbase =  $secure ? URL_BASE_SECURE : URL_BASE;
+        $linkbase .= SCRIPT_RELATIVE;
+                
+        if (isset($params['section']) && $params['section'] == SITE_DEFAULT_SECTION) {            
+            return self::cleanLink($linkbase);
+        }
+
+        
+        if (SEF_URLS == 1 && ($_SERVER["PHP_SELF"] == PATH_RELATIVE.'index.php' || $_SERVER["PHP_SELF"] == PATH_RELATIVE.'install/index.php') && $force_old_school == false) {
+            
+            if (isset($params['section']) && !isset($params['action'])) {                
+                if (empty($params['sef_name'])) {
+                    global $db;
+
+                    $params['sef_name'] = $db->selectValue('section', 'sef_name', 'id='.intval($params['section']));
+                }                               
+                return self::cleanLink($linkbase.$params['sef_name']);
+            } else {                
+                
+                $link = '';               
+        
+                
+                
+                if (!empty($params['module']) && empty($params['controller'])) $params['controller'] = $params['module'];
+            
+                
+                if (empty($no_map)){
+                    for ($i = 0, $iMax = count($this->maps); $i < $iMax; $i++) {
+                        $missing_params = array("dump");
+
+                        if ((!empty($params) && !empty($params['controller']) && !empty($params['action'])) && (in_array($params['controller'], $this->maps[$i]) && in_array($params['action'], $this->maps[$i]) && (!isset($this->maps[$i]['src']) || in_array($params['src'], $this->maps[$i])))) {
+                            $missing_params = array_diff_key($this->maps[$i]['url_parts'], $params);
+                        }
+
+                        if (count($missing_params) == 0) {
+                            foreach($this->maps[$i]['url_parts'] as $key=>$value) {
+                                if ($key == 'controller') {
+                                    $link .= urlencode($value)."/";
+                                } else {
+                                    $link .= urlencode($params[$key])."/";
+                                }
+                            }
+                            break;  
+                        }
+                    }
+                }
+
+                
+                
+                if ($link != '') return self::cleanLink($linkbase.$link);
+                
+                if (!empty($params['controller'])) $link .= $params['controller'].'/';
+                if (!empty($params['action'])) $link .= $params['action'].'/';
+                foreach ($params as $key=>$value) {
+                    if(!is_array($value) && strpos($key,'__') !== 0 && $key !== 'PHPSESSID') {
+                        $value = trim($value);
+                        $key = trim($key);
+                        if ($value != "") {
+                            if ($key != 'module' && $key != 'action' && $key != 'controller') {
+                                if ($key != 'src') {
+                                    $link .= urlencode($key)."/".urlencode($value)."/";
+                                } else {
+                                    $link .= $key."/".$value."/";
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                return self::cleanLink($linkbase.$link);
+            }
+        } else {
+            
+            if (!empty($params['sef_name'])) unset($params['sef_name']);
+            $link = $linkbase . SCRIPT_FILENAME . "?";
+            foreach ($params as $key=>$value) {
+                if (!is_array($value) && strpos($key,'__') !== 0 && $key !== 'PHPSESSID'){
+                    $value = trim($value);
+                    $key = trim($key);
+                    if ($value != "") {
+                        if ($key != 'src') {
+                            $link .= urlencode($key)."=".urlencode($value)."&";
+                        } else {
+                            $link .= $key."=".$value."&";
+                        }                    
+                    }
+                }
+            }
+
+            $link = substr($link,0,-1);
+            return $link; 
+            
+        }
+    }
+
+    
+    public function plainPath() {
+        $params = $this->params;
+        unset($params['src']);
+        return $this->makeLink($params);
+    }
+
+    public function routeRequest() {
+        global $user;
+
+        
+        foreach ($_GET as $key=>$var) {
+            if (is_string($var) && strpos($var,'">')) {
+                unset(
+                    $_GET[$key],
+                    $_REQUEST[$key]
+                );
+            }
+        }
+        
+        if (isset($_REQUEST['id'])) {
+            if (isset($_GET['id']))
+                $_GET['id'] = intval($_GET['id']);
+            if (isset($_POST['id']))
+                $_POST['id'] = intval($_POST['id']);
+
+            $_REQUEST['id'] = intval($_REQUEST['id']);
+        }
+        
+        foreach ($_REQUEST as $key=>$var) {
+            if (is_string($var) && strlen($key) >= 3 && strrpos($key,'_id',-3) !== false) {
+                if (isset($_GET[$key]))
+                    $_GET[$key] = intval($_GET[$key]);
+                if (isset($_POST[$key]))
+                    $_POST[$key] = intval($_POST[$key]);
+
+                $_REQUEST[$key] = intval($_REQUEST[$key]);
+            }
+        }
+        if (empty($user->id) || (!empty($user->id) && !$user->isAdmin())) {  
+
+            expString::sanitize($_REQUEST);  
+        }
+
+        
+        $this->splitURL();
+        
+
+        if ($this->url_style == 'sef') {
+            if ($this->url_type == 'page' || $this->url_type == 'base') {
+                $ret = $this->routePageRequest();               
+                if (!$ret) $this->url_type = 'malformed';
+            } elseif ($this->url_type == 'action') {
+                $this->isMappedURL();                       
+                $ret = $this->routeActionRequest();         
+
+                
+                
+                
+                
+                if (!$ret) $this->url_type = 'malformed';  
+            } elseif ($this->url_type == 'post') {
+                
+                
+                
+                if (!empty($_POST['controller']) || !empty($_POST['module'])) {
+                    $module = !empty($_POST['controller']) ? expString::sanitize($_POST['controller']) : expString::sanitize($_POST['module']);
+                    
+                    if (expModules::controllerExists($module)) {
+                        $_POST['controller'] = $module;
+                        $_REQUEST['controller'] = $module;
+                    }
+                }
+            }
+        } elseif ($this->url_style == 'query' && SEF_URLS == 1 && !empty($_REQUEST['section']) && PRINTER_FRIENDLY != 1 && EXPORT_AS_PDF != 1) {
+            
+            
+            
+            header("Location: ".$this->makeLink(array('section'=>intval($_REQUEST['section']))),TRUE,301);          
+        }
+
+        
+        if ($this->url_type != 'malformed') {               
+            $this->current_url = $this->buildCurrentUrl();
+        } else {
+            
+            
+            $_REQUEST['controller'] = 'notfound';
+            $_REQUEST['action'] = 'handle';
+        }
+    }
+
+    
+    public function updateHistory($section=null) {
+        global $db,$user;
+
+        
+        
+        setcookie('UserUID',expSession::getTicketString(),86400 * TRACKING_COOKIE_EXPIRES);
+        $cookieID = (empty($_COOKIE['UserUID'])) ? expSession::getTicketString() : $_COOKIE['UserUID'];
+        
+        
+        $tmpParams = array();
+        foreach ($this->params as $key=>$value) {
+            if ($key != 'module' && $key != 'action' && $key != 'controller' && $key != 'section') {
+                $tmpParams[$key] = $value;
+            }
+        }
+        $trackingObject = new stdClass();
+        $trackingObject->params = serialize($tmpParams);
+        if ($this->url_type == 'page' || $this->url_type == 'base') {
+            $trackingObject->section = $section;
+        } else {
+            $trackingObject->module = ($_SERVER['REQUEST_METHOD'] == 'POST') ? (empty($_POST['controller']) ? expString::sanitize($_POST['module']) : expString::sanitize($_POST['controller'])) : $this->url_parts[0];
+            $trackingObject->action = ($_SERVER['REQUEST_METHOD'] == 'POST') ? $_POST['action'] : $this->url_parts[1];
+        }
+        $trackingObject->referer = empty($_SERVER['HTTP_REFERER']) ? null : $_SERVER['HTTP_REFERER'];
+        $trackingObject->cookieUID = $cookieID;
+        $trackingObject->user_id = $user->id;
+        $trackingObject->timestamp = time();
+        $trackingObject->user_address = $_SERVER['REMOTE_ADDR'];
+        $trackingObject->user_agent = $_SERVER['HTTP_USER_AGENT'];
+        $trackingObject->session_id = $_COOKIE['PHPSESSID'];
+        $db->insertObject($trackingObject,'tracking_rawdata');
+    }
+
+    public function splitURL() {
+        global $db;
+
+        $this->url_parts = array();
+        $this->buildSEFPath();
+
+        if (!empty($this->sefPath)) {
+            $this->url_style = 'sef';
+            $this->url_parts = explode('/', $this->sefPath);     
+
+            
+            
+            if ($this->url_parts[count($this->url_parts)-1] == '') array_pop($this->url_parts);
+            if (empty($this->url_parts[0])) array_shift($this->url_parts);
+            
+            if (count($this->url_parts) < 1 || (empty($this->url_parts[0]) && count($this->url_parts) == 1) ) {
+                $this->url_type = 'base';  
+            } elseif (count($this->url_parts) == 1 || $db->selectObject('section', "sef_name='" . substr($this->sefPath,1) . "'") != null) {
+                $this->url_type = 'page';  
+            } elseif ($_SERVER['REQUEST_METHOD'] == 'POST') {
+                $this->url_type = 'post';  
+            } else {
+                
+                
+                if (($db->selectObject('section', "sef_name='" . $this->url_parts[0] . "'") != null) && (in_array(array('printerfriendly','exportaspdf','ajax_action'), $this->url_parts))) {
+                    $this->url_type = 'page';
+                } else {
+                    $this->url_type = 'action';
+                }
+            }
+            $this->params = $this->convertPartsToParams();
+        } elseif ($_SERVER['REQUEST_METHOD'] == 'POST') {
+            $this->url_style = 'sef';
+            $this->url_type = 'post';
+            $this->params = $this->convertPartsToParams();
+        } elseif (isset($_SERVER['REQUEST_URI'])) {
+            
+            
+            if ($_SERVER['REQUEST_URI'] == PATH_RELATIVE) {
+                $this->url_type = 'base';
+                $this->params = array();
+            } else {
+                $sefPath = explode('%22%3E',$_SERVER['REQUEST_URI']);  
+                $_SERVER['REQUEST_URI'] = $sefPath[0];
+                $this->url_style = 'query';
+            }
+        } else {
+            $this->url_type = 'base';
+            $this->params = array();
+        }
+                              
+        
+        define('PRINTER_FRIENDLY', (isset($_REQUEST['printerfriendly']) || isset($this->params['printerfriendly'])) ? 1 : 0);         
+        define('EXPORT_AS_PDF', (isset($_REQUEST['exportaspdf']) || isset($this->params['exportaspdf'])) ? 1 : 0);
+        define('EXPORT_AS_PDF_LANDSCAPE', (isset($_REQUEST['landscapepdf']) || isset($this->params['landscapepdf'])) ? 1 : 0);
+    }
+
+    public function routePageRequest() {        
+
+
+        if ($this->url_type == 'base') {
+            
+            if (expTheme::inAction()) {
+                $_REQUEST['section'] = (expSession::is_set('last_section') ? expSession::get('last_section') : SITE_DEFAULT_SECTION);
+            } else {
+                $_REQUEST['section'] = SITE_DEFAULT_SECTION;  
+            }
+        } else {
+            
+            
+            
+            $section = $this->getPageByName(substr($this->sefPath,1));
+            
+            
+            
+            
+            
+            
+            
+            
+            if (empty($section)) {
+                $sef_url = $this->url_parts[0];
+                
+                $c = new storeCategory();                
+                $cat = $c->findBy('sef_url', $sef_url);
+                if (empty($cat)) {
+                    
+                    $p = new product();
+                    $prod = $p->findBy('sef_url', $sef_url);
+                    if(!empty($prod)) {
+                        
+                        $this->url_type = 'action';                   
+                        $this->url_parts[0] = 'store'; 
+                        $this->url_parts[1] = 'show'; 
+                        $this->url_parts[2] = 'title'; 
+                        $this->url_parts[3] = $sef_url; 
+                        
+                        $this->params = $this->convertPartsToParams();
+                        return $this->routeActionRequest();
+                    }
+                    
+                } else {
+                    
+                    $this->url_type = 'action';                                      
+                    $this->url_parts[0] = 'store'; 
+                    $this->url_parts[1] = 'showall'; 
+                    $this->url_parts[2] = 'title'; 
+                    $this->url_parts[3] = $sef_url; 
+                    
+                    $this->params = $this->convertPartsToParams();
+                    return $this->routeActionRequest();
+                }
+                return false;
+            }
+            
+            
+            $_REQUEST['section'] = $section->id;
+        }
+        
+        expHistory::set('viewable', array('section'=>intval($_REQUEST['section'])));
+        return true;
+    }
+
+    
+    public function isMappedURL() {
+        $part_count = count($this->url_parts);
+        foreach ($this->maps as $map) {
+            $matched = true;
+            $pairs = array();
+            $i = 0;
+            if ($part_count == count($map['url_parts'])) {               
+                foreach($map['url_parts'] as $key=>$map_part) {
+                    $res = preg_match("/^$map_part/", $this->url_parts[$i]);
+                    if ($res != 1) {
+                        $matched = false;
+                        break;
+                    } 
+                    $pairs[$key] = $this->url_parts[$i];
+                    $i++;
+                }
+            } else {
+                $matched = false;
+            }            
+              
+            if ($matched) {
+                
+                if (count($this->url_parts) >= 2 && method_exists(expModules::getController($this->url_parts[0]), $this->url_parts[1]))
+                    return false;
+
+                $this->url_parts = array();
+                $this->url_parts[0] = $map['controller'];
+                $this->url_parts[1] = $map['action'];
+        
+                if (isset($map['view'])) {
+                    $this->url_parts[2] = 'view';
+                    $this->url_parts[3] = $map['view'];
+                }
+
+                foreach($map as $key=>$value) {
+                    if ($key != 'controller' && $key != 'action' && $key != 'view' && $key != 'url_parts') {
+                        $this->url_parts[] = $key;
+                        $this->url_parts[] = $value;
+                    }
+                }
+
+                foreach($pairs as $key=>$value) {
+                    if ($key != 'controller') {
+                        $this->url_parts[] = $key;
+                        $this->url_parts[] = $value;
+                    }
+                }
+                
+                $this->params = $this->convertPartsToParams();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function routeActionRequest() {
+        $return_params = array('controller'=>'','action'=>'','url_parts'=>array());
+    
+        
+        $return_params['controller'] = $this->url_parts[0]; 
+        $return_params['action'] = $this->url_parts[1];     
+
+        
+        if (expModules::controllerExists($return_params['controller'])) {
+            $requestType = 'controller';
+
+
+        } else {
+            return false;  
+        }
+
+        
+        if (count($this->url_parts) == 3) {
+            if ( is_numeric($this->url_parts[2])) {
+                $return_params['url_parts']['id'] = $this->url_parts[2];
+            }
+        } else {
+            for ($i = 2, $iMax = count($this->url_parts); $i < $iMax; $i++) {
+                if ($i % 2 == 0) {
+                    $return_params['url_parts'][$this->url_parts[$i]] = isset($this->url_parts[$i+1]) ? $this->url_parts[$i+1] : '';
+                }
+            }
+        }        
+
+        
+        $_REQUEST[$requestType] = $return_params['controller']; 
+        $_GET[$requestType] = $return_params['controller'];
+        $_POST[$requestType] = $return_params['controller'];
+    
+        
+        if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+            
+            
+            $action = !empty($_POST['action']) ? $_POST['action'] : $this->params['action'];
+        } else {
+            $action = $return_params['action'];
+        }
+    
+        $_REQUEST['action'] = $action;
+        $_GET['action'] = $action;
+        $_POST['action'] = $action;
+
+        
+        foreach($return_params['url_parts'] as $key=>$value) {
+            $save_value = expString::sanitize($value);
+            $_REQUEST[$key] = $save_value;
+            $_GET[$key] = $save_value;
+        }
+
+        return true;
+    }
+
+    public function buildCurrentUrl() {
+        $url =  URL_BASE;
+        if ($this->url_style == 'sef') {
+            $url .= substr(PATH_RELATIVE,0,-1).$this->sefPath;
+        } else {
+            $url .= urldecode((empty($_SERVER['REQUEST_URI'])) ? $_ENV['REQUEST_URI'] : $_SERVER['REQUEST_URI']);
+        }
+        return expString::escape(expString::sanitize($url));
+    }
+
+    public static function encode($url) {
+        $url = str_replace('&', 'and', $url);
+        return preg_replace("/(-)$/", "", preg_replace('/(-){2,}/', '-', strtolower(preg_replace("/([^0-9a-z-_\+])/i", '-', $url))));
+    }
+    
+    public static function decode($url) {
+        $url = str_replace('-', ' ', $url);
+        return str_replace('+', '-', $url);
+    }
+
+    public function getSefUrlByPageId($id=null) {  
+        if (!empty($id)) {
+            global $db;
+
+            $section = $db->selectObject('section', 'id='.intval($id));
+            $url = URL_FULL;
+            $url .= !empty($section->sef_name) ? $section->sef_name : $section->name;
+        }
+    }
+
+    public function buildUrlByPageId($id=null) {
+        global $db;
+
+        
+        $url = '';
+        if (!empty($id)) {
+            if (SEF_URLS == 1) {
+                $section = $db->selectObject('section', 'id='.intval($id));
+                if ($section->id != SITE_DEFAULT_SECTION) {
+                    $url .= !empty($section->sef_name) ? $section->sef_name : $section->name;
+                }
+            } else {
+                $url .= 'index.php?section='.$id;
+            }
+        }
+        return $url;
+    }
+
+    public function printerFriendlyLink($link_text="Printer Friendly", $class=null, $width=800, $height=600, $view='', $title_text = "Printer Friendly") {
+        $url = '';
+        if (PRINTER_FRIENDLY != 1 && EXPORT_AS_PDF != 1) {
+            $class = !empty($class) ? $class : 'printer-friendly-link';
+            $url =  '<a class="'.$class.'" href="javascript:void(0)" onclick="window.open(\'';
+            if (!empty($_REQUEST['view']) && !empty($view) && $_REQUEST['view'] != $view) {
+                $_REQUEST['view'] = $view;
+            }
+            if ($this->url_style == 'sef') {
+                $url .= $this->convertToOldSchoolUrl();
+                if (empty($_REQUEST['view']) && !empty($view)) $url .= '&view='.$view;
+                if ($this->url_type=='base') $url .= '/index.php?section='.SITE_DEFAULT_SECTION;
+            } else {
+                $url .= $this->current_url;
+            }
+            $url .= '&printerfriendly=1\' , \'mywindow\',\'menubar=1,resizable=1,scrollbars=1,width='.$width.',height='.$height.'\');"';
+            $url .= ' title="'.$title_text.'"';
+            $url .= '> '.$link_text.'</a>';
+            $url = str_replace('&ajax_action=1','',$url);
+        }
+        
+        return $url; 
+    }
+
+    public function exportAsPDFLink($link_text="Export as PDF", $class=null, $width=800, $height=600, $view='', $orientation=false, $limit='', $title_text="Export as PDF") {
+        $url = '';
+        if (EXPORT_AS_PDF != 1 && PRINTER_FRIENDLY != 1) {
+            $class = !empty($class) ? $class : 'export-pdf-link';
+            $url =  '<a class="'.$class.'" href="javascript:void(0)" onclick="window.open(\'';
+            if (!empty($_REQUEST['view']) && !empty($view) && $_REQUEST['view'] != $view) {
+                $_REQUEST['view'] = $view;
+            }
+            if ($this->url_style == 'sef') {
+                $url .= $this->convertToOldSchoolUrl();
+                if (empty($_REQUEST['view']) && !empty($view)) $url .= '&view='.$view;
+                if ($this->url_type=='base') $url .= '/index.php?section='.SITE_DEFAULT_SECTION;
+            } else {
+                $url .= $this->current_url;
+            }
+            if (!empty($orientation)) {
+                $orientation = '&landscapepdf='.$orientation;
+            }
+            if (!empty($limit)) {
+                $limit = '&limit='.$limit;
+            }
+            $url .= '&exportaspdf=1'.$orientation.$limit.'&\' , \'mywindow\',\'menubar=1,resizable=1,scrollbars=1,width='.$width.',height='.$height.'\');"';
+            $url .= ' title="'.$title_text.'"';
+            $url .= '> '.$link_text.'</a>';
+            $url = str_replace('&ajax_action=1','',$url);
+        }
+
+        return $url;
+    }
+
+    public function convertToOldSchoolUrl() {
+        $params = $this->convertPartsToParams();
+        return $this->makeLink($params, true);
+    }
+
+    public function convertPartsToParams() {
+        $params = array();
+        if ($this->url_type == 'base') {
+            $params['section'] = SITE_DEFAULT_SECTION;
+        } elseif ($this->url_type == 'page') {
+            $section = $this->getPageByName(substr($this->sefPath,1));
+            $params['section'] = empty($section->id) ? null : $section->id;
+        } elseif ($this->url_type == 'action') {
+            $params['controller'] = $this->url_parts[0];
+            $params['action'] = !empty($this->url_parts[1]) ? $this->url_parts[1] : null;
+            for ($i = 2, $iMax = count($this->url_parts); $i < $iMax; $i++) {
+                if ($i % 2 == 0) {
+                    $params[$this->url_parts[$i]] = isset($this->url_parts[$i+1]) ? $this->url_parts[$i+1] : '';
+                }
+            }
+        } elseif ($this->url_type == 'post') {
+            if (isset($_REQUEST['PHPSESSID'])) unset($_REQUEST['PHPSESSID']);
+
+
+
+
+
+
+                $params = expString::sanitize($_REQUEST);
+
+        }
+        
+
+        return $params;
+    }
+
+    public function getPageByName($url_name) {
+        global $db;
+        
+        $section = null;
+        if (is_numeric($url_name)) {
+            $section = $db->selectObject('section', 'id=' . $url_name);
+            if ($section == null) $section = $db->selectObject('section', "sef_name='" . $url_name . "'");
+        } elseif ($this->url_type == 'base') {
+            
+            $section = $db->selectObject('section', 'id='.SITE_DEFAULT_SECTION);
+        } else {
+            $section = $db->selectObject('section', "sef_name='".$url_name."'");
+        }
+        
+        
+        
+
+
+
+
+
+
+        return $section;
+    }
+    
+    private function buildSEFPath () {
+        
+        if (strpos($_SERVER['SERVER_SOFTWARE'],'Apache') !== false || strpos($_SERVER['SERVER_SOFTWARE'],'WebServerX') !== false) {
+            switch(php_sapi_name()) {
+                case "cgi":
+                    $this->sefPath = !empty($_SERVER['REQUEST_URI']) ? urldecode($_SERVER['REQUEST_URI']): null;
+                    break;
+                case "cgi-fcgi":
+                    if (isset($_SERVER['REDIRECT_URL']) && $_SERVER['REDIRECT_URL'] != PATH_RELATIVE.'index.php') {
+                        $this->sefPath = urldecode($_SERVER['REDIRECT_URL']);
+                    } elseif (!empty($_ENV['REQUEST_URI'])) {
+                        $this->sefPath = urldecode($_ENV['REQUEST_URI']);
+                    } else {
+                        $this->sefPath = urldecode($_SERVER['REQUEST_URI']);
+                    }
+                    break;
+                default:
+                    $this->sefPath = !empty($_SERVER['REDIRECT_URL']) ? urldecode($_SERVER['REDIRECT_URL']) : null;
+                    break;
+            }
+        
+        } elseif (strpos(strtolower($_SERVER['SERVER_SOFTWARE']),'lighttpd') !== false) {
+            
+            if (isset($_SERVER['ORIG_PATH_INFO'])) {
+                $this->sefPath = urldecode($_SERVER['ORIG_PATH_INFO']);
+            } elseif (isset($_SERVER['REDIRECT_URI'])){
+                $this->sefPath = urldecode(substr($_SERVER['REDIRECT_URI'],9));
+            } elseif (isset($_SERVER['REQUEST_URI'])){
+                $this->sefPath = urldecode($_SERVER['REQUEST_URI']);
+            }
+        
+        } elseif (strpos(strtolower($_SERVER['SERVER_SOFTWARE']),'nginx') !== false) {
+            $this->sefPath = urldecode($_SERVER['REQUEST_URI']);
+        } else {
+            $this->sefPath = urldecode($_SERVER['REQUEST_URI']);
+        }
+        
+        $this->sefPath = substr($this->sefPath,strlen(substr(PATH_RELATIVE,0,-1))); 
+        if (strpos($this->sefPath,'/index.php') === 0) {
+            $this->sefPath = null;
+        }
+        
+		
+        if(isset($_SERVER['argv']) && is_array($_SERVER['argv']))
+        {
+            foreach($_SERVER['argv'] as $set)
+            {
+                $s = explode("=",$set);
+                if($s[0] == "ectid")
+                {
+                    $this->ectid = $s[1];    
+                }   
+            }            
+        }
+        if (substr($this->sefPath,-1) == "/") $this->sefPath = substr($this->sefPath,0,-1);
+        
+        $sefPath = explode('">',$this->sefPath);  
+        $this->sefPath = expString::escape(expString::sanitize($sefPath[0]));
+    }
+
+    public function getSection() {
+        global $db;
+
+        if (expTheme::inAction()) {
+            if (isset($_REQUEST['section'])) {
+                $section = $this->url_style=="sef" ? $this->getPageByName($_REQUEST['section'])->id : intval($_REQUEST['section']) ;
+            } else {
+                $section = (expSession::is_set('last_section') ? expSession::get('last_section') : SITE_DEFAULT_SECTION);
+            }
+        } else {
+            $section = (isset($_REQUEST['section']) ? intval($_REQUEST['section']) : SITE_DEFAULT_SECTION);
+        }
+        $testsection = $db->selectObject('section','id='.$section);
+        if (empty($testsection)) {
+            $section = SITE_DEFAULT_SECTION;
+        }
+        return $section;
+    }
+
+    public function getSectionObj($section) {
+        global $db;
+
+        if ($section == "*") {
+            $sectionObj = call_user_func(expModules::getModuleClassName($this->params['controller']) . "::getSection", $this->params);
+        } else {
+
+            $sectionObj = new section(intval($section));
+        }
+
+        if (!$sectionObj->canView()) {
+            define('AUTHORIZED_SECTION',0);
+        } else {
+            define('AUTHORIZED_SECTION',1);
+        }
+        if (!$sectionObj->isPublic()) {
+            define('PUBLIC_SECTION',0);
+        } else {
+            define('PUBLIC_SECTION',1);
+        }
+    
+        if (isset($_REQUEST['section'])) {
+            expSession::set('last_section', intval($_REQUEST['section']));
+        } elseif ($section == SITE_DEFAULT_SECTION) {
+            expSession::set('last_section', intval(SITE_DEFAULT_SECTION));
+        } else {
+            
+        }
+        return $sectionObj;
+    }
+    
+    public function getRouterMaps() {
+        $mapfile = BASE.'framework/core/router_maps.php';
+		if (file_exists(BASE.'themes/'.DISPLAY_THEME.'/router_maps.php')) {
+			$mapfile = BASE.'themes/'.DISPLAY_THEME.'/router_maps.php';
+        }
+
+        $this->maps = $maps;  
+    }
+    
+    public function getTrackingId()
+    {        
+        if(isset($this->ectid)) return $this->ectid;
+        else return '';
+    }
+}
+
+?>

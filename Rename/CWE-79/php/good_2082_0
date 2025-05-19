@@ -1,0 +1,616 @@
+<?php
+
+
+
+
+
+
+if (isset($_REQUEST['show_as_php'])) {
+    $GLOBALS['show_as_php'] = $_REQUEST['show_as_php'];
+}
+
+
+$var_0 = array(
+    'action_bookmark',
+    'allow_interrupt',
+    'bkm_label',
+    'bookmark_variable',
+    'charset_of_file',
+    'format',
+    'id_bookmark',
+    'import_type',
+    'is_js_confirmed',
+    'MAX_FILE_SIZE',
+    'message_to_show',
+    'noplugin',
+    'skip_queries',
+    'local_import_file'
+);
+
+
+foreach ($var_0 as $var_1) {
+    if (isset($var_12[$var_1])) {
+        $GLOBALS[$var_1] = $var_12[$var_1];
+    }
+}
+
+
+$_SESSION['Import_message']['message'] = null;
+$_SESSION['Import_message']['go_back_url'] = null;
+
+$GLOBALS['reload'] = false;
+
+
+
+if (!isset($_SESSION['is_multi_query'])) {
+    $_SESSION['is_multi_query'] = false;
+}
+
+
+
+if (! empty($var_2)) {
+    
+    $var_3 = $var_2;
+    $var_4 = 'query';
+    $var_5 = 'sql';
+
+    
+    if (preg_match('/^(DROP)\s+(VIEW|TABLE|DATABASE|SCHEMA)\s+/i', $var_2)) {
+        $GLOBALS['reload'] = true;
+    }
+
+    
+    if (preg_match(
+        '/^(CREATE|ALTER)\s+(VIEW|TABLE|DATABASE|SCHEMA)\s+/i',
+        $var_2
+    )) {
+        $var_79['reload'] = true;
+    }
+
+    
+    
+    if (preg_match(
+        '/^RENAME\s+TABLE\s+(.*?)\s+TO\s+(.*?)($|;|\s)/i',
+        $var_2,
+        $var_6
+    )) {
+        $var_79['table_name'] = PMA_Util::unQuote($var_6[2]);
+        $var_79['reload'] = true;
+    }
+
+    $var_2 = '';
+} elseif (! empty($var_7)) {
+    
+    $var_8 = $var_7;
+    $var_4 = 'queryfile';
+    $var_5 = 'sql';
+    unset($var_7);
+} elseif (! empty($var_9)) {
+    
+    $var_10 = $var_9;
+    $var_4 = 'queryfile';
+    $var_5 = 'sql';
+    unset($var_9);
+} elseif (! empty($var_11)) {
+    
+    $var_4 = 'query';
+    $var_5 = 'sql';
+}
+
+
+
+;
+if ($var_12 == array() && $var_13 == array()) {
+    $var_14 = PMA_Message::error(
+        __('You probably tried to upload a file that is too large. Please refer to %sdocumentation%s for a workaround for this limit.')
+    );
+    $var_14->addParam('[doc@faq1-16]');
+    $var_14->addParam('[/doc]');
+
+    
+    $_SESSION['Import_message']['message'] = $var_14->getDisplay();
+    $_SESSION['Import_message']['go_back_url'] = $var_17;
+
+    $var_14->display();
+    var_19; 
+}
+
+
+
+if (! in_array(
+    $var_5,
+    array(
+        'csv',
+        'ldi',
+        'mediawiki',
+        'ods',
+        'shp',
+        'sql',
+        'xml'
+    )
+)
+) {
+    
+    
+    PMA_fatalError('Incorrect format parameter');
+}
+
+$var_20 = array(
+    '/^force_file_/',
+    '/^'. $var_5 . '_/'
+);
+foreach (array_keys($var_12) as $var_21) {
+    foreach ($var_20 as $var_22) {
+        if (preg_match($var_22, $var_21)) {
+            $GLOBALS[$var_21] = $var_12[$var_21];
+        }
+    }
+}
+
+
+PMA_Util::checkParameters(array('import_type', 'format'));
+
+
+$var_5 = PMA_securePath($var_5);
+
+
+
+
+if ($var_4 == 'table') {
+    $var_23 = 'tbl_import.php?' . PMA_URL_getCommon($var_24, $var_25);
+    $_SESSION['Import_message']['go_back_url'] = $var_23;
+    $var_17 = 'tbl_import.php';
+} elseif ($var_4 == 'database') {
+    $var_23 = 'db_import.php?' . PMA_URL_getCommon($var_24);
+    $_SESSION['Import_message']['go_back_url'] = $var_23;
+    $var_17 = 'db_import.php';
+} elseif ($var_4 == 'server') {
+    $var_23 = 'server_import.php?' . PMA_URL_getCommon();
+    $_SESSION['Import_message']['go_back_url'] = $var_23;
+    $var_17 = 'server_import.php';
+} else {
+    if (empty($var_17) || !preg_match('@^(server|db|tbl)(_[a-z]*)*\.php$@i', $var_17)) {
+        if (strlen($var_25) && strlen($var_24)) {
+            $var_17 = 'tbl_structure.php';
+        } elseif (strlen($var_24)) {
+            $var_17 = 'db_structure.php';
+        } else {
+            $var_17 = 'server_sql.php';
+        }
+    }
+    if (strlen($var_25) && strlen($var_24)) {
+        $var_26 = PMA_URL_getCommon($var_24, $var_25);
+    } elseif (strlen($var_24)) {
+        $var_26 = PMA_URL_getCommon($var_24);
+    } else {
+        $var_26 = PMA_URL_getCommon();
+    }
+    $var_23  = $var_17 . '?' . $var_26
+        . (preg_match('@^tbl_[a-z]*\.php$@', $var_17)
+            ? '&amp;table=' . htmlspecialchars($var_25)
+            : '');
+    $_SESSION['Import_message']['go_back_url'] = $var_23;
+}
+
+
+if (strlen($var_24)) {
+    $GLOBALS['dbi']->selectDb($var_24);
+}
+
+@set_time_limit($cfg['ExecTimeLimit']);
+if (! empty($cfg['MemoryLimit'])) {
+    @ini_set('memory_limit', $cfg['MemoryLimit']);
+}
+
+$var_28 = time();
+if (isset($var_29)) {
+    $var_30 = ini_get('max_execution_time');
+} else {
+    $var_30 = 0;
+}
+
+
+$var_31 = false;
+$var_32 = false;
+$var_33 = 1;
+$var_34 = false;
+$var_35 = 0;
+$var_36 = 0;
+$var_37 = '';
+$var_2 = '';
+$var_38 = false;
+$var_39 = false;
+$var_40 = 0;
+$var_41 = true;
+$var_42 = false;
+$var_43 = false;
+$var_44 = false;
+
+
+if (! empty($var_11)) {
+    $var_11 = (int)$var_11;
+    switch ($var_45) {
+    case 0: 
+        $var_3 = PMA_Bookmark_get(
+            $var_24,
+            $var_11,
+            'id',
+            isset($var_46)
+        );
+        if (isset($var_47) && ! empty($var_47)) {
+            $var_3 = preg_replace(
+                '|/\*(.*)\[VARIABLE\](.*)\*/|imsU',
+                '${1}' . PMA_Util::sqlAddSlashes($var_47) . '${2}',
+                $var_3
+            );
+        }
+
+        
+        if (preg_match(
+            '/^(DROP)\s+(VIEW|TABLE|DATABASE|SCHEMA)\s+/i',
+            $var_3
+        )) {
+            $GLOBALS['reload'] = true;
+        }
+
+        
+        if (preg_match(
+            '/^(CREATE|ALTER)\s+(VIEW|TABLE|DATABASE|SCHEMA)\s+/i',
+            $var_3
+        )
+        ) {
+            $var_79['reload'] = true;
+        }
+        break;
+    case 1: 
+        $var_3 = PMA_Bookmark_get($var_24, $var_11);
+        if ($GLOBALS['is_ajax_request'] == true) {
+            $var_14 = PMA_Message::success(__('Showing bookmark'));
+            $var_48 = PMA_Response::getInstance();
+            $var_48->isSuccess($var_14->isSuccess());
+            $var_48->addJSON('message', $var_14);
+            $var_48->addJSON('sql_query', $var_3);
+            $var_48->addJSON('action_bookmark', $var_45);
+            var_19;
+        } else {
+            $var_41 = false;
+        }
+        break;
+    case 2: 
+        $var_3 = PMA_Bookmark_get($var_24, $var_11);
+        PMA_Bookmark_delete($var_24, $var_11);
+        if ($GLOBALS['is_ajax_request'] == true) {
+            $var_14 = PMA_Message::success(__('The bookmark has been deleted.'));
+            $var_48 = PMA_Response::getInstance();
+            $var_48->isSuccess($var_14->isSuccess());
+            $var_48->addJSON('message', $var_14);
+            $var_48->addJSON('action_bookmark', $var_45);
+            $var_48->addJSON('id_bookmark', $var_11);
+            var_19;
+        } else {
+            $var_41 = false;
+            $var_32 = true; 
+        }
+        break;
+    }
+} 
+
+
+if (isset($GLOBALS['show_as_php'])) {
+    $var_41 = false;
+    $var_39 = true;
+}
+
+
+$var_51 = trim(@ini_get('memory_limit'));
+
+if (empty($var_51)) {
+    $var_51 = 2097152;
+}
+
+if ($var_51 == -1) {
+    $var_51 = 10485760;
+}
+
+
+if (strtolower(substr($var_51, -1)) == 'm') {
+    $var_51 = (int)substr($var_51, 0, -1) * 1024 * 1024;
+} elseif (strtolower(substr($var_51, -1)) == 'k') {
+    $var_51 = (int)substr($var_51, 0, -1) * 1024;
+} elseif (strtolower(substr($var_51, -1)) == 'g') {
+    $var_51 = (int)substr($var_51, 0, -1) * 1024 * 1024 * 1024;
+} else {
+    $var_51 = (int)$var_51;
+}
+
+
+$var_52 = $var_51 / 8;
+
+
+if (isset($_FILES['import_file'])) {
+    $var_10 = $_FILES['import_file']['tmp_name'];
+}
+if (! empty($var_8) && ! empty($cfg['UploadDir'])) {
+
+    
+    $var_8 = PMA_securePath($var_8);
+
+    $var_10 = PMA_Util::userDir($cfg['UploadDir'])
+        . $var_8;
+
+} elseif (empty($var_10) || ! is_uploaded_file($var_10)) {
+    $var_10  = 'none';
+}
+
+
+
+if ($var_10 != 'none' && ! $var_32) {
+    
+    $var_53 = @ini_get('open_basedir');
+
+    
+    
+    
+
+    if (! empty($var_53)) {
+
+        $var_54 = (var_55 ? '.\\tmp\\' : 'tmp/');
+
+        if (is_writable($var_54)) {
+
+
+            $var_56 = $var_54 . basename($var_10) . uniqid();
+            if (move_uploaded_file($var_10, $var_56)) {
+                $var_10 = $var_56;
+                $var_37 = $var_56;
+            }
+
+            $var_57 = filesize($var_10);
+        }
+    }
+
+    
+    $var_58 = PMA_detectCompression($var_10);
+    if ($var_58 === false) {
+        $var_14 = PMA_Message::error(__('File could not be read'));
+        $var_32 = true;
+    } else {
+        switch ($var_58) {
+        case 'application/bzip2':
+            if ($cfg['BZipDump'] && @function_exists('bzopen')) {
+                $var_59 = @bzopen($var_10, 'r');
+            } else {
+                $var_14 = PMA_Message::error(
+                    __('You attempted to load file with unsupported compression (%s). Either support for it is not implemented or disabled by your configuration.')
+                );
+                $var_14->addParam($var_58);
+                $var_32 = true;
+            }
+            break;
+        case 'application/gzip':
+            if ($cfg['GZipDump'] && @function_exists('gzopen')) {
+                $var_59 = @gzopen($var_10, 'r');
+            } else {
+                $var_14 = PMA_Message::error(
+                    __('You attempted to load file with unsupported compression (%s). Either support for it is not implemented or disabled by your configuration.')
+                );
+                $var_14->addParam($var_58);
+                $var_32 = true;
+            }
+            break;
+        case 'application/zip':
+            if ($cfg['ZipDump'] && @function_exists('zip_open')) {
+                
+                $var_60 = PMA_getZipContents($var_10);
+                if (! empty($var_60['error'])) {
+                    $var_14 = PMA_Message::rawError($var_60['error']);
+                    $var_32 = true;
+                } else {
+                    $var_3 = $var_60['data'];
+                }
+            } else {
+                $var_14 = PMA_Message::error(
+                    __('You attempted to load file with unsupported compression (%s). Either support for it is not implemented or disabled by your configuration.')
+                );
+                $var_14->addParam($var_58);
+                $var_32 = true;
+            }
+            break;
+        case 'none':
+            $var_59 = @fopen($var_10, 'r');
+            break;
+        default:
+            $var_14 = PMA_Message::error(
+                __('You attempted to load file with unsupported compression (%s). Either support for it is not implemented or disabled by your configuration.')
+            );
+            $var_14->addParam($var_58);
+            $var_32 = true;
+            break;
+        }
+    }
+    
+    if (! $var_32 && isset($var_59) && $var_59 === false) {
+        $var_14 = PMA_Message::error(__('File could not be read'));
+        $var_32 = true;
+    }
+} elseif (! $var_32) {
+    if (! isset($var_3) || empty($var_3)) {
+        $var_14 = PMA_Message::error(
+            __('No data was received to import. Either no file name was submitted, or the file size exceeded the maximum size permitted by your PHP configuration. See [doc@faq1-16]FAQ 1.16[/doc].')
+        );
+        $var_32 = true;
+    }
+}
+
+
+
+
+
+if ($GLOBALS['PMA_recoding_engine'] != var_61 && isset($var_62)) {
+    if ($var_62 != 'utf-8') {
+        $var_42 = true;
+    }
+} elseif (isset($var_62) && $var_62 != 'utf8') {
+    if (var_63) {
+        
+        
+        $var_32 = true;
+        $var_14 = PMA_Message::error(
+            __('Cannot convert file\'s character set without character set conversion library')
+        );
+    } else {
+        $GLOBALS['dbi']->query('SET NAMES \'' . $var_62 . '\'');
+        
+        $var_38 = true;
+        $var_43 = true;
+    }
+}
+
+
+if (! $var_32 && isset($var_65)) {
+    $var_66 = $var_65;
+    while ($var_65 > 0) {
+        PMA_importGetNextChunk($var_65 < $var_52 ? $var_65 : $var_52);
+        
+        $var_33 = 1;
+        $var_65 -= $var_52;
+    }
+    unset($var_65);
+}
+
+
+
+$var_67 = array('valid_sql' => array(), 'valid_queries' => 0);
+
+if (! $var_32) {
+    
+    $var_68 = PMA_getPlugin(
+        "import",
+        $var_5,
+        'libraries/plugins/import/',
+        $var_4
+    );
+    if ($var_68 == null) {
+        $var_32 = true;
+        $var_14 = PMA_Message::error(
+            __('Could not load import plugins, please check your installation!')
+        );
+    } else {
+        
+        $var_68->doImport($var_67);
+    }
+}
+
+if (! $var_32 && false !== $var_59 && null !== $var_59) {
+    fclose($var_59);
+}
+
+
+if ($var_37 != '') {
+    unlink($var_37);
+}
+
+
+if ($var_43) {
+    $GLOBALS['dbi']->query('SET CHARACTER SET utf8');
+    $GLOBALS['dbi']->query(
+        'SET SESSION collation_connection =\'' . $var_70 . '\''
+    );
+}
+
+
+if (! empty($var_11) && $var_45 == 2) {
+    $var_14 = PMA_Message::success(__('The bookmark has been deleted.'));
+    $var_71 = $var_3;
+    $var_32 = false; 
+} elseif (! empty($var_11) && $var_45 == 1) {
+    $var_14 = PMA_Message::notice(__('Showing bookmark'));
+} elseif ($var_44) {
+    $var_72 = '[br]'  . sprintf(
+        __('Bookmark %s created'),
+        htmlspecialchars($var_73)
+    );
+} elseif ($var_34 && ! $var_32) {
+    if ($var_4 == 'query') {
+        $var_14 = PMA_Message::success();
+    } else {
+        $var_14 = PMA_Message::success(
+            '<em>'
+            . __('Import has been successfully finished, %d queries executed.')
+            . '</em>'
+        );
+        $var_14->addParam($var_40);
+
+        if ($var_74) {
+            $var_14->addString($var_74);
+        }
+        if (isset($var_8)) {
+            $var_14->addString('(' . htmlspecialchars($var_8) . ')');
+        } else {
+            $var_14->addString('(' . htmlspecialchars($_FILES['import_file']['name']) . ')');
+        }
+    }
+}
+
+
+if ($var_31) {
+    $var_14 = PMA_Message::error(
+        __('Script timeout passed, if you want to finish import, please resubmit same file and import will resume.')
+    );
+    if ($var_35 == 0 || (isset($var_66) && $var_66 == $var_35)) {
+        $var_14->addString(
+            __('However on last run no data has been parsed, this usually means phpMyAdmin won\'t be able to finish this import unless you increase php time limits.')
+        );
+    }
+}
+
+
+
+if (isset($var_14)) {
+    $_SESSION['Import_message']['message'] = $var_14->getDisplay();
+}
+
+
+
+
+if (strlen($var_2) <= $GLOBALS['cfg']['MaxCharactersInDisplayedSQL']) {
+}
+
+
+if (isset($var_76)) {
+    foreach ($var_76 as $var_77 => $var_78) {
+        PMA_Util::mysqlDie(
+            $var_78['error'], $var_78['sql'], '', $var_23, $var_32
+        );
+    }
+}
+
+if ($var_39) {
+    
+
+    if (isset($var_79) && $var_79['reload'] === true) {
+        $var_48 = PMA_Response::getInstance();
+        $var_48->addJSON('ajax_reload', $var_79);
+    }
+    PMA_executeQueryAndSendQueryResponse(
+        $var_80, false, $var_24, $var_25, null, $var_3, null,
+        $var_80['is_affected'], null,
+        null, null, null, $var_17, $var_81, null, null, null, $var_2,
+        null, null
+    );
+} else if ($var_60) {
+    $var_48 = PMA_Response::getInstance();
+    $var_48->isSuccess(true);
+    $var_48->addJSON('message', PMA_Message::success($var_82));
+    $var_48->addJSON(
+        'sql_query',
+        PMA_Util::getMessage($var_82, $var_2, 'success')
+    );
+} else if ($var_60 == false) {
+    $var_48 = PMA_Response::getInstance();
+    $var_48->isSuccess(false);
+    $var_48->addJSON('message', PMA_Message::error($var_82));
+} else {
+    $var_83 = $var_17;
+}
+?>

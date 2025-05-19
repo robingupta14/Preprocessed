@@ -1,0 +1,284 @@
+<?php if ( ! defined('YII_PATH')) exit('No direct script access allowed');
+
+
+class CmsInput extends CApplicationComponent
+{
+    
+    protected $cleanPostCompleted   = false;
+    
+    
+    protected $cleanGetCompleted    = false;
+    
+    
+    protected $defaultCleanMethod   = 'stripClean';
+    
+    
+    protected $security;
+    
+    
+    protected $originalPost = array();
+    
+    
+    protected $originalGet  = array();
+    
+    
+    protected $purifier;
+
+    
+    public $_cleanPost   = true;
+    
+    
+    public $_cleanGet    = true;
+    
+    
+    public $_cleanMethod = 'stripClean';
+    
+    
+    
+    public function init()
+    {
+        $this->originalPost=$_POST;
+        $this->originalGet=$_GET;
+
+        parent::init();
+        Yii::app()->attachEventHandler('onBeginRequest', array($this, 'cleanGlobals'));
+    }
+    
+    
+    public function purify($str)
+    {
+        if(is_array($str))
+        {
+            foreach($str AS $k=>$v)
+                $str[$k]=$this->purify($v);
+            return $str;
+        }
+        return $this->getHtmlPurifier()->purify($str);
+    }
+
+    
+    public function xssClean($str, $isImage=false)
+    {
+        return $this->getSecurity()->xss_clean($str, $isImage);
+    }
+
+    
+    public function stripTags($str, $encode=false)
+	{
+        if(is_array($str))
+        {
+            foreach($str AS $k=>$v) 
+                $str[$k]=$this->stripTags($v, $encode);
+            return $str;
+        }     
+        $str=trim(strip_tags($str));
+        
+        if($encode) 
+            $str=$this->encode($str);
+        return $str;              
+	}
+    
+    
+    public function stripCleanEncode($str)
+    {
+        if(is_array($str))
+        {
+            foreach($str AS $k=>$v)
+                $str[$k]=$this->stripCleanEncode($v);
+            return $str;
+        }
+        return $this->encode($this->stripClean($str)); 
+    }
+    
+    
+    public function cleanEncode($str)
+    {
+        return $this->encode($this->xssClean($str));
+    }
+    
+    
+    public function stripClean($str)
+    {
+        return $this->stripTags($this->xssClean($str));
+    }
+    
+    
+    public function encode($str)
+    {
+        if(is_array($str))
+        {
+            foreach($str AS $k=>$v)
+                $str[$k]=$this->encode($v);
+            return $str;
+        }
+        return CHtml::encode($str);
+    }
+    
+    
+    public function decode($str)
+    {
+        if(is_array($str))
+        {
+            foreach($str AS $k=>$v)
+                $str[$k]=$this->decode($v);
+            return $str;
+        }
+        return CHtml::decode($str);
+    }
+    
+    
+    public function stripEncode($str)
+    {
+        return $this->stripTags($str, true);
+    }
+    
+    
+    public function get($key=null, $defaultValue=null, $clean=true)
+    {
+        $cleanMethod = $this->getCleanMethod();
+        if(empty($key) && empty($defaultValue))
+        {
+            if($clean===true && $this->cleanGetCompleted===false)
+                return $this->$cleanMethod($_GET);
+            return $_GET;
+        }
+        $value=Yii::app()->request->getQuery($key, $defaultValue);
+        if($clean===true && $this->cleanGetCompleted===false && !empty($value))
+            return $this->$cleanMethod($value);
+        return $value;
+    }
+ 
+    
+     public function getQuery($key=null, $defaultValue=null, $clean=true)
+     {
+        return $this->get($key, $defaultValue, $clean);
+     }
+    
+    
+    public function post($key=null, $defaultValue=null, $clean=true)
+    {
+        $cleanMethod = $this->getCleanMethod();
+        if(empty($key) && empty($defaultValue))
+        {
+            if($clean===true && $this->cleanPostCompleted===false)
+                return $this->$cleanMethod($_POST);
+            return $_POST;
+        }
+        $value=Yii::app()->request->getPost($key, $defaultValue);
+        if($clean===true && $this->cleanPostCompleted===false && !empty($value))
+            return $this->$cleanMethod($value);
+        return $value;
+    }
+    
+    
+    public function getPost($key, $defaultValue=null, $clean=true)
+    {
+        return $this->post($key, $defaultValue, $clean);
+    }
+
+    
+    public function sanitizeFilename($file)
+    {
+        return $this->getSecurity()->sanitize_filename($file);
+    } 
+
+    
+    protected function cleanGlobals()
+    {
+        $cleanMethod = $this->getCleanMethod();
+
+        if($this->getCleanPost()===true && $this->cleanPostCompleted===false && !empty($_POST))
+        {
+            $_POST=$this->post();
+            $this->cleanPostCompleted=true;
+            if(defined('YII_DEBUG')&&YII_DEBUG)
+                Yii::log(Yii::t('security', 'Global {global} array cleaned using {method} method.',array('{global}'=>'$_POST', '{method}'=>__CLASS__.'::'.$cleanMethod)));
+        }
+        if($this->getCleanGet()===true && $this->cleanGetCompleted===false && !empty($_GET))
+        {
+            $_GET=$this->get();
+            $this->cleanGetCompleted=true;
+            if(defined('YII_DEBUG')&&YII_DEBUG)
+                Yii::log(Yii::t('security', 'Global {global} array cleaned using {method} method.',array('{global}'=>'$_GET', '{method}'=>__CLASS__.'::'.$cleanMethod)));
+        }
+    }
+    
+    
+    public function setCleanPost($str)
+    {
+        $this->_cleanPost=(bool)$str;
+    }
+    
+    
+    public function getCleanPost()
+    {
+        return $this->_cleanPost;
+    }
+    
+    
+    public function setCleanGet($str)
+    {
+        $this->_cleanGet=(bool)$str;
+    }
+    
+    
+    public function getCleanGet()
+    {
+        return $this->_cleanGet;
+    }
+    
+    
+    public function setCleanMethod($str)
+    {
+        if(!method_exists($this, $str))
+            $str=$this->defaultCleanMethod;
+        $this->_cleanMethod=$str;
+    }
+    
+    
+    public function getCleanMethod()
+    {
+        return $this->_cleanMethod;
+    }
+    
+    
+    public function getOriginalPost($key=null, $defaultValue=null)
+    {
+        if(empty($key))
+            return $this->originalPost;
+        return isset($this->originalPost[$key])?$this->originalPost[$key]:$defaultValue;
+    }
+    
+    
+    public function getOriginalGet($key=null, $defaultValue=null)
+    {
+        if(empty($key))
+            return $this->originalGet;
+        return isset($this->originalGet[$key])?$this->originalGet[$key]:$defaultValue;
+    }
+    
+    
+    private function getSecurity()
+    {
+        if($this->security !== null) {
+            return $this->security;
+        }
+
+        $this->security = new Security();
+
+        return $this->security;
+    }
+    
+    
+    private function getHtmlPurifier()
+    {
+        if($this->purifier!==null)
+            return $this->purifier;
+        $this->purifier=new CHtmlPurifier;
+        if(file_exists($file=Yii::getPathOfAlias('application').DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'htmlpurifier.php'))
+            $this->purifier->options=include($file);
+        return $this->purifier;
+    }
+
+
+}

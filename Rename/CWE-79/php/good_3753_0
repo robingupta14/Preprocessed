@@ -1,0 +1,404 @@
+<?php
+
+
+
+
+class class_0{
+	
+	public static function fn_0($var_0){
+		$var_1 = null;
+		if(is_array($var_0)) {
+			$var_2 = join(',', array_fill(0, count($var_0), '?'));
+			$var_3 = 'SELECT * FROM *PREFIX*contacts_cards WHERE addressbookid IN ('.$var_2.') ORDER BY fullname';
+			try {
+				$var_4 = var_5\var_6::prepare( $var_3 );
+				$var_1 = $var_4->execute($var_0);
+			} catch(var_8 $var_9) {}
+		} elseif($var_0) {
+			try {
+				$var_4 = var_5\var_6::prepare( 'SELECT * FROM *PREFIX*contacts_cards WHERE addressbookid = ? ORDER BY fullname' );
+				$var_1 = $var_4->execute(array($var_0));
+			} catch(var_8 $var_9) {}
+		}
+		$var_10 = array();
+		if(!is_null($var_1)) {
+			while( $var_11 = $var_1->fetchRow()){
+				$var_10[] = $var_11;
+			}
+		}
+
+		return $var_10;
+	}
+
+	
+	public static function fn_1($var_0){
+		$var_4 = var_5\var_6::prepare( 'SELECT * FROM *PREFIX*contacts_cards WHERE id = ?' );
+		$var_1 = $var_4->execute(array($var_0));
+
+		return $var_1->fetchRow();
+	}
+
+	
+	public static function fn_2($var_13,$var_14){
+		$var_4 = var_5\var_6::prepare( 'SELECT * FROM *PREFIX*contacts_cards WHERE addressbookid = ? AND uri = ?' );
+		$var_1 = $var_4->execute(array($var_13,$var_14));
+
+		return $var_1->fetchRow();
+	}
+
+	
+	public static function fn_3(&$var_15) {
+		foreach($var_15->var_16 as $var_17=>&$var_18){
+			$var_19 = OC_Contacts_App::getTypesOfProperty($var_15->var_20);
+			if(is_array($var_19) && in_array(strtoupper($var_18->var_20), array_keys($var_19)) || strtoupper($var_18->var_20) == 'PREF') {
+				$var_15->var_16[] = new class_1('TYPE', $var_18->var_20);
+			}
+			unset($var_15->var_16[$var_17]);
+		}
+	}
+
+	
+	public static function fn_4(&$var_15) {
+		
+		foreach($var_15->var_16 as $var_17=>&$var_18){
+			if(strtoupper($var_18->var_20) == 'ENCODING') {
+				if(strtoupper($var_18->var_21) == 'QUOTED-PRINTABLE') { 
+					$var_15->var_21 = quoted_printable_decode($var_15->var_21);
+					unset($var_15->var_16[$var_17]);
+				}
+			} elseif(strtoupper($var_18->var_20) == 'CHARSET') {
+					unset($var_15->var_16[$var_17]);
+			}
+		}
+	}
+
+	
+	protected static function fn_5($var_13, &$var_22) {
+		$var_4 = var_5\var_6::prepare( 'SELECT * FROM *PREFIX*contacts_cards WHERE addressbookid = ? AND uri = ?' );
+		$var_14 = $var_22.'.vcf';
+		$var_1 = $var_4->execute(array($var_13,$var_14));
+		if($var_1->numRows() > 0){
+			while(true) {
+				$var_24 = substr(md5(rand().time()),0,10);
+				$var_14 = $var_24.'.vcf';
+				$var_1 = $var_4->execute(array($var_13,$var_14));
+				if($var_1->numRows() > 0){
+					continue;
+				} else {
+					$var_22 = $var_24;
+					return true;
+				}
+			}
+		} else {
+			return false;
+		}
+	}
+
+	
+	protected static function fn_6($var_13, &$var_25) { 
+		$var_26 = array('N', 'FN', 'ORG', 'NICK', 'ADR', 'NOTE');
+		$var_27 = array('ADR', 'TEL', 'EMAIL');
+		$var_28 = false;
+		$var_29 = $var_30 = $var_22 = $var_31 = $var_32 = null;
+		$var_33 = $var_25->getAsString('VERSION');
+		
+		if($var_33 && $var_33 < '3.0') {
+			$var_28 = true;
+			var_5\var_35::writeLog('contacts','OC_Contacts_VCard::updateValuesFromAdd. Updating from version: '.$var_33,var_5\var_35::var_36);
+		}
+		foreach($var_25->var_37 as &$var_15){
+			
+			if($var_28 && in_array($var_15->var_20, $var_26)) {
+				self::fn_4($var_15);
+			}
+			if(in_array($var_15->var_20, $var_26)) {
+				$var_15->var_21 = strip_tags($var_15->var_21);
+			}
+			
+			if($var_28 && in_array($var_15->var_20, $var_27)) {
+				var_5\var_35::writeLog('contacts','OC_Contacts_VCard::updateValuesFromAdd. before: '.$var_15->serialize(),var_5\var_35::var_36);
+				self::fn_3($var_15);
+				var_5\var_35::writeLog('contacts','OC_Contacts_VCard::updateValuesFromAdd. after: '.$var_15->serialize(),var_5\var_35::var_36);
+			}
+			if($var_15->var_20 == 'FN'){
+				$var_29 = $var_15->var_21;
+			}
+			if($var_15->var_20 == 'N'){
+				$var_30 = $var_15->var_21;
+			}
+			if($var_15->var_20 == 'UID'){
+				$var_22 = $var_15->var_21;
+			}
+			if($var_15->var_20 == 'ORG'){
+				$var_32 = $var_15->var_21;
+			}
+			if($var_15->var_20 == 'EMAIL' && is_null($var_31)){ 
+				$var_31 = $var_15->var_21;
+			}
+		}
+		
+		if(!$var_29) {
+			if($var_30 && $var_30 != ';;;;'){
+				$var_29 = join(' ', array_reverse(array_slice(explode(';', $var_30), 0, 2)));
+			} elseif($var_31) {
+				$var_29 = $var_31;
+			} elseif($var_32) {
+				$var_29 = $var_32;
+			} else {
+				$var_29 = 'Unknown Name';
+			}
+			$var_25->setString('FN', $var_29);
+			var_5\var_35::writeLog('contacts','OC_Contacts_VCard::updateValuesFromAdd. Added missing \'FN\' field: '.$var_29,var_5\var_35::var_36);
+		}
+		if(!$var_30 || $var_30 = ';;;;'){ 
+			$var_40 = array_reverse(array_slice(explode(' ', $var_29), 0, 2)); 
+			if(count($var_40) < 2) { 
+				$var_40[] = "";
+			}
+			$var_30 = implode(';', $var_40).';;;';
+			$var_25->setString('N', $var_30);
+			var_5\var_35::writeLog('contacts','OC_Contacts_VCard::updateValuesFromAdd. Added missing \'N\' field: '.$var_30,var_5\var_35::var_36);
+		}
+		if(!$var_22) {
+			$var_25->setUID();
+			$var_22 = $var_25->getAsString('UID');
+			var_5\var_35::writeLog('contacts','OC_Contacts_VCard::updateValuesFromAdd. Added missing \'UID\' field: '.$var_22,var_5\var_35::var_36);
+		}
+		if(self::fn_5($var_13, $var_22)) {
+			$var_25->setString('UID', $var_22);
+		}
+		$var_42 = new class_2;
+		$var_25->setString('REV', $var_42->format(var_43::var_45));
+	}
+
+	
+	public static function fn_7($var_13, var_46 $var_47, $var_14=null, $var_48=false){
+		if(is_null($var_47)){
+			var_5\var_35::writeLog('contacts','OC_Contacts_VCard::add. No vCard supplied', var_5\var_35::var_49);
+			return null;
+		};
+
+		if(!$var_48) {
+			OC_Contacts_App::loadCategoriesFromVCard($var_47);
+			self::fn_6($var_13, $var_47);
+		}
+
+		$var_47->setString('VERSION','3.0');
+		
+		$var_50 = trim($var_47->getAsString('PRODID'));
+		if(!$var_50) {
+			$var_51 = var_5\var_52::getAppInfo('contacts');
+			$var_53 = var_5\var_52::getAppVersion('contacts');
+			$var_50 = '-
+			$card->setString('var_54', $var_50);
+		}
+
+		$var_29 = $var_47->getAsString('FN');
+		if (empty($var_29)) {
+			$var_29 = '';
+		}
+
+		if (!$var_14) {
+			$var_22 = $var_47->getAsString('UID');
+			$var_14 = $var_22.'.vcf';
+		}
+
+		$var_55 = $var_47->serialize();
+		$var_4 = var_5\var_6::prepare( 'INSERT INTO *PREFIX*contacts_cards (addressbookid,fullname,carddata,uri,lastmodified) VALUES(?,?,?,?,?)' );
+		$var_1 = $var_4->execute(array($var_13,$var_29,$var_55,$var_14,time()));
+		$var_56 = var_5\var_6::insertid('*PREFIX*contacts_cards');
+
+		OC_Contacts_Addressbook::touch($var_13);
+
+		return $var_56;
+	}
+
+	
+	public static function fn_8($var_0,$var_14,$var_55){
+		$var_47 = OC_VObject::parse($var_55);
+		return self::fn_7($var_0, $var_47, $var_14);
+	}
+
+	
+	public static function fn_9($var_57){
+		$var_4 = var_5\var_6::prepare( 'UPDATE *PREFIX*contacts_cards SET carddata = ?, lastmodified = ? WHERE id = ?' );
+		$var_42 = new class_2;
+		foreach($var_57 as $var_58) {
+			$var_25 = OC_VObject::parse($var_58[1]);
+			if(!is_null($var_25)){
+				$var_25->setString('REV', $var_42->format(var_43::var_45));
+				$var_55 = $var_25->serialize();
+				try {
+					$var_1 = $var_4->execute(array($var_55,time(),$var_58[0]));
+					
+				} catch(var_8 $var_9) {}
+			}
+		}
+	}
+
+	
+	public static function fn_10($var_0, var_46 $var_47){
+		$var_59 = self::fn_1($var_0);
+
+		if(is_null($var_47)) {
+			return false;
+		}
+
+		OC_Contacts_App::loadCategoriesFromVCard($var_47);
+
+		$var_29 = $var_47->getAsString('FN');
+		if (empty($var_29)) {
+			$var_29 = null;
+		}
+
+		$var_42 = new class_2;
+		$var_47->setString('REV', $var_42->format(var_43::var_45));
+
+		$var_55 = $var_47->serialize();
+		$var_4 = var_5\var_6::prepare( 'UPDATE *PREFIX*contacts_cards SET fullname = ?,carddata = ?, lastmodified = ? WHERE id = ?' );
+		$var_1 = $var_4->execute(array($var_29,$var_55,time(),$var_0));
+
+		OC_Contacts_Addressbook::touch($var_59['addressbookid']);
+
+		return true;
+	}
+
+	
+	public static function fn_11($var_13,$var_14,$var_55){
+		$var_59 = self::fn_2($var_13,$var_14);
+		$var_47 = OC_VObject::parse($var_55);
+		return self::fn_10($var_59['id'], $var_47);
+	}
+
+	
+	public static function fn_12($var_0){
+		
+		$var_4 = var_5\var_6::prepare( 'DELETE FROM *PREFIX*contacts_cards WHERE id = ?' );
+		$var_4->execute(array($var_0));
+
+		return true;
+	}
+
+	
+	public static function fn_13($var_13,$var_14){
+		
+		$var_4 = var_5\var_6::prepare( 'DELETE FROM *PREFIX*contacts_cards WHERE addressbookid = ? AND uri=?' );
+		$var_4->execute(array($var_13,$var_14));
+		OC_Contacts_Addressbook::touch($var_13);
+
+		return true;
+	}
+
+	
+	public static function fn_14($var_21, $var_60=';') {
+		foreach($var_21 as &$var_61 ) {
+			$var_61 = implode("\\$var_60", explode($var_60, $var_61));
+		}
+		return implode($var_60, $var_21);
+	}
+
+
+	
+	public static function fn_15($var_21, $var_60=';') {
+		$var_62 = explode($var_60,$var_21);
+		for($var_61=0;$var_61<count($var_62);$var_61++) {
+			if(substr($var_62[$var_61],-1,1)=="\\") {
+				if(isset($var_62[$var_61+1])) {
+					$var_62[$var_61] = substr($var_62[$var_61],0,count($var_62[$var_61])-2).$var_60.$var_62[$var_61+1];
+					unset($var_62[$var_61+1]);
+				} else {
+					$var_62[$var_61] = substr($var_62[$var_61],0,count($var_62[$var_61])-2).$var_60;
+				}
+				$var_61 = $var_61 - 1;
+			}
+		}
+		$var_62 = array_map('trim', $var_62);
+		return $var_62;
+	}
+
+	
+	public static function fn_16($var_58){
+		$var_63 = array();
+		foreach($var_58->var_37 as $var_15){
+			$var_64 = self::fn_17($var_15);
+			if(!is_null($var_64)) {
+				if(array_key_exists($var_15->var_20,$var_63)){
+					$var_63[$var_15->var_20][] = $var_64;
+				}
+				else{
+					$var_63[$var_15->var_20] = array($var_64);
+				}
+			}
+		}
+		return $var_63;
+	}
+
+	
+	public static function fn_17($var_15){
+		$var_21 = $var_15->var_21;
+		
+		if($var_15->var_20 == 'ADR' || $var_15->var_20 == 'N'){
+			$var_21 = self::fn_15($var_21);
+		} elseif($var_15->var_20 == 'BDAY') {
+			if(strpos($var_21, '-') === false) {
+				if(strlen($var_21) >= 8) {
+					$var_21 = substr($var_21, 0, 4).'-'.substr($var_21, 4, 2).'-'.substr($var_21, 6, 2);
+				} else {
+					return null; 
+				}
+			}
+		}
+		$var_64 = array(
+			'name' => $var_15->var_20,
+			'value' => $var_21,
+			'parameters' => array(),
+			'checksum' => md5($var_15->serialize()));
+		foreach($var_15->var_16 as $var_18){
+			
+			
+			
+			if($var_18->var_20 == 'TYPE' && $var_18->var_21 == 'PREF'){
+				$var_18->var_20 = 'PREF';
+				$var_18->var_21 = '1';
+			}
+			
+			
+			if (in_array($var_15->var_20, array('TEL', 'EMAIL')) && $var_18->var_20 == 'TYPE'){
+				if (isset($var_64['parameters'][$var_18->var_20])){
+					$var_64['parameters'][$var_18->var_20][] = $var_18->var_21;
+				}
+				else{
+					$var_64['parameters'][$var_18->var_20] = array($var_18->var_21);
+				}
+			}
+			else{
+				$var_64['parameters'][$var_18->var_20] = $var_18->var_21;
+			}
+		}
+		return $var_64;
+	}
+
+	
+	public static function fn_18($var_13, $var_0){
+		OC_Contacts_App::getAddressbook($var_13); 
+		if(is_array($var_0)) {
+			$var_2 = join(',', array_fill(0, count($var_0), '?'));
+			$var_3 = 'UPDATE *PREFIX*contacts_cards SET addressbookid = ? WHERE id IN ('.$var_2.')';
+			try {
+				$var_4 = var_5\var_6::prepare( $var_3 );
+				
+				$var_65 = array_merge((array)$var_13, $var_0);
+				$var_1 = $var_4->execute($var_65);
+			} catch(var_8 $var_9) {}
+		} else {
+			try {
+				$var_4 = var_5\var_6::prepare( 'UPDATE *PREFIX*contacts_cards SET addressbookid = ? WHERE id = ?' );
+				$var_1 = $var_4->execute(array($var_13, $var_0));
+			} catch(var_8 $var_9) {}
+		}
+
+		OC_Contacts_Addressbook::touch($var_13);
+		return true;
+	}
+
+}

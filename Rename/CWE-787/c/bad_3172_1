@@ -1,0 +1,360 @@
+
+
+
+
+
+
+
+
+typedef struct
+{
+    VarLenData **text_body;
+    VarLenData **html_bodies;
+    VarLenData **rtf_bodies;
+} MessageBody;
+
+typedef enum
+{
+    enum_0 = 't',
+    enum_1 = 'h',
+    enum_2 = 'r'
+} MessageBodyTypes;
+
+
+
+static Attr*
+fn_3 (FILE *in)
+{
+    Attr *attr = NULL;
+
+
+    int var_5 = fgetc(in);
+    if (var_5 == -1) return NULL;
+    ungetc(var_5, in);
+
+    attr = attr_read (in);
+
+    return attr;
+}
+
+static void
+fn_5(VarLenData **bodies, int var_7)
+{
+    while (var_7--)
+    {
+        XFREE(bodies[var_7]->data);
+        XFREE(bodies[var_7]);
+    }
+}
+
+static File**
+fn_7 (const char* filename,
+  const char var_10,
+  const MessageBody* body)
+{
+    File **files = NULL;
+    VarLenData **data;
+    char *ext = "";
+    char *type = "unknown";
+    int var_23;
+
+    switch (var_10)
+    {
+    case 'r':
+ data = body->rtf_bodies;
+ ext = ".rtf";
+            type = "text/rtf";
+ break;
+    case 'h':
+ data = body->html_bodies;
+ ext = ".html";
+            type = "text/html";
+ break;
+    case 't':
+ data = body->text_body;
+ ext = ".txt";
+            type = "text/plain";
+ break;
+    default:
+ data = NULL;
+ break;
+    }
+
+    if (data)
+    {
+ int var_11 = 0;
+ char *tmp
+     = CHECKED_XCALLOC(char,
+         strlen(filename) + strlen(ext) + 1);
+ strcpy (tmp, filename);
+ strcat (tmp, ext);
+
+        char *mime = CHECKED_XCALLOC(char, strlen(type) + 1);
+        strcpy (mime, type);
+
+
+ while (data[var_11++]);
+
+ files = (File**)XCALLOC(File*, var_11 + 1);
+ for (var_23 = 0; data[var_23]; var_23++)
+ {
+     files[var_23] = (File*)XCALLOC(File, 1);
+     files[var_23]->name = tmp;
+            files[var_23]->mime_type = mime;
+     files[var_23]->len = data[var_23]->len;
+     files[var_23]->data
+  = CHECKED_XMALLOC(unsigned char, data[var_23]->len);
+     memmove (files[var_23]->data, data[var_23]->data, data[var_23]->len);
+ }
+    }
+    return files;
+}
+
+static VarLenData**
+fn_11 (Attr *attr)
+{
+    VarLenData **body = XCALLOC(VarLenData*, 2);
+
+    body[0] = XCALLOC(VarLenData, 1);
+    body[0]->len = attr->len;
+    body[0]->data = CHECKED_XCALLOC(unsigned char, attr->len);
+    memmove (body[0]->data, attr->buf, attr->len);
+    return body;
+}
+
+static VarLenData**
+fn_12 (MAPI_Attr *a)
+{
+    VarLenData **body = XCALLOC(VarLenData*, a->num_values + 1);
+
+    int var_23;
+    for (var_23 = 0; var_23 < a->num_values; var_23++)
+    {
+ body[var_23] = XMALLOC(VarLenData, 1);
+ body[var_23]->len = a->values[var_23].len;
+ body[var_23]->data = CHECKED_XCALLOC(unsigned char, a->values[var_23].len);
+ memmove (body[var_23]->data, a->values[var_23].data.buf, body[var_23]->len);
+    }
+    return body;
+}
+
+int
+fn_14 (FILE* input_file)
+{
+    int var_18 = 1;
+
+    if (feof(input_file)) var_18 = 0;
+    else if (input_file != stdin)
+    {
+
+ struct struct_16 statbuf;
+ size_t pos, data_left;
+ fstat (fileno(input_file), &statbuf);
+ pos = ftell(input_file);
+ data_left = (statbuf.st_size - pos);
+
+ if (data_left > 0 && data_left < MINIMUM_ATTR_LENGTH)
+ {
+     if ( CRUFT_SKIP )
+     {
+
+
+  if ( data_left == 2 )
+  {
+      int var_18 = fgetc( input_file );
+
+      if ( var_18 < 0 )
+      {
+   fprintf( stderr, "ERROR: confused beyond all redemption.\n" );
+   exit (1);
+      }
+
+      ungetc( var_18, input_file );
+
+      if ( var_18 == 0x0d )
+      {
+
+
+   if ( VERBOSE_ON )
+       fprintf( stderr, "WARNING: garbage at end of file (ignored)\n" );
+
+   if ( DEBUG_ON )
+       debug_print( "!!garbage at end of file (ignored)\n" );
+      }
+      else
+      {
+   fprintf( stderr, "ERROR: garbage at end of file.\n" );
+      }
+  }
+  else
+  {
+      fprintf (stderr, "ERROR: garbage at end of file.\n");
+  }
+     }
+     else
+     {
+  fprintf (stderr, "ERROR: garbage at end of file.\n");
+     }
+
+     var_18 = 0;
+ }
+    }
+    return var_18;
+}
+
+
+
+int
+fn_18 (FILE* input_file, char* directory,
+     char *body_filename, char *body_pref,
+     int var_22)
+{
+    uint32 d;
+    uint16 key;
+    Attr *attr = NULL;
+    File *file = NULL;
+    int var_23 = 0, var_23 = 0;
+    MessageBody body;
+    memset (&body, '\0', sizeof (MessageBody));
+
+
+    g_flags = var_22;
+
+
+    d = geti32(input_file);
+    if (d != TNEF_SIGNATURE)
+    {
+ fprintf (stdout, "Seems not to be a TNEF file\n");
+ return 1;
+    }
+
+
+    key = geti16(input_file);
+    debug_print ("TNEF Key: %hx\n", key);
+
+
+    while ( data_left( input_file ) )
+    {
+ attr = read_object( input_file );
+
+ if ( attr == NULL ) break;
+
+
+ if (attr->name == attATTACHRENDDATA)
+ {
+     if (file)
+     {
+  file_write (file, directory);
+  file_free (file);
+     }
+     else
+     {
+  file = CHECKED_XCALLOC (File, 1);
+     }
+ }
+
+
+ switch (attr->lvl_type)
+ {
+ case LVL_MESSAGE:
+     if (attr->name == attBODY)
+     {
+  body.text_body = get_text_data (attr);
+     }
+     else if (attr->name == attMAPIPROPS)
+     {
+  MAPI_Attr **mapi_attrs
+      = mapi_attr_read (attr->len, attr->buf);
+  if (mapi_attrs)
+  {
+      int var_23;
+      for (var_23 = 0; mapi_attrs[var_23]; var_23++)
+      {
+   MAPI_Attr *a = mapi_attrs[var_23];
+
+   if (a->name == MAPI_BODY_HTML)
+   {
+       body.html_bodies = get_html_data (a);
+                                var_23 = a->num_values;
+   }
+   else if (a->name == MAPI_RTF_COMPRESSED)
+   {
+       body.rtf_bodies = get_rtf_data (a);
+                                var_23 = a->num_values;
+   }
+      }
+
+
+
+      mapi_attr_free_list (mapi_attrs);
+      XFREE (mapi_attrs);
+  }
+     }
+     break;
+ case LVL_ATTACHMENT:
+     file_add_attr (file, attr);
+     break;
+ default:
+     fprintf (stderr, "Invalid lvl type on attribute: %d\n",
+       attr->lvl_type);
+     return 1;
+     break;
+ }
+ attr_free (attr);
+ XFREE (attr);
+    }
+
+    if (file)
+    {
+ file_write (file, directory);
+ file_free (file);
+ XFREE (file);
+    }
+
+
+    if (var_22 & SAVEBODY)
+    {
+ int var_23 = 0;
+ int var_23 = 0;
+ if (strcmp (body_pref, "all") == 0)
+ {
+     var_23 = 1;
+     body_pref = "rht";
+ }
+
+ for (; var_23 < 3; var_23++)
+ {
+     File **files
+  = get_body_files (body_filename, body_pref[var_23], &body);
+     if (files)
+     {
+  int var_23 = 0;
+  for (; files[var_23]; var_23++)
+  {
+      file_write(files[var_23], directory);
+      file_free (files[var_23]);
+                    XFREE(files[var_23]);
+  }
+  XFREE(files);
+  if (!var_23) break;
+     }
+ }
+    }
+
+    if (body.text_body)
+    {
+        free_bodies(body.text_body, 1);
+        XFREE(body.text_body);
+    }
+    if (var_23 > 0)
+    {
+        free_bodies(body.rtf_bodies, var_23);
+        XFREE(body.rtf_bodies);
+    }
+    if (var_23 > 0)
+    {
+        free_bodies(body.html_bodies, var_23);
+        XFREE(body.html_bodies);
+    }
+    return 0;
+}

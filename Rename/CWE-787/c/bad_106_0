@@ -1,0 +1,1548 @@
+
+
+
+
+
+
+
+
+static DEFINE_MUTEX(ebt_mutex);
+
+static struct struct_56 var_93 = {
+ .name = "standard",
+ .revision = 0,
+ .family = NFPROTO_BRIDGE,
+ .targetsize = sizeof(int),
+
+
+
+
+
+};
+
+static inline int
+fn_2(const struct struct_82 *w, struct struct_17 *skb,
+        struct struct_27 *par)
+{
+ par->target = w->u.watcher;
+ par->targinfo = w->data;
+ w->u.watcher->target(skb, par);
+
+ return 0;
+}
+
+static inline int
+fn_6(struct struct_81 *m, const struct struct_17 *skb,
+      struct struct_27 *par)
+{
+ par->match = m->u.match;
+ par->matchinfo = m->data;
+ return m->u.match->match(skb, par) ? EBT_MATCH : EBT_NOMATCH;
+}
+
+static inline int
+fn_8(const char *entry, const struct struct_13 *device)
+{
+ int var_75 = 0;
+ const char *devname;
+
+ if (*entry == '\0')
+  return 0;
+ if (!device)
+  return 1;
+ devname = device->name;
+
+ while (entry[var_75] != '\0' && entry[var_75] != 1 && entry[var_75] == devname[var_75])
+  var_75++;
+ return devname[var_75] != entry[var_75] && entry[var_75] != 1;
+}
+
+
+static inline int
+fn_11(const struct struct_83 *e, const struct struct_17 *skb,
+  const struct struct_13 *in, const struct struct_13 *out)
+{
+ const struct struct_13 *h = eth_hdr(skb);
+ const struct struct_14 *p;
+ __be16 ethproto;
+
+ if (skb_vlan_tag_present(skb))
+  ethproto = htons(ETH_P_8021Q);
+ else
+  ethproto = h->h_proto;
+
+ if (e->bitmask & EBT_802_3) {
+  if (NF_INVF(e, EBT_IPROTO, eth_proto_is_802_3(ethproto)))
+   return 1;
+ } else if (!(e->bitmask & EBT_NOPROTO) &&
+     NF_INVF(e, EBT_IPROTO, e->ethproto != ethproto))
+  return 1;
+
+ if (NF_INVF(e, EBT_IIN, ebt_dev_check(e->in, in)))
+  return 1;
+ if (NF_INVF(e, EBT_IOUT, ebt_dev_check(e->out, out)))
+  return 1;
+
+ if (in && (p = br_port_get_rcu(in)) != NULL &&
+     NF_INVF(e, EBT_ILOGICALIN,
+      ebt_dev_check(e->logical_in, p->br->dev)))
+  return 1;
+ if (out && (p = br_port_get_rcu(out)) != NULL &&
+     NF_INVF(e, EBT_ILOGICALOUT,
+      ebt_dev_check(e->logical_out, p->br->dev)))
+  return 1;
+
+ if (e->bitmask & EBT_SOURCEMAC) {
+  if (NF_INVF(e, EBT_ISOURCE,
+       !ether_addr_equal_masked(h->h_source, e->sourcemac,
+           e->sourcemsk)))
+   return 1;
+ }
+ if (e->bitmask & EBT_DESTMAC) {
+  if (NF_INVF(e, EBT_IDEST,
+       !ether_addr_equal_masked(h->h_dest, e->destmac,
+           e->destmsk)))
+   return 1;
+ }
+ return 0;
+}
+
+static inline
+struct struct_83 *fn_15(const struct struct_83 *entry)
+{
+ return (void *)entry + entry->next_offset;
+}
+
+
+unsigned int fn_16(struct struct_17 *skb,
+     const struct struct_17 *state,
+     struct struct_89 *table)
+{
+ unsigned int var_57 = state->hook;
+ int var_75, var_86;
+ struct struct_83 *point;
+ struct struct_86 *counter_base, *cb_base;
+ const struct struct_83 *t;
+ int verdict, var_28 = 0;
+ struct struct_49 *cs;
+ struct struct_83 *chaininfo;
+ const char *base;
+ const struct struct_71 *private;
+ struct struct_27 acpar;
+
+ acpar.state = state;
+ acpar.hotdrop = false;
+
+ read_lock_bh(&table->lock);
+ private = table->private;
+ cb_base = ((struct struct_86 *)(((char *)private->counters) + ((((private->nentries * sizeof(struct struct_86)) + SMP_CACHE_BYTES-1) & ~(SMP_CACHE_BYTES-1))) * smp_processor_id()));
+
+ if (private->chainstack)
+  cs = private->chainstack[smp_processor_id()];
+ else
+  cs = NULL;
+ chaininfo = private->hook_entry[var_57];
+ var_86 = private->hook_entry[var_57]->nentries;
+ point = (struct struct_83 *)(private->hook_entry[var_57]->data);
+ counter_base = cb_base + private->hook_entry[var_57]->counter_offset;
+
+ base = private->entries;
+ var_75 = 0;
+ while (var_75 < var_86) {
+  if (ebt_basic_match(point, skb, state->in, state->out))
+   goto letscontinue;
+
+  if (EBT_MATCH_ITERATE(point, ebt_do_match, skb, &acpar) != 0)
+   goto letscontinue;
+  if (acpar.hotdrop) {
+   read_unlock_bh(&table->lock);
+   return NF_DROP;
+  }
+
+
+  (*(counter_base + var_75)).pcnt++;
+  (*(counter_base + var_75)).bcnt += skb->len;
+
+
+
+
+  EBT_WATCHER_ITERATE(point, ebt_do_watcher, skb, &acpar);
+
+  t = (struct struct_83 *)
+     (((char *)point) + point->target_offset);
+
+  if (!t->u.target->target)
+   verdict = ((struct struct_61 *)t)->verdict;
+  else {
+   acpar.target = t->u.target;
+   acpar.targinfo = t->data;
+   verdict = t->u.target->target(skb, &acpar);
+  }
+  if (verdict == EBT_ACCEPT) {
+   read_unlock_bh(&table->lock);
+   return NF_ACCEPT;
+  }
+  if (verdict == EBT_DROP) {
+   read_unlock_bh(&table->lock);
+   return NF_DROP;
+  }
+  if (verdict == EBT_RETURN) {
+letsreturn:
+   if (WARN(var_28 == 0, "RETURN on base chain")) {
+
+    goto letscontinue;
+   }
+
+   var_28--;
+
+   var_75 = cs[var_28].n;
+   chaininfo = cs[var_28].chaininfo;
+   var_86 = chaininfo->nentries;
+   point = cs[var_28].e;
+   counter_base = cb_base +
+      chaininfo->counter_offset;
+   continue;
+  }
+  if (verdict == EBT_CONTINUE)
+   goto letscontinue;
+
+  if (WARN(verdict < 0, "bogus standard verdict\n")) {
+   read_unlock_bh(&table->lock);
+   return NF_DROP;
+  }
+
+
+  cs[var_28].n = var_75 + 1;
+  cs[var_28].chaininfo = chaininfo;
+  cs[var_28].e = ebt_next_entry(point);
+  var_75 = 0;
+  chaininfo = (struct struct_83 *) (base + verdict);
+
+  if (WARN(chaininfo->distinguisher, "jump to non-chain\n")) {
+   read_unlock_bh(&table->lock);
+   return NF_DROP;
+  }
+
+  var_86 = chaininfo->nentries;
+  point = (struct struct_83 *)chaininfo->data;
+  counter_base = cb_base + chaininfo->counter_offset;
+  var_28++;
+  continue;
+letscontinue:
+  point = ebt_next_entry(point);
+  var_75++;
+ }
+
+
+ if (chaininfo->policy == EBT_RETURN)
+  goto letsreturn;
+ if (chaininfo->policy == EBT_ACCEPT) {
+  read_unlock_bh(&table->lock);
+  return NF_ACCEPT;
+ }
+ read_unlock_bh(&table->lock);
+ return NF_DROP;
+}
+
+
+static inline void *
+fn_28(struct struct_32 *head, const char *name, int *error,
+   struct struct_34 *mutex)
+{
+ struct {
+  struct struct_32 list;
+  char name[EBT_FUNCTION_MAXNAMELEN];
+ } *e;
+
+ mutex_lock(mutex);
+ list_for_each_entry(e, head, list) {
+  if (strcmp(e->name, name) == 0)
+   return e;
+ }
+ *error = -ENOENT;
+ mutex_unlock(mutex);
+ return NULL;
+}
+
+static void *
+fn_31(struct struct_32 *head, const char *name, const char *prefix,
+   int *error, struct struct_34 *mutex)
+{
+ return try_then_request_module(
+   find_inlist_lock_noload(head, name, error, mutex),
+   "%s%s", prefix, name);
+}
+
+static inline struct struct_89 *
+fn_32(struct struct_89 *net, const char *name, int *error,
+  struct struct_34 *mutex)
+{
+ return find_inlist_lock(&net->xt.tables[NFPROTO_BRIDGE], name,
+    "ebtable_", error, mutex);
+}
+
+static inline int
+fn_34(struct struct_81 *m, struct struct_57 *par,
+  unsigned int *cnt)
+{
+ const struct struct_83 *e = par->entryinfo;
+ struct struct_36 *match;
+ size_t var_46 = ((char *)e + e->watchers_offset) - (char *)m;
+ int var_92;
+
+ if (var_46 < sizeof(struct struct_81) ||
+     var_46 - sizeof(struct struct_81) < m->match_size)
+  return -EINVAL;
+
+ match = xt_find_match(NFPROTO_BRIDGE, m->u.name, 0);
+ if (IS_ERR(match) || match->family != NFPROTO_BRIDGE) {
+  if (!IS_ERR(match))
+   module_put(match->me);
+  request_module("ebt_%s", m->u.name);
+  match = xt_find_match(NFPROTO_BRIDGE, m->u.name, 0);
+ }
+ if (IS_ERR(match))
+  return PTR_ERR(match);
+ m->u.match = match;
+
+ par->match = match;
+ par->matchinfo = m->data;
+ var_92 = xt_check_match(par, m->match_size,
+       e->ethproto, e->invflags & EBT_IPROTO);
+ if (var_92 < 0) {
+  module_put(match->me);
+  return var_92;
+ }
+
+ (*cnt)++;
+ return 0;
+}
+
+static inline int
+fn_39(struct struct_82 *w, struct struct_57 *par,
+    unsigned int *cnt)
+{
+ const struct struct_83 *e = par->entryinfo;
+ struct struct_56 *watcher;
+ size_t var_46 = ((char *)e + e->target_offset) - (char *)w;
+ int var_92;
+
+ if (var_46 < sizeof(struct struct_82) ||
+    var_46 - sizeof(struct struct_82) < w->watcher_size)
+  return -EINVAL;
+
+ watcher = xt_request_find_target(NFPROTO_BRIDGE, w->u.name, 0);
+ if (IS_ERR(watcher))
+  return PTR_ERR(watcher);
+ w->u.watcher = watcher;
+
+ par->target = watcher;
+ par->targinfo = w->data;
+ var_92 = xt_check_target(par, w->watcher_size,
+       e->ethproto, e->invflags & EBT_IPROTO);
+ if (var_92 < 0) {
+  module_put(watcher->me);
+  return var_92;
+ }
+
+ (*cnt)++;
+ return 0;
+}
+
+static int fn_41(const struct struct_89 *repl,
+          struct struct_71 *newinfo)
+{
+ unsigned int var_46 = repl->entries_size;
+ unsigned int var_46 = repl->valid_hooks;
+ unsigned int var_46 = 0;
+ int var_75;
+
+ for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++)
+  newinfo->hook_entry[var_75] = NULL;
+
+ newinfo->entries_size = repl->entries_size;
+ newinfo->nentries = repl->nentries;
+
+ while (var_46 < var_46) {
+  size_t var_46 = var_46 - var_46;
+  struct struct_83 *e = (void *)newinfo->entries + var_46;
+
+  if (var_46 < sizeof(unsigned int))
+   break;
+
+  for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++) {
+   if ((var_46 & (1 << var_75)) == 0)
+    continue;
+   if ((char __user *)repl->hook_entry[var_75] ==
+        repl->entries + var_46)
+    break;
+  }
+
+  if (var_75 != NF_BR_NUMHOOKS || !(e->bitmask & EBT_ENTRY_OR_ENTRIES)) {
+   if (e->bitmask != 0) {
+
+
+
+    printk("kernel msg: ebtables bug: please " "report to author: ""EBT_ENTRY_OR_ENTRIES shouldn't be set " "in distinguisher\n");
+
+    return -EINVAL;
+   }
+   if (var_75 != NF_BR_NUMHOOKS)
+    newinfo->hook_entry[var_75] = (struct struct_83 *)e;
+   if (var_46 < sizeof(struct struct_83))
+    break;
+   var_46 += sizeof(struct struct_83);
+  } else {
+   if (var_46 < sizeof(struct struct_83))
+    break;
+   if (var_46 < e->next_offset)
+    break;
+   if (e->next_offset < sizeof(struct struct_83))
+    return -EINVAL;
+   var_46 += e->next_offset;
+  }
+ }
+ if (var_46 != var_46) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""entries_size too small\n");
+  return -EINVAL;
+ }
+
+
+ for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++) {
+  if (!newinfo->hook_entry[var_75] &&
+     (var_46 & (1 << var_75))) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""Valid hook without chain\n");
+   return -EINVAL;
+  }
+ }
+ return 0;
+}
+
+
+
+
+static inline int
+fn_46(const struct struct_83 *e,
+          const struct struct_71 *newinfo,
+          unsigned int *n, unsigned int *cnt,
+          unsigned int *totalcnt, unsigned int *var_62)
+{
+ int var_75;
+
+ for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++) {
+  if ((void *)e == (void *)newinfo->hook_entry[var_75])
+   break;
+ }
+
+
+
+ if (var_75 != NF_BR_NUMHOOKS || !e->bitmask) {
+
+
+
+  if (*n != *cnt) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""nentries does not equal the nr of entries " "in the chain\n");
+
+   return -EINVAL;
+  }
+  if (((struct struct_83 *)e)->policy != EBT_DROP &&
+     ((struct struct_83 *)e)->policy != EBT_ACCEPT) {
+
+   if (var_75 != NF_BR_NUMHOOKS ||
+      ((struct struct_83 *)e)->policy != EBT_RETURN) {
+    printk("kernel msg: ebtables bug: please " "report to author: ""bad policy\n");
+    return -EINVAL;
+   }
+  }
+  if (var_75 == NF_BR_NUMHOOKS)
+   (*var_62)++;
+  if (((struct struct_83 *)e)->counter_offset != *totalcnt) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""counter_offset != totalcnt");
+   return -EINVAL;
+  }
+  *n = ((struct struct_83 *)e)->nentries;
+  *cnt = 0;
+  return 0;
+ }
+
+ if (sizeof(struct struct_83) > e->watchers_offset ||
+    e->watchers_offset > e->target_offset ||
+    e->target_offset >= e->next_offset) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""entry offsets not in right order\n");
+  return -EINVAL;
+ }
+
+ if (e->next_offset - e->target_offset < sizeof(struct struct_83)) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""target size too small\n");
+  return -EINVAL;
+ }
+ (*cnt)++;
+ (*totalcnt)++;
+ return 0;
+}
+
+struct struct_62 {
+ struct struct_49 cs;
+ int from;
+ unsigned int hookmask;
+};
+
+
+
+
+static inline int
+fn_49(struct struct_83 *e, struct struct_71 *newinfo,
+        unsigned int *n, struct struct_62 *udc)
+{
+ int var_75;
+
+
+ if (e->bitmask)
+  return 0;
+ for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++) {
+  if (newinfo->hook_entry[var_75] == (struct struct_83 *)e)
+   break;
+ }
+
+ if (var_75 != NF_BR_NUMHOOKS)
+  return 0;
+
+ udc[*n].cs.chaininfo = (struct struct_83 *)e;
+
+ udc[*n].cs.n = 0;
+ udc[*n].hookmask = 0;
+
+ (*n)++;
+ return 0;
+}
+
+static inline int
+fn_50(struct struct_81 *m, struct struct_89 *net, unsigned int *var_75)
+{
+ struct struct_51 par;
+
+ if (var_75 && (*var_75)-- == 0)
+  return 1;
+
+ par.net = net;
+ par.match = m->u.match;
+ par.matchinfo = m->data;
+ par.family = NFPROTO_BRIDGE;
+ if (par.match->destroy != NULL)
+  par.match->destroy(&par);
+ module_put(par.match->me);
+ return 0;
+}
+
+static inline int
+fn_52(struct struct_82 *w, struct struct_89 *net, unsigned int *var_75)
+{
+ struct struct_55 par;
+
+ if (var_75 && (*var_75)-- == 0)
+  return 1;
+
+ par.net = net;
+ par.target = w->u.watcher;
+ par.targinfo = w->data;
+ par.family = NFPROTO_BRIDGE;
+ if (par.target->destroy != NULL)
+  par.target->destroy(&par);
+ module_put(par.target->me);
+ return 0;
+}
+
+static inline int
+fn_54(struct struct_83 *e, struct struct_89 *net, unsigned int *cnt)
+{
+ struct struct_55 par;
+ struct struct_83 *t;
+
+ if (e->bitmask == 0)
+  return 0;
+
+ if (cnt && (*cnt)-- == 0)
+  return 1;
+ EBT_WATCHER_ITERATE(e, ebt_cleanup_watcher, net, NULL);
+ EBT_MATCH_ITERATE(e, ebt_cleanup_match, net, NULL);
+ t = (struct struct_83 *)(((char *)e) + e->target_offset);
+
+ par.net = net;
+ par.target = t->u.target;
+ par.targinfo = t->data;
+ par.family = NFPROTO_BRIDGE;
+ if (par.target->destroy != NULL)
+  par.target->destroy(&par);
+ module_put(par.target->me);
+ return 0;
+}
+
+static inline int
+fn_55(struct struct_83 *e, struct struct_89 *net,
+  const struct struct_71 *newinfo,
+  const char *name, unsigned int *cnt,
+  struct struct_62 *cl_s, unsigned int var_62)
+{
+ struct struct_83 *t;
+ struct struct_56 *target;
+ unsigned int var_75, j, var_57 = 0, var_57 = 0;
+ size_t gap;
+ int var_92;
+ struct struct_57 mtpar;
+ struct struct_57 tgpar;
+
+
+ if (e->bitmask == 0)
+  return 0;
+
+ if (e->bitmask & ~EBT_F_MASK) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Unknown flag for bitmask\n");
+  return -EINVAL;
+ }
+ if (e->invflags & ~EBT_INV_MASK) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Unknown flag for inv bitmask\n");
+  return -EINVAL;
+ }
+ if ((e->bitmask & EBT_NOPROTO) && (e->bitmask & EBT_802_3)) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""NOPROTO & 802_3 not allowed\n");
+  return -EINVAL;
+ }
+
+ for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++) {
+  if (!newinfo->hook_entry[var_75])
+   continue;
+  if ((char *)newinfo->hook_entry[var_75] < (char *)e)
+   var_57 = var_75;
+  else
+   break;
+ }
+
+
+
+ if (var_75 < NF_BR_NUMHOOKS)
+  var_57 = (1 << var_57) | (1 << NF_BR_NUMHOOKS);
+ else {
+  for (var_75 = 0; var_75 < var_62; var_75++)
+   if ((char *)(cl_s[var_75].cs.chaininfo) > (char *)e)
+    break;
+  if (var_75 == 0)
+   var_57 = (1 << var_57) | (1 << NF_BR_NUMHOOKS);
+  else
+   var_57 = cl_s[var_75 - 1].hookmask;
+ }
+ var_75 = 0;
+
+ mtpar.net = tgpar.net = net;
+ mtpar.table = tgpar.table = name;
+ mtpar.entryinfo = tgpar.entryinfo = e;
+ mtpar.hook_mask = tgpar.hook_mask = var_57;
+ mtpar.family = tgpar.family = NFPROTO_BRIDGE;
+ var_92 = EBT_MATCH_ITERATE(e, ebt_check_match, &mtpar, &var_75);
+ if (var_92 != 0)
+  goto cleanup_matches;
+ j = 0;
+ var_92 = EBT_WATCHER_ITERATE(e, ebt_check_watcher, &tgpar, &j);
+ if (var_92 != 0)
+  goto cleanup_watchers;
+ t = (struct struct_83 *)(((char *)e) + e->target_offset);
+ gap = e->next_offset - e->target_offset;
+
+ target = xt_request_find_target(NFPROTO_BRIDGE, t->u.name, 0);
+ if (IS_ERR(target)) {
+  var_92 = PTR_ERR(target);
+  goto cleanup_watchers;
+ }
+
+ t->u.target = target;
+ if (t->u.target == &var_93) {
+  if (gap < sizeof(struct struct_61)) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""Standard target size too big\n");
+   var_92 = -EFAULT;
+   goto cleanup_watchers;
+  }
+  if (((struct struct_61 *)t)->verdict <
+     -NUM_STANDARD_TARGETS) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""Invalid standard target\n");
+   var_92 = -EFAULT;
+   goto cleanup_watchers;
+  }
+ } else if (t->target_size > gap - sizeof(struct struct_83)) {
+  module_put(t->u.target->me);
+  var_92 = -EFAULT;
+  goto cleanup_watchers;
+ }
+
+ tgpar.target = target;
+ tgpar.targinfo = t->data;
+ var_92 = xt_check_target(&tgpar, t->target_size,
+       e->ethproto, e->invflags & EBT_IPROTO);
+ if (var_92 < 0) {
+  module_put(target->me);
+  goto cleanup_watchers;
+ }
+ (*cnt)++;
+ return 0;
+cleanup_watchers:
+ EBT_WATCHER_ITERATE(e, ebt_cleanup_watcher, net, &j);
+cleanup_matches:
+ EBT_MATCH_ITERATE(e, ebt_cleanup_match, net, &var_75);
+ return var_92;
+}
+
+
+
+
+
+static int fn_57(const struct struct_83 *chain, struct struct_62 *cl_s,
+       unsigned int var_62, unsigned int var_61, char *base)
+{
+ int var_75, var_61 = -1, var_61 = 0, var_86 = chain->nentries, verdict;
+ const struct struct_83 *e = (struct struct_83 *)chain->data;
+ const struct struct_83 *t;
+
+ while (var_61 < var_86 || var_61 != -1) {
+
+  if (var_61 == var_86) {
+
+   e = cl_s[var_61].cs.e;
+   if (cl_s[var_61].from != -1)
+    var_86 =
+    cl_s[cl_s[var_61].from].cs.chaininfo->nentries;
+   else
+    var_86 = chain->nentries;
+   var_61 = cl_s[var_61].cs.n;
+
+   cl_s[var_61].cs.n = 0;
+   var_61 = cl_s[var_61].from;
+   if (var_61 == var_86)
+    continue;
+  }
+  t = (struct struct_83 *)
+     (((char *)e) + e->target_offset);
+  if (strcmp(t->u.name, EBT_STANDARD_TARGET))
+   goto letscontinue;
+  if (e->target_offset + sizeof(struct struct_61) >
+     e->next_offset) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""Standard target size too big\n");
+   return -1;
+  }
+  verdict = ((struct struct_61 *)t)->verdict;
+  if (verdict >= 0) {
+   struct struct_83 *hlp2 =
+      (struct struct_83 *)(base + verdict);
+   for (var_75 = 0; var_75 < var_62; var_75++)
+    if (hlp2 == cl_s[var_75].cs.chaininfo)
+     break;
+
+   if (var_75 == var_62) {
+    printk("kernel msg: ebtables bug: please " "report to author: ""bad destination\n");
+    return -1;
+   }
+   if (cl_s[var_75].cs.n) {
+    printk("kernel msg: ebtables bug: please " "report to author: ""loop\n");
+    return -1;
+   }
+   if (cl_s[var_75].hookmask & (1 << var_61))
+    goto letscontinue;
+
+   cl_s[var_75].cs.n = var_61 + 1;
+   var_61 = 0;
+   cl_s[var_75].cs.e = ebt_next_entry(e);
+   e = (struct struct_83 *)(hlp2->data);
+   var_86 = hlp2->nentries;
+   cl_s[var_75].from = var_61;
+   var_61 = var_75;
+
+   cl_s[var_75].hookmask |= (1 << var_61);
+   continue;
+  }
+letscontinue:
+  e = ebt_next_entry(e);
+  var_61++;
+ }
+ return 0;
+}
+
+
+static int fn_61(struct struct_89 *net, const char *name,
+      struct struct_71 *newinfo)
+{
+ unsigned int var_75, j, k, var_62;
+ int var_92;
+ struct struct_62 *cl_s = NULL;
+
+ var_75 = 0;
+ while (var_75 < NF_BR_NUMHOOKS && !newinfo->hook_entry[var_75])
+  var_75++;
+ if (var_75 == NF_BR_NUMHOOKS) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""No valid hooks specified\n");
+  return -EINVAL;
+ }
+ if (newinfo->hook_entry[var_75] != (struct struct_83 *)newinfo->entries) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Chains don't start at beginning\n");
+  return -EINVAL;
+ }
+
+
+
+ for (j = var_75 + 1; j < NF_BR_NUMHOOKS; j++) {
+  if (!newinfo->hook_entry[j])
+   continue;
+  if (newinfo->hook_entry[j] <= newinfo->hook_entry[var_75]) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""Hook order must be followed\n");
+   return -EINVAL;
+  }
+  var_75 = j;
+ }
+
+
+ var_75 = 0;
+ j = 0;
+ k = 0;
+
+
+ var_62 = 0;
+ var_92 = EBT_ENTRY_ITERATE(newinfo->entries, newinfo->entries_size,
+    ebt_check_entry_size_and_hooks, newinfo,
+    &var_75, &j, &k, &var_62);
+
+ if (var_92 != 0)
+  return var_92;
+
+ if (var_75 != j) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""nentries does not equal the nr of entries in the " "(last) chain\n");
+
+  return -EINVAL;
+ }
+ if (k != newinfo->nentries) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Total nentries is wrong\n");
+  return -EINVAL;
+ }
+
+
+
+
+ if (var_62) {
+
+
+
+  newinfo->chainstack =
+   vmalloc(nr_cpu_ids * sizeof(*(newinfo->chainstack)));
+  if (!newinfo->chainstack)
+   return -ENOMEM;
+  for_each_possible_cpu(var_75) {
+   newinfo->chainstack[var_75] =
+     vmalloc(var_62 * sizeof(*(newinfo->chainstack[0])));
+   if (!newinfo->chainstack[var_75]) {
+    while (var_75)
+     vfree(newinfo->chainstack[--var_75]);
+    vfree(newinfo->chainstack);
+    newinfo->chainstack = NULL;
+    return -ENOMEM;
+   }
+  }
+
+  cl_s = vmalloc(var_62 * sizeof(*cl_s));
+  if (!cl_s)
+   return -ENOMEM;
+  var_75 = 0;
+  EBT_ENTRY_ITERATE(newinfo->entries, newinfo->entries_size,
+     ebt_get_udc_positions, newinfo, &var_75, cl_s);
+
+  if (var_75 != var_62) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""i != udc_cnt\n");
+   vfree(cl_s);
+   return -EFAULT;
+  }
+ }
+
+
+ for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++)
+  if (newinfo->hook_entry[var_75])
+   if (check_chainloops(newinfo->hook_entry[var_75],
+      cl_s, var_62, var_75, newinfo->entries)) {
+    vfree(cl_s);
+    return -EINVAL;
+   }
+
+ var_75 = 0;
+ var_92 = EBT_ENTRY_ITERATE(newinfo->entries, newinfo->entries_size,
+    ebt_check_entry, net, newinfo, name, &var_75, cl_s, var_62);
+ if (var_92 != 0) {
+  EBT_ENTRY_ITERATE(newinfo->entries, newinfo->entries_size,
+      ebt_cleanup_entry, net, &var_75);
+ }
+ vfree(cl_s);
+ return var_92;
+}
+
+
+static void fn_62(const struct struct_86 *oldcounters,
+    struct struct_86 *counters, unsigned int var_86)
+{
+ int var_75, cpu;
+ struct struct_86 *counter_base;
+
+
+ memcpy(counters, oldcounters,
+        sizeof(struct struct_86) * var_86);
+
+
+ for_each_possible_cpu(cpu) {
+  if (cpu == 0)
+   continue;
+  counter_base = ((struct struct_86 *)(((char *)oldcounters) + ((((var_86 * sizeof(struct struct_86)) + SMP_CACHE_BYTES-1) & ~(SMP_CACHE_BYTES-1))) * cpu));
+  for (var_75 = 0; var_75 < var_86; var_75++) {
+   counters[var_75].pcnt += counter_base[var_75].pcnt;
+   counters[var_75].bcnt += counter_base[var_75].bcnt;
+  }
+ }
+}
+
+static int fn_63(struct struct_89 *net, struct struct_89 *repl,
+         struct struct_71 *newinfo)
+{
+ int var_92, var_75;
+ struct struct_86 *counterstmp = NULL;
+
+ struct struct_71 *table;
+ struct struct_89 *t;
+
+
+
+
+ if (repl->num_counters) {
+  unsigned long var_65 = repl->num_counters * sizeof(*counterstmp);
+  counterstmp = vmalloc(var_65);
+  if (!counterstmp)
+   return -ENOMEM;
+ }
+
+ newinfo->chainstack = NULL;
+ var_92 = ebt_verify_pointers(repl, newinfo);
+ if (var_92 != 0)
+  goto free_counterstmp;
+
+ var_92 = translate_table(net, repl->name, newinfo);
+
+ if (var_92 != 0)
+  goto free_counterstmp;
+
+ t = find_table_lock(net, repl->name, &var_92, &ebt_mutex);
+ if (!t) {
+  var_92 = -ENOENT;
+  goto free_iterate;
+ }
+
+
+ if (t->check && (var_92 = t->check(newinfo, repl->valid_hooks)))
+  goto free_unlock;
+
+ if (repl->num_counters && repl->num_counters != t->private->nentries) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Wrong nr. of counters requested\n");
+  var_92 = -EINVAL;
+  goto free_unlock;
+ }
+
+
+ table = t->private;
+
+ if (!table->nentries && newinfo->nentries && !try_module_get(t->me)) {
+  var_92 = -ENOENT;
+  goto free_unlock;
+ } else if (table->nentries && !newinfo->nentries)
+  module_put(t->me);
+
+ write_lock_bh(&t->lock);
+ if (repl->num_counters)
+  get_counters(t->private->counters, counterstmp,
+     t->private->nentries);
+
+ t->private = newinfo;
+ write_unlock_bh(&t->lock);
+ mutex_unlock(&ebt_mutex);
+
+
+
+
+
+ if (repl->num_counters &&
+    copy_to_user(repl->counters, counterstmp,
+    repl->num_counters * sizeof(struct struct_86))) {
+
+  net_warn_ratelimited("ebtables: counters copy to user failed while replacing table\n");
+ }
+
+
+ EBT_ENTRY_ITERATE(table->entries, table->entries_size,
+     ebt_cleanup_entry, net, NULL);
+
+ vfree(table->entries);
+ if (table->chainstack) {
+  for_each_possible_cpu(i)
+   fn_72(table->chainstack[var_75]);
+  vfree(table->chainstack);
+ }
+ vfree(table);
+
+ vfree(counterstmp);
+
+ return var_92;
+
+free_unlock:
+ mutex_unlock(&ebt_mutex);
+free_iterate:
+ EBT_ENTRY_ITERATE(newinfo->entries, newinfo->entries_size,
+     ebt_cleanup_entry, net, NULL);
+free_counterstmp:
+ vfree(counterstmp);
+
+ if (newinfo->chainstack) {
+  for_each_possible_cpu(i)
+   fn_72(newinfo->chainstack[var_75]);
+  vfree(newinfo->chainstack);
+ }
+ return var_92;
+}
+
+
+static int fn_66(struct struct_89 *net, const void __user *user,
+        unsigned int var_89)
+{
+ int var_92, countersize;
+ struct struct_71 *newinfo;
+ struct struct_89 tmp;
+
+ if (copy_from_user(&tmp, user, sizeof(tmp)) != 0)
+  return -EFAULT;
+
+ if (var_89 != sizeof(tmp) + tmp.entries_size) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Wrong len argument\n");
+  return -EINVAL;
+ }
+
+ if (tmp.entries_size == 0) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Entries_size never zero\n");
+  return -EINVAL;
+ }
+
+ if (tmp.nentries >= ((INT_MAX - sizeof(struct struct_71)) /
+   NR_CPUS - SMP_CACHE_BYTES) / sizeof(struct struct_86))
+  return -ENOMEM;
+ if (tmp.num_counters >= INT_MAX / sizeof(struct struct_86))
+  return -ENOMEM;
+
+ tmp.name[sizeof(tmp.name) - 1] = 0;
+
+ countersize = ((((tmp.nentries * sizeof(struct struct_86)) + SMP_CACHE_BYTES-1) & ~(SMP_CACHE_BYTES-1))) * nr_cpu_ids;
+ newinfo = vmalloc(sizeof(*newinfo) + countersize);
+ if (!newinfo)
+  return -ENOMEM;
+
+ if (countersize)
+  memset(newinfo->counters, 0, countersize);
+
+ newinfo->entries = vmalloc(tmp.entries_size);
+ if (!newinfo->entries) {
+  var_92 = -ENOMEM;
+  goto free_newinfo;
+ }
+ if (copy_from_user(
+    newinfo->entries, tmp.entries, tmp.entries_size) != 0) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Couldn't copy entries from userspace\n");
+  var_92 = -EFAULT;
+  goto free_entries;
+ }
+
+ var_92 = do_replace_finish(net, &tmp, newinfo);
+ if (var_92 == 0)
+  return var_92;
+free_entries:
+ vfree(newinfo->entries);
+free_newinfo:
+ vfree(newinfo);
+ return var_92;
+}
+
+static void fn_68(struct struct_89 *net, struct struct_89 *table)
+{
+ int var_75;
+
+ mutex_lock(&ebt_mutex);
+ list_del(&table->list);
+ mutex_unlock(&ebt_mutex);
+ EBT_ENTRY_ITERATE(table->private->entries, table->private->entries_size,
+     ebt_cleanup_entry, net, NULL);
+ if (table->private->nentries)
+  module_put(table->me);
+ vfree(table->private->entries);
+ if (table->private->chainstack) {
+  for_each_possible_cpu(i)
+   fn_72(table->private->chainstack[var_75]);
+  vfree(table->private->chainstack);
+ }
+ vfree(table->private);
+ kfree(table);
+}
+
+int fn_69(struct struct_89 *net, const struct struct_89 *input_table,
+         const struct struct_73 *ops, struct struct_89 **res)
+{
+ struct struct_71 *newinfo;
+ struct struct_89 *t, *table;
+ struct struct_71 *repl;
+ int var_92, var_75, countersize;
+ void *p;
+
+ if (input_table == NULL || (repl = input_table->table) == NULL ||
+     repl->entries == NULL || repl->entries_size == 0 ||
+     repl->counters != NULL || input_table->private != NULL) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Bad table data for ebt_register_table!!!\n");
+  return -EINVAL;
+ }
+
+
+ table = kmemdup(input_table, sizeof(struct struct_89), GFP_KERNEL);
+ if (!table) {
+  var_92 = -ENOMEM;
+  goto out;
+ }
+
+ countersize = ((((repl->nentries * sizeof(struct struct_86)) + SMP_CACHE_BYTES-1) & ~(SMP_CACHE_BYTES-1))) * nr_cpu_ids;
+ newinfo = vmalloc(sizeof(*newinfo) + countersize);
+ var_92 = -ENOMEM;
+ if (!newinfo)
+  goto free_table;
+
+ p = vmalloc(repl->entries_size);
+ if (!p)
+  goto free_newinfo;
+
+ memcpy(p, repl->entries, repl->entries_size);
+ newinfo->entries = p;
+
+ newinfo->entries_size = repl->entries_size;
+ newinfo->nentries = repl->nentries;
+
+ if (countersize)
+  memset(newinfo->counters, 0, countersize);
+
+
+ newinfo->chainstack = NULL;
+ for (var_75 = 0; var_75 < NF_BR_NUMHOOKS; var_75++) {
+  if ((repl->valid_hooks & (1 << var_75)) == 0)
+   newinfo->hook_entry[var_75] = NULL;
+  else
+   newinfo->hook_entry[var_75] = p +
+    ((char *)repl->hook_entry[var_75] - repl->entries);
+ }
+ var_92 = translate_table(net, repl->name, newinfo);
+ if (var_92 != 0) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Translate_table failed\n");
+  goto free_chainstack;
+ }
+
+ if (table->check && table->check(newinfo, table->valid_hooks)) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""The table doesn't like its own initial data, lol\n");
+  var_92 = -EINVAL;
+  goto free_chainstack;
+ }
+
+ table->private = newinfo;
+ rwlock_init(&table->lock);
+ mutex_lock(&ebt_mutex);
+ list_for_each_entry(t, &net->xt.tables[NFPROTO_BRIDGE], list) {
+  if (strcmp(t->name, table->name) == 0) {
+   var_92 = -EEXIST;
+   printk("kernel msg: ebtables bug: please " "report to author: ""Table name already exists\n");
+   goto free_unlock;
+  }
+ }
+
+
+ if (newinfo->nentries && !try_module_get(table->me)) {
+  var_92 = -ENOENT;
+  goto free_unlock;
+ }
+ list_add(&table->list, &net->xt.tables[NFPROTO_BRIDGE]);
+ mutex_unlock(&ebt_mutex);
+
+ WRITE_ONCE(*res, table);
+
+ if (!ops)
+  return 0;
+
+ var_92 = nf_register_net_hooks(net, ops, hweight32(table->valid_hooks));
+ if (var_92) {
+  __ebt_unregister_table(net, table);
+  *res = NULL;
+ }
+
+ return var_92;
+free_unlock:
+ mutex_unlock(&ebt_mutex);
+free_chainstack:
+ if (newinfo->chainstack) {
+  for_each_possible_cpu(i)
+   fn_72(newinfo->chainstack[var_75]);
+  vfree(newinfo->chainstack);
+ }
+ vfree(newinfo->entries);
+free_newinfo:
+ vfree(newinfo);
+free_table:
+ kfree(table);
+out:
+ return var_92;
+}
+
+void fn_72(struct struct_89 *net, struct struct_89 *table,
+     const struct struct_73 *ops)
+{
+ if (ops)
+  nf_unregister_net_hooks(net, ops, hweight32(table->valid_hooks));
+ __ebt_unregister_table(net, table);
+}
+
+
+static int fn_73(struct struct_89 *net, const char *name,
+    struct struct_86 __user *counters,
+    unsigned int var_84,
+    const void __user *user, unsigned int var_89)
+{
+ int var_75, var_92;
+ struct struct_86 *tmp;
+ struct struct_89 *t;
+
+ if (var_84 == 0)
+  return -EINVAL;
+
+ tmp = vmalloc(var_84 * sizeof(*tmp));
+ if (!tmp)
+  return -ENOMEM;
+
+ t = find_table_lock(net, name, &var_92, &ebt_mutex);
+ if (!t)
+  goto free_tmp;
+
+ if (var_84 != t->private->nentries) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Wrong nr of counters\n");
+  var_92 = -EINVAL;
+  goto unlock_mutex;
+ }
+
+ if (copy_from_user(tmp, counters, var_84 * sizeof(*counters))) {
+  var_92 = -EFAULT;
+  goto unlock_mutex;
+ }
+
+
+ write_lock_bh(&t->lock);
+
+
+ for (var_75 = 0; var_75 < var_84; var_75++) {
+  t->private->counters[var_75].pcnt += tmp[var_75].pcnt;
+  t->private->counters[var_75].bcnt += tmp[var_75].bcnt;
+ }
+
+ write_unlock_bh(&t->lock);
+ var_92 = 0;
+unlock_mutex:
+ mutex_unlock(&ebt_mutex);
+free_tmp:
+ vfree(tmp);
+ return var_92;
+}
+
+static int fn_75(struct struct_89 *net, const void __user *user,
+       unsigned int var_89)
+{
+ struct struct_89 hlp;
+
+ if (copy_from_user(&hlp, user, sizeof(hlp)))
+  return -EFAULT;
+
+ if (var_89 != sizeof(hlp) + hlp.num_counters * sizeof(struct struct_86))
+  return -EINVAL;
+
+ return do_update_counters(net, hlp.name, hlp.counters,
+    hlp.num_counters, user, var_89);
+}
+
+static inline int fn_76(char __user *um, const char *_name,
+      const char *data, int var_80,
+      int var_80, int var_80)
+{
+ char name[EBT_FUNCTION_MAXNAMELEN] = {0};
+
+
+
+
+ strlcpy(name, _name, sizeof(name));
+ if (copy_to_user(um, name, EBT_FUNCTION_MAXNAMELEN) ||
+     put_user(var_80, (int __user *)(um + EBT_FUNCTION_MAXNAMELEN)) ||
+     xt_data_to_user(um + var_80, data, var_80, var_80,
+       XT_ALIGN(var_80)))
+  return -EFAULT;
+
+ return 0;
+}
+
+static inline int fn_80(const struct struct_81 *m,
+        const char *base, char __user *ubase)
+{
+ return ebt_obj_to_user(ubase + ((char *)m - base),
+          m->u.match->name, m->data, sizeof(*m),
+          m->u.match->usersize, m->match_size);
+}
+
+static inline int fn_81(const struct struct_82 *w,
+          const char *base, char __user *ubase)
+{
+ return ebt_obj_to_user(ubase + ((char *)w - base),
+          w->u.watcher->name, w->data, sizeof(*w),
+          w->u.watcher->usersize, w->watcher_size);
+}
+
+static inline int fn_82(struct struct_83 *e, const char *base,
+        char __user *ubase)
+{
+ int var_92;
+ char __user *hlp;
+ const struct struct_83 *t;
+
+ if (e->bitmask == 0) {
+
+  if (copy_to_user(ubase + ((char *)e - base), e,
+     sizeof(struct struct_83)))
+   return -EFAULT;
+  return 0;
+ }
+
+ if (copy_to_user(ubase + ((char *)e - base), e, sizeof(*e)))
+  return -EFAULT;
+
+ hlp = ubase + (((char *)e + e->target_offset) - base);
+ t = (struct struct_83 *)(((char *)e) + e->target_offset);
+
+ var_92 = EBT_MATCH_ITERATE(e, ebt_match_to_user, base, ubase);
+ if (var_92 != 0)
+  return var_92;
+ var_92 = EBT_WATCHER_ITERATE(e, ebt_watcher_to_user, base, ubase);
+ if (var_92 != 0)
+  return var_92;
+ var_92 = ebt_obj_to_user(hlp, t->u.target->name, t->data, sizeof(*t),
+         t->u.target->usersize, t->target_size);
+ if (var_92 != 0)
+  return var_92;
+
+ return 0;
+}
+
+static int fn_83(struct struct_89 *t,
+     const struct struct_86 *oldcounters,
+     void __user *user, unsigned int var_84,
+     unsigned int var_86)
+{
+ struct struct_86 *counterstmp;
+ int var_92 = 0;
+
+
+ if (var_84 == 0)
+  return 0;
+
+ if (var_84 != var_86) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Num_counters wrong\n");
+  return -EINVAL;
+ }
+
+ counterstmp = vmalloc(var_86 * sizeof(*counterstmp));
+ if (!counterstmp)
+  return -ENOMEM;
+
+ write_lock_bh(&t->lock);
+ get_counters(oldcounters, counterstmp, var_86);
+ write_unlock_bh(&t->lock);
+
+ if (copy_to_user(user, counterstmp,
+    var_86 * sizeof(struct struct_86)))
+  var_92 = -EFAULT;
+ vfree(counterstmp);
+ return var_92;
+}
+
+
+static int fn_84(struct struct_89 *t, void __user *user,
+       const int *var_89, int var_89)
+{
+ struct struct_89 tmp;
+ const struct struct_86 *oldcounters;
+ unsigned int entries_size, var_86;
+ int var_92;
+ char *entries;
+
+ if (var_89 == EBT_SO_GET_ENTRIES) {
+  entries_size = t->private->entries_size;
+  var_86 = t->private->nentries;
+  entries = t->private->entries;
+  oldcounters = t->private->counters;
+ } else {
+  entries_size = t->table->entries_size;
+  var_86 = t->table->nentries;
+  entries = t->table->entries;
+  oldcounters = t->table->counters;
+ }
+
+ if (copy_from_user(&tmp, user, sizeof(tmp)))
+  return -EFAULT;
+
+ if (*var_89 != sizeof(struct struct_89) + entries_size +
+    (tmp.num_counters ? var_86 * sizeof(struct struct_86) : 0))
+  return -EINVAL;
+
+ if (tmp.nentries != var_86) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Nentries wrong\n");
+  return -EINVAL;
+ }
+
+ if (tmp.entries_size != entries_size) {
+  printk("kernel msg: ebtables bug: please " "report to author: ""Wrong size\n");
+  return -EINVAL;
+ }
+
+ var_92 = copy_counters_to_user(t, oldcounters, tmp.counters,
+     tmp.num_counters, var_86);
+ if (var_92)
+  return var_92;
+
+
+ return EBT_ENTRY_ITERATE(entries, entries_size,
+    ebt_entry_to_user, entries, tmp.entries);
+}
+
+static int fn_86(struct struct_89 *sk,
+ int var_89, void __user *user, unsigned int var_89)
+{
+ int var_92;
+ struct struct_89 *net = sock_net(sk);
+
+ if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+  return -EPERM;
+
+ switch (var_89) {
+ case EBT_SO_SET_ENTRIES:
+  var_92 = do_replace(net, user, var_89);
+  break;
+ case EBT_SO_SET_COUNTERS:
+  var_92 = update_counters(net, user, var_89);
+  break;
+ default:
+  var_92 = -EINVAL;
+ }
+ return var_92;
+}
+
+static int fn_88(struct struct_89 *sk, int var_89, void __user *user, int *var_89)
+{
+ int var_92;
+ struct struct_89 tmp;
+ struct struct_89 *t;
+ struct struct_89 *net = sock_net(sk);
+
+ if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+  return -EPERM;
+
+ if (copy_from_user(&tmp, user, sizeof(tmp)))
+  return -EFAULT;
+
+ tmp.name[sizeof(tmp.name) - 1] = '\0';
+
+ t = find_table_lock(net, tmp.name, &var_92, &ebt_mutex);
+ if (!t)
+  return var_92;
+
+ switch (var_89) {
+ case EBT_SO_GET_INFO:
+ case EBT_SO_GET_INIT_INFO:
+  if (*var_89 != sizeof(struct struct_89)) {
+   var_92 = -EINVAL;
+   mutex_unlock(&ebt_mutex);
+   break;
+  }
+  if (var_89 == EBT_SO_GET_INFO) {
+   tmp.nentries = t->private->nentries;
+   tmp.entries_size = t->private->entries_size;
+   tmp.valid_hooks = t->valid_hooks;
+  } else {
+   tmp.nentries = t->table->nentries;
+   tmp.entries_size = t->table->entries_size;
+   tmp.valid_hooks = t->table->valid_hooks;
+  }
+  mutex_unlock(&ebt_mutex);
+  if (copy_to_user(user, &tmp, *var_89) != 0) {
+   printk("kernel msg: ebtables bug: please " "report to author: ""c2u Didn't work\n");
+   var_92 = -EFAULT;
+   break;
+  }
+  var_92 = 0;
+  break;
+
+ case EBT_SO_GET_ENTRIES:
+ case EBT_SO_GET_INIT_ENTRIES:
+  var_92 = copy_everything_to_user(t, user, var_89, var_89);
+  mutex_unlock(&ebt_mutex);
+  break;
+
+ default:
+  mutex_unlock(&ebt_mutex);
+  var_92 = -EINVAL;
+ }
+
+ return var_92;
+}
+
+static struct struct_89 var_93 = {
+ .pf = PF_INET,
+ .set_optmin = EBT_BASE_CTL,
+ .set_optmax = EBT_SO_SET_MAX + 1,
+ .set = do_ebt_set_ctl,
+
+
+
+ .get_optmin = EBT_BASE_CTL,
+ .get_optmax = EBT_SO_GET_MAX + 1,
+ .get = do_ebt_get_ctl,
+
+
+
+ .owner = THIS_MODULE,
+};
+
+static int __init fn_91(void)
+{
+ int var_92;
+
+ var_92 = xt_register_target(&var_93);
+ if (var_92 < 0)
+  return var_92;
+ var_92 = nf_register_sockopt(&var_93);
+ if (var_92 < 0) {
+  xt_unregister_target(&var_93);
+  return var_92;
+ }
+
+ return 0;
+}
+
+static void __exit fn_92(void)
+{
+ nf_unregister_sockopt(&var_93);
+ xt_unregister_target(&var_93);
+}
+
+EXPORT_SYMBOL(ebt_register_table);
+EXPORT_SYMBOL(ebt_unregister_table);
+EXPORT_SYMBOL(ebt_do_table);
+module_init(ebtables_init);
+module_exit(ebtables_fini);
+MODULE_LICENSE("GPL");

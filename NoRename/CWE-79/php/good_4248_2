@@ -1,0 +1,193 @@
+<?php
+
+
+
+
+
+class RedirectController extends AbstractController
+{
+    
+    public function showRedirectionLinksAction(Request $request)
+    {
+        
+        $ssl_redirect = $this->sslRedirect($request);
+        if ($ssl_redirect !== false) {
+            return $ssl_redirect;
+        }
+
+        $operator = $this->getOperator();
+        $thread_id = $request->attributes->get('thread_id');
+        $token = $request->attributes->get('token');
+
+        $thread = Mibew\Thread::load($thread_id, $token);
+        if (!$thread) {
+            throw new NotFoundException('The thread is not found.');
+        }
+
+        if ($thread->agentId != $operator['operatorid']) {
+            $page = array('errors' => array('Can redirect only own threads.'));
+
+            return $this->render('error', $page);
+        }
+
+        $page = array_merge_recursive(
+            setup_chatview_for_operator(
+                $this->getRouter(),
+                $request,
+                $thread,
+                $operator
+            ),
+            setup_redirect_links(
+                $this->getRouter(),
+                $thread_id,
+                $operator,
+                $token
+            )
+        );
+
+        
+        return $this->render('redirect', $page);
+    }
+
+    
+    public function redirectAction(Request $request)
+    {
+        $thread_id = $request->attributes->get('thread_id');
+        $token = $request->attributes->get('token');
+
+        $thread = Mibew\Thread::load($thread_id, $token);
+        if (!$thread) {
+            throw new NotFoundException('The thread is not found.');
+        }
+
+        $page = array(
+            'errors' => array(),
+        );
+
+        if ($request->query->has('nextGroup')) {
+            
+            $next_id = $request->query->get('nextGroup');
+            if (!preg_match("/^\d{1,10}$/", $next_id)) {
+                throw new BadRequestException('Wrong value of "nextGroup" argument.');
+            }
+            $next_group = group_by_id($next_id);
+
+            if ($next_group) {
+                $page['message'] = getlocal(
+                    'The visitor has been placed in a priorty queue of the group {0}.',
+                    array(get_group_name($next_group))
+                );
+                if (!$this->redirectToGroup($thread, (int)$next_id)) {
+                    $page['errors'][] = getlocal('You are not chatting with the visitor.');
+                }
+            } else {
+                $page['errors'][] = 'Unknown group';
+            }
+        } else {
+            
+            $next_id = $request->query->get('nextAgent');
+            if (!preg_match("/^\d{1,10}$/", $next_id)) {
+                throw new BadRequestException('Wrong value of "nextAgent" argument.');
+            }
+            $next_operator = operator_by_id($next_id);
+
+            if ($next_operator) {
+                $page['message'] = getlocal(
+                    'The visitor has been placed in the priorty queue of the operator {0}.',
+                    array(get_operator_name($next_operator))
+                );
+                if (!$this->redirectToOperator($thread, $next_id)) {
+                    $page['errors'][] = getlocal('You are not chatting with the visitor.');
+                }
+            } else {
+                $page['errors'][] = 'Unknown operator';
+            }
+        }
+
+        $page = array_merge_recursive($page, setup_logo());
+
+        if (count($page['errors']) > 0) {
+            return $this->render('error', $page);
+        } else {
+            return $this->render('redirected', $page);
+        }
+    }
+
+    
+    protected function redirectToGroup(Thread $thread, $group_id)
+    {
+        if ($thread->state != Mibew\Thread::STATE_CHATTING) {
+            
+            return false;
+        }
+
+        
+        $thread->state = Mibew\Thread::STATE_WAITING;
+        $thread->nextAgent = 0;
+        $thread->groupId = $group_id;
+        $thread->agentId = 0;
+        $thread->agentName = '';
+        $thread->save();
+
+        
+        $thread->postMessage(
+            Mibew\Thread::KIND_EVENTS,
+            getlocal(
+                'Operator {0} redirected you to another operator. Please wait a while.',
+                array(safe_htmlspecialchars(get_operator_name($this->getOperator()))),
+                $thread->locale,
+                true
+            )
+        );
+
+        return true;
+    }
+
+    
+    protected function redirectToOperator(Thread $thread, $operator_id)
+    {
+        if ($thread->state != Mibew\Thread::STATE_CHATTING) {
+            
+            return false;
+        }
+
+        
+        $thread->state = Mibew\Thread::STATE_WAITING;
+        $thread->nextAgent = $operator_id;
+        $thread->agentId = 0;
+
+        
+        
+        if ($thread->groupId != 0) {
+            $db = Mibew\Database::getInstance();
+            list($groups_count) = $db->query(
+                ("SELECT count(*) AS count "
+                    . "FROM {operatortoopgroup} "
+                    . "WHERE operatorid = ? AND groupid = ?"),
+                array($operator_id, $thread->groupId),
+                array(
+                    'return_rows' => Mibew\Database::RETURN_ONE_ROW,
+                    'fetch_type' => Mibew\Database::FETCH_NUM,
+                )
+            );
+            if ($groups_count === 0) {
+                $thread->groupId = 0;
+            }
+        }
+
+        $thread->save();
+
+        
+        $thread->postMessage(
+            Mibew\Thread::KIND_EVENTS,
+            getlocal(
+                'Operator {0} redirected you to another operator. Please wait a while.',
+                array(safe_htmlspecialchars(get_operator_name($this->getOperator()))),
+                $thread->locale,
+                true
+            )
+        );
+
+        return true;
+    }
+}

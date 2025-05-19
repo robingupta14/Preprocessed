@@ -1,0 +1,1193 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class cartController extends expController {
+    public $basemodel_name = 'order';
+    private $checkout_steps = array('productinfo', 'specials', 'form', 'wizards', 'newsletter', 'confirmation', 'postprocess');
+
+    public $useractions = array(
+        'show'                         => 'Show Shopping Cart',
+    );
+
+        
+    public $remove_configs = array(
+        'aggregation',
+        'categories',
+        'comments',
+        'ealerts',
+        'facebook',
+        'files',
+        'pagination',
+        'rss',
+        'tags',
+        'twitter',
+    );  
+
+    static function displayname() {
+        return gt("e-Commerce Shopping Cart");
+    }
+
+    static function description() {
+        return gt("Displays the shopping cart contents from your store.");
+    }
+
+    function addItem() {
+        global $router;
+
+        $product_type = isset($this->params['product_type']) ? $this->params['product_type'] : 'product';
+        $product      = new product();
+
+        
+        $c = new stdClass();
+        if (isset($this->params['product_id']) && empty($this->params['children'])) $c = $product->find('first', 'parent_id=' . $this->params['product_id']);
+        if (!empty($c->id)) {
+            flash('message', gt("Please select a product and quantity from the options listed below to add to your cart."));
+            redirect_to(array('controller'=> 'store', 'action'=> 'show', 'id'=> $this->params['product_id']));
+        }
+
+        
+        if (isset($this->params['prod-quantity'])) {
+            
+            
+
+            foreach ($this->params['prod-quantity'] as $qkey=> &$quantity) {
+                if (in_array($qkey, $this->params['prod-check'])) {
+                    
+                    $child = new $product_type($qkey);
+                    
+                    $this->params['children'][$qkey] = $quantity;
+                }
+                if (isset($child)) $this->params['product_id'] = $child->parent_id;
+            }
+        }
+
+        $product = new $product_type($this->params['product_id'], true, true); 
+
+        
+        if (isset($this->params['quantity'])) {
+            if (((int)$this->params['quantity']) < $product->minimum_order_quantity) {
+                flash('message', gt("Please enter a quantity equal or greater than the minimum order quantity."));
+                redirect_to(array('controller'=> 'store', 'action'=> 'show', 'id'=> $this->params['product_id']));
+            } else {
+
+            }
+            
+            if ($product->multiple_order_quantity && ((int)$this->params['quantity']) % $product->multiple_order_quantity) {
+                flash('message', gt("Please enter a quantity in multiples of") . ' ' . $product->multiple_order_quantity);
+                redirect_to(array('controller'=> 'store', 'action'=> 'show', 'id'=> $this->params['product_id']));
+            } else {
+
+            }
+        }
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+        
+        if ($product->addToCart($this->params)) {
+            
+            if (ecomconfig::getConfig('show_cart') || !empty($this->params['quick'])) {
+                
+
+
+
+
+
+
+
+                
+                
+                redirect_to(array('controller'=>'cart', 'action'=>'show'));
+                
+
+            } else {
+                
+                if ($product->product_type == "donation") {
+                    $type = ' '.gt('Donation');
+                } elseif ($product->product_type == "eventregistration") {
+                    $type = ' '.gt('Event');
+                } else {
+                    $type = '';
+                }
+                flash('message', gt("Added") . " " . $product->title . $type . " " . gt("to your cart.") . " <a href='" . $router->makeLink(array('controller'=> 'cart', 'action'=> 'checkout'), false, true) . "'>" . gt("Click here to checkout now.") . "</a>");
+            }
+        } else {
+            return false;
+        }
+        expHistory::back();
+    }
+
+    function updateQuantity() {
+        global $order;
+        if (expJavascript::inAjaxAction()) {
+            
+            $id      = str_replace('quantity-', '', $this->params['id']);
+            $item    = new orderitem($id);
+            $updates = new stdClass();
+            if (!empty($item->id)) {
+                
+                $newqty = $item->product->updateQuantity($this->params['value']);
+                if ($newqty > $item->product->quantity) {
+                    if ($item->product->availability_type == 1) {
+                        $diff             = ($item->product->quantity <= 0) ? $newqty : $newqty - $item->product->quantity;
+                        $updates->message = 'Only ' . $item->product->quantity . ' ' . $item->products_name . ' are currently in stock. Shipping may be delayed on the other ' . $diff;
+                    } elseif ($item->product->availability_type == 2) {
+                        $updates->message    = $item->products_name . ' only has ' . $item->product->quantity . ' on hand. You can not add any more than that to your cart.';
+                        $updates->cart_total = expCore::getCurrencySymbol() . number_format($order->getCartTotal(), 2);
+                        $updates->item_total = expCore::getCurrencySymbol() . number_format($item->getTotal(), 2);
+                        $updates->item_id    = $id;
+                        $updates->quantity   = $item->product->quantity;
+                        
+                        return true;
+                    }
+                }
+                $item->quantity = $newqty;
+                $item->save();
+                $order->refresh();
+                $updates->cart_total = expCore::getCurrencySymbol() . number_format($order->getCartTotal(), 2);
+                $updates->item_total = expCore::getCurrencySymbol() . number_format($item->getTotal(), 2);
+                $updates->item_id    = $id;
+                $updates->quantity   = $item->quantity;
+                
+            }
+        } else {
+            if (empty($this->params['quantity']) && !empty($this->params['qtyr'])) $this->params['quantity'] = $this->params['qtyr'];
+            if (!is_numeric($this->params['quantity'])) {
+                flash('error', gt('Please enter a valid quantity.'));
+                expHistory::back();
+            }
+
+            $item = new orderitem($this->params['id']);
+
+            if (!empty($item->id)) {
+                
+                $newqty = $this->params['quantity'];
+                
+                
+                $qCheck = 0; 
+                
+                
+                foreach ($order->orderitem as $orderItem) {
+                    if ($orderItem->product_id == $item->product_id) $qCheck += $orderItem->quantity;
+                }
+                
+                
+                
+                
+                $qtyMessage = '';
+                if ($newqty < $item->product->minimum_order_quantity) {
+                    $qtyMessage = $item->product->title . ' has a minimum order quantity of ' . $item->product->minimum_order_quantity . '. The quantity has been adjusted and added to your cart.<br/><br/>';
+                    $newqty     = $item->product->minimum_order_quantity;
+                }
+                
+                if ($newqty % $item->product->multiple_order_quantity) {
+                    $qtyMessage = $item->product->title . ' must be ordered in multiples of ' . $item->product->multiple_order_quantity . '. The quantity has been adjusted up and added to your cart.<br/><br/>';
+                    $offset = $newqty % $item->product->multiple_order_quantity;
+                    $newqty     = $newqty - $offset + $item->product->multiple_order_quantity;
+                }
+
+                $itemMessage = '';
+                if (($qCheck + ($newqty - $item->quantity)) > $item->product->quantity) {
+                    if ($item->product->availability_type == 1) {
+                        $diff        = ($item->product->quantity <= 0) ? $newqty : $newqty - $item->product->quantity;
+                        $itemMessage = gt('Only') . ' ' . $item->product->quantity . ' ' . $item->products_name . ' ' . gt('are currently in stock. Shipping may be delayed on the other') . ' ' . $diff . "<br/><br/>";
+                        
+                    } elseif ($item->product->availability_type == 2) {
+                        flash('error', $item->products_name . ' ' . gt('only has') . ' ' . $item->product->quantity . ' ' . gt('on hand. You can not add any more than that to your cart.'));
+                        
+                        expHistory::back();
+                    }
+                } else if ($newqty <= 0) {
+                    $item->delete();
+                    flash('message', $item->products_name . ' ' . gt('has been removed from your cart.'));
+                    expHistory::back();
+                }
+                $item->quantity = $newqty;
+                $item->save();
+                $order->refresh();
+
+                
+                
+            }
+            
+            flash('message', $qtyMessage . $itemMessage . $item->products_name . ' ' . gt('quantity has been updated.'));
+            expHistory::back();
+        }
+    }
+
+    function removeItem() {
+        global $order;
+        foreach ($order->orderitem as $item) {
+            if ($item->id == intval($this->params['id'])) {
+                $product = new  $item->product_type($item->product_id);
+                $product->removeItem($item);
+                $item->delete();
+            }
+        }
+
+        expHistory::back();
+    }
+
+    function show() {
+        global $order;
+
+        
+        
+        
+        expHistory::set('viewable', $this->params);
+        
+        if (isset($order)) {
+            
+            
+
+
+            $order->calculateGrandTotal();
+
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+
+            
+            $discountCheck    = new discounts();
+            $discountsEnabled = $discountCheck->find('all', 'enabled=1');
+            if (empty($discountsEnabled)) {
+                
+                assign_to_template(array(
+                    'noactivediscounts'=> '1'
+                ));
+                $discounts = null;
+            } else {
+                
+                $discounts = $order->validateDiscounts();
+            }
+        } else {
+            $order              = new stdClass();
+            $order->orderitem   = new stdClass();
+            $items              = null;
+            $discounts          = null;
+
+        }
+        assign_to_template(array(
+            'items'    => $order->orderitem,
+            'order'    => $order,
+            'discounts'=> $discounts,
+            
+        ));
+
+    }
+
+    function cart_only() {
+        $this->show();
+    }
+
+    function quickpay_donation_cart() {
+        $this->show();
+    }
+
+    function checkout() {
+        global $user, $order, $router;
+
+        if (empty($order)) {
+            flash('error', gt('There is an error with your shopping cart.'));
+            expHistory::back();
+        }
+
+
+
+        $order->calculateGrandTotal();
+        $order->validateDiscounts(array('controller'=> 'cart', 'action'=> 'checkout'));
+
+        if (!expSession::get('customer-signup') && !$user->isLoggedin()) {  
+            expHistory::set('viewable', $this->params);
+            expSession::set('customer-login', true);
+            flash('message', gt("Please select how you would like to continue with the checkout process."));
+            expHistory::redirecto_login(makeLink(array('module'=> 'cart', 'action'=> 'checkout'), 'secure'),true);
+        }
+
+
+
+
+        if ($order->total < intval(ecomconfig::getConfig('min_order'))) {
+            flashAndFlow('error',gt("Note: Thank you for your decision to purchase. However, our minimum order for merchandise is ").expCore::getCurrencySymbol() . number_format(ecomconfig::getConfig('min_order'), 2, ".", ",") . ". ".gt("Please increase your quantity or continue shopping."));
+        }
+
+        if (empty($order->orderitem)) flashAndFlow('error',gt('There are no items in your cart.'));
+
+        if (!order::getDefaultOrderType()) {
+            flashAndFlow('error', gt('This store is not yet fully configured to allow checkouts.')."<br>".gt('You Must Create a Default Order Type').' <a href="'.expCore::makeLink(array('controller'=>'order_type','action'=>'manage')).'">'.gt('Here').'</a>');
+        }
+        if (!order::getDefaultOrderStatus()) {
+            flashAndFlow('error', gt('This store is not yet fully configured to allow checkouts.')."<br>".gt('You Must Create a Default Order Status').' <a href="'.expCore::makeLink(array('controller'=>'order_status','action'=>'manage')).'">'.gt('Here').'</a>');
+        }
+
+        $billing = new billing();
+        
+        if (count($billing->available_calculators) < 1) {
+            flashAndFlow('error', gt('This store is not yet fully configured to allow checkouts.')."<br>".gt('You Must Activate a Payment Option').' <a href="'.expCore::makeLink(array('controller'=>'billing','action'=>'manage')).'">'.gt('Here').'</a>');
+        }
+        
+        expHistory::set('viewable', $this->params);
+
+        
+        
+        
+
+        
+        
+        $discountCheck    = new discounts();
+        $discountsEnabled = $discountCheck->find('all', 'enabled=1');
+        if (empty($discountsEnabled)) {
+            
+            assign_to_template(array(
+                'noactivediscounts'=> '1'
+            ));
+            $discounts = null;
+        } else {
+            
+            $discounts = $order->getOrderDiscounts();
+        }
+        
+        
+        
+        foreach ($order->orderitem as $item) {
+            $product = new $item->product_type($item->product_id);
+            $product->checkout();
+        }
+
+        
+        $specials = $this->getSpecials();
+
+        
+        $address = new address();
+        
+        $shipAddress = $address->find('first', 'user_id=' . $user->id . ' AND is_shipping=1');
+        if (empty($shipAddress) || !$user->isLoggedin()) {  
+            expSession::set('customer-signup', false);
+            flash('message', gt('Enter your primary address info now.') .
+                '<br><br>' .
+                gt('You may also optionally provide a password if you would like to return to our store at a later time to view your order history or make additional purchases.') .
+                '<br><br>' .
+                gt('If you need to add another billing or shipping address you will be able to do so on the following page.'));
+            redirect_to(array('controller'=> 'address', 'action'=> 'edit'));
+        }
+
+        
+        $shipping = new shipping();
+        
+        if (count($shipping->available_calculators) < 1) {
+            flashAndFlow('error', gt('This store is not yet fully configured to allow checkouts.')."<br>".gt('You Must Activate a Shipping Option').' <a href="'.expCore::makeLink(array('controller'=>'shipping','action'=>'manage')).'">'.gt('Here').'</a>');
+        }
+
+        
+        $shipping->getRates();
+
+        if (strpos($router->current_url, 'https:
+            flash('error', gt('This page appears to be unsecured!  Personal information may become compromised!'));
+
+        assign_to_template(array(
+
+            
+            
+            'shipping'            => $shipping,
+            'user'                => $user,
+            'billing'             => $billing,
+            'discounts'           => $discounts,
+            'order'               => $order,
+            'order_types'         => order::getOrderTypes(),
+            'default_order_type'  => order::getDefaultOrderType(),
+            'order_statuses'      => order::getOrderStatuses(),
+            'default_order_status'=> order::getDefaultOrderStatus(),
+            'sales_reps'          => order::getSalesReps()
+            
+        ));
+    }
+
+    
+    public function preprocess() {
+        
+        global $order, $user, $db;
+
+
+
+
+
+
+
+
+
+        
+        
+        
+        $shipping = new shipping();
+        $billing  = new billing();
+        
+        $billing->billingmethod->update($this->params);
+        
+        $billing = new billing();
+
+        if (!$user->isLoggedIn()) {
+            flash('message', gt("It appears that your session has expired. Please log in to continue the checkout process."));
+            expHistory::redirecto_login(makeLink(array('module'=> 'cart', 'action'=> 'checkout'), true));
+        }
+
+        
+        if (empty($order->orderitem)) {
+            flash('error', gt('There are no items in your cart.'));
+        }
+        if (empty($shipping->calculator->id) && !$shipping->splitshipping) {
+            flash('error', gt('You must pick a shipping method'));
+        }
+        if (empty($shipping->address->id) && !$shipping->splitshipping) {
+            flash('error', gt('You must pick a shipping address'));
+        }
+        if (empty($billing->calculator->id)) {
+            flash('error', gt('You must pick a billing method'));
+        }
+        if (empty($billing->address->id)) {
+            flash('error', gt('You must select a billing address'));
+        }
+
+        
+        foreach ($order->getShippingMethods() as $smid) {
+            $sm       = new shippingmethod($smid);
+            $calcname = $db->selectValue('shippingcalculator', 'calculator_name', 'id=' . $sm->shippingcalculator_id);
+            $calc     = new $calcname($sm->shippingcalculator_id);
+            $ret      = $calc->meetsCriteria($sm);
+            if (is_string($ret)) {
+                flash('error', $ret);
+            }
+        }
+
+        
+        if (!expQueue::isQueueEmpty('error')) {
+            redirect_to(array('controller'=>'cart', 'action'=>'checkout'));
+
+        }
+
+         
+        $order->calculateGrandTotal();
+        $order->setOrderType($this->params);
+        $order->setOrderStatus($this->params);
+        
+
+        
+        if ($billing->calculator != null) {
+            if (isset($this->params['cc_type_' . $billing->calculator->calculator_name])) {
+                $this->params['cc_type'] = $this->params['cc_type_' . $billing->calculator->calculator_name];
+                unset($this->params['cc_type_' . $billing->calculator->calculator_name]);
+            }
+            $opts = $billing->calculator->userFormUpdate($this->params);
+            
+            
+            
+
+            
+            
+            $result = $billing->calculator->preprocess($billing->billingmethod, $opts, $this->params, $order);
+        } else {  
+            if (substr($this->params['cash_amount'], 0, strlen(expCore::getCurrencySymbol())) == expCore::getCurrencySymbol()) {
+                $this->params['cash_amount'] = substr($this->params['cash_amount'], strlen(expCore::getCurrencySymbol()));
+            }
+            $opts = new stdClass();
+            $opts->cash_amount = $this->params["cash_amount"];
+
+            if ($opts->cash_amount < $order->grand_total) $opts->payment_due = $order->grand_total - $opts->cash_amount;
+            $billing->billingmethod->update(array('billing_options' => serialize($opts)));
+        }
+        
+        expSession::set('billing_options', $opts);  
+        
+        
+        
+
+        
+        
+        
+
+
+
+        if (empty($result->errorCode)) {  
+			redirect_to(array('controller'=>'cart', 'action'=>'confirm'));
+
+        } else {
+            flash('error', gt('An error was encountered while processing your transaction.') . '<br /><br />' . $result->message);
+            expHistory::back();
+        }
+    }
+
+    public function confirm() {
+        global $order;
+
+        
+        if (empty($order->orderitem)) flashAndFlow('error',gt('There are no items in your cart.'));
+
+        
+        $order->calculateGrandTotal();
+
+        
+        
+        
+        $shipping = new shipping();
+        $billing  = new billing();
+
+        $opts = expSession::get('billing_options');
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+        assign_to_template(array(
+            'shipping'   => $shipping,
+            'billing'    => $billing,
+            'order'      => $order,
+            'total'      => $order->total,
+            'billinginfo'=> $billing->getBillingInfo($opts),
+        ));
+    }
+
+    public function process() {
+
+        global $order, $user;
+
+        
+        if (!$user->isLoggedIn() && empty($this->params['nologin'])) {
+            flash('message', gt("It appears that your session has expired. Please log in to continue the checkout process."));
+            expHistory::back();
+
+            
+        }
+        
+        
+        
+        if (empty($order->orderitem)) flash('error', gt('There are no items in your cart.'));
+        if (!expQueue::isQueueEmpty('error')) redirect_to(array('controller'=> 'store', 'action'=> 'showall'));
+
+        
+        $order->update($this->params);
+
+        
+        $change = new order_status_changes();
+
+        $change->to_status_id   = $order->order_status_id;
+        $change->orders_id      = $order->id;
+        $change->save();
+
+        
+
+        $billing  = new billing();
+
+        
+        $order->calculateGrandTotal();
+        
+        $order->invoice_id = $order->getInvoiceNumber(false);  
+        
+
+        if ($billing->calculator != null) {
+
+            $result = $billing->calculator->process($billing->billingmethod, expSession::get('billing_options'), $this->params, $order);
+        } else {
+            
+            $opts = expSession::get('billing_options');
+            $object = new stdClass();
+            $object->errorCode = $opts->result->errorCode = 0;
+            $opts->result->payment_status = gt("complete");
+            if ($opts->cash_amount < $order->grand_total) $opts->result->payment_status = gt("payment due");
+            $billing->billingmethod->update(array('billing_options' => serialize($opts),'transaction_state'=>$opts->result->payment_status));
+
+
+            $amount = number_format($order->grand_total, 2, '.', '');
+            $bt = new billingtransaction();
+            $bt->billingmethods_id = $billing->billingmethod->id;
+            $bt->billingcalculator_id = $billing->billingmethod->billingcalculator_id;
+            $bt->billing_cost = $amount;
+            $bt->billing_options  = serialize($opts->result);
+            $bt->extra_data = '';
+            $bt->transaction_state = $opts->result->payment_status;
+            $bt->save();
+            $result = $opts;
+        }
+
+
+        if (empty($result->errorCode)) {
+            
+            
+            
+            $billing->billingmethod->update(array('billing_cost'=> $order->grand_total));
+
+            
+            
+            
+
+            
+            $invNum = $order->getInvoiceNumber();  
+
+            $order->update(array('invoice_id'=> $invNum, 'purchased'=> time(), 'updated'=> time()));
+            
+            
+            $order->refresh();
+
+            
+            foreach ($order->orderitem as $item) {
+                $product = new $item->product_type($item->product_id);
+                $product->process($item, $order->order_type->affects_inventory);
+            }
+
+            if ($billing->calculator != null) {
+                $billing->calculator->postProcess($order, $this->params);
+            }
+            orderController::clearCartCookie();
+        } else {
+            flash('error', gt('An error was encountered while processing your transaction.') . '<br /><br />' . $result->message);
+            expHistory::back();
+
+            
+        }
+
+
+            
+        if ($order->order_type->emails_customer)
+            $invoice = renderAction(array('controller'=> 'order', 'action'=> 'email', 'id'=> $order->id));
+
+
+
+        expSession::un_set('record');
+        
+        flash('message', gt('Your order has been submitted.'));
+        redirect_to(array('controller'=> 'order', 'action'=> 'myOrder', 'id'=> $order->id, 'tc'=> 1));
+    }
+
+    function quickPay() {
+        global $order, $user;
+
+        if ($order->shipping_required) redirect_to(array('controller'=> 'cart', 'action'=> 'checkout'),true);
+        if (empty($order->orderitem)) flashAndFlow('error',gt('There are no items in your cart.'));
+
+        
+        expHistory::set('viewable', $this->params);
+
+        
+        foreach ($order->orderitem as $item) {
+            $product = new $item->product_type($item->product_id);
+            $product->checkout();
+        }
+
+        
+
+        if ($order->billing_required) {
+            $billing = new billing();
+            assign_to_template(array(
+                'billing'=> $billing
+            ));
+        }
+
+
+        if ($order->shipping_required) {  
+            $shipping            = new shipping();
+            $shipping->pricelist = $shipping->listPrices();
+            assign_to_template(array(
+                'shipping'=> $shipping
+            ));
+        }
+
+        assign_to_template(array(
+            'product'=> $product,
+            'user'   => $user,
+            'order'  => $order
+        ));
+    }
+
+    function quickConfirm() {
+        global $order, $user;
+
+        if ($order->shipping_required || $order->grand_total) redirect_to(array('controller'=> 'cart', 'action'=> 'checkout'),true);
+        if (empty($order->orderitem)) flashAndFlow('error',gt('There are no items in your cart.'));
+
+        
+        expHistory::set('viewable', $this->params);
+
+        
+        foreach ($order->orderitem as $item) {
+            $product = new $item->product_type($item->product_id);
+            $product->checkout();
+        }
+
+        assign_to_template(array(
+            'product'=> $product,
+            'user'   => $user,
+            'order'  => $order
+        ));
+    }
+
+    function processQuickPay() {
+        global $order, $template;
+
+        
+        $tplvars = $template->tpl->tpl_vars;
+        $template = expTemplate::get_template_for_action($this, 'confirm', $this->loc);
+        $template->tpl->tpl_vars = array_merge($tplvars,$template->tpl->tpl_vars);
+
+        if (!empty($this->params['billing'])) {
+            $billing = new billing();
+            $billing->billingmethod->setAddress($this->params['billing']);
+        }
+
+        if (!empty($this->params['shipping'])) {
+            die('NEED TO IMPLEMENT THE SHIPPING PIECE!!'); 
+            $shipping = new shipping();
+            $shipping->shippingingmethod->setAddress($this->params['shipping']);
+            assign_to_template(array(
+                'shipping'=> $shipping
+            ));
+        }
+
+        $opts = $billing->calculator->userFormUpdate($this->params);
+        $order->calculateGrandTotal();
+        expSession::set('billing_options', $opts);  
+        assign_to_template(array(
+            'billing'    => $billing,
+            'order'      => $order,
+            'total'      => $order->total,
+
+            'billinginfo'=> $billing->getBillingInfo($opts),
+            'nologin'    => 1
+        ));
+    }
+
+    public function splitShipping() {
+        global $user, $order;
+
+        expHistory::set('viewable', $this->params);
+
+        
+        $address      = new address(null, false, false);
+        $addresses_dd = $address->dropdownByUser($user->id);
+
+        if (count($addresses_dd) < 2) {
+            expHistory::set('viewable', $this->params);
+            flash('error', gt('You must have more than 1 address to split your shipment.  Please add another now.'));
+            redirect_to(array('controller'=> 'address', 'action'=> 'edit'));
+        }
+
+        
+        $orderitems = array();
+        foreach ($order->orderitem as $item) {
+            if ($item->product->requiresShipping == true) {
+                for ($i = 0; $i < $item->quantity; $i++) {
+                    $orderitems[] = $item;
+                }
+            }
+        }
+
+        if (count($orderitems) < 2) {
+            flashAndFlow('error',gt('You must have a minimum of 2 items in your shopping cart in order to split your shipment.'));
+        }
+
+        expHistory::set('viewable', $this->params);
+        assign_to_template(array(
+            'addresses_dd'=> $addresses_dd,
+            'orderitems'  => $orderitems,
+            'order'       => $order
+        ));
+    }
+
+    public function saveSplitShipping() {
+        global $db;
+
+        $addresses            = array();
+        $orderitems_to_delete = '';
+
+        foreach ($this->params['orderitems'] as $id=> $address_ids) {
+            foreach ($address_ids as $address_id) {
+                if (empty($addresses[$address_id][$id])) {
+                    $addresses[$address_id][$id] = 1;
+                } else {
+                    $addresses[$address_id][$id]++;
+                }
+            }
+
+            if (!empty($orderitems_to_delete)) $orderitems_to_delete .= ',';
+            $orderitems_to_delete .= $id;
+        }
+
+        foreach ($addresses as $addy_id => $orderitems) {
+            $shippingmethod = new shippingmethod();
+            $shippingmethod->setAddress($addy_id);
+
+            foreach ($orderitems as $orderitem_id => $qty) {
+                $orderitem = new orderitem($orderitem_id);
+                unset(
+                    $orderitem->id,
+                    $orderitem->shippingmethods_id
+                );
+                $orderitem->shippingmethods_id = $shippingmethod->id;
+                $orderitem->quantity           = $qty;
+                $orderitem->save();
+            }
+        }
+
+        $db->delete('orderitems', 'id IN (' . $orderitems_to_delete . ')');
+        redirect_to(array('controller'=>'cart', 'action'=>'selectShippingMethods'));
+
+    }
+
+    public function selectShippingMethods() {
+        global $order;
+
+        expHistory::set('editable', $this->params);
+        $shipping          = new shipping();
+        $shippingmethod_id = $order->getShippingMethods();
+
+        $shipping_items = array();
+        foreach ($shippingmethod_id as $id) {
+            $shipping_items[$id] = new order();
+            $shipping_items[$id]->method    = new shippingmethod($id);
+            $shipping_items[$id]->orderitem = $order->getOrderitemsByShippingmethod($id);
+            foreach ($shipping_items[$id]->orderitem as $key=> $item) {
+                if ($item->product->requiresShipping == false) {
+                    unset($shipping_items[$id]->orderitem[$key]);
+                }
+            }
+
+            if (empty($shipping_items[$id]->orderitem)) {
+                unset($shipping_items[$id]);
+            } else {
+                foreach ($shipping->available_calculators as $calcid=> $name) {
+                    if (class_exists($name)) {
+                        $calc = new $name($calcid);
+                        $shipping_items[$id]->prices[$calcid] = $calc->getRates($shipping_items[$id]);
+                        
+                    }
+                }
+            }
+        }
+
+        assign_to_template(array(
+            'shipping_items'=> $shipping_items,
+            'shipping'      => $shipping
+        ));
+    }
+
+    public function customerSignup() {
+        if (expSession::get('customer-login')) expSession::un_set('customer-login');
+        expSession::set('customer-signup', true);
+        redirect_to(array('controller'=>'cart', 'action'=>'checkout'));
+
+    }
+
+    public function saveShippingMethods() {
+        global $order;
+
+        $shipping               = new shipping();
+        $order->shippingmethods = array();
+
+        
+        if (empty($this->params['methods'])) {
+            expValidator::failAndReturnToForm(gt("You did not pick any shipping options"), $this->params);
+        }
+
+        
+        if (count($this->params['methods']) < count($this->params['calcs'])) {
+            expValidator::failAndReturnToForm(gt("You must select a shipping options for all of your packages."), $this->params);
+        }
+
+        foreach ($this->params['methods'] as $id=> $method) {
+            $cost           = $this->params['cost'][$method];
+            $title          = $this->params['title'][$method];
+            $shippingmethod = new shippingmethod($id);
+            $shippingmethod->update(array(
+                'option'               => $method,
+                'option_title'         => $title,
+                'shipping_cost'        => $cost,
+                'shippingcalculator_id'=> $this->params['calcs'][$id],
+            ));
+
+            $order->shippingmethods[] = $shippingmethod->id;
+        }
+
+        redirect_to(array('controller'=>'cart', 'action'=>'checkout'));
+
+    }
+
+    function createaddress() {
+
+        global $user;
+
+        if ($user->isLoggedIn()) {
+            
+            $address = new address();
+            $count   = $address->find('count', 'user_id=' . $user->id);
+            if ($count == 0) $this->params['is_default'] = 1;
+            $this->params['user_id'] = $user->id;
+            $address->update($this->params);
+
+            
+            if (isset($this->params['addresstype'])) {
+                if ($this->params['addresstype'] == 'shipping') {
+                    $shipping = new shipping();
+                    $shipping->shippingmethod->setAddress($address);
+                } elseif ($this->params['addresstype'] == 'billing') {
+                    $billing = new billing();
+                    $billing->billingmethod->setAddress($address);
+                }
+            }
+
+        }
+
+		redirect_to(array('controller'=>'cart', 'action'=>'checkout'));
+
+    }
+
+    function getSpecials() {
+        
+        return null;
+    }
+
+    
+
+    function isValidDiscountCode($code) {
+        
+        if ($code == '12345') {
+            
+            
+            
+            
+            
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    
+
+    function addDiscountToCart() {
+
+        global $order;
+        
+        
+
+        $discount = new discounts();
+        $discount = $discount->getCouponByName($this->params['coupon_code']);
+
+        if (empty($discount)) {
+            flash('error', gt("This discount code you entered does not exist."));
+            
+            expHistory::back();
+        }
+
+        
+        if ($this->isDiscountInCart($discount->id)) {
+            flash('error', gt("This discount code is already in your cart."));
+            
+            expHistory::back();
+        }
+
+        
+        $validateDiscountMessage = $discount->validateDiscount();
+        if ($validateDiscountMessage == "") {
+            
+            $od               = new order_discounts();
+            $od->orders_id    = $order->id;
+            $od->discounts_id = $discount->id;
+            $od->coupon_code  = $discount->coupon_code;
+            $od->title        = $discount->title;
+            $od->body         = $discount->body;
+            $od->save();
+            
+            flash('message', gt("The discount code has been applied to your cart."));
+        } else {
+            flash('error', $validateDiscountMessage);
+        }
+        
+        expHistory::back();
+    }
+
+    function removeDiscountFromCart($id = null, $redirect = true) {
+        
+        if ($id == null) $id = $this->params['id'];
+        $od = new order_discounts($id);
+        $od->delete();
+        flash('message', gt("The discount code has been removed from your cart"));
+        if ($redirect == true) {
+            
+            expHistory::back();
+        }
+    }
+
+    function isDiscountInCart($discountId) {
+        global $order;
+        $cds = $order->getOrderDiscounts();
+        if (count($cds) == 0) return false;
+
+        foreach ($cds as $d) {
+            if ($discountId == $d->discounts_id) return true;
+        }
+        return false;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    
+    private function rebuildCart() {
+        
+        
+        
+        global $order;
+        
+        $items = $order->orderitem;
+        foreach ($order->orderitem as $item) {
+            $item->delete();
+        }
+        $order->orderitem = array();
+        $order->refresh();
+        foreach ($items as $item) {
+
+            for ($x = 1; $x <= $item->quantity; $x++) {
+                $product   = $item->product;
+                $price     = $product->getBasePrice();
+                $basePrice = $price;
+                $options   = array();
+                if (!empty($item->opts)) {
+                    foreach ($item->opts as $opt) {
+                        $cost = $opt[2] == '$' ? $opt[4] : $basePrice * ($opt[4] * 0.01);
+                        $cost = $opt[3] == '+' ? $cost : $cost * -1;
+                        $price += $cost;
+                        $options[] = $opt;
+                    }
+                }
+                $params['options']        = serialize($options);
+                $params['products_price'] = $price;
+                $params['product_id']     = $product->id;
+                $params['product_type']   = $product->product_type;
+
+                $newitem = new orderitem($params);
+                
+                $newitem->products_price = $price;
+                $newitem->options        = serialize($options);
+
+                $sm                          = $order->getCurrentShippingMethod();
+                $newitem->shippingmethods_id = $sm->id;
+                $newitem->save();
+                $order->refresh();
+            }
+        }
+        $order->save();
+        
+        return true;
+
+    }
+
+    public function empty_cart() {
+        global $order;
+        foreach ($order->orderitem as $orderItem) {
+            $orderItem->delete();
+        }
+        flash('message', gt('Your shopping cart is now empty.'));
+        expHistory::back();
+    }
+
+
+
+
+
+
+
+
+
+    
+    function metainfo() {
+        global $router;
+
+        if (empty($router->params['action'])) return false;
+
+        
+        $action = $router->params['action'];
+        $metainfo = array('title' => '', 'keywords' => '', 'description' => '', 'canonical' => '', 'noindex' => true, 'nofollow' => true);
+        $storename = ecomconfig::getConfig('storename');
+        switch ($action) {
+            default:
+                $metainfo['title'] = gt("Shopping Cart") . " - " . $storename;
+                $metainfo['keywords'] = SITE_KEYWORDS;
+                $metainfo['description'] = SITE_DESCRIPTION;
+
+
+        }
+
+        return $metainfo;
+    }
+
+}
+
+?>

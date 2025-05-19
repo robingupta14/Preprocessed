@@ -1,0 +1,1649 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class class_0 extends var_0 {
+    public $var_1 = 'user';
+
+
+
+
+    protected $var_2 = array(
+        'toggle_extension' => 'Activate Extensions',
+        'kill_session'     => 'End Sessions',
+        'boot_user'        => 'Boot Users',
+        'userperms'        => 'User Permissions',
+        'groupperms'       => 'Group Permissions',
+        'import'           => 'Import Users',
+        'export'           => 'Export Users',
+        'update'           => 'Update Users',
+    );
+
+    static function fn_0() {
+        return gt("User Manager");
+    }
+
+    static function fn_1() {
+        return gt("This is the user management module. It allows for creating user, editing user, etc.");
+    }
+
+    static function fn_2() {
+        return false;
+    }
+
+    static function fn_3() {
+        return false;
+    }
+
+    static function fn_4() {
+        return true;
+    }
+
+    public function fn_5() {
+        global $var_4;
+
+        expHistory::set('manageable', $var_5->var_6);
+
+
+        if ($var_4->var_7 == 1) {
+
+            $var_8 = '';
+        } elseif ($var_4->isSuperAdmin()) {
+
+            $var_8 = "is_system_user != 1";
+        } else {
+
+            $var_8 = "is_admin != 1";
+        }
+        $var_10 = new class_2(array(
+                    'model'=>'user',
+                    'where'=>$var_8,
+
+
+                    'page'=>(isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+                    'controller'=>$var_5->var_11,
+                    'action'=>$var_5->var_6['action'],
+                    'columns'=>array(
+                        gt('Username')=>'username',
+                        gt('First Name')=>'firstname',
+                        gt('Last Name')=>'lastname',
+                        gt('Is Admin')=>'is_acting_admin',
+                    )
+                ));
+
+        assign_to_template(array('page'=>$var_10));
+
+
+
+    }
+
+    public function fn_6() {
+        redirect_to(array('controller' => 'users', 'action' => 'edituser'));
+
+    }
+
+    public function fn_7() {
+        global $var_4, $var_12;
+
+        
+        expHistory::set('editable', $var_5->var_6);
+        expSession::set("userkey", sha1(microtime()));
+        expSession::clearCurrentUserSessionCache();
+
+        $var_13 = !empty($var_5->var_6['id']) ? $var_5->var_6['id'] : null;
+
+        
+        if ($var_4->isAdmin() || ($var_4->var_13 == $var_13 && !$var_4->globalPerm('prevent_profile_change'))) {
+            $var_16 = new class_1($var_13);
+            if ($var_16->isSuperAdmin() && $var_4->isActingAdmin()) {  
+                flash('error', gt('You do not have the proper permissions to edit this user'));
+                expHistory::back();
+            }
+        } else {
+            flash('error', gt('You do not have the proper permissions to edit this user'));
+            expHistory::back();
+        }
+        $var_18 = $var_12->selectObjects('profileextension', 'active=1', 'rank');
+
+        
+        if (empty($var_16->var_20)) $var_16->var_20 = var_21 . "framework/modules/users/assets/images/avatar_not_found.jpg";
+
+        assign_to_template(array(
+            'edit_user'  => $var_16,
+            'extensions' => $var_18,
+            "userkey"    => expSession::get("userkey")
+        ));
+
+        if ($var_4->isAdmin()) {
+            $var_10 = new class_2(array(
+                'model'      => 'group',
+                'where'      => 1,
+                'limit'      => (isset($var_5->config['limit']) && $var_5->config['limit'] != '') ? $var_5->config['limit'] : 10,
+                'order'      => empty($var_5->config['order']) ? 'name' : $var_5->config['order'],
+                'page'       => (isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+                'columns'    => array(
+                    gt('Name')        => 'name',
+                    gt('Description') => 'description',
+                ),
+                'controller' => $var_5->var_11,
+                'action'     => $var_5->var_6['action'],
+            ));
+
+            assign_to_template(array(
+                'groups' => $var_10,
+                'mygroups' => $var_16->getGroupMemberships(),
+            ));
+        }
+    }
+
+    public function fn_8() {
+        global $var_4, $var_12;
+
+        
+        $var_13 = !empty($var_5->var_6['id']) ? $var_5->var_6['id'] : null;
+        if ((($var_4->var_13 == $var_13) || $var_4->isAdmin()) && $var_5->var_6['userkey'] != expSession::get("userkey")) expHistory::back();
+
+        
+        if (!$var_4->isLoggedIn() && var_25 == 0) {
+            flash('error', gt('This site does not allow user registrations'));
+            expHistory::back();
+        } elseif (!$var_4->isAdmin() && ($var_4->isLoggedIn() && $var_4->var_13 != $var_13)) {
+            flash('error', gt('You do not have permission to edit this user account'));
+            expHistory::back();
+        }
+
+        
+        
+        
+        if (!empty($var_13)) {
+            $var_16 = new class_1($var_13);
+            $var_16->fn_8($var_5->var_6);
+            if ($var_4->isAdmin() && $var_4->var_13 != $var_13) {
+                flash('message', gt('Account information for') . ' ' . $var_16->var_26 . ' ' . gt('has been updated.'));
+            } else {
+                flash('message', gt('Thank you') . ' ' . $var_16->var_27 . '.  ' . gt('Your account information has been updated.'));
+            }
+            if ($var_4->var_13 == $var_13) {
+                $_SESSION[SYS_SESSION_KEY]['user'] = $var_16;
+                $var_4 = $var_16;
+            }
+        } else {
+            $var_16 = new class_1($var_5->var_6);
+            $var_28 = $var_16->setPassword($var_5->var_6['pass1'], $var_5->var_6['pass2']);
+            if ($var_28 != true) expValidator::failAndReturnToForm($var_28, $var_5->var_6);
+            $var_16->save();
+            if ($var_4->isAdmin()) {
+                flash('message', gt('Created new user account for') . ' ' . $var_16->var_26);
+            } else {
+                class_1::login($var_16->var_26, $var_5->var_6['pass1']);
+                flash('message', gt('Thank you') . ' ' . $var_16->var_27 . '.  ' . gt('Your new account has been created.'));
+            }
+        }
+
+        
+        if (!empty($var_16->var_13)) {
+            $var_5->var_6['user_id'] = $var_16->var_13;
+            
+            $var_18 = $var_12->selectObjects('profileextension', 'active=1');
+            foreach ($var_18 as $var_31) {
+                if (is_file(var_32 . $var_31->var_33)) {
+                    $var_34 = new $var_31->var_35();
+                    $var_12->fn_9($var_34->var_37, 'user_id=' . $var_16->var_13);
+                    $var_34->fn_8($var_5->var_6);
+                }
+            }
+        }
+
+        
+        if (!empty($var_5->var_6['member'])) {
+            $var_38 = $var_12->selectObjects('groupmembership', 'member_id=' . $var_16->var_13);
+
+            $var_39 = new class_3();
+            $var_39->var_40 = $var_16->var_13;
+            foreach ($var_5->var_6['member'] as $var_41) {
+                $var_39->var_42 = $var_41;
+                $var_39->var_43 = false;
+                foreach ($var_38 as $var_44) {
+                    if ($var_44->var_42 == $var_41) {
+                        if ($var_44->var_43) $var_39->var_43 = true;  
+                    }
+                }
+                $var_12->insertObject($var_39, 'groupmembership');
+            }
+            if ($var_16->var_13 == $var_4->var_13) expSession::triggerRefresh();
+        }
+
+        
+        
+        if (empty($var_13)) {
+            
+            
+            
+            
+            $var_39 = new class_3();
+            $var_39->var_40 = $var_16->var_13;
+            
+
+
+
+
+            
+
+            foreach ($var_12->selectObjects('group', 'inclusive=1') as $var_46) {
+                $var_39->var_42 = $var_46->var_13;
+                $var_12->insertObject($var_39, 'groupmembership');
+            }
+
+            
+
+
+            
+            if (var_47 && !empty($var_16->var_48)) {
+                $var_49 = $var_16->var_27 . ", \n\n";
+                $var_49 .= sprintf(var_50, $var_16->var_27, $var_16->var_51, $var_16->var_26);
+
+                $var_52 = new class_4();
+                $var_52->quickSend(array(
+                    'text_message' => $var_49,
+                    'to'           => array(trim($var_16->var_48) => trim(class_1::getUserAttribution($var_16->var_13))),
+                    'from'         => array(trim(var_54) => trim(var_55)),
+                    'subject'      => var_56,
+                ));
+
+                flash('message', gt('A welcome email has been sent to') . ' ' . $var_16->var_48);
+            }
+
+            
+            if (var_57 && !$var_4->isAdmin()) {
+                $var_49 = gt("When") . ": " . date("F j, Y, g:i a") . "\n\n";
+                $var_49 .= gt("Their name is") . ": " . $var_16->var_27 . " " . $var_16->var_51 . "\n\n";
+
+                $var_52 = new class_4();
+                $var_52->quickSend(array(
+                    'text_message' => $var_49,
+                    'to'           => trim(var_58),
+                    'from'         => array(trim(var_54) => trim(var_55)),
+                    'subject'      => var_59,
+                ));
+            }
+        }
+
+        
+        if ($var_13 == $var_4->var_13) {
+            $var_4->getUserProfile();
+
+        }
+
+        expHistory::back();
+    }
+
+    public function fn_9() {
+        global $var_4, $var_12;
+        if (!$var_4->isAdmin()) {
+            flash('error', gt('You do not have permission to delete user accounts'));
+            expHistory::back();
+        }
+
+        if (empty($var_5->var_6['id'])) {
+            flash('error', gt('No user selected.'));
+            expHistory::back();
+        }
+
+        
+        $var_12->fn_9('groupmembership', 'member_id=' . $var_5->var_6['id']);
+
+        
+        $var_12->fn_9('userpermission', 'uid=' . $var_5->var_6['id']);
+
+        
+        $var_18 = $var_12->selectObjects('profileextension', 'active=1');
+        foreach ($var_18 as $var_31) {
+            if (is_file(var_32 . $var_31->var_33)) {
+                $var_34 = new $var_31->var_35();
+                $var_12->fn_9($var_34->var_61, 'user_id=' . $var_5->var_6['id']);
+            }
+        }
+
+        
+        $var_62 = new class_5();
+        $var_12->fn_9($var_62->var_61, 'user_id=' . $var_5->var_6['id']);
+
+        parent::fn_9();
+    }
+
+    public function fn_10() {
+
+        global $var_12;
+
+        expHistory::set('manageable', $var_5->var_6);
+
+        
+        if (var_63 == true) {
+            $var_12->fn_9('sessionticket', 'last_active < ' . (time() - var_64));
+
+
+        }
+
+        if (isset($var_5->var_6['id']) && $var_5->var_6['id'] == 0) {
+            $var_65 = $var_12->selectObjects('sessionticket', "uid<>0");
+            $var_66 = 1;
+        } else {
+            $var_65 = $var_12->selectObjects('sessionticket');
+            $var_66 = 0;
+        }
+
+
+        for ($var_67 = 0, $var_68 = count($var_65); $var_67 < $var_68; $var_67++) {
+            $var_65[$var_67]->var_4 = new class_1($var_65[$var_67]->var_69);
+            if ($var_65[$var_67]->var_69 == 0) {
+                $var_65[$var_67]->var_4->var_13 = 0;
+            }
+            $var_65[$var_67]->var_70 = expDateTime::duration($var_65[$var_67]->var_71, $var_65[$var_67]->var_72);
+        }
+
+        assign_to_template(array(
+            'sessions' => $var_65,
+            'filter'   => $var_66
+        ));
+    }
+
+    public function fn_11() {
+        global $var_4, $var_12;
+        $var_73 = $var_12->selectObject('sessionticket', "ticket='" . preg_replace('/[^A-Za-z0-9.]/', '', $var_5->var_6['ticket']) . "'");
+        if ($var_73) {
+            $var_16 = new class_1($var_73->var_69);
+            if ($var_4->isSuperAdmin() || ($var_4->isActingAdmin() && !$var_16->isAdmin())) {
+                
+                
+                $var_12->fn_9('sessionticket', "ticket='" . $var_73->var_73 . "'");
+            }
+        }
+        expHistory::back();
+    }
+
+    public function fn_12() {
+        global $var_4, $var_12;
+        if (!empty($var_5->var_6['id'])) {
+            $var_16 = new class_1($var_5->var_6['id']);
+            if ($var_4->isSuperAdmin() || ($var_4->isActingAdmin() && !$var_16->isAdmin())) {
+                
+                
+                $var_12->fn_9('sessionticket', 'uid=' . $var_16->var_13);
+            }
+        }
+        expHistory::back();
+    }
+
+    
+    public function fn_13() {
+        global $var_12;
+
+        
+        expHistory::set('manageable', $var_5->var_6);
+
+        
+        
+        $var_75 = array(
+            'framework/modules/users/extensions',
+            'themes/' . var_76 . '/modules/users/extensions'
+        );
+        foreach ($var_75 as $var_77) {
+            if (is_readable(var_32 . $var_77)) {
+                $var_78 = opendir(var_32 . $var_77);
+                while (($var_79 = readdir($var_78)) !== false) {
+                    if (is_file(var_32 . "$var_77/$var_79") && is_readable(var_32 . "$var_77/$var_79") && substr($var_79, 0, 1) != '_' && substr($var_79, 0, 1) != '.') {
+                        $var_35 = substr($var_79, 0, -4);
+                        $var_80 = new $var_35();
+                        $var_81 = $var_12->selectObject('profileextension', "title='" . $var_80->name() . "'");
+                        if (empty($var_81->var_13)) {
+                            $var_31 = new class_6();
+                            $var_31->var_83 = $var_80->name();
+                            $var_31->var_84 = $var_80->fn_1();
+                            $var_31->var_33 = "$var_77/$var_79";
+                            $var_31->var_35 = $var_35;
+                            $var_31->save();
+                        }
+                    }
+                }
+            }
+        }
+
+        $var_10 = new class_2(array(
+            'model'      => 'profileextension',
+            'where'      => 1,
+            'limit'      => 25,
+            'order'      => 'title',
+            'page'       => (isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+            'columns'    => array(
+                gt('Name')        => 'title',
+                gt('Description') => 'body',
+                gt('Active')      => 'active'
+            ),
+            'controller' => $var_5->var_11,
+            'action'     => $var_5->var_6['action'],
+        ));
+
+        assign_to_template(array(
+            'page' => $var_10
+        ));
+    }
+
+    public function fn_14() {
+        expHistory::set('manageable', $var_5->var_6);
+        $var_10 = new class_2(array(
+            'model'      => 'group',
+            'where'      => 1,
+
+            'order'      => empty($var_5->config['order']) ? 'name' : $var_5->config['order'],
+            'page'       => (isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+            'columns'    => array(
+                gt('Name')        => 'name',
+                gt('Description') => 'description',
+                gt('Type')        => 'inclusive',
+            ),
+            'controller' => $var_5->var_11,
+            'action'     => $var_5->var_6['action'],
+        ));
+
+        foreach ($var_10->var_85 as $var_86=>$var_87) {
+            $var_10->var_85[$var_86]->var_88 = class_7::getUsersInGroup($var_87->var_13);
+        }
+
+        assign_to_template(array(
+            'page' => $var_10,
+        ));
+    }
+
+    public function fn_15() {
+        expHistory::set('editable', $var_5->var_6);
+    }
+
+    public function fn_16() {
+        global $var_12;
+
+        
+        $var_5->var_6['username'] = expString::escape($var_5->var_6['username']);
+        $var_16 = class_1::getUserByName($var_5->var_6['username']);
+        if (empty($var_16)) {
+            $var_16 = class_1::getUserByEmail($var_5->var_6['username']);
+            if (!empty($var_16) && $var_16->var_89 > 1) {
+                expValidator::failAndReturnToForm(gt('That email address applies to more than one user account, please enter your username instead.'));
+            }
+        }
+        $var_16 = new class_1($var_16->var_13);
+
+        if (!expValidator::check_antispam($var_5->var_6)) {
+            expValidator::failAndReturnToForm(gt('Anti-spam verification failed.  Please try again.'), $var_5->var_6);
+        } elseif (empty($var_16->var_13)) {
+            expValidator::failAndReturnToForm(gt('We were unable to find an account with that username/email'), $var_5->var_6);
+        } elseif (empty($var_16->var_48)) {
+            expValidator::failAndReturnToForm(gt('Your account does not appear to have an email address.  Please contact the site administrators to reset your password'), $var_5->var_6);
+        } elseif ($var_16->isAdmin()) {
+            expValidator::failAndReturnToForm(gt('You cannot reset passwords for an administrator account.'), $var_5->var_6);
+        }
+
+        $var_90 = new class_3();
+        $var_90->var_69 = $var_16->var_13;
+        $var_90->var_91 = time() + 7200;
+        $var_90->var_92 = md5(time()) . uniqid('');
+
+        $var_48 = $var_93 = expTemplate::get_template_for_action($var_5, 'email/password_reset_email', $var_5->var_94);
+        $var_48->assign('token', $var_90);
+        $var_48->assign('username', $var_16->var_26);
+        $var_49 = $var_48->render();
+        $var_52 = new class_4();
+        $var_52->quickSend(array(
+            'html_message' => $var_49,
+            'to'           => array(trim($var_16->var_48) => trim(class_1::getUserAttribution($var_16->var_13))),
+            'from'         => array(trim(var_54) => trim(var_55)),
+            'subject'      => gt('Password Reset Requested'),
+        ));
+
+        $var_12->fn_9('passreset_token', 'uid=' . $var_16->var_13);
+        $var_12->insertObject($var_90, 'passreset_token');
+        flash('message', gt('An email has been sent to you with instructions on how to finish resetting your password.') . '<br><br>' .
+            gt('This new password request is only valid for 2 hours.  If you have not completed the password reset process within 2 hours, the new password request will expire.'));
+
+        expHistory::back();
+    }
+
+    public function fn_17() {
+        global $var_12;
+
+        $var_12->fn_9('passreset_token', 'expires < ' . time());
+        $var_90 = $var_12->selectObject('passreset_token', 'uid=' . intval($var_5->var_6['uid']) . " AND token='" . preg_replace('/[^A-Za-z0-9]/', '', expString::escape($var_5->var_6['token'])) . "'");
+        if ($var_90 == null) {
+            flash('error', gt('Your password reset request has expired.  Please try again.'));
+            expHistory::back();
+        }
+
+        
+        $var_97 = '';
+        for ($var_67 = 0, $var_68 = mt_rand(12, 20); $var_67 < $var_68; $var_67++) {
+            $var_98 = mt_rand(48, 122);
+            if (($var_98 > 97 && $var_98 < 122) || ($var_98 > 65 && $var_98 < 90) || ($var_98 > 48 && $var_98 < 57)) $var_97 .= chr($var_98);
+            else $var_67--;
+        }
+
+        
+        $var_16 = new class_1($var_90->var_69);
+
+        
+        $var_48 = $var_93 = expTemplate::get_template_for_action($var_5, 'email/confirm_password_email', $var_5->var_94);
+        $var_48->assign('newpass', $var_97);
+        $var_48->assign('username', $var_16->var_26);
+        $var_49 = $var_48->render();
+
+        
+        $var_52 = new class_4();
+        $var_52->quickSend(array(
+            'html_message' => $var_49,
+            'to'           => array(trim($var_16->var_48) => trim(class_1::getUserAttribution($var_16->var_13))),
+            'from'         => array(trim(var_54) => trim(var_55)),
+            'subject'      => gt('The account password for') . ' ' . var_99 . ' ' . gt('was reset'),
+        ));
+
+        
+        $var_16->fn_8(array('password' => class_1::encryptPassword($var_97)));
+
+        
+        $var_12->fn_9('passreset_token', 'uid=' . $var_90->var_69);
+
+        flash('message', gt('Your password has been reset and the new password has been emailed to you.'));
+
+        
+        redirect_to(array('controller' => 'login', 'action' => 'loginredirect'));
+    }
+
+    public function fn_18() {
+        global $var_4;
+
+        expHistory::set('editable', $var_5->var_6);
+        $var_13 = isset($var_5->var_6['id']) ? $var_5->var_6['id'] : $var_4->var_13;
+
+        if ($var_4->isAdmin() || ($var_4->var_13 == $var_13)) {
+            $var_100 = ($var_4->var_13 == $var_13) ? 1 : 0;
+            $var_16 = new class_1($var_13);
+        } else {
+            flash('error', gt('You do not have the proper permissions to do that'));
+            expHistory::back();
+        }
+        assign_to_template(array(
+            'u'      => $var_16,
+            'isuser' => $var_100
+        ));
+    }
+
+    public function fn_19() {
+        global $var_4;
+
+        $var_100 = ($var_5->var_6['uid'] == $var_4->var_13) ? 1 : 0;
+
+        if (!$var_4->isAdmin() && !$var_100) {
+            flash('error', gt('You do not have permissions to change this users password.'));
+            expHistory::back();
+        }
+
+        if (($var_100 && empty($var_5->var_6['password'])) || (!empty($var_5->var_6['password']) && $var_4->var_101 != class_1::encryptPassword($var_5->var_6['password']))) {
+            flash('error', gt('The current password you entered is not correct.'));
+            expHistory::returnTo('editable');
+        }
+        
+        $var_16 = new class_1(intval($var_5->var_6['uid']));
+
+        $var_28 = $var_16->setPassword($var_5->var_6['new_password1'], $var_5->var_6['new_password2']);
+        
+        if (is_string($var_28)) {
+            flash('error', $var_28);
+            expHistory::returnTo('editable');
+        } else {
+            $var_6 = array();
+            $var_6['is_admin'] = !empty($var_16->var_43);
+            $var_6['is_acting_admin'] = !empty($var_16->var_102);
+            $var_16->fn_8($var_6);
+        }
+
+        if (!$var_100) {
+            flash('message', gt('The password for') . ' ' . $var_16->var_26 . ' ' . gt('has been changed.'));
+        } else {
+            $var_4->var_101 = $var_16->var_101;
+            flash('message', gt('Your password has been changed.'));
+        }
+        expHistory::back();
+    }
+
+    public function fn_20() {
+        expHistory::set('editable', $var_5->var_6);
+        if (empty($var_5->var_6['id'])) {
+            flash('error', gt('You must specify the user whose password you want to change'));
+            expHistory::back();
+        }
+
+        $var_16 = new class_1($var_5->var_6['id']);
+        assign_to_template(array(
+            'u' => $var_16
+        ));
+    }
+
+    public function fn_21() {
+        global $var_4;
+
+        if (!$var_4->isAdmin() && $var_5->var_6['id'] != $var_4->var_13) {
+            flash('error', gt('You do not have permissions to change this users password.'));
+            expHistory::back();
+        }
+
+        if (empty($var_5->var_6['id'])) {
+            expValidator::failAndReturnToForm(gt('You must specify the user whose password you want to change'), $var_5->var_6);
+        }
+
+        if (empty($var_5->var_6['new_password1'])) {
+            expValidator::setErrorField('new_password1');
+            expValidator::failAndReturnToForm(gt('You must specify a new password for this user.'), $var_5->var_6);
+        }
+
+        if (empty($var_5->var_6['new_password2'])) {
+            expValidator::setErrorField('new_password2');
+            expValidator::failAndReturnToForm(gt('You must confirm the password.'), $var_5->var_6);
+
+        }
+
+        $var_16 = new class_1($var_5->var_6['id']);
+        $var_28 = $var_16->setPassword($var_5->var_6['new_password1'], $var_5->var_6['new_password2']);
+        if (is_string($var_28)) {
+            expValidator::setErrorField('new_password1');
+            $var_5->var_6['new_password1'] = '';
+            $var_5->var_6['new_password2'] = '';
+            expValidator::failAndReturnToForm($var_28, $var_5->var_6);
+        } else {
+            $var_16->save(true);
+        }
+
+        flash('message', gt('Password reset for user') . ' ' . $var_16->var_26);
+        expHistory::back();
+    }
+
+    public function fn_22() {
+        global $var_12;
+
+        expHistory::set('editable', $var_5->var_6);
+        $var_13 = isset($var_5->var_6['id']) ? $var_5->var_6['id'] : null;
+        $var_87 = new class_7($var_13);
+        $var_87->var_103 = $var_12->selectValue('section', 'id', "sef_name='" . $var_87->var_103 . "'");
+        assign_to_template(array(
+            'record' => $var_87
+        ));
+    }
+
+    public function fn_23() {
+        global $var_12, $var_4;
+
+
+        $var_39 = $var_12->selectObject('groupmembership', 'member_id=' . $var_4->var_13 . ' AND group_id=' . $var_5->var_6['id'] . ' AND is_admin=1');
+
+        $var_105 = 0;
+        if ($var_39) $var_105 = 1;
+        if (expPermissions::check('user_management', expCore::makeLocation('administrationmodule'))) $var_105 = 2;
+
+        $var_87 = $var_12->selectObject('group', 'id=' . $var_5->var_6['id']);
+        $var_106 = class_1::getAllUsers(0);
+
+        $var_88 = array();
+        $var_107 = array();
+        foreach ($var_12->selectObjects('groupmembership', 'group_id=' . $var_87->var_13) as $var_108) {
+            $var_88[] = $var_108->var_40;
+            if ($var_108->var_43 == 1) {
+                $var_107[] = $var_108->var_40;
+            }
+        }
+
+        for ($var_67 = 0, $var_68 = count($var_106); $var_67 < $var_68; $var_67++) {
+            if (in_array($var_106[$var_67]->var_13, $var_88)) {
+                $var_106[$var_67]->var_109 = 1;
+            } else {
+                $var_106[$var_67]->var_109 = 0;
+            }
+
+            if (in_array($var_106[$var_67]->var_13, $var_107)) {
+                $var_106[$var_67]->var_43 = 1;
+            } else {
+                $var_106[$var_67]->var_43 = 0;
+            }
+        }
+
+        
+        $var_10 = new class_2(array(
+
+            'records'    => $var_106,
+            'where'      => 1,
+
+            
+            'order'      => empty($var_5->config['order']) ? 'username' : $var_5->config['order'],
+            'page'       => (isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+            'columns'    => array(
+                gt('Username')   => 'username',
+                gt('First Name') => 'firstname',
+                gt('Last Name')  => 'lastname',
+                gt('Is Member')  => 'is_member',
+                gt('Is Admin')   => 'is_admin',
+            ),
+            'controller' => $var_5->var_11,
+            'action'     => $var_5->var_6['action'],
+        ));
+
+        assign_to_template(array(
+            'page'       => $var_10,
+            'group'      => $var_87,
+            'users'      => $var_106,
+            'canAdd'     => (count($var_88) < count($var_106) ? 1 : 0),
+            'hasMember'  => (count($var_88) > 0 ? 1 : 0),
+            'perm_level' => $var_105,
+        ));
+    }
+
+    public function fn_24() {
+        global $var_12;
+
+        $var_87 = new class_7();
+        if (!empty($var_5->var_6['redirect'])) {
+            $var_5->var_6['redirect'] = $var_12->selectValue('section', 'sef_name', 'id=' . $var_5->var_6['redirect']);
+        }
+        $var_87->fn_8($var_5->var_6);
+        expHistory::back();
+    }
+
+    public function fn_25() {
+        global $var_4, $var_12;
+        if (!$var_4->isAdmin()) {
+            flash('error', gt('You do not have permission to delete user groups'));
+            expHistory::back();
+        }
+
+        if (empty($var_5->var_6['id'])) {
+            flash('error', gt('No group selected.'));
+            expHistory::back();
+        }
+
+        
+        $var_12->fn_9('groupmembership', 'group_id=' . $var_5->var_6['id']);
+
+        
+        $var_12->fn_9('grouppermission', 'gid=' . $var_5->var_6['id']);
+
+        
+        $var_12->fn_9('group', 'id=' . $var_5->var_6['id']);
+        expHistory::back();
+    }
+
+    public function fn_26() {
+        global $var_12;
+        if (isset($var_5->var_6['id'])) $var_12->toggle('profileextension', 'active', 'id=' . $var_5->var_6['id']);
+        expHistory::back();
+    }
+
+    public function fn_27() {
+
+        global $var_12;
+
+        
+        $var_87 = $var_12->selectObject('group', 'id=' . $var_5->var_6['id']);
+
+        $var_12->fn_9('groupmembership', 'group_id=' . $var_87->var_13);
+        $var_39 = new class_3();
+        $var_39->var_42 = $var_87->var_13;
+        if ($var_5->var_6['memdata'] != "") {
+            foreach ($var_5->var_6['memdata'] as $var_16 => $var_111) {
+                $var_39->var_40 = $var_16;
+                $var_39->var_43 = $var_111['is_admin'];
+                $var_12->insertObject($var_39, 'groupmembership');
+            }
+        }
+        expSession::triggerRefresh();
+        expHistory::back();
+    }
+
+    public function fn_28() {
+        $var_112 = $var_5->var_1;
+        $var_113 = 25; 
+        $var_114 = 0; 
+        $var_115 = null; 
+        $var_77 = 'asc'; 
+        $var_116 = var_117;
+
+        
+        if (strlen($var_5->var_6['results']) > 0) {
+            $var_113 = $var_5->var_6['results'];
+        }
+
+        
+        if (strlen($var_5->var_6['startIndex']) > 0) {
+            $var_114 = $var_5->var_6['startIndex'];
+        }
+
+        
+        if (strlen($var_5->var_6['sort']) > 0) {
+            $var_115 = $var_5->var_6['sort'];
+            if ($var_115 = 'id') $var_115 = 'username';
+        }
+
+        if (!empty($var_5->var_6['filter'])) {
+            switch ($var_5->var_6['filter']) {
+                case '1' :
+                    $var_118 = '';
+                    break;
+                case '2' :
+                    $var_118 = "is_system_user != 1";
+                    break;
+                case '3' :
+                    $var_118 = "is_admin != 1";
+            }
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+        if ((strlen($var_5->var_6['dir']) > 0) && ($var_5->var_6['dir'] == 'desc')) {
+            $var_77 = 'desc';
+            $var_116 = var_119;
+        } else {
+            $var_77 = 'asc';
+            $var_116 = var_117;
+        }
+
+        if (!empty($var_5->var_6['query'])) {
+
+
+            $var_120 = $var_5->$var_112->find('count', (empty($var_118) ? '' : $var_118 . " AND ") . "(username LIKE '%" . $var_5->var_6['query'] . "%' OR firstname LIKE '%" . $var_5->var_6['query'] . "%' OR lastname LIKE '%" . $var_5->var_6['query'] . "%' OR email LIKE '%" . $var_5->var_6['query'] . "%')");
+
+            $var_106 = $var_5->$var_112->find('all', (empty($var_118) ? '' : $var_118 . " AND ") . "(username LIKE '%" . $var_5->var_6['query'] . "%' OR firstname LIKE '%" . $var_5->var_6['query'] . "%' OR lastname LIKE '%" . $var_5->var_6['query'] . "%' OR email LIKE '%" . $var_5->var_6['query'] . "%')", $var_115 . ' ' . $var_77, $var_113, $var_114);
+
+            for ($var_67 = 0, $var_68 = count($var_106); $var_67 < $var_68; $var_67++) {
+                if (var_122 == 1) {
+                    $var_106[$var_67]->var_123 = "<a href='viewuser/{$var_106[$var_67]->var_13}'  class='fileinfo'>{$var_106[$var_67]->var_26}</a>";
+                } else {
+                    $var_106[$var_67]->var_123 = $var_106[$var_67]->var_26;
+                }
+            }
+
+            $var_124 = array(
+                'recordsReturned' => count($var_106),
+                'totalRecords'    => $var_120,
+                'startIndex'      => $var_114,
+                'sort'            => $var_115,
+                'dir'             => $var_77,
+                'pageSize'        => $var_113,
+                'records'         => $var_106
+            );
+        } else {
+
+            $var_120 = $var_5->$var_112->find('count', $var_118);
+
+            $var_106 = $var_5->$var_112->find('all', $var_118, $var_115 . ' ' . $var_77, $var_113, $var_114);
+
+            for ($var_67 = 0, $var_68 = count($var_106); $var_67 < $var_68; $var_67++) {
+                if (var_122 == 1) {
+                    $var_106[$var_67]->var_123 = "<a href='viewuser/{$var_106[$var_67]->var_13}'  class='fileinfo'>{$var_106[$var_67]->var_26}</a>";
+                } else {
+                    $var_106[$var_67]->var_123 = $var_106[$var_67]->var_26;
+                }
+            }
+
+            $var_124 = array(
+                'recordsReturned' => count($var_106),
+                'totalRecords'    => $var_120,
+                'startIndex'      => $var_114,
+                'sort'            => $var_115,
+                'dir'             => $var_77,
+                'pageSize'        => $var_113,
+                'records'         => $var_106
+            );
+
+        }
+
+        
+    }
+
+    public function fn_29() {
+        global $var_4;
+
+        if (!empty($var_5->var_6['id'])) {
+            $var_16 = new class_1($var_5->var_6['id']);
+        } elseif (!empty($var_4->var_13)) {
+            $var_16 = $var_4;
+        } else {
+            flash('error', gt('You may not view this user'));
+            expHistory::back();
+        }
+        $var_62 = new class_5();
+
+        $var_125 = $var_62->find('all', 'user_id=' . $var_16->var_13 . ' AND is_billing = 1');
+        $var_126 = $var_62->find('all', 'user_id=' . $var_16->var_13 . ' AND is_shipping = 1');
+
+        
+        $var_127 = 'SELECT o.*, b.firstname as firstname, b.billing_cost as total, b.middlename as middlename, b.lastname as lastname, os.title as status, ot.title as order_type ';
+        $var_127 .= 'FROM ' . var_128 . '_orders o, ' . var_128 . '_billingmethods b, ';
+        $var_127 .= var_128 . '_order_status os, ';
+        $var_127 .= var_128 . '_order_type ot ';
+        $var_127 .= 'WHERE o.id = b.orders_id AND o.order_status_id = os.id AND o.order_type_id = ot.id AND o.purchased > 0 AND user_id =' . $var_16->var_13;
+
+        $var_129 = (isset($var_5->config['limit']) && $var_5->config['limit'] != '') ? $var_5->config['limit'] : 10;
+        $var_130 = !empty($var_5->var_6['order']) ? $var_5->var_6['order'] : 'purchased';
+        $var_77 = !empty($var_5->var_6['dir']) ? $var_5->var_6['dir'] : 'DESC';
+        
+        $var_131 = new class_2(array(
+            
+            'sql'        => $var_127,
+            'limit'      => $var_129,
+            'order'      => $var_130,
+            'dir'        => $var_77,
+            'page'       => (isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+            'columns'    => array(
+                gt('Order 
+                gt('var_132')          => 'total',
+                gt('Date Purchased') => 'purchased',
+
+                gt('Status')         => 'order_status_id',
+                gt('Ref')            => 'orig_referrer',
+            ),
+            'controller' => $var_5->var_6['controller'],
+            'action'     => $var_5->var_6['action'],
+        ));
+
+        assign_to_template(array(
+            'u'         => $var_16,
+            'billings'  => $var_125,
+            'shippings' => $var_126,
+            'orders'    => $var_131,
+        ));
+    }
+
+    public function fn_30() {
+        global $var_4;
+
+        if (!empty($var_5->var_6['mod']) && $var_4->isAdmin()) {
+            $var_94 = expCore::makeLocation($var_5->var_6['mod'], isset($var_5->var_6['src']) ? $var_5->var_6['src'] : null, isset($var_5->var_6['int']) ? $var_5->var_6['int'] : null);
+            $var_106 = array();
+            $var_133 = expModules::getModuleClassName(($var_94->var_134));
+            $var_134 = new $var_133();
+            $var_135 = $var_134->permissions($var_94->var_137);
+            $var_138 = 0;
+            foreach (class_1::getAllUsers(false) as $var_16) {
+                $var_138 = 1;
+                foreach ($var_135 as $var_139 => $var_82) {
+
+                    if (expPermissions::checkUser($var_16, $var_139, $var_94, true)) {
+                        $var_16->$var_139 = 1;
+                    } else if (expPermissions::checkUser($var_16, $var_139, $var_94)) {
+                        $var_16->$var_139 = 2;
+                    } else {
+                        $var_16->$var_139 = 0;
+                    }
+                }
+                $var_106[] = $var_16;
+            }
+
+            $var_141[gt("User Name")] = 'username';
+            $var_141[gt("First Name")] = 'firstname';
+            $var_141[gt("Last Name")] = 'lastname';
+            foreach ($var_134->permissions() as $var_140) {
+                
+                $var_141[gt($var_140)] = 'no-sort';
+            }
+
+
+                $var_10 = new class_2(array(
+                    
+
+                    'records'    => $var_106,
+                    
+                    'order'      => (isset($var_5->var_6['order']) ? $var_5->var_6['order'] : 'username'),
+                    'dir'        => (isset($var_5->var_6['dir']) ? $var_5->var_6['dir'] : 'ASC'),
+                    'page'       => (isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+                    'controller' => $var_5->var_6['controller'],
+                    'action'     => $var_5->var_6['action'],
+                    'columns'    => $var_141,
+                ));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            assign_to_template(array(
+                'user_form'  => 1,
+                'have_users' => $var_138,
+                'users'      => $var_106,
+                'page'       => $var_10,
+                'perms'      => $var_135,
+                'loc'        => $var_94,
+
+                'title'      => ($var_94->var_134 != 'navigation' || ($var_94->var_134 == 'navigation' && !empty($var_94->var_142))) ? $var_134->name() . ' ' . ($var_94->var_134 != 'container' ? gt('module') : '') . ' ' : gt('Page'),
+            ));
+        } else {
+
+            notfoundController::handle_not_authorized();
+        }
+    }
+
+    public function fn_31() {
+        global $var_4;
+
+        $var_94 = expCore::makeLocation($var_5->var_6['mod'], isset($var_5->var_6['src']) ? $var_5->var_6['src'] : null, isset($var_5->var_6['int']) ? $var_5->var_6['int'] : null);
+        foreach ($var_5->var_6['users'] as $var_16) {
+            expPermissions::revokeAll($var_16, $var_94);
+        }
+        foreach ($var_5->var_6['permdata'] as $var_143 => $var_144) {
+            $var_135 = array_keys($var_144);
+            $var_16 = class_1::getUserById($var_143);
+            for ($var_67 = 0, $var_68 = count($var_135); $var_67 < $var_68; $var_67++) {
+                expPermissions::grant($var_16, $var_135[$var_67], $var_94);
+            }
+
+            if ($var_143 == $var_4->var_13) {
+                expPermissions::load($var_4);
+            }
+        }
+        expSession::triggerRefresh();
+        expHistory::back();
+    }
+
+    public function fn_32() {
+        global $var_4;
+
+        if (!empty($var_5->var_6['mod']) && $var_4->isAdmin()) {
+            $var_94 = expCore::makeLocation($var_5->var_6['mod'], isset($var_5->var_6['src']) ? $var_5->var_6['src'] : null, isset($var_5->var_6['int']) ? $var_5->var_6['int'] : null);
+            $var_106 = array(); 
+            $var_133 = expModules::getModuleClassName($var_94->var_134);
+            $var_134 = new $var_133();
+            $var_135 = $var_134->permissions($var_94->var_137);
+
+            foreach (class_7::getAllGroups() as $var_46) {
+                foreach ($var_135 as $var_139 => $var_82) {
+
+                    if (expPermissions::checkGroup($var_46, $var_139, $var_94, true)) {
+                        $var_46->$var_139 = 1;
+                    } else if (expPermissions::checkGroup($var_46, $var_139, $var_94)) {
+                        $var_46->$var_139 = 2;
+                    } else {
+                        $var_46->$var_139 = 0;
+                    }
+                }
+                $var_106[] = $var_46;
+            }
+
+            $var_141[gt("Group")] = 'username';
+            foreach ($var_134->permissions() as $var_140) {
+                
+                $var_141[gt($var_140)] = 'no-sort';
+            }
+
+
+                $var_10 = new class_2(array(
+                    
+
+                    'records'    => $var_106,
+                    
+                    'order'      => (isset($var_5->var_6['order']) ? $var_5->var_6['order'] : 'name'),
+                    'dir'        => (isset($var_5->var_6['dir']) ? $var_5->var_6['dir'] : 'ASC'),
+                    'page'       => (isset($var_5->var_6['page']) ? $var_5->var_6['page'] : 1),
+                    'controller' => $var_5->var_6['controller'],
+                    'action'     => $var_5->var_6['action'],
+                    'columns'    => $var_141,
+                ));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            assign_to_template(array(
+                'user_form'  => 0,
+                'is_group'   => 1,
+                'have_users' => count($var_106) > 0, 
+                'users'      => $var_106,
+                'page'       => $var_10,
+                'perms'      => $var_135,
+                'loc'        => $var_94,
+
+                'title'      => ($var_94->var_134 != 'navigation' || ($var_94->var_134 == 'navigation' && !empty($var_94->var_142))) ? $var_134->name() . ' ' . ($var_94->var_134 != 'container' ? gt('module') : '') . ' ' : gt('Page'),
+            ));
+        } else {
+
+            notfoundController::handle_not_authorized();
+        }
+    }
+
+    public function fn_33() {
+        $var_94 = expCore::makeLocation($var_5->var_6['mod'], isset($var_5->var_6['src']) ? $var_5->var_6['src'] : null, isset($var_5->var_6['int']) ? $var_5->var_6['int'] : null);
+        foreach ($var_5->var_6['users'] as $var_46) {
+            expPermissions::revokeAllGroup($var_46, $var_94);
+        }
+        foreach ($var_5->var_6['permdata'] as $var_143 => $var_145) {
+            $var_135 = array_keys($var_145);
+            $var_46 = class_7::getGroupById($var_143);
+            for ($var_67 = 0, $var_68 = count($var_135); $var_67 < $var_68; $var_67++) {
+                expPermissions::grantGroup($var_46, $var_135[$var_67], $var_94);
+            }
+        }
+        expSession::triggerRefresh();
+        expHistory::back();
+    }
+
+    public function fn_34() {
+        if (expFile::canCreate(var_32 . "tmp/test") != var_146) {
+            assign_to_template(array(
+                "error" => "The /tmp directory is not writable.  Please contact your administrator.",
+            ));
+        } else {
+            
+            $var_147 = Array(
+                ',' => gt('Comma'),
+                ';' => gt('Semicolon'),
+                ':' => gt('Colon'),
+                ' ' => gt('Space'));
+
+
+
+
+
+
+
+
+
+
+
+
+
+            assign_to_template(array(
+
+                'delimiters' => $var_147,
+            ));
+        }
+    }
+
+    public function fn_35() {
+        
+        
+        if (!is_numeric($var_5->var_6["rowstart"])) {
+            unset($var_5->var_6["rowstart"]);
+            $var_5->var_6['_formError'] = gt('The starting row must be a number.');
+            expSession::set("last_POST", $var_5->var_6);
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit('Redirecting...');
+        }
+
+        
+        $var_148 = "tmp";
+
+        
+        if ($_FILES["upload"]["error"] == var_149) {
+            
+            $var_79 = expFile::fileUpload("upload", false, false, time() . "_" . $_FILES['upload']['name'], $var_148.'/');
+            if ($var_79 == null) {
+                switch ($_FILES["upload"]["error"]) {
+                    case var_150:
+                    case var_151:
+                        $var_5->var_6['_formError'] = gt('The file you attempted to upload is too large.  Contact your system administrator if this is a problem.');
+                        break;
+                    case var_152:
+                        $var_5->var_6['_formError'] = gt('The file was only partially uploaded.');
+                        break;
+                    case var_153:
+                        $var_5->var_6['_formError'] = gt('No file was uploaded.');
+                        break;
+                    default:
+                        $var_5->var_6['_formError'] = gt('A strange internal error has occurred.  Please contact the Exponent Developers.');
+                        break;
+                }
+                expSession::set("last_POST", $var_5->var_6);
+                header("Location: " . $_SERVER['HTTP_REFERER']);
+                exit("");
+            }
+        }
+        
+
+        
+        $var_154 = null;
+        $var_155 = ini_get('auto_detect_line_endings');
+        ini_set('auto_detect_line_endings',TRUE);
+        $var_156 = fopen(var_32 . $var_148 . "/" . $var_79->var_157, "r");
+        if (!empty($var_5->var_6["use_header"])) $var_5->var_6["rowstart"]++;
+        for ($var_158 = 0; $var_158 < $var_5->var_6["rowstart"]; $var_158++) {
+            $var_159 = fgetcsv($var_156, 2000, $var_5->var_6["delimiter"]);
+            if ($var_158 == 0 && !empty($var_5->var_6["use_header"])) $var_154 = $var_159;
+        }
+
+        $var_160 = array(
+            "none"      => gt('--Disregard this column--'),
+            "username"  => gt('Username'),
+            "password"  => gt('Password'),
+            "firstname" => gt('First Name'),
+            "lastname"  => gt('Last Name'),
+            "email"     => gt('Email Address')
+        );
+
+        
+        if ($var_159 == null) {
+            $var_5->var_6['_formError'] = sprintf(gt('This file does not appear to be delimited by "%s". <br />Please specify a different delimiter.<br /><br />'), $var_5->var_6["delimiter"]);
+            expSession::set("last_POST", $var_5->var_6);
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit("");
+        } else {
+            
+            $var_161 = new class_8();
+            $var_161->meta("controller", "users");
+            $var_161->meta("action", "import_users_process");
+            $var_161->meta("rowstart", $var_5->var_6["rowstart"]);
+            $var_161->meta("use_header", $var_5->var_6["use_header"]);
+            $var_161->meta("filename", $var_148 . "/" . $var_79->var_157);
+            $var_161->meta("delimiter", $var_5->var_6["delimiter"]);
+            for ($var_67 = 0, $var_68 = count($var_159); $var_67 < $var_68; $var_67++) {
+                if ($var_154 != null) {
+                    $var_83 = $var_154[$var_67] . ' (' . $var_159[$var_67] .')';
+                    if (array_key_exists($var_154[$var_67], $var_160)) {
+                        $var_163 = $var_154[$var_67];
+                    } else {
+                        $var_163 = "none";
+                    }
+                } else {
+                    $var_83 = $var_159[$var_67];
+                    $var_163 = "none";
+                }
+                $var_161->register("column[$var_67]", $var_83, new class_9($var_163, $var_160));
+            }
+            $var_161->register("submit", "", new class_10(gt('Next'), "", gt('Cancel')));
+
+            assign_to_template(array(
+                "form_html" => $var_161->tohtml(),
+            ));
+        }
+    }
+
+    public function fn_36() {
+        if (in_array("username", $var_5->var_6["column"]) == false) {
+            $var_166 = array(
+                "FILN"    => gt('First Initial / Last Name'),
+                "FILNNUM" => gt('First Initial / Last Name / Random Number'),
+                "EMAIL"   => gt('Email Address'),
+                "FNLN"    => gt('First Name / Last Name'));
+        } else {
+            $var_166 = array("INFILE" => gt('Username Specified in CSV File'));
+        }
+
+        if (in_array("password", $var_5->var_6["column"]) == false) {
+            $var_167 = array(
+                "RAND"    => gt('Generate Random Passwords'),
+                "DEFPASS" => gt('Use the Default Password Supplied Below'));
+        } else {
+            $var_167 = array("INFILE" => gt('Password Specified in CSV File'));
+        }
+        if (count($var_167) == 1) {
+            $var_168 = true;
+        } else {
+            $var_168 = false;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        assign_to_template(array(
+
+            'uname_options' => $var_166,
+            'pword_options' => $var_167,
+            'pword_disabled' => $var_168,
+            'params' => $var_5->var_6
+        ));
+    }
+
+    public function fn_37() {
+        $var_155 = ini_get('auto_detect_line_endings');
+        ini_set('auto_detect_line_endings',TRUE);
+        $var_79 = fopen(var_32 . $var_5->var_6["filename"], "r");
+        $var_169 = array();
+        $var_170 = array();
+        $var_171 = array();
+        $var_172 = 1;
+
+        while (($var_173 = fgetcsv($var_79, 2000, $var_5->var_6["delimiter"])) != false) {
+
+            if ($var_172 >= $var_5->var_6["rowstart"]) {
+                $var_67 = 0;
+
+                $var_169['username'] = "";
+                $var_169['firstname'] = "";
+                $var_169['lastname'] = "";
+                $var_169['is_admin'] = 0;
+                $var_169['is_acting_admin'] = 0;
+
+                $var_169['email'] = '';
+                $var_169['changed'] = "";
+
+                foreach ($var_173 as $var_174) {
+                    if (!empty($var_5->var_6["column"][$var_67]) && $var_5->var_6["column"][$var_67] != "none") {
+                        $var_175 = $var_5->var_6["column"][$var_67];
+                        $var_169[$var_175] = trim($var_174);
+                    } else {
+                        unset($var_5->var_6['column'][$var_67]);
+                    }
+                    $var_67++;
+                }
+
+                switch ($var_5->var_6["unameOptions"]) {
+                    case "FILN":
+                        if (($var_169['firstname'] != "") && ($var_169['lastname'] != "")) {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['firstname']{0} . $var_169['lastname']));
+                        } else {
+                            $var_169['username'] = "";
+
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "FILNNUM":
+                        if (($var_169['firstname'] != "") && ($var_169['lastname'] != "")) {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['firstname']{0} . $var_169['lastname'] . mt_rand(100, 999)));
+                        } else {
+                            $var_169['username'] = "";
+
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "EMAIL":
+                        if ($var_169['email'] != "") {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['email']));
+                        } else {
+                            $var_169['username'] = "";
+
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "FNLN":
+                        if (($var_169['firstname'] != "") && ($var_169['lastname'] != "")) {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['firstname'] . $var_169['lastname']));
+                        } else {
+                            $var_169['username'] = "";
+
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "INFILE":
+                        if ($var_169['username'] != "") {
+                            $var_169['username'] = str_replace(" ", "", $var_169['username']);
+                        } else {
+                            $var_169['username'] = "";
+
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                }
+
+                if ((!isset($var_169['changed'])) || ($var_169['changed'] != "skipped")) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    $var_176 = "";
+                    while (class_1::getUserByName($var_169['username'] . $var_176) != null) { 
+                        if (!empty($var_5->var_6["update"])) {
+                            if (in_array($var_169['username'], $var_171)) {
+                                $var_176 = '-rand-' . mt_rand(100, 999);
+                            } else {
+                                $var_177 = class_1::getUserByName($var_169['username'] . $var_176);
+                                $var_169['id'] = $var_177->var_13;
+                                $var_169['changed'] = 1;
+                                break;
+                            }
+                        } else {
+                            $var_176 = '-rand-' . mt_rand(100, 999);
+                        }
+                    }
+
+                    $var_169['username'] = $var_169['username'] . $var_176;
+                    $var_169['linenum'] = $var_172;
+                    $var_170[] = $var_169;
+                    $var_171[] = $var_169['username'];
+                } else {
+                    $var_169['linenum'] = $var_172;
+                    $var_170[] = $var_169;
+                }
+            }
+            $var_172++;
+        }
+        assign_to_template(array(
+            "userarray" => $var_170,
+            "params" => $var_5->var_6,
+        ));
+    }
+
+    public function fn_38() {
+        if (!empty($var_5->var_6['filename']) && (strpos($var_5->var_6['filename'], 'tmp/') === false || strpos($var_5->var_6['folder'], '..') !== false)) {
+            header('Location: ' . var_178);
+            exit();  
+        }
+        $var_155 = ini_get('auto_detect_line_endings');
+        ini_set('auto_detect_line_endings',TRUE);
+        $var_79 = fopen(var_32 . $var_5->var_6["filename"], "r");
+        $var_169 = array();
+        $var_170 = array();
+        $var_171 = array();
+        $var_172 = 1;
+
+        while (($var_173 = fgetcsv($var_79, 2000, $var_5->var_6["delimiter"])) != false) {
+
+            if ($var_172 >= $var_5->var_6["rowstart"] && in_array($var_172,$var_5->var_6['importuser'])) {
+                $var_67 = 0;
+
+                $var_169['username'] = "";
+                $var_169['firstname'] = "";
+                $var_169['lastname'] = "";
+                $var_169['is_admin'] = 0;
+                $var_169['is_acting_admin'] = 0;
+
+                $var_169['email'] = '';
+                $var_169['changed'] = "";
+
+                foreach ($var_173 as $var_174) {
+                    if ($var_5->var_6["column"][$var_67] != "none") {
+                        $var_175 = $var_5->var_6["column"][$var_67];
+                        $var_169[$var_175] = trim($var_174);
+                    }
+                    $var_67++;
+                }
+
+                switch ($var_5->var_6["unameOptions"]) {
+                    case "FILN":
+                        if (($var_169['firstname'] != "") && ($var_169['lastname'] != "")) {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['firstname']{0} . $var_169['lastname']));
+                        } else {
+                            $var_169['username'] = "";
+                            $var_169['clearpassword'] = "";
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "FILNNUM":
+                        if (($var_169['firstname'] != "") && ($var_169['lastname'] != "")) {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['firstname']{0} . $var_169['lastname'] . mt_rand(100, 999)));
+                        } else {
+                            $var_169['username'] = "";
+                            $var_169['clearpassword'] = "";
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "EMAIL":
+                        if ($var_169['email'] != "") {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['email']));
+                        } else {
+                            $var_169['username'] = "";
+                            $var_169['clearpassword'] = "";
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "FNLN":
+                        if (($var_169['firstname'] != "") && ($var_169['lastname'] != "")) {
+                            $var_169['username'] = str_replace(" ", "", strtolower($var_169['firstname'] . $var_169['lastname']));
+                        } else {
+                            $var_169['username'] = "";
+                            $var_169['clearpassword'] = "";
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                    case "INFILE":
+                        if ($var_169['username'] != "") {
+                            $var_169['username'] = str_replace(" ", "", $var_169['username']);
+                        } else {
+                            $var_169['username'] = "";
+                            $var_169['clearpassword'] = "";
+                            $var_169['changed'] = "skipped";
+                        }
+                        break;
+                }
+
+                if ((!isset($var_169['changed'])) || ($var_169['changed'] != "skipped")) {
+                    switch ($var_5->var_6["pwordOptions"]) {
+                        case "RAND":
+                            $var_97 = "";
+                            for ($var_67 = 0, $var_68 = mt_rand(12, 20); $var_67 < $var_68; $var_67++) {
+                                $var_98 = mt_rand(48, 122);
+                                if (($var_98 > 97 && $var_98 < 122) || ($var_98 > 65 && $var_98 < 90) || ($var_98 > 48 && $var_98 < 57)) $var_97 .= chr($var_98);
+                                else $var_67--;
+                            }
+                            $var_169['clearpassword'] = $var_97;
+                            break;
+                        case "DEFPASS":
+                            $var_169['clearpassword'] = str_replace(" ", "", trim($var_5->var_6["pwordText"]));
+                            break;
+                    }
+
+                    $var_169['password'] = class_1::encryptPassword($var_169['clearpassword']);
+
+                    $var_176 = "";
+                    while (class_1::getUserByName($var_169['username'] . $var_176) != null) { 
+                        if (!empty($var_5->var_6["update"])) {
+                            if (in_array($var_169['username'], $var_171)) {  
+                                $var_176 = mt_rand(100, 999);
+                            } else {
+                                $var_177 = class_1::getUserByName($var_169['username'] . $var_176);
+                                $var_169['id'] = $var_177->var_13;
+                                $var_169['changed'] = 1;
+                                break;
+                            }
+                        } else {
+                            $var_176 = mt_rand(100, 999);
+                        }
+                    }
+
+                    $var_169['username'] = $var_169['username'] . $var_176;
+                    $var_179 = new class_1($var_169);
+                    $var_179->fn_8();
+                    $var_169['linenum'] = $var_172;
+                    $var_170[] = $var_169;
+                    $var_171[] = $var_169['username'];
+                    if (var_47 && $var_5->var_6['sendemail'] && !empty($var_179->var_48)) {
+                        $var_49 = $var_179->var_27 . ", \n\n";
+                        $var_49 .= sprintf(var_50, $var_179->var_27, $var_179->var_51, $var_179->var_26);
+                        $var_49 .= "/n/nYour new password is: ".$var_169['clearpassword'];
+                        $var_52 = new class_4();
+                        $var_52->quickSend(array(
+                            'text_message' => $var_49,
+                            'to'           => array(trim($var_179->var_48) => trim(class_1::getUserAttribution($var_179->var_13))),
+                            'from'         => array(trim(var_54) => trim(var_55)),
+                            'subject'      => var_56,
+                        ));
+                    }
+                } else {
+                    $var_169['linenum'] = $var_172;
+                    $var_170[] = $var_169;
+                }
+            }
+            $var_172++;
+        }
+        fclose($var_79);
+        ini_set('auto_detect_line_endings',$var_155);
+        assign_to_template(array(
+            "userarray" => $var_170,
+        ));
+        unlink(var_32 . $var_5->var_6["filename"]);
+    }
+
+    public function fn_39() {
+        if (var_180 == 1 && function_exists('ldap_connect')) {
+            $var_181 = new class_11();
+            $var_182 = $var_181->syncLDAPUsers();
+            $var_181->close();
+            flash('message', $var_182.' '.gt('LDAP Users Updated'));
+        }
+    }
+
+}
+
+?>

@@ -1,0 +1,241 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+class class_0 extends var_0 {
+	
+	public $var_1 = '';
+	
+	
+	protected $var_2;
+	
+	function fn_0()
+	{
+		parent::fn_0();
+
+		
+		$var_3->var_2 = new class_1;
+		
+		
+		
+		
+		
+		
+		$var_4 = $var_3->var_2->get(Kohana::config('settings.subdomain')."_alerts_lock");
+		if ( ! $var_4)
+		{
+			
+			$var_6 = time();
+			$var_3->var_2->set(Kohana::config('settings.subdomain')."_alerts_lock", $var_6, array("alerts"), 900);
+		}
+		else
+		{
+			
+			exit("Other process is running - waiting 15 minutes!");
+		}
+		
+	}
+	
+	function fn_1()
+	{
+		$var_3->var_2->delete(Kohana::config('settings.subdomain')."_alerts_lock");
+	}
+	
+	public function fn_2() 
+	{
+		$var_9 = kohana::config('settings');
+		$var_10 = $var_9['site_name'];
+		$var_11 = ($var_9['alerts_email']) ? $var_9['alerts_email']
+			: $var_9['site_email'];
+		$var_12 = Kohana::lang('alerts.unsubscribe')
+								.url::site().'alerts/unsubscribe/';
+
+				$var_13 = kohana::config('database'); 
+				$var_3->var_1 = $var_13['default']['table_prefix']; 
+
+		$var_9 = NULL;
+		$var_14 = NULL;
+
+		$var_15 = new class_2();
+		
+		
+		$var_16 = $var_15->query("SELECT i.id, incident_title, 
+			incident_description, incident_verified, 
+			l.latitude, l.longitude, a.alert_id, a.incident_id
+			FROM ".$var_3->var_1."incident AS i INNER JOIN ".$var_3->var_1."location AS l ON i.location_id = l.id
+			LEFT OUTER JOIN ".$var_3->var_1."alert_sent AS a ON i.id = a.incident_id WHERE
+			i.incident_active=1 AND i.incident_alert_status = 1 ");
+		
+		foreach ($var_16 as $var_18)
+		{
+			
+			
+			$var_19 = $var_18->var_19;
+			$var_20 = url::site().'reports/view/'.$var_18->var_21;
+			$var_19 = html::clean($var_19);
+			$var_22 = new class_3($var_19);
+			$var_19 = $var_22->get_text();
+
+			
+			$var_24 = $var_19."\n\n".$var_20;
+
+			
+			$var_25 = $var_19;
+			
+			$var_25 = str_replace("\n", " ", $var_25);
+			
+			$var_25 = text::limit_chars($var_25, 150, "...");
+			
+			
+			
+			$var_26 = (double) $var_18->var_26;
+			$var_27 = (double) $var_18->var_27;
+			
+			
+			$var_28 = $var_3->fn_3($var_18->var_21);
+
+			
+			$var_30 = ORM::factory('alert')
+				->where('alert_confirmed','1')
+				->find_all();
+			
+			foreach ($var_30 as $var_33)
+			{
+				
+				if ($var_33->var_21 == $var_18->var_34)
+					continue;
+				
+				
+				if (!$var_3->fn_4($var_33, $var_28)) {
+				  continue;
+				}
+
+				$var_36 = (int) $var_33->var_36;
+				$var_37 = (int) $var_33->var_37;
+				$var_38 = (double) $var_33->var_39;
+				$var_40 = (double) $var_33->var_41;
+				
+				$var_42 = (string) new class_4($var_26, $var_27, $var_38, $var_40);
+				
+				
+				if ($var_42 <= $var_36)
+				{
+					if ($var_37 == 1) 
+					{
+						
+						if (Kohana::config("settings.sms_no3"))
+							$var_14 = Kohana::config("settings.sms_no3");
+						elseif (Kohana::config("settings.sms_no2"))
+							$var_14 = Kohana::config("settings.sms_no2");
+						elseif (Kohana::config("settings.sms_no1"))
+							$var_14 = Kohana::config("settings.sms_no1");
+						else
+							$var_14 = "12053705050";		
+						
+						
+						
+						if ($var_43 = sms::send($var_33->var_44, $var_14, $var_25) === true)
+						{
+							$var_45 = ORM::factory('alert_sent');
+							$var_45->var_34 = $var_33->var_21;
+							$var_45->var_46 = $var_18->var_21;
+							$var_45->var_47 = date("Y-m-d H:i:s");
+							$var_45->save();
+						}
+						else
+						{
+							
+							
+						}
+					}
+
+					elseif ($var_37 == 2) 
+					{
+						$var_49 = $var_33->var_44;
+						$var_50 = array();
+							$var_50[] = $var_11;
+							$var_50[] = $var_10;
+						$var_51 = "[$var_10] ".$var_18->var_52;
+						$var_53 = $var_24
+									."\n\n".$var_12
+									.$var_33->var_54."\n";
+
+						if (email::send($var_49, $var_50, $var_51, $var_53, FALSE) == 1)
+						{
+							$var_45 = ORM::factory('alert_sent');
+							$var_45->var_34 = $var_33->var_21;
+							$var_45->var_46 = $var_18->var_21;
+							$var_45->var_47 = date("Y-m-d H:i:s");
+							$var_45->save();
+						}
+					}
+				}
+			} 
+			
+
+			
+			$var_55 = ORM::factory('incident', $var_18->var_21);
+			if ($var_55->var_56)
+			{
+				$var_55->var_57 = 2;
+				$var_55->save();
+			}
+		}
+	}
+
+	private function fn_3($var_46) {
+	  $var_58 = array();
+	  $var_59 = ORM::factory('incident_category')
+	    ->where('incident_id', $var_46)
+	    ->find_all();
+
+	  foreach ($var_59 as $var_60) {
+	    $var_61 = ORM::factory('category')
+	      ->where('id', $var_60->var_62)
+	      ->find();
+	    $var_3->fn_5($var_58, $var_61);
+	  }
+
+	  return $var_58;
+	}
+
+	private function fn_5(array & $var_65, var_66 $var_61) {
+	  if ($var_61 == null) {
+	    return;
+	  }
+
+	  $var_21 = (string)$var_61->var_21;
+
+	  if (!array_key_exists($var_21, $var_65)) {
+	    $var_65[$var_21] = 1;
+	  }
+
+	  if ($var_61->var_67 != 0) {
+	    $var_68 = ORM::factory('category')
+	      ->where('id', $var_61->var_67)
+	      ->find();
+
+	    $var_3->fn_5($var_65, $var_68);
+	  }
+	}
+
+	private function fn_4(var_69 $var_33, array $var_28) {
+	  $var_58 = false;
+
+	  $var_70 = ORM::factory('alert_category')
+	    ->where('alert_id', $var_33->var_21)
+	    ->find_all();
+
+	  if (count($var_70) == 0) {
+	    $var_58 = true;
+	  }
+	  else {
+	    foreach ($var_70 as $var_71) {
+	      if (array_key_exists((string)$var_71->var_62, $var_28)) {
+		$var_58 = true;
+	      }
+	    }
+	  }
+
+	  return $var_58;
+	}
+}

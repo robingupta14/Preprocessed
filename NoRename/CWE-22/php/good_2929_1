@@ -1,0 +1,507 @@
+<?php
+
+
+
+
+function dbIsConnected()
+{
+    global $database_link;
+    if (empty($database_link)) {
+        return false;
+    }
+
+    return mysqli_ping($database_link);
+}
+
+
+function dbConnect($host = null, $user = '', $password = '', $database = '', $port = null, $socket = null)
+{
+    global $config, $database_link;
+
+    if (dbIsConnected()) {
+        return $database_link;
+    }
+
+    $host = empty($host) ? $config['db_host'] : $host;
+    $user = empty($user) ? $config['db_user'] : $user;
+    $password = empty($password) ? $config['db_pass'] : $password;
+    $database = empty($database) ? $config['db_name'] : $database;
+    $port = empty($port) ? $config['db_port'] : $port;
+    $socket = empty($socket) ? $config['db_socket'] : $socket;
+
+    $database_link = mysqli_connect('p:' . $host, $user, $password, null, $port, $socket);
+    mysqli_options($database_link, MYSQLI_OPT_LOCAL_INFILE, false);
+    if ($database_link === false) {
+        $error = mysqli_connect_error();
+        if ($error == 'No such file or directory') {
+            $error = 'Could not connect to ' . $host;
+        }
+        throw new DatabaseConnectException($error);
+    }
+
+    $database_db = mysqli_select_db($database_link, $config['db_name']);
+    if (!$database_db) {
+        $db_create_sql = "CREATE DATABASE " . $config['db_name'] . " CHARACTER SET utf8 COLLATE utf8_unicode_ci";
+        mysqli_query($database_link, $db_create_sql);
+        $database_db = mysqli_select_db($database_link, $database);
+    }
+
+    if (!$database_db) {
+        throw new DatabaseConnectException("Could not select database: $database. " . mysqli_error($database_link));
+    }
+
+    dbQuery("SET NAMES 'utf8'");
+    dbQuery("SET CHARACTER SET 'utf8'");
+    dbQuery("SET COLLATION_CONNECTION = 'utf8_unicode_ci'");
+
+    return $database_link;
+}
+
+
+
+
+function dbQuery($sql, $parameters = array())
+{
+    global $fullSql, $debug, $sql_debug, $database_link, $config;
+    $fullSql = dbMakeQuery($sql, $parameters);
+    if ($debug) {
+        if (php_sapi_name() == 'cli' && empty($_SERVER['REMOTE_ADDR'])) {
+            if (preg_match('/(INSERT INTO `alert_log`).*(details)/i', $fullSql)) {
+                
+            } else {
+                c_echo('SQL[%y'.$fullSql."%n] \n");
+            }
+        } else {
+            $sql_debug[] = $fullSql;
+        }
+    }
+
+    $result = mysqli_query($database_link, $fullSql);
+    if (!$result) {
+        $mysql_error = mysqli_error($database_link);
+        if (isset($config['mysql_log_level']) && ((in_array($config['mysql_log_level'], array('INFO', 'ERROR')) && !preg_match('/Duplicate entry/', $mysql_error)) || in_array($config['mysql_log_level'], array('DEBUG')))) {
+            if (!empty($mysql_error)) {
+                logfile(date($config['dateformat']['compact']) . " MySQL Error: $mysql_error ($fullSql)");
+            }
+        }
+    }
+
+    return $result;
+}
+
+
+
+
+
+function dbInsert($data, $table)
+{
+    global $database_link;
+    $time_start = microtime(true);
+
+    
+    
+    
+    
+    if (is_string($data) && is_array($table)) {
+        $tmp   = $data;
+        $data  = $table;
+        $table = $tmp;
+        
+    }
+
+    $sql = 'INSERT INTO `'.$table.'` (`'.implode('`,`', array_keys($data)).'`)  VALUES ('.implode(',', dbPlaceHolders($data)).')';
+
+    dbBeginTransaction();
+    $result = dbQuery($sql, $data);
+    if ($result) {
+        $id = mysqli_insert_id($database_link);
+        dbCommitTransaction();
+        
+    } else {
+        if ($table != 'Contact') {
+            trigger_error('QDB - Insert failed.', E_USER_WARNING);
+        }
+
+        dbRollbackTransaction();
+        $id = null;
+    }
+
+    recordDbStatistic('insert', $time_start);
+    return $id;
+}
+
+
+
+
+
+function dbBulkInsert($data, $table)
+{
+    $time_start = microtime(true);
+    
+    
+    
+    
+    if (is_string($data) && is_array($table)) {
+        $tmp   = $data;
+        $data  = $table;
+        $table = $tmp;
+    }
+    if (count($data) === 0) {
+        return false;
+    }
+    if (count($data[0]) === 0) {
+        return false;
+    }
+
+    $sql = 'INSERT INTO `'.$table.'` (`'.implode('`,`', array_keys($data[0])).'`)  VALUES ';
+    $values ='';
+
+    foreach ($data as $row) {
+        if ($values != '') {
+            $values .= ',';
+        }
+        $rowvalues='';
+        foreach ($row as $key => $value) {
+            if ($rowvalues != '') {
+                $rowvalues .= ',';
+            }
+            $rowvalues .= "'".mres($value)."'";
+        }
+        $values .= "(".$rowvalues.")";
+    }
+
+    $result = dbQuery($sql.$values);
+
+    recordDbStatistic('insert', $time_start);
+    return $result;
+}
+
+
+
+
+
+function dbUpdate($data, $table, $where = null, $parameters = array())
+{
+    global $fullSql, $database_link;
+    $time_start = microtime(true);
+
+    
+    
+    
+    
+    if (is_string($data) && is_array($table)) {
+        $tmp   = $data;
+        $data  = $table;
+        $table = $tmp;
+        
+    }
+
+    
+    
+    $sql = 'UPDATE `'.$table.'` set ';
+    foreach ($data as $key => $value) {
+        $sql .= '`'.$key.'` '.'=:'.$key.',';
+    }
+
+    $sql = substr($sql, 0, -1);
+    
+    if ($where) {
+        $sql .= ' WHERE '.$where;
+        $data = array_merge($data, $parameters);
+    }
+
+    if (dbQuery($sql, $data)) {
+        $return = mysqli_affected_rows($database_link);
+    } else {
+        
+        trigger_error('QDB - Update failed.', E_USER_WARNING);
+        $return = false;
+    }
+
+    recordDbStatistic('update', $time_start);
+    return $return;
+}
+
+
+function dbDelete($table, $where = null, $parameters = array())
+{
+    global $database_link;
+    $time_start = microtime(true);
+
+    $sql = 'DELETE FROM `'.$table.'`';
+    if ($where) {
+        $sql .= ' WHERE '.$where;
+    }
+
+    $result = dbQuery($sql, $parameters);
+
+    recordDbStatistic('delete', $time_start);
+    if ($result) {
+        return mysqli_affected_rows($database_link);
+    } else {
+        return false;
+    }
+}
+
+
+
+
+
+function dbFetchRows($sql, $parameters = array(), $nocache = false)
+{
+    global $config;
+
+    if ($config['memcached']['enable'] && $nocache === false) {
+        $result = $config['memcached']['resource']->get(hash('sha512', $sql.'|'.serialize($parameters)));
+        if (!empty($result)) {
+            return $result;
+        }
+    }
+
+    $time_start = microtime(true);
+    $result         = dbQuery($sql, $parameters);
+
+    if (mysqli_num_rows($result) > 0) {
+        $rows = array();
+        while ($row = mysqli_fetch_assoc($result)) {
+            $rows[] = $row;
+        }
+
+        mysqli_free_result($result);
+        if ($config['memcached']['enable'] && $nocache === false) {
+            $config['memcached']['resource']->set(hash('sha512', $sql.'|'.serialize($parameters)), $rows, $config['memcached']['ttl']);
+        }
+        recordDbStatistic('fetchrows', $time_start);
+        return $rows;
+    }
+
+    mysqli_free_result($result);
+
+    
+    
+    recordDbStatistic('fetchrows', $time_start);
+    return array();
+}
+
+
+
+
+
+function dbFetch($sql, $parameters = array(), $nocache = false)
+{
+    return dbFetchRows($sql, $parameters, $nocache);
+    
+}
+
+
+
+
+
+function dbFetchRow($sql = null, $parameters = array(), $nocache = false)
+{
+    global $config;
+
+    if (isset($config['memcached']['enable']) && $config['memcached']['enable'] && $nocache === false) {
+        $result = $config['memcached']['resource']->get(hash('sha512', $sql.'|'.serialize($parameters)));
+        if (!empty($result)) {
+            return $result;
+        }
+    }
+
+    $time_start = microtime(true);
+    $result         = dbQuery($sql, $parameters);
+    if ($result) {
+        $row = mysqli_fetch_assoc($result);
+        mysqli_free_result($result);
+
+        recordDbStatistic('fetchrow', $time_start);
+
+        if (isset($config['memcached']['enable']) && $config['memcached']['enable'] && $nocache === false) {
+            $config['memcached']['resource']->set(hash('sha512', $sql.'|'.serialize($parameters)), $row, $config['memcached']['ttl']);
+        }
+        return $row;
+    } else {
+        return null;
+    }
+}
+
+
+
+
+
+function dbFetchCell($sql, $parameters = array(), $nocache = false)
+{
+    $time_start = microtime(true);
+    $row = dbFetchRow($sql, $parameters, $nocache);
+
+    recordDbStatistic('fetchcell', $time_start);
+    if ($row) {
+        return array_shift($row);
+        
+    }
+    return null;
+}
+
+
+
+
+
+function dbFetchColumn($sql, $parameters = array(), $nocache = false)
+{
+    $time_start = microtime(true);
+    $cells          = array();
+    foreach (dbFetch($sql, $parameters, $nocache) as $row) {
+        $cells[] = array_shift($row);
+    }
+
+    recordDbStatistic('fetchcolumn', $time_start);
+    return $cells;
+}
+
+
+
+
+
+function dbFetchKeyValue($sql, $parameters = array(), $nocache = false)
+{
+    $data = array();
+    foreach (dbFetch($sql, $parameters, $nocache) as $row) {
+        $key = array_shift($row);
+        if (sizeof($row) == 1) {
+            
+            
+            $data[$key] = array_shift($row);
+        } else {
+            
+            
+            $data[$key] = $row;
+        }
+    }
+
+    return $data;
+}
+
+
+
+
+
+function dbMakeQuery($sql, $parameters)
+{
+    
+    if (sizeof($parameters) == 0) {
+        return $sql;
+    }
+
+    $parameters = dbPrepareData($parameters);
+    
+    $questionParams = array();
+    $namedParams    = array();
+    foreach ($parameters as $key => $value) {
+        if (is_numeric($key)) {
+            $questionParams[] = $value;
+        } else {
+            $namedParams[':'.$key] = $value;
+        }
+    }
+
+    
+    krsort($namedParams);
+
+    
+    if (preg_match('/(\[\[:[\w]+:\]\])/', $sql)) {
+        $result = preg_split('/(\?[a-zA-Z0-9_-]*)/', $sql, -1, (PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE));
+    } else {
+        $result = preg_split('/(\?|:[a-zA-Z0-9_-]+)/', $sql, -1, (PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE));
+    }
+
+    
+    $query            = '';
+    $res_size = sizeof($result);
+    for ($i = 0; $i < $res_size; $i += 2) {
+        $query .= $result[$i];
+
+        $j = ($i + 1);
+        if (array_key_exists($j, $result)) {
+            $test = $result[$j];
+            if ($test == '?') {
+                $query .= array_shift($questionParams);
+            } else {
+                $query .= $namedParams[$test];
+            }
+        }
+    }
+
+    return $query;
+}
+
+
+function dbPrepareData($data)
+{
+    global $database_link;
+    $values = array();
+
+    foreach ($data as $key => $value) {
+        $escape = true;
+        
+        
+        
+        if (is_array($value) && !is_object($value)) {
+            $escape = false;
+            $value  = array_shift($value);
+        }
+
+        
+        
+        
+        
+        if ($escape) {
+            $values[$key] = "'".mysqli_real_escape_string($database_link, $value)."'";
+        } else {
+            $values[$key] = $value;
+        }
+    }
+
+    return $values;
+}
+
+
+function dbPlaceHolders($values)
+{
+    $data = array();
+    foreach ($values as $key => $value) {
+        if (is_numeric($key)) {
+            $data[] = '?';
+        } else {
+            $data[] = ':'.$key;
+        }
+    }
+
+    return $data;
+}
+
+
+function dbBeginTransaction()
+{
+    global $database_link;
+    mysqli_query($database_link, 'begin');
+}
+
+
+function dbCommitTransaction()
+{
+    global $database_link;
+    mysqli_query($database_link, 'commit');
+}
+
+
+function dbRollbackTransaction()
+{
+    global $database_link;
+    mysqli_query($database_link, 'rollback');
+}
+
+
+function dbGenPlaceholders($count)
+{
+    return '(' . implode(',', array_fill(0, $count, '?')) . ')';
+}

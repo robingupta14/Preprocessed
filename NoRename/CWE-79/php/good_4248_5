@@ -1,0 +1,291 @@
+<?php
+
+
+
+
+
+function invitation_state($visitor_id)
+{
+    $db = Mibew\Database::getInstance();
+    $db_result = $db->query(
+        ("SELECT t.threadid, t.invitationstate, t.istate "
+            . "FROM {sitevisitor} v, {thread} t "
+            . "WHERE visitorid = ? "
+            . "AND t.threadid = v.threadid"),
+        array($visitor_id),
+        array('return_rows' => Mibew\Database::RETURN_ONE_ROW)
+    );
+
+    $ret = array();
+    if (!$db_result) {
+        $ret['invited'] = false;
+        $ret['threadid'] = false;
+    } else {
+        $ret['invited'] = ($db_result['istate'] == Mibew\Thread::STATE_INVITED)
+            && ($db_result['invitationstate'] == Mibew\Thread::INVITATION_WAIT);
+        $ret['threadid'] = $db_result['threadid'];
+    }
+
+    return $ret;
+}
+
+
+function invitation_invite($visitor_id, $operator)
+{
+    
+    $invitation_state = invitation_state($visitor_id);
+    if ($invitation_state['invited']) {
+        return false;
+    }
+
+    
+    $visitor = track_get_visitor_by_id($visitor_id);
+
+    
+    $visitor_path = track_get_path($visitor);
+    ksort($visitor_path);
+    $last_visited_page = array_pop($visitor_path);
+
+    
+    $visitor_details = track_retrieve_details($visitor);
+
+    
+    $operator_name = get_operator_name($operator);
+
+    
+    $thread = new Thread();
+
+    
+    $thread->agentId = $operator['operatorid'];
+    $thread->agentName = $operator_name;
+    $thread->userName = $visitor['username'];
+    $thread->remote = $visitor_details['remote_host'];
+    $thread->referer = $last_visited_page;
+    
+    $thread->locale = get_current_locale();
+    $thread->userId = $visitor['userid'];
+    $thread->userAgent = $visitor_details['user_agent'];
+    $thread->state = Mibew\Thread::STATE_INVITED;
+    $thread->invitationState = Mibew\Thread::INVITATION_WAIT;
+    $thread->save();
+
+    $db = Mibew\Database::getInstance();
+    $db->query(
+        ("UPDATE {sitevisitor} set "
+            . "invitations = invitations + 1, "
+            . "threadid = :thread_id "
+            . "WHERE visitorid = :visitor_id"),
+        array(
+            ':thread_id' => $thread->id,
+            ':visitor_id' => $visitor_id,
+        )
+    );
+
+    
+    $thread->postMessage(
+        Mibew\Thread::KIND_FOR_AGENT,
+        getlocal(
+            'Operator {0} invites visitor at {1} page',
+            array(safe_htmlspecialchars($operator_name), safe_htmlspecialchars($last_visited_page)),
+            get_current_locale(),
+            true
+        )
+    );
+    $thread->postMessage(
+        Mibew\Thread::KIND_AGENT,
+        getlocal('Hello, how can I help you?', null, get_current_locale(), true),
+        array(
+            'name' => $operator_name,
+            'operator_id' => $operator['operatorid'],
+        )
+    );
+
+    
+    $args = array('invitation' => $thread);
+    Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::INVITATION_CREATE, $args);
+
+    return $thread;
+}
+
+
+function invitation_accept($visitor_id)
+{
+    
+    $invitation_state = invitation_state($visitor_id);
+    if (!$invitation_state['invited']) {
+        
+        return false;
+    }
+
+    
+    $db = Mibew\Database::getInstance();
+    $result = $db->query(
+        "SELECT threadid FROM {sitevisitor} WHERE visitorid = :visitor_id",
+        array(':visitor_id' => $visitor_id),
+        array('return_rows' => Mibew\Database::RETURN_ONE_ROW)
+    );
+
+    if (empty($result['threadid'])) {
+        
+        return false;
+    }
+
+    $thread = Mibew\Thread::load($result['threadid']);
+    if (!$thread) {
+        
+        return false;
+    }
+
+    
+    $thread->state = Mibew\Thread::STATE_CHATTING;
+    $thread->invitationState = Mibew\Thread::INVITATION_ACCEPTED;
+    $thread->chatStarted = time();
+    $thread->save();
+
+    
+    $db->query(
+        ("UPDATE {sitevisitor} SET chats = chats + 1 "
+            . "WHERE visitorid = :visitor_id"),
+        array(':visitor_id' => $visitor_id)
+    );
+
+    $args = array('invitation' => $thread);
+    Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::INVITATION_ACCEPT, $args);
+
+    return $thread;
+}
+
+
+function invitation_reject($visitor_id)
+{
+    $visitor = track_get_visitor_by_id($visitor_id);
+
+    
+    $thread = Mibew\Thread::load($visitor['threadid']);
+    if ($thread) {
+        $thread->postMessage(
+            Mibew\Thread::KIND_FOR_AGENT,
+            getlocal('Visitor rejected invitation', null, get_current_locale(), true)
+        );
+    }
+
+    $db = Mibew\Database::getInstance();
+    $db->query(
+        ("UPDATE {sitevisitor} v, {thread} t SET "
+            . "v.threadid = NULL, "
+            . "t.invitationstate = :invitation_rejected, "
+            . "t.istate = :state_closed, "
+            . "t.dtmclosed = :now "
+            . "WHERE t.threadid = v.threadid "
+            . "AND visitorid = :visitor_id"),
+        array(
+            ':invitation_rejected' => Mibew\Thread::INVITATION_REJECTED,
+            ':state_closed' => Mibew\Thread::STATE_CLOSED,
+            ':visitor_id' => $visitor_id,
+            ':now' => time(),
+        )
+    );
+
+    $args = array('invitation' => $thread);
+    Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::INVITATION_REJECT, $args);
+}
+
+
+function invitation_close_old()
+{
+    
+    $lock = new ProcessLock('invitations_close_old');
+    if ($lock->get()) {
+        
+        $now = time();
+
+        $db = Mibew\Database::getInstance();
+
+        
+        $db->query(
+            ("UPDATE {sitevisitor} v, {thread} t SET "
+                . "v.threadid = NULL "
+                . "WHERE t.istate = :state_invited "
+                . "AND t.invitationstate = :invitation_wait "
+                . "AND (:now - t.dtmcreated) > :lifetime"),
+            array(
+                ':invitation_wait' => Mibew\Thread::INVITATION_WAIT,
+                ':state_invited' => Mibew\Thread::STATE_INVITED,
+                ':lifetime' => Mibew\Settings::get('invitation_lifetime'),
+                ':now' => $now,
+            )
+        );
+
+        
+        $threads = $db->query(
+            ("SELECT * FROM {thread} "
+                . "WHERE istate = :state_invited "
+                . "AND invitationstate = :invitation_wait "
+                . "AND (:now - dtmcreated) > :lifetime"),
+            array(
+                ':invitation_wait' => Mibew\Thread::INVITATION_WAIT,
+                ':state_invited' => Mibew\Thread::STATE_INVITED,
+                ':lifetime' => Mibew\Settings::get('invitation_lifetime'),
+                ':now' => $now,
+            ),
+            array('return_rows' => Mibew\Database::RETURN_ALL_ROWS)
+        );
+
+        
+        foreach ($threads as $thread_info) {
+            $thread = Mibew\Thread::createFromDbInfo($thread_info);
+            $thread->invitationState = Mibew\Thread::INVITATION_IGNORED;
+            $thread->state = Mibew\Thread::STATE_CLOSED;
+            $thread->closed = $now;
+            $thread->save();
+
+            
+            $thread->postMessage(
+                Mibew\Thread::KIND_FOR_AGENT,
+                getlocal(
+                    'Visitor ignored invitation and it was closed automatically',
+                    null,
+                    $thread->locale,
+                    true
+                )
+            );
+
+            $args = array('invitation' => $thread);
+            Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::INVITATION_IGNORE, $args);
+
+            unset($thread);
+        }
+
+        
+        $lock->release();
+    }
+}
+
+
+function setup_invitation_view(Thread $thread)
+{
+    $data = prepare_chat_app_data();
+
+    
+    $data['frequency'] = Mibew\Settings::get('updatefrequency_chat');
+
+    
+    $data['invitation'] = array();
+
+    $data['invitation']['thread'] = array(
+        'id' => $thread->id,
+        'token' => $thread->lastToken,
+        'agentId' => $thread->agentId,
+        'userId' => $thread->userId,
+    );
+
+    $data['invitation']['user'] = array(
+        'name' => htmlspecialchars($thread->userName),
+        'canChangeName' => false,
+        'isAgent' => false,
+    );
+
+    $data['startFrom'] = 'invitation';
+
+    return $data;
+}

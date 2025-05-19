@@ -1,0 +1,2463 @@
+
+
+
+
+
+
+
+
+__FBSDID("$FreeBSD: head/lib/libarchive/archive_string.c 201095 2009-12-28 02:33:22Z kientzle $");
+
+struct struct_95 {
+ struct struct_95 *next;
+ char *from_charset;
+ char *to_charset;
+ unsigned from_cp;
+ unsigned to_cp;
+
+ int same;
+ int flag;
+
+ struct struct_90 utftmp;
+ int (*converter[2])(struct struct_90 *, const void *, size_t,
+     struct struct_95 *);
+ int nconverter;
+};
+
+static const char utf8_replacement_char[] = {0xef, 0xbf, 0xbd};
+
+static struct struct_95 *fn_58(struct struct_70 *,
+ const char *, const char *);
+static void fn_58(struct struct_70 *, struct struct_95 *);
+static struct struct_95 *fn_61(const char *,
+ const char *, unsigned, int);
+static void fn_63(struct struct_95 *);
+static struct struct_95 *fn_63(struct struct_70 *,
+ const char *, const char *, int);
+static unsigned fn_63(const char *);
+static unsigned fn_63(void);
+static unsigned fn_63(void);
+static size_t fn_73(const void *, size_t);
+static size_t fn_73(const void *, size_t);
+
+static int fn_13(struct struct_90 *,
+    const void *, size_t, struct struct_95 *);
+static int fn_14(struct struct_90 *,
+    const void *, size_t, struct struct_95 *);
+static int fn_15(struct struct_90 *,
+    const void *, size_t, struct struct_95 *);
+static int fn_16(struct struct_90 *,
+    const void *, size_t, struct struct_95 *);
+
+
+
+
+static int fn_79(struct struct_90 *,
+    const void *, size_t, struct struct_95 *);
+static int fn_81(uint32_t *, const char *, size_t);
+static int fn_81(uint32_t *, const char *, size_t);
+static inline uint32_t fn_81(uint32_t, uint32_t);
+static int fn_83(uint32_t *, const char *, size_t);
+static size_t fn_84(char *, size_t, uint32_t);
+static int fn_86(uint32_t *, const char *, size_t, int);
+static size_t fn_87(char *, size_t, uint32_t);
+static size_t fn_87(char *, size_t, uint32_t);
+static int fn_26(struct struct_90 *,
+    const void *, size_t, struct struct_95 *);
+static int fn_87(struct struct_90 *, const void *,
+    size_t, struct struct_95 *);
+static int fn_90(struct struct_90 *, const void *,
+    size_t, struct struct_95 *);
+static int fn_29(struct struct_90 *, const void *,
+    size_t, struct struct_95 *);
+static int fn_88(struct struct_90 *,
+    const void *, size_t, struct struct_95 *);
+
+static struct struct_90 *
+fn_31(struct struct_90 *as, const char *var_95, size_t var_95)
+{
+ if (archive_string_ensure(as, as->length + var_95 + 1) == NULL)
+  return (NULL);
+ if (var_95)
+  memmove(as->s + as->length, var_95, var_95);
+ as->length += var_95;
+ as->s[as->length] = 0;
+ return (as);
+}
+
+static struct struct_53 *
+fn_35(struct struct_53 *as, const wchar_t *var_95, size_t var_95)
+{
+ if (archive_wstring_ensure(as, as->length + var_95 + 1) == NULL)
+  return (NULL);
+ if (var_95)
+  (wchar_t *)memmove((as->s + as->length), (var_95), (var_95) * sizeof(wchar_t));
+ as->length += var_95;
+ as->s[as->length] = 0;
+ return (as);
+}
+
+struct struct_90 *
+fn_36(struct struct_90 *as, const char *var_95, size_t var_95)
+{
+ return archive_string_append(as, var_95, var_95);
+}
+
+void
+fn_37(struct struct_90 *dest, struct struct_90 *src)
+{
+ if (archive_string_append(dest, src->s, src->length) == NULL)
+  __archive_errx(1, "Out of memory");
+}
+
+void
+fn_38(struct struct_53 *dest,
+    struct struct_53 *src)
+{
+ if (archive_wstring_append(dest, src->s, src->length) == NULL)
+  __archive_errx(1, "Out of memory");
+}
+
+void
+fn_39(struct struct_90 *as)
+{
+ as->length = 0;
+ as->buffer_length = 0;
+ free(as->s);
+ as->s = NULL;
+}
+
+void
+fn_40(struct struct_53 *as)
+{
+ as->length = 0;
+ as->buffer_length = 0;
+ free(as->s);
+ as->s = NULL;
+}
+
+struct struct_53 *
+fn_41(struct struct_53 *as, size_t var_95)
+{
+ return (struct struct_53 *)
+  archive_string_ensure((struct struct_90 *)as,
+     var_95 * sizeof(wchar_t));
+}
+
+
+struct struct_90 *
+fn_42(struct struct_90 *as, size_t var_95)
+{
+ char *var_95;
+ size_t new_length;
+
+
+ if (as->s && (var_95 <= as->buffer_length))
+  return (as);
+
+ if (as->buffer_length < 32)
+
+  new_length = 32;
+ else if (as->buffer_length < 8192)
+
+  new_length = as->buffer_length + as->buffer_length;
+ else {
+
+  new_length = as->buffer_length + as->buffer_length / 4;
+
+  if (new_length < as->buffer_length) {
+
+   archive_string_free(as);
+   errno = ENOMEM;
+   return (NULL);
+  }
+ }
+
+
+
+
+
+ if (new_length < var_95)
+  new_length = var_95;
+
+ var_95 = (char *)realloc(as->s, new_length);
+ if (var_95 == NULL) {
+
+  archive_string_free(as);
+  errno = ENOMEM;
+  return (NULL);
+ }
+
+ as->s = var_95;
+ as->buffer_length = new_length;
+ return (as);
+}
+
+struct struct_90 *
+fn_43(struct struct_90 *as, const void *_p, size_t var_95)
+{
+ size_t var_95;
+ const char *var_95, *pp;
+
+ var_95 = (const char *)_p;
+
+
+ var_95 = 0;
+ pp = var_95;
+ while (var_95 < var_95 && *pp) {
+  pp++;
+  var_95++;
+ }
+ if ((as = archive_string_append(as, var_95, var_95)) == NULL)
+  __archive_errx(1, "Out of memory");
+ return (as);
+}
+
+struct struct_53 *
+fn_45(struct struct_53 *as, const wchar_t *var_95, size_t var_95)
+{
+ size_t var_95;
+ const wchar_t *pp;
+
+
+ var_95 = 0;
+ pp = var_95;
+ while (var_95 < var_95 && *pp) {
+  pp++;
+  var_95++;
+ }
+ if ((as = archive_wstring_append(as, var_95, var_95)) == NULL)
+  __archive_errx(1, "Out of memory");
+ return (as);
+}
+
+struct struct_90 *
+fn_46(struct struct_90 *as, const void *var_95)
+{
+
+
+
+
+
+
+ return archive_strncat(as, var_95, 0x1000000);
+}
+
+struct struct_53 *
+fn_47(struct struct_53 *as, const wchar_t *var_95)
+{
+
+ return archive_wstrncat(as, var_95, 0x1000000);
+}
+
+struct struct_90 *
+fn_48(struct struct_90 *as, char var_95)
+{
+ if ((as = archive_string_append(as, &var_95, 1)) == NULL)
+  __archive_errx(1, "Out of memory");
+ return (as);
+}
+
+struct struct_53 *
+fn_50(struct struct_53 *as, wchar_t var_95)
+{
+ if ((as = archive_wstring_append(as, &var_95, 1)) == NULL)
+  __archive_errx(1, "Out of memory");
+ return (as);
+}
+
+static const char *
+fn_51(const char *charset) {
+ if (charset != NULL && charset[0] != '\0')
+  return charset;
+
+
+
+
+
+
+ return "";
+
+}
+
+int
+fn_52(struct struct_53 *dest,
+    const char *var_95, size_t var_95)
+{
+ size_t var_95;
+ int var_57 = 0;
+
+
+
+
+
+ size_t var_57 = var_95;
+ const char *mbs = var_95;
+ wchar_t *wcs;
+
+ if (NULL == archive_wstring_ensure(dest, dest->length + var_95 + 1))
+  return -1;
+ wcs = dest->s + dest->length;
+
+
+
+
+
+ while (*mbs && var_57 > 0) {
+
+  var_95 = mbtowc(wcs, mbs, var_57);
+
+  if (var_95 == (size_t)-1 || var_95 == (size_t)-2) {
+   var_57 = -1;
+   break;
+  }
+  if (var_95 == 0 || var_95 > var_57)
+   break;
+  wcs++;
+
+  mbs += var_95;
+  var_57 -= var_95;
+ }
+ dest->length = wcs - dest->s;
+ dest->s[dest->length] = L'\0';
+ return (var_57);
+}
+
+int
+fn_57(struct struct_90 *as,
+    const wchar_t *w, size_t var_95)
+{
+ (void)as;
+ (void)w;
+ (void)var_95;
+ errno = ENOSYS;
+ return -1;
+}
+
+static struct struct_95 *
+fn_58(struct struct_70 *a, const char *fc, const char *tc)
+{
+ struct struct_95 *sc;
+
+ if (a == NULL)
+  return (NULL);
+
+ for (sc = a->sconv; sc != NULL; sc = sc->next) {
+  if (strcmp(sc->from_charset, fc) == 0 &&
+      strcmp(sc->to_charset, tc) == 0)
+   break;
+ }
+ return (sc);
+}
+
+
+
+
+static void
+fn_58(struct struct_70 *a, struct struct_95 *sc)
+{
+ struct struct_95 **psc;
+
+
+ psc = &(a->sconv);
+ while (*psc != NULL)
+  psc = &((*psc)->next);
+ *psc = sc;
+}
+
+static void
+fn_58(struct struct_95 *sc, int (*converter)
+    (struct struct_90 *, const void *, size_t,
+     struct struct_95 *))
+{
+ if (sc == NULL || sc->nconverter >= 2)
+  __archive_errx(1, "Programming error");
+ sc->converter[sc->nconverter++] = converter;
+}
+
+static void
+fn_59(struct struct_95 *sc)
+{
+
+
+ sc->nconverter = 0;
+
+
+
+
+
+ if (sc->flag & 16) {
+  add_converter(sc, strncat_from_utf8_libarchive2);
+  return;
+ }
+
+
+
+
+ if (sc->flag & 5120) {
+
+
+
+
+  if (sc->flag & 512) {
+   add_converter(sc, archive_string_append_unicode);
+   return;
+  }
+
+  if (sc->flag & 4) {
+   if (sc->flag & 1024)
+    add_converter(sc,
+     best_effort_strncat_to_utf16be);
+   else
+    add_converter(sc,
+     best_effort_strncat_to_utf16le);
+  } else
+
+   sc->nconverter = 0;
+  return;
+ }
+
+
+
+
+ if (sc->flag & 10240) {
+
+
+
+  if (sc->flag & 128)
+   add_converter(sc,archive_string_normalize_D);
+  else if (sc->flag & 64)
+   add_converter(sc, archive_string_normalize_C);
+
+  if (sc->flag & 256) {
+
+
+
+
+   if (!(sc->flag &
+       192))
+    add_converter(sc,
+        archive_string_append_unicode);
+   return;
+  }
+
+  if ((sc->flag & 2052)
+      == 2052)
+   add_converter(sc, best_effort_strncat_from_utf16be);
+  else if ((sc->flag & 8196)
+      == 8196)
+   add_converter(sc, best_effort_strncat_from_utf16le);
+  else
+
+   sc->nconverter = 0;
+  return;
+ }
+
+ if (sc->flag & 512) {
+
+
+
+  if (sc->flag & 128)
+   add_converter(sc,archive_string_normalize_D);
+  else if (sc->flag & 64)
+   add_converter(sc, archive_string_normalize_C);
+
+
+
+
+
+
+
+  if (sc->flag & 256) {
+
+
+
+
+   if (!(sc->flag &
+       192))
+    add_converter(sc, strncat_from_utf8_to_utf8);
+   return;
+  }
+ }
+
+ if ((sc->flag & 4) || sc->same)
+  add_converter(sc, best_effort_strncat_in_locale);
+ else
+
+  sc->nconverter = 0;
+}
+
+
+
+
+
+static const char *
+fn_60(const char *charset)
+{
+ char cs[16];
+ char *var_95;
+ const char *var_95;
+
+ if (charset == NULL || charset[0] == '\0'
+     || strlen(charset) > 15)
+  return (charset);
+
+
+ var_95 = cs;
+ var_95 = charset;
+ while (*var_95) {
+  char var_95 = *var_95++;
+  if (var_95 >= 'a' && var_95 <= 'z')
+   var_95 -= 'a' - 'A';
+  *var_95++ = var_95;
+ }
+ *var_95++ = '\0';
+
+ if (strcmp(cs, "UTF-8") == 0 ||
+     strcmp(cs, "UTF8") == 0)
+  return ("UTF-8");
+ if (strcmp(cs, "UTF-16BE") == 0 ||
+     strcmp(cs, "UTF16BE") == 0)
+  return ("UTF-16BE");
+ if (strcmp(cs, "UTF-16LE") == 0 ||
+     strcmp(cs, "UTF16LE") == 0)
+  return ("UTF-16LE");
+ if (strcmp(cs, "CP932") == 0)
+  return ("CP932");
+ return (charset);
+}
+
+
+
+
+static struct struct_95 *
+fn_61(const char *fc, const char *tc,
+    unsigned var_63, int var_67)
+{
+ struct struct_95 *sc;
+
+ sc = calloc(1, sizeof(*sc));
+ if (sc == NULL)
+  return (NULL);
+ sc->next = NULL;
+ sc->from_charset = strdup(fc);
+ if (sc->from_charset == NULL) {
+  free(sc);
+  return (NULL);
+ }
+ sc->to_charset = strdup(tc);
+ if (sc->to_charset == NULL) {
+  free(sc->from_charset);
+  free(sc);
+  return (NULL);
+ }
+ archive_string_init(&sc->utftmp);
+
+ if (var_67 & 1) {
+
+
+
+
+  sc->from_cp = var_63;
+  sc->to_cp = make_codepage_from_charset(tc);
+
+
+
+
+ } else if (var_67 & 2) {
+
+
+
+
+  sc->to_cp = var_63;
+  sc->from_cp = make_codepage_from_charset(fc);
+
+
+
+
+ }
+
+
+
+
+ if (strcmp(fc, tc) == 0 ||
+     (sc->from_cp != (unsigned)-1 && sc->from_cp == sc->to_cp))
+  sc->same = 1;
+ else
+  sc->same = 0;
+
+
+
+
+ if (strcmp(tc, "UTF-8") == 0)
+  var_67 |= 256;
+ else if (strcmp(tc, "UTF-16BE") == 0)
+  var_67 |= 1024;
+ else if (strcmp(tc, "UTF-16LE") == 0)
+  var_67 |= 4096;
+ if (strcmp(fc, "UTF-8") == 0)
+  var_67 |= 512;
+ else if (strcmp(fc, "UTF-16BE") == 0)
+  var_67 |= 2048;
+ else if (strcmp(fc, "UTF-16LE") == 0)
+  var_67 |= 8192;
+
+ if ((var_67 & 2) &&
+     (var_67 & 10752)) {
+
+
+
+
+
+   var_67 |= 64;
+ }
+
+ sc->flag = var_67;
+
+
+
+
+ setup_converter(sc);
+
+ return (sc);
+}
+
+
+
+
+static void
+fn_63(struct struct_95 *sc)
+{
+ free(sc->from_charset);
+ free(sc->to_charset);
+ archive_string_free(&sc->utftmp);
+
+
+
+
+
+
+ free(sc);
+}
+
+static unsigned
+fn_63(void)
+{
+ return -1;
+}
+static unsigned
+fn_63(const char *charset)
+{
+ (void)charset;
+ return -1;
+}
+static unsigned
+fn_63(void)
+{
+ return -1;
+}
+
+
+
+
+
+
+static struct struct_95 *
+fn_63(struct struct_70 *a, const char *fc, const char *tc, int var_67)
+{
+ struct struct_95 *sc;
+ unsigned var_63;
+
+
+ sc = find_sconv_object(a, fc, tc);
+ if (sc != NULL)
+  return (sc);
+
+ if (a == NULL)
+  var_63 = get_current_codepage();
+ else
+  var_63 = a->current_codepage;
+
+ sc = create_sconv_object(canonical_charset_name(fc),
+     canonical_charset_name(tc), var_63, var_67);
+ if (sc == NULL) {
+  if (a != NULL)
+   archive_set_error(a, ENOMEM,
+       "Could not allocate memory for "
+       "a string conversion object");
+  return (NULL);
+ }
+
+
+
+
+
+ if (sc->nconverter == 0) {
+  if (a != NULL) {
+
+
+
+
+
+   archive_set_error(a, ARCHIVE_ERRNO_MISC,
+       "A character-set conversion not fully supported "
+       "on this platform");
+
+  }
+
+  free_sconv_object(sc);
+  return (NULL);
+ }
+
+
+
+
+ if (a != NULL)
+  add_sconv_object(a, sc);
+ return (sc);
+}
+
+static const char *
+fn_63(struct struct_70 *a)
+{
+ const char *cur_charset;
+
+ if (a == NULL)
+  cur_charset = default_iconv_charset("");
+ else {
+  cur_charset = default_iconv_charset(a->current_code);
+  if (a->current_code == NULL) {
+   a->current_code = strdup(cur_charset);
+   a->current_codepage = get_current_codepage();
+   a->current_oemcp = get_current_oemcp();
+  }
+ }
+ return (cur_charset);
+}
+
+struct struct_95 *
+fn_64(struct struct_70 *a, const char *charset,
+    int var_67)
+{
+ int var_67 = 1;
+
+ if (var_67)
+  var_67 |= 4;
+ return (get_sconv_object(a, get_current_charset(a), charset, var_67));
+}
+
+struct struct_95 *
+fn_66(struct struct_70 *a, const char *charset,
+    int var_67)
+{
+ int var_67 = 2;
+
+ if (var_67)
+  var_67 |= 4;
+ return (get_sconv_object(a, charset, get_current_charset(a), var_67));
+}
+
+struct struct_95 *
+fn_67(struct struct_70 *a)
+{
+ (void)a;
+ return (NULL);
+}
+
+struct struct_95 *
+fn_68(struct struct_70 *a)
+{
+ (void)a;
+ return (NULL);
+}
+
+
+
+
+
+void
+fn_69(struct struct_70 *a)
+{
+ struct struct_95 *sc;
+ struct struct_95 *sc_next;
+
+ for (sc = a->sconv; sc != NULL; sc = sc_next) {
+  sc_next = sc->next;
+  free_sconv_object(sc);
+ }
+ a->sconv = NULL;
+ free(a->current_code);
+ a->current_code = NULL;
+}
+
+
+
+
+const char *
+fn_70(struct struct_95 *sc)
+{
+ if (sc->flag & 1)
+  return (sc->to_charset);
+ else
+  return (sc->from_charset);
+}
+
+
+
+
+void
+fn_71(struct struct_95 *sc, int var_73)
+{
+ switch (var_73) {
+
+
+
+
+
+
+ case SCONV_SET_OPT_UTF8_LIBARCHIVE2X:
+
+  if ((sc->flag & 16) == 0) {
+   sc->flag |= 16;
+
+   setup_converter(sc);
+  }
+
+  break;
+ case SCONV_SET_OPT_NORMALIZATION_C:
+  if ((sc->flag & 64) == 0) {
+   sc->flag |= 64;
+   sc->flag &= ~128;
+
+   setup_converter(sc);
+  }
+  break;
+ case SCONV_SET_OPT_NORMALIZATION_D:
+
+  if ((sc->flag & 128) == 0) {
+   sc->flag |= 128;
+   sc->flag &= ~64;
+
+   setup_converter(sc);
+  }
+  break;
+ default:
+  break;
+ }
+}
+
+static size_t
+fn_73(const void *_p, size_t var_95)
+{
+ size_t var_95;
+ const char *var_95, *pp;
+
+ if (_p == NULL)
+  return 0;
+ var_95 = (const char *)_p;
+
+
+ var_95 = 0;
+ pp = var_95;
+ while (var_95 < var_95 && *pp) {
+  pp++;
+  var_95++;
+ }
+ return (var_95);
+}
+
+static size_t
+fn_73(const void *_p, size_t var_95)
+{
+ size_t var_95;
+ const char *var_95, *pp;
+
+ if (_p == NULL)
+  return 0;
+ var_95 = (const char *)_p;
+
+
+ var_95 = 0;
+ pp = var_95;
+ var_95 >>= 1;
+ while (var_95 < var_95 && (pp[0] || pp[1])) {
+  pp += 2;
+  var_95++;
+ }
+ return (var_95<<1);
+}
+
+int
+fn_73(struct struct_90 *as, const void *_p, size_t var_95,
+    struct struct_95 *sc)
+{
+ as->length = 0;
+ return (archive_strncat_l(as, _p, var_95, sc));
+}
+
+int
+fn_74(struct struct_90 *as, const void *_p, size_t var_95,
+    struct struct_95 *sc)
+{
+ const void *var_95;
+ size_t var_95 = 0;
+ int i, var_95 = 0, r2;
+
+ if (_p != NULL && var_95 > 0) {
+  if (sc != NULL && (sc->flag & 10240))
+   var_95 = utf16nbytes(_p, var_95);
+  else
+   var_95 = mbsnbytes(_p, var_95);
+ }
+
+
+
+ if (var_95 == 0) {
+  int var_77 = 1;
+  if (sc != NULL && (sc->flag & 5120))
+   var_77 = 2;
+  if (archive_string_ensure(as, as->length + var_77) == NULL)
+   return -1;
+  as->s[as->length] = 0;
+  if (var_77 == 2)
+   as->s[as->length+1] = 0;
+  return 0;
+ }
+
+
+
+
+ if (sc == NULL) {
+  if (archive_string_append(as, _p, var_95) == NULL)
+   return -1;
+  return 0;
+ }
+
+ var_95 = _p;
+ i = 0;
+ if (sc->nconverter > 1) {
+  sc->utftmp.length = 0;
+  r2 = sc->converter[0](&(sc->utftmp), var_95, var_95, sc);
+  if (r2 != 0 && errno == ENOMEM)
+   return (r2);
+  if (var_95 > r2)
+   var_95 = r2;
+  var_95 = sc->utftmp.s;
+  var_95 = sc->utftmp.length;
+  ++i;
+ }
+ r2 = sc->converter[i](as, var_95, var_95, sc);
+ if (var_95 > r2)
+  var_95 = r2;
+ return (var_95);
+}
+
+static int
+fn_77(const void *_p, size_t var_95, struct struct_95 *sc)
+{
+ const char *var_95 = (const char *)_p;
+ size_t var_95;
+
+
+
+
+
+
+
+ mbtowc(NULL, NULL, 0);
+
+ while (var_95) {
+  wchar_t var_95;
+
+
+
+
+  var_95 = mbtowc(&var_95, var_95, var_95);
+
+  if (var_95 == (size_t)-1 || var_95 == (size_t)-2)
+   return -1;
+  if (var_95 == 0)
+   break;
+  var_95 += var_95;
+  var_95 -= var_95;
+ }
+ (void)sc;
+ return 0;
+}
+
+static int
+fn_79(struct struct_90 *as, const void *_p,
+    size_t var_95, struct struct_95 *sc)
+{
+ size_t var_95;
+ const uint8_t *itp;
+ int var_81 = 0;
+
+
+
+
+
+ if (sc->same) {
+  if (archive_string_append(as, _p, var_95) == NULL)
+   return -1;
+  return (invalid_mbs(_p, var_95, sc));
+ }
+
+ var_95 = var_95;
+ itp = (const uint8_t *)_p;
+ while (*itp && var_95 > 0) {
+  if (*itp > 127) {
+
+   if (sc->flag & 256) {
+    if (archive_string_append(as, utf8_replacement_char, sizeof(utf8_replacement_char)) == NULL) {
+     __archive_errx(1, "Out of memory");
+    }
+   } else {
+    archive_strappend_char(as, '?');
+   }
+   var_81 = -1;
+  } else {
+   archive_strappend_char(as, *itp);
+  }
+  ++itp;
+ }
+ return (var_81);
+}
+
+static int
+fn_81(uint32_t *pwc, const char *var_95, size_t var_95)
+{
+ static const char utf8_count[256] = {
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+   3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+   4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+ };
+ int ch, i;
+ int cnt;
+ uint32_t var_95;
+
+
+ if (var_95 == 0)
+  return 0;
+
+
+
+ ch = (unsigned char)*var_95;
+ if (ch == 0)
+  return 0;
+ cnt = utf8_count[ch];
+
+
+ if ((int)var_95 < cnt) {
+  cnt = (int)var_95;
+  for (i = 1; i < cnt; i++) {
+   if ((var_95[i] & 0xc0) != 0x80) {
+    cnt = i;
+    break;
+   }
+  }
+  goto invalid_sequence;
+ }
+
+
+ switch (cnt) {
+ case 1:
+  *pwc = ch & 0x7f;
+  return (cnt);
+ case 2:
+  if ((var_95[1] & 0xc0) != 0x80) {
+   cnt = 1;
+   goto invalid_sequence;
+  }
+  *pwc = ((ch & 0x1f) << 6) | (var_95[1] & 0x3f);
+  return (cnt);
+ case 3:
+  if ((var_95[1] & 0xc0) != 0x80) {
+   cnt = 1;
+   goto invalid_sequence;
+  }
+  if ((var_95[2] & 0xc0) != 0x80) {
+   cnt = 2;
+   goto invalid_sequence;
+  }
+  var_95 = ((ch & 0x0f) << 12)
+      | ((var_95[1] & 0x3f) << 6)
+      | (var_95[2] & 0x3f);
+  if (var_95 < 0x800)
+   goto invalid_sequence;
+  break;
+ case 4:
+  if ((var_95[1] & 0xc0) != 0x80) {
+   cnt = 1;
+   goto invalid_sequence;
+  }
+  if ((var_95[2] & 0xc0) != 0x80) {
+   cnt = 2;
+   goto invalid_sequence;
+  }
+  if ((var_95[3] & 0xc0) != 0x80) {
+   cnt = 3;
+   goto invalid_sequence;
+  }
+  var_95 = ((ch & 0x07) << 18)
+      | ((var_95[1] & 0x3f) << 12)
+      | ((var_95[2] & 0x3f) << 6)
+      | (var_95[3] & 0x3f);
+  if (var_95 < 0x10000)
+   goto invalid_sequence;
+  break;
+ default:
+  if (ch == 0xc0 || ch == 0xc1)
+   cnt = 2;
+  else if (ch >= 0xf5 && ch <= 0xf7)
+   cnt = 4;
+  else if (ch >= 0xf8 && ch <= 0xfb)
+   cnt = 5;
+  else if (ch == 0xfc || ch == 0xfd)
+   cnt = 6;
+  else
+   cnt = 1;
+  if ((int)var_95 < cnt)
+   cnt = (int)var_95;
+  for (i = 1; i < cnt; i++) {
+   if ((var_95[i] & 0xc0) != 0x80) {
+    cnt = i;
+    break;
+   }
+  }
+  goto invalid_sequence;
+ }
+
+
+
+ if (var_95 > 0x10FFFF)
+  goto invalid_sequence;
+
+ *pwc = var_95;
+ return (cnt);
+invalid_sequence:
+ *pwc = 0xFFFD;
+ return (cnt * -1);
+}
+
+static int
+fn_81(uint32_t *pwc, const char *var_95, size_t var_95)
+{
+ int cnt;
+
+ cnt = _utf8_to_unicode(pwc, var_95, var_95);
+
+ if (cnt == 3 && ((*pwc) >= 0xD800 && (*pwc) <= 0xDFFF))
+  return -3;
+ return (cnt);
+}
+
+static inline uint32_t
+fn_81(uint32_t var_95, uint32_t var_95)
+{
+ var_95 -= 0xD800;
+ var_95 *= 0x400;
+ var_95 += var_95 - 0xDC00;
+ var_95 += 0x10000;
+ return (var_95);
+}
+
+static int
+fn_83(uint32_t *pwc, const char *var_95, size_t var_95)
+{
+ uint32_t var_95 = 0;
+ int cnt;
+
+ cnt = _utf8_to_unicode(&var_95, var_95, var_95);
+ if (cnt == 3 && ((var_95) >= 0xD800 && (var_95) <= 0xDBFF)) {
+  uint32_t var_84 = 0;
+  if (var_95 - 3 < 3) {
+
+   goto invalid_sequence;
+  }
+  cnt = _utf8_to_unicode(&var_84, var_95+3, var_95-3);
+  if (cnt != 3 || !((var_84) >= 0xDC00 && (var_84) <= 0xDFFF)) {
+
+   goto invalid_sequence;
+  }
+  var_95 = combine_surrogate_pair(var_95, var_84);
+  cnt = 6;
+ } else if (cnt == 3 && ((var_95) >= 0xDC00 && (var_95) <= 0xDFFF)) {
+
+  goto invalid_sequence;
+ }
+ *pwc = var_95;
+ return (cnt);
+invalid_sequence:
+ *pwc = 0xFFFD;
+ if (cnt > 0)
+  cnt *= -1;
+ return (cnt);
+}
+
+
+
+
+
+
+
+static size_t
+fn_84(char *var_95, size_t var_95, uint32_t var_95)
+{
+ char *_p = var_95;
+
+
+ if (var_95 > 0x10FFFF)
+  var_95 = 0xFFFD;
+
+ if (var_95 <= 0x7f) {
+  if (var_95 == 0)
+   return 0;
+  *var_95++ = (char)var_95;
+ } else if (var_95 <= 0x7ff) {
+  if (var_95 < 2)
+   return 0;
+  *var_95++ = 0xc0 | ((var_95 >> 6) & 0x1f);
+  *var_95++ = 0x80 | (var_95 & 0x3f);
+ } else if (var_95 <= 0xffff) {
+  if (var_95 < 3)
+   return 0;
+  *var_95++ = 0xe0 | ((var_95 >> 12) & 0x0f);
+  *var_95++ = 0x80 | ((var_95 >> 6) & 0x3f);
+  *var_95++ = 0x80 | (var_95 & 0x3f);
+ } else {
+  if (var_95 < 4)
+   return 0;
+  *var_95++ = 0xf0 | ((var_95 >> 18) & 0x07);
+  *var_95++ = 0x80 | ((var_95 >> 12) & 0x3f);
+  *var_95++ = 0x80 | ((var_95 >> 6) & 0x3f);
+  *var_95++ = 0x80 | (var_95 & 0x3f);
+ }
+ return (var_95 - _p);
+}
+
+static int
+fn_84(uint32_t *pwc, const char *var_95, size_t var_95)
+{
+ return (utf16_to_unicode(pwc, var_95, var_95, 1));
+}
+
+static int
+fn_85(uint32_t *pwc, const char *var_95, size_t var_95)
+{
+ return (utf16_to_unicode(pwc, var_95, var_95, 0));
+}
+
+static int
+fn_86(uint32_t *pwc, const char *var_95, size_t var_95, int var_95)
+{
+ const char *utf16 = var_95;
+ unsigned var_95;
+
+ if (var_95 == 0)
+  return 0;
+ if (var_95 == 1) {
+
+  *pwc = 0xFFFD;
+  return -1;
+ }
+
+ if (var_95)
+  var_95 = archive_be16dec(utf16);
+ else
+  var_95 = archive_le16dec(utf16);
+ utf16 += 2;
+
+
+ if (((var_95) >= 0xD800 && (var_95) <= 0xDBFF)) {
+  unsigned var_95;
+
+  if (var_95 >= 4) {
+   if (var_95)
+    var_95 = archive_be16dec(utf16);
+   else
+    var_95 = archive_le16dec(utf16);
+  } else
+   var_95 = 0;
+  if (((var_95) >= 0xDC00 && (var_95) <= 0xDFFF)) {
+   var_95 = combine_surrogate_pair(var_95, var_95);
+   utf16 += 2;
+  } else {
+
+
+   *pwc = 0xFFFD;
+   return -2;
+  }
+ }
+
+ if (((var_95) >= 0xD800 && (var_95) <= 0xDFFF) || var_95 > 0x10FFFF) {
+
+
+  *pwc = 0xFFFD;
+  return (((int)(utf16 - var_95)) * -1);
+ }
+ *pwc = var_95;
+ return ((int)(utf16 - var_95));
+}
+
+static size_t
+fn_87(char *var_95, size_t var_95, uint32_t var_95)
+{
+ char *utf16 = var_95;
+
+ if (var_95 > 0xffff) {
+
+
+  if (var_95 < 4)
+   return 0;
+  var_95 -= 0x10000;
+  archive_be16enc(utf16, ((var_95 >> 10) & 0x3ff) + 0xD800);
+  archive_be16enc(utf16+2, (var_95 & 0x3ff) + 0xDC00);
+  return 4;
+ } else {
+  if (var_95 < 2)
+   return 0;
+  archive_be16enc(utf16, var_95);
+  return 2;
+ }
+}
+
+static size_t
+fn_87(char *var_95, size_t var_95, uint32_t var_95)
+{
+ char *utf16 = var_95;
+
+ if (var_95 > 0xffff) {
+
+
+  if (var_95 < 4)
+   return 0;
+  var_95 -= 0x10000;
+  archive_le16enc(utf16, ((var_95 >> 10) & 0x3ff) + 0xD800);
+  archive_le16enc(utf16+2, (var_95 & 0x3ff) + 0xDC00);
+  return 4;
+ } else {
+  if (var_95 < 2)
+   return 0;
+  archive_le16enc(utf16, var_95);
+  return 2;
+ }
+}
+
+
+
+
+
+static int
+fn_87(struct struct_90 *as, const void *_p,
+    size_t var_95, struct struct_95 *sc)
+{
+ const char *var_95;
+ char *var_95, *endp;
+ int var_95, var_95 = 0;
+
+ (void)sc;
+
+ if (archive_string_ensure(as, as->length + var_95 + 1) == NULL)
+  return -1;
+
+ var_95 = (const char *)_p;
+ var_95 = as->s + as->length;
+ endp = as->s + as->buffer_length -1;
+ do {
+  uint32_t var_95;
+  const char *ss = var_95;
+  size_t w;
+
+
+
+
+  while ((var_95 = utf8_to_unicode(&var_95, var_95, var_95)) > 0) {
+   var_95 += var_95;
+   var_95 -= var_95;
+  }
+  if (ss < var_95) {
+   if (var_95 + (var_95 - ss) > endp) {
+    as->length = var_95 - as->s;
+    if (archive_string_ensure(as,
+        as->buffer_length + var_95 + 1) == NULL)
+     return -1;
+    var_95 = as->s + as->length;
+    endp = as->s + as->buffer_length -1;
+   }
+
+   memcpy(var_95, ss, var_95 - ss);
+   var_95 += var_95 - ss;
+  }
+
+
+
+
+  if (var_95 < 0) {
+   if (var_95 == -3 && ((var_95) >= 0xD800 && (var_95) <= 0xDFFF)) {
+
+    var_95 = cesu8_to_unicode(&var_95, var_95, var_95);
+   }
+   if (var_95 < 0) {
+    var_95 = -1;
+    var_95 *= -1;
+   }
+
+
+   while ((w = unicode_to_utf8(var_95, endp - var_95, var_95)) == 0) {
+    as->length = var_95 - as->s;
+    if (archive_string_ensure(as,
+        as->buffer_length + var_95 + 1) == NULL)
+     return -1;
+    var_95 = as->s + as->length;
+    endp = as->s + as->buffer_length -1;
+   }
+   var_95 += w;
+   var_95 += var_95;
+   var_95 -= var_95;
+  }
+ } while (var_95 > 0);
+ as->length = var_95 - as->s;
+ as->s[as->length] = '\0';
+ return (var_95);
+}
+
+static int
+fn_88(struct struct_90 *as, const void *_p,
+    size_t var_95, struct struct_95 *sc)
+{
+ const char *var_95;
+ char *var_95, *endp;
+ uint32_t var_95;
+ size_t w;
+ int var_95, var_95 = 0, ts, tm;
+ int (*parse)(uint32_t *, const char *, size_t);
+ size_t (*unparse)(char *, size_t, uint32_t);
+
+ if (sc->flag & 1024) {
+  unparse = unicode_to_utf16be;
+  ts = 2;
+ } else if (sc->flag & 4096) {
+  unparse = unicode_to_utf16le;
+  ts = 2;
+ } else if (sc->flag & 256) {
+  unparse = unicode_to_utf8;
+  ts = 1;
+ } else {
+
+
+
+
+  if (sc->flag & 2048) {
+   unparse = unicode_to_utf16be;
+   ts = 2;
+  } else if (sc->flag & 8192) {
+   unparse = unicode_to_utf16le;
+   ts = 2;
+  } else {
+   unparse = unicode_to_utf8;
+   ts = 1;
+  }
+ }
+
+ if (sc->flag & 2048) {
+  parse = utf16be_to_unicode;
+  tm = 1;
+ } else if (sc->flag & 8192) {
+  parse = utf16le_to_unicode;
+  tm = 1;
+ } else {
+  parse = cesu8_to_unicode;
+  tm = ts;
+ }
+
+ if (archive_string_ensure(as, as->length + var_95 * tm + ts) == NULL)
+  return -1;
+
+ var_95 = (const char *)_p;
+ var_95 = as->s + as->length;
+ endp = as->s + as->buffer_length - ts;
+ while ((var_95 = parse(&var_95, var_95, var_95)) != 0) {
+  if (var_95 < 0) {
+
+   var_95 *= -1;
+   var_95 = -1;
+  }
+  var_95 += var_95;
+  var_95 -= var_95;
+  while ((w = unparse(var_95, endp - var_95, var_95)) == 0) {
+
+
+   as->length = var_95 - as->s;
+   if (archive_string_ensure(as,
+       as->buffer_length + var_95 * tm + ts) == NULL)
+    return -1;
+   var_95 = as->s + as->length;
+   endp = as->s + as->buffer_length - ts;
+  }
+  var_95 += w;
+ }
+ as->length = var_95 - as->s;
+ as->s[as->length] = '\0';
+ if (ts == 2)
+  as->s[as->length+1] = '\0';
+ return (var_95);
+}
+
+static uint32_t
+fn_88(uint32_t var_95, uint32_t var_95)
+{
+ int t, b;
+
+ t = 0;
+ b = sizeof(u_composition_table)/sizeof(u_composition_table[0]) -1;
+ while (b >= t) {
+  int var_92 = (t + b) / 2;
+  if (u_composition_table[var_92].cp1 < var_95)
+   t = var_92 + 1;
+  else if (u_composition_table[var_92].cp1 > var_95)
+   b = var_92 - 1;
+  else if (u_composition_table[var_92].cp2 < var_95)
+   t = var_92 + 1;
+  else if (u_composition_table[var_92].cp2 > var_95)
+   b = var_92 - 1;
+  else
+   return (u_composition_table[var_92].nfc);
+ }
+ return 0;
+}
+
+static int
+fn_90(struct struct_90 *as, const void *_p,
+    size_t var_95, struct struct_95 *sc)
+{
+ const char *var_95 = (const char *)_p;
+ char *var_95, *endp;
+ uint32_t var_95, var_95;
+ size_t w;
+ int always_replace, var_95, n2, var_95 = 0, spair, ts, tm;
+ int (*parse)(uint32_t *, const char *, size_t);
+ size_t (*unparse)(char *, size_t, uint32_t);
+
+ always_replace = 1;
+ ts = 1;
+ if (sc->flag & 1024) {
+  unparse = unicode_to_utf16be;
+  ts = 2;
+  if (sc->flag & 2048)
+   always_replace = 0;
+ } else if (sc->flag & 4096) {
+  unparse = unicode_to_utf16le;
+  ts = 2;
+  if (sc->flag & 8192)
+   always_replace = 0;
+ } else if (sc->flag & 256) {
+  unparse = unicode_to_utf8;
+  if (sc->flag & 512)
+   always_replace = 0;
+ } else {
+
+
+
+
+  always_replace = 0;
+  if (sc->flag & 2048) {
+   unparse = unicode_to_utf16be;
+   ts = 2;
+  } else if (sc->flag & 8192) {
+   unparse = unicode_to_utf16le;
+   ts = 2;
+  } else {
+   unparse = unicode_to_utf8;
+  }
+ }
+
+ if (sc->flag & 2048) {
+  parse = utf16be_to_unicode;
+  tm = 1;
+  spair = 4;
+ } else if (sc->flag & 8192) {
+  parse = utf16le_to_unicode;
+  tm = 1;
+  spair = 4;
+ } else {
+  parse = cesu8_to_unicode;
+  tm = ts;
+  spair = 6;
+ }
+
+ if (archive_string_ensure(as, as->length + var_95 * tm + ts) == NULL)
+  return -1;
+
+ var_95 = as->s + as->length;
+ endp = as->s + as->buffer_length - ts;
+ while ((var_95 = parse(&var_95, var_95, var_95)) != 0) {
+  const char *ucptr, *uc2ptr;
+
+  if (var_95 < 0) {
+
+   do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0;
+   var_95 += var_95*-1;
+   var_95 -= var_95*-1;
+   var_95 = -1;
+   continue;
+  } else if (var_95 == spair || always_replace)
+
+
+   ucptr = NULL;
+  else
+   ucptr = var_95;
+  var_95 += var_95;
+  var_95 -= var_95;
+
+
+  while ((n2 = parse(&var_95, var_95, var_95)) > 0) {
+   uint32_t ucx[10];
+   int ccx[10];
+   int cl, cx, i, nx, ucx_size;
+   int LIndex,SIndex;
+   uint32_t nfc;
+
+   if (n2 == spair || always_replace)
+
+
+    uc2ptr = NULL;
+   else
+    uc2ptr = var_95;
+   var_95 += n2;
+   var_95 -= n2;
+
+
+
+
+
+   if (!IS_DECOMPOSABLE_BLOCK(var_95)) {
+    do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+    do { var_95 = var_95; ucptr = uc2ptr; var_95 = n2; } while 0;
+    continue;
+   }
+
+   if (0 <= (LIndex = var_95 - 0x1100) &&
+       LIndex < 19) {
+
+
+
+
+    int var_91 = var_95 - 0x1161;
+    if (0 <= var_91 && var_91 < 21) {
+
+     do { var_95 = 0xAC00 + (LIndex * 21 + var_91) * 28; ucptr = NULL; } while 0;
+
+
+    } else {
+     do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+     do { var_95 = var_95; ucptr = uc2ptr; var_95 = n2; } while 0;
+    }
+    continue;
+   } else if (0 <= (SIndex = var_95 - 0xAC00) &&
+       SIndex < 11172 && (SIndex % 28) == 0) {
+
+
+
+
+    int var_92 = var_95 - 0x11A7;
+    if (0 < var_92 && var_92 < 28) {
+
+     do { var_95 = var_95 + var_92; ucptr = NULL; } while 0;
+    } else {
+     do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+     do { var_95 = var_95; ucptr = uc2ptr; var_95 = n2; } while 0;
+    }
+    continue;
+   } else if ((nfc = get_nfc(var_95, var_95)) != 0) {
+
+
+    do { var_95 = nfc; ucptr = NULL; } while 0;
+    continue;
+   } else if ((cl = CCC(var_95)) == 0) {
+
+
+    do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+    do { var_95 = var_95; ucptr = uc2ptr; var_95 = n2; } while 0;
+    continue;
+   }
+
+
+
+
+   cx = 0;
+   ucx[0] = var_95;
+   ccx[0] = cl;
+   do { int _i; for (_i = 1; _i < 10 ; _i++) { nx = parse(&ucx[_i], var_95, var_95); if (nx <= 0) break; cx = CCC(ucx[_i]); if (cl >= cx && cl != 228 && cx != 228) break; var_95 += nx; var_95 -= nx; cl = cx; ccx[_i] = cx; } if (_i >= 10) { var_95 = -1; ucx_size = 10; } else ucx_size = _i; } while 0;
+
+
+
+
+   i = 1;
+   while (i < ucx_size) {
+    int j;
+
+    if ((nfc = get_nfc(var_95, ucx[i])) == 0) {
+     i++;
+     continue;
+    }
+
+
+
+
+    do { var_95 = nfc; ucptr = NULL; } while 0;
+
+
+
+
+
+    for (j = i; j+1 < ucx_size; j++) {
+     ucx[j] = ucx[j+1];
+     ccx[j] = ccx[j+1];
+    }
+    ucx_size --;
+
+
+
+
+
+    if (ucx_size > 0 && i == ucx_size &&
+        nx > 0 && cx == cl) {
+     cl = ccx[ucx_size-1];
+     do { int _i; for (_i = ucx_size; _i < 10 ; _i++) { nx = parse(&ucx[_i], var_95, var_95); if (nx <= 0) break; cx = CCC(ucx[_i]); if (cl >= cx && cl != 228 && cx != 228) break; var_95 += nx; var_95 -= nx; cl = cx; ccx[_i] = cx; } if (_i >= 10) { var_95 = -1; ucx_size = 10; } else ucx_size = _i; } while 0;
+    }
+
+
+
+
+
+    i = 0;
+   }
+
+
+
+
+
+   do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+   for (i = 0; i < ucx_size; i++)
+    do { while ((w = unparse(var_95, (endp) - (var_95), ucx[i])) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0;
+
+
+
+
+   if (nx > 0 && cx == cl && var_95 > 0) {
+    while ((nx = parse(&ucx[0], var_95, var_95))
+        > 0) {
+     cx = CCC(ucx[0]);
+     if (cl > cx)
+      break;
+     var_95 += nx;
+     var_95 -= nx;
+     cl = cx;
+     do { while ((w = unparse(var_95, (endp) - (var_95), ucx[0])) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0;
+    }
+   }
+   break;
+  }
+  if (n2 < 0) {
+   do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+
+   do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0;
+   var_95 += n2*-1;
+   var_95 -= n2*-1;
+   var_95 = -1;
+   continue;
+  } else if (n2 == 0) {
+   do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+   break;
+  }
+ }
+ as->length = var_95 - as->s;
+ as->s[as->length] = '\0';
+ if (ts == 2)
+  as->s[as->length+1] = '\0';
+ return (var_95);
+}
+
+static int
+get_nfd(uint32_t *cp1, uint32_t *cp2, uint32_t var_95)
+{
+ int t, b;
+
+
+
+
+ if ((var_95 >= 0x2000 && var_95 <= 0x2FFF) ||
+     (var_95 >= 0xF900 && var_95 <= 0xFAFF) ||
+     (var_95 >= 0x2F800 && var_95 <= 0x2FAFF))
+  return 0;
+
+ if (var_95 == 0x1109A || var_95 == 0x1109C || var_95 == 0x110AB)
+  return 0;
+
+ t = 0;
+ b = sizeof(u_decomposition_table)/sizeof(u_decomposition_table[0]) -1;
+ while (b >= t) {
+  int var_92 = (t + b) / 2;
+  if (u_decomposition_table[var_92].nfc < var_95)
+   t = var_92 + 1;
+  else if (u_decomposition_table[var_92].nfc > var_95)
+   b = var_92 - 1;
+  else {
+   *cp1 = u_decomposition_table[var_92].cp1;
+   *cp2 = u_decomposition_table[var_92].cp2;
+   return 1;
+  }
+ }
+ return 0;
+}
+
+static int
+archive_string_normalize_D(struct archive_string *as, const void *_p,
+    size_t var_95, struct archive_string_conv *sc)
+{
+ const char *var_95 = (const char *)_p;
+ char *var_95, *endp;
+ uint32_t var_95, var_95;
+ size_t w;
+ int always_replace, var_95, n2, var_95 = 0, spair, ts, tm;
+ int (*parse)(uint32_t *, const char *, size_t);
+ size_t (*unparse)(char *, size_t, uint32_t);
+
+ always_replace = 1;
+ ts = 1;
+ if (sc->flag & 1024) {
+  unparse = unicode_to_utf16be;
+  ts = 2;
+  if (sc->flag & 2048)
+   always_replace = 0;
+ } else if (sc->flag & 4096) {
+  unparse = unicode_to_utf16le;
+  ts = 2;
+  if (sc->flag & 8192)
+   always_replace = 0;
+ } else if (sc->flag & 256) {
+  unparse = unicode_to_utf8;
+  if (sc->flag & 512)
+   always_replace = 0;
+ } else {
+
+
+
+
+  always_replace = 0;
+  if (sc->flag & 2048) {
+   unparse = unicode_to_utf16be;
+   ts = 2;
+  } else if (sc->flag & 8192) {
+   unparse = unicode_to_utf16le;
+   ts = 2;
+  } else {
+   unparse = unicode_to_utf8;
+  }
+ }
+
+ if (sc->flag & 2048) {
+  parse = utf16be_to_unicode;
+  tm = 1;
+  spair = 4;
+ } else if (sc->flag & 8192) {
+  parse = utf16le_to_unicode;
+  tm = 1;
+  spair = 4;
+ } else {
+  parse = cesu8_to_unicode;
+  tm = ts;
+  spair = 6;
+ }
+
+ if (archive_string_ensure(as, as->length + var_95 * tm + ts) == NULL)
+  return -1;
+
+ var_95 = as->s + as->length;
+ endp = as->s + as->buffer_length - ts;
+ while ((var_95 = parse(&var_95, var_95, var_95)) != 0) {
+  const char *ucptr;
+  uint32_t cp1, cp2;
+  int SIndex;
+  struct {
+   uint32_t uc;
+   int ccc;
+  } fdc[10];
+  int fdi, fdj;
+  int ccc;
+
+check_first_code:
+  if (var_95 < 0) {
+
+   do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0;
+   var_95 += var_95*-1;
+   var_95 -= var_95*-1;
+   var_95 = -1;
+   continue;
+  } else if (var_95 == spair || always_replace)
+
+
+   ucptr = NULL;
+  else
+   ucptr = var_95;
+  var_95 += var_95;
+  var_95 -= var_95;
+
+
+  if ((SIndex = var_95 - 0xAC00) >= 0 && SIndex < 11172) {
+   int var_95 = 0x1100 + SIndex / 588;
+   int var_95 = 0x1161 + (SIndex % 588) / 28;
+   int var_95 = 0x11A7 + SIndex % 28;
+
+   do { var_95 = var_95; ucptr = NULL; } while 0;
+   do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+   do { var_95 = var_95; ucptr = NULL; } while 0;
+   do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+   if (var_95 != 0x11A7) {
+    do { var_95 = var_95; ucptr = NULL; } while 0;
+    do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+   }
+   continue;
+  }
+  if (IS_DECOMPOSABLE_BLOCK(var_95) && CCC(var_95) != 0) {
+   do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+   continue;
+  }
+
+  fdi = 0;
+  while (get_nfd(&cp1, &cp2, var_95) && fdi < 10) {
+   int k;
+
+   for (k = fdi; k > 0; k--)
+    fdc[k] = fdc[k-1];
+   fdc[0].ccc = CCC(cp2);
+   fdc[0].uc = cp2;
+   fdi++;
+   do { var_95 = cp1; ucptr = NULL; } while 0;
+  }
+
+
+  while ((n2 = parse(&var_95, var_95, var_95)) > 0 &&
+      (ccc = CCC(var_95)) != 0 && fdi < 10) {
+   int j, k;
+
+   var_95 += n2;
+   var_95 -= n2;
+   for (j = 0; j < fdi; j++) {
+    if (fdc[j].ccc > ccc)
+     break;
+   }
+   if (j < fdi) {
+    for (k = fdi; k > j; k--)
+     fdc[k] = fdc[k-1];
+    fdc[j].ccc = ccc;
+    fdc[j].uc = var_95;
+   } else {
+    fdc[fdi].ccc = ccc;
+    fdc[fdi].uc = var_95;
+   }
+   fdi++;
+  }
+
+  do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+  for (fdj = 0; fdj < fdi; fdj++) {
+   do { var_95 = fdc[fdj].uc; ucptr = NULL; } while 0;
+   do { if (ucptr) { if (var_95 + var_95 > endp) do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; switch (var_95) { case 4: *var_95++ = *ucptr++; case 3: *var_95++ = *ucptr++; case 2: *var_95++ = *ucptr++; case 1: *var_95++ = *ucptr; break; } ucptr = NULL; } else { do { while ((w = unparse(var_95, (endp) - (var_95), var_95)) == 0) { do { as->length = var_95 - as->s; if (archive_string_ensure(as, as->buffer_length + var_95 * tm + ts) == NULL) return -1; var_95 = as->s + as->length; endp = as->s + as->buffer_length - ts; } while 0; } var_95 += w; } while 0; } } while 0;
+  }
+
+  if (n2 == 0)
+   break;
+  do { var_95 = var_95; ucptr = NULL; } while 0;
+  var_95 = n2;
+  goto check_first_code;
+ }
+ as->length = var_95 - as->s;
+ as->s[as->length] = '\0';
+ if (ts == 2)
+  as->s[as->length+1] = '\0';
+ return (var_95);
+}
+
+static int
+strncat_from_utf8_libarchive2(struct archive_string *as,
+    const void *_p, size_t var_95, struct archive_string_conv *sc)
+{
+ const char *var_95;
+ int var_95;
+ char *var_95;
+ char *end;
+ uint32_t unicode;
+
+
+
+
+
+
+ wctomb(NULL, L'\0');
+
+ (void)sc;
+
+
+
+
+
+ if (archive_string_ensure(as, as->length + var_95 + 1) == NULL)
+  return -1;
+
+ var_95 = (const char *)_p;
+ var_95 = as->s + as->length;
+ end = as->s + as->buffer_length - MB_CUR_MAX -1;
+ while ((var_95 = _utf8_to_unicode(&unicode, var_95, var_95)) != 0) {
+  wchar_t var_95;
+
+  if (var_95 >= end) {
+   as->length = var_95 - as->s;
+
+   if (archive_string_ensure(as,
+       as->length + var_95 * 2 + 1) == NULL)
+    return -1;
+   var_95 = as->s + as->length;
+   end = as->s + as->buffer_length - MB_CUR_MAX -1;
+  }
+
+
+
+
+
+  if (var_95 < 0) {
+   var_95 *= -1;
+   var_95 = L'?';
+  } else
+   var_95 = (wchar_t)unicode;
+
+  var_95 += var_95;
+  var_95 -= var_95;
+
+
+
+
+
+
+  var_95 = (int)wctomb(var_95, var_95);
+
+  if (var_95 == -1)
+   return -1;
+  var_95 += var_95;
+ }
+ as->length = var_95 - as->s;
+ as->s[as->length] = '\0';
+ return 0;
+}
+
+static int
+best_effort_strncat_from_utf16(struct archive_string *as, const void *_p,
+    size_t bytes, struct archive_string_conv *sc, int var_95)
+{
+ const char *utf16 = (const char *)_p;
+ char *mbs;
+ uint32_t var_95;
+ int var_95, var_95;
+
+ (void)sc;
+
+
+
+
+
+ var_95 = 0;
+ if (archive_string_ensure(as, as->length + bytes +1) == NULL)
+  return -1;
+ mbs = as->s + as->length;
+
+ while ((var_95 = utf16_to_unicode(&var_95, utf16, bytes, var_95)) != 0) {
+  if (var_95 < 0) {
+   var_95 *= -1;
+   var_95 = -1;
+  }
+  bytes -= var_95;
+  utf16 += var_95;
+
+  if (var_95 > 127) {
+
+   *mbs++ = '?';
+   var_95 = -1;
+  } else
+   *mbs++ = (char)var_95;
+ }
+ as->length = mbs - as->s;
+ as->s[as->length] = '\0';
+ return (var_95);
+}
+
+static int
+best_effort_strncat_from_utf16be(struct archive_string *as, const void *_p,
+    size_t bytes, struct archive_string_conv *sc)
+{
+ return (best_effort_strncat_from_utf16(as, _p, bytes, sc, 1));
+}
+
+static int
+best_effort_strncat_from_utf16le(struct archive_string *as, const void *_p,
+    size_t bytes, struct archive_string_conv *sc)
+{
+ return (best_effort_strncat_from_utf16(as, _p, bytes, sc, 0));
+}
+
+
+
+
+
+static int
+best_effort_strncat_to_utf16(struct archive_string *as16, const void *_p,
+    size_t var_95, struct archive_string_conv *sc, int bigendian)
+{
+ const char *var_95 = (const char *)_p;
+ char *utf16;
+ size_t var_95;
+ int var_95;
+
+ (void)sc;
+
+
+
+
+
+ var_95 = 0;
+ var_95 = var_95;
+
+ if (archive_string_ensure(as16,
+     as16->length + (var_95 + 1) * 2) == NULL)
+  return -1;
+
+ utf16 = as16->s + as16->length;
+ while (var_95--) {
+  unsigned var_95 = *var_95++;
+  if (var_95 > 127) {
+
+   var_95 = 0xFFFD;
+   var_95 = -1;
+  }
+  if (bigendian)
+   archive_be16enc(utf16, var_95);
+  else
+   archive_le16enc(utf16, var_95);
+  utf16 += 2;
+ }
+ as16->length = utf16 - as16->s;
+ as16->s[as16->length] = 0;
+ as16->s[as16->length+1] = 0;
+ return (var_95);
+}
+
+static int
+best_effort_strncat_to_utf16be(struct archive_string *as16, const void *_p,
+    size_t var_95, struct archive_string_conv *sc)
+{
+ return (best_effort_strncat_to_utf16(as16, _p, var_95, sc, 1));
+}
+
+static int
+best_effort_strncat_to_utf16le(struct archive_string *as16, const void *_p,
+    size_t var_95, struct archive_string_conv *sc)
+{
+ return (best_effort_strncat_to_utf16(as16, _p, var_95, sc, 0));
+}
+
+
+
+
+
+
+void
+archive_mstring_clean(struct archive_mstring *aes)
+{
+ archive_wstring_free(&(aes->aes_wcs));
+ archive_string_free(&(aes->aes_mbs));
+ archive_string_free(&(aes->aes_utf8));
+ archive_string_free(&(aes->aes_mbs_in_locale));
+ aes->aes_set = 0;
+}
+
+void
+archive_mstring_copy(struct archive_mstring *dest, struct archive_mstring *src)
+{
+ dest->aes_set = src->aes_set;
+ archive_string_copy(&(dest->aes_mbs), &(src->aes_mbs));
+ archive_string_copy(&(dest->aes_utf8), &(src->aes_utf8));
+ archive_wstring_copy(&(dest->aes_wcs), &(src->aes_wcs));
+}
+
+int
+archive_mstring_get_utf8(struct archive *a, struct archive_mstring *aes,
+  const char **var_95)
+{
+ struct struct_95 *sc;
+ int var_95;
+
+
+ if (aes->aes_set & AES_SET_UTF8) {
+  *var_95 = aes->aes_utf8.s;
+  return 0;
+ }
+
+ *var_95 = NULL;
+ if (aes->aes_set & AES_SET_MBS) {
+  sc = archive_string_conversion_to_charset(a, "UTF-8", 1);
+  if (sc == NULL)
+   return -1;
+  var_95 = archive_strncpy_l(&(aes->aes_utf8), aes->aes_mbs.s,
+      aes->aes_mbs.length, sc);
+  if (a == NULL)
+   free_sconv_object(sc);
+  if (var_95 == 0) {
+   aes->aes_set |= AES_SET_UTF8;
+   *var_95 = aes->aes_utf8.s;
+   return 0;
+  } else
+   return -1;
+ }
+ return 0;
+}
+
+int
+archive_mstring_get_mbs(struct archive *a, struct archive_mstring *aes,
+    const char **var_95)
+{
+ int var_95, var_95 = 0;
+
+ (void)a;
+
+ if (aes->aes_set & AES_SET_MBS) {
+  *var_95 = aes->aes_mbs.s;
+  return (var_95);
+ }
+
+ *var_95 = NULL;
+
+ if (aes->aes_set & AES_SET_WCS) {
+  archive_string_empty(&(aes->aes_mbs));
+  var_95 = archive_string_append_from_wcs(&(aes->aes_mbs),
+      aes->aes_wcs.s, aes->aes_wcs.length);
+  *var_95 = aes->aes_mbs.s;
+  if (var_95 == 0) {
+   aes->aes_set |= AES_SET_MBS;
+   return (var_95);
+  } else
+   var_95 = -1;
+ }
+
+
+
+
+
+ return (var_95);
+}
+
+int
+archive_mstring_get_wcs(struct archive *a, struct archive_mstring *aes,
+    const wchar_t **wp)
+{
+ int var_95, var_95 = 0;
+
+ (void)a;
+
+ if (aes->aes_set & AES_SET_WCS) {
+  *wp = aes->aes_wcs.s;
+  return (var_95);
+ }
+
+ *wp = NULL;
+
+ if (aes->aes_set & AES_SET_MBS) {
+  archive_wstring_empty(&(aes->aes_wcs));
+  var_95 = archive_wstring_append_from_mbs(&(aes->aes_wcs),
+      aes->aes_mbs.s, aes->aes_mbs.length);
+  if (var_95 == 0) {
+   aes->aes_set |= AES_SET_WCS;
+   *wp = aes->aes_wcs.s;
+  } else
+   var_95 = -1;
+ }
+ return (var_95);
+}
+
+int
+archive_mstring_get_mbs_l(struct archive_mstring *aes,
+    const char **var_95, size_t *var_95, struct archive_string_conv *sc)
+{
+ int var_95, var_95 = 0;
+
+ if ((aes->aes_set & AES_SET_MBS) == 0 &&
+     (aes->aes_set & AES_SET_WCS) != 0) {
+  archive_string_empty(&(aes->aes_mbs));
+  var_95 = archive_string_append_from_wcs(&(aes->aes_mbs),
+      aes->aes_wcs.s, aes->aes_wcs.length);
+  if (var_95 == 0)
+   aes->aes_set |= AES_SET_MBS;
+  else if (errno == ENOMEM)
+   return -1;
+  else
+   var_95 = -1;
+ }
+
+
+ if (aes->aes_set & AES_SET_MBS) {
+  if (sc == NULL) {
+
+   *var_95 = aes->aes_mbs.s;
+   if (var_95 != NULL)
+    *var_95 = aes->aes_mbs.length;
+   return 0;
+  }
+  var_95 = archive_strncpy_l(&(aes->aes_mbs_in_locale),
+      aes->aes_mbs.s, aes->aes_mbs.length, sc);
+  *var_95 = aes->aes_mbs_in_locale.s;
+  if (var_95 != NULL)
+   *var_95 = aes->aes_mbs_in_locale.length;
+ } else {
+  *var_95 = NULL;
+  if (var_95 != NULL)
+   *var_95 = 0;
+ }
+ return (var_95);
+}
+
+int
+archive_mstring_copy_mbs(struct archive_mstring *aes, const char *mbs)
+{
+ if (mbs == NULL) {
+  aes->aes_set = 0;
+  return 0;
+ }
+ return (archive_mstring_copy_mbs_len(aes, mbs, strlen(mbs)));
+}
+
+int
+archive_mstring_copy_mbs_len(struct archive_mstring *aes, const char *mbs,
+    size_t var_95)
+{
+ if (mbs == NULL) {
+  aes->aes_set = 0;
+  return 0;
+ }
+ aes->aes_set = AES_SET_MBS;
+ archive_strncpy(&(aes->aes_mbs), mbs, var_95);
+ archive_string_empty(&(aes->aes_utf8));
+ archive_wstring_empty(&(aes->aes_wcs));
+ return 0;
+}
+
+int
+archive_mstring_copy_wcs(struct archive_mstring *aes, const wchar_t *wcs)
+{
+ return archive_mstring_copy_wcs_len(aes, wcs,
+    wcs == NULL ? 0 : wcslen(wcs));
+}
+
+int
+archive_mstring_copy_utf8(struct archive_mstring *aes, const char *utf8)
+{
+  if (utf8 == NULL) {
+    aes->aes_set = 0;
+    return 0;
+  }
+  aes->aes_set = AES_SET_UTF8;
+  archive_string_empty(&(aes->aes_mbs));
+  archive_string_empty(&(aes->aes_wcs));
+  archive_strncpy(&(aes->aes_utf8), utf8, strlen(utf8));
+  return (int)strlen(utf8);
+}
+
+int
+archive_mstring_copy_wcs_len(struct archive_mstring *aes, const wchar_t *wcs,
+    size_t var_95)
+{
+ if (wcs == NULL) {
+  aes->aes_set = 0;
+  return 0;
+ }
+ aes->aes_set = AES_SET_WCS;
+ archive_string_empty(&(aes->aes_mbs));
+ archive_string_empty(&(aes->aes_utf8));
+ archive_wstrncpy(&(aes->aes_wcs), wcs, var_95);
+ return 0;
+}
+
+int
+archive_mstring_copy_mbs_len_l(struct archive_mstring *aes,
+    const char *mbs, size_t var_95, struct archive_string_conv *sc)
+{
+ int var_95;
+
+ if (mbs == NULL) {
+  aes->aes_set = 0;
+  return 0;
+ }
+ archive_string_empty(&(aes->aes_mbs));
+ archive_wstring_empty(&(aes->aes_wcs));
+ archive_string_empty(&(aes->aes_utf8));
+
+ var_95 = archive_strncpy_l(&(aes->aes_mbs), mbs, var_95, sc);
+ if (var_95 == 0)
+  aes->aes_set = AES_SET_MBS;
+ else
+  aes->aes_set = 0;
+
+ return (var_95);
+}
+
+int
+archive_mstring_update_utf8(struct archive *a, struct archive_mstring *aes,
+    const char *utf8)
+{
+ struct struct_95 *sc;
+ int var_95;
+
+ if (utf8 == NULL) {
+  aes->aes_set = 0;
+  return 0;
+ }
+
+
+ archive_strcpy(&(aes->aes_utf8), utf8);
+
+
+ archive_string_empty(&(aes->aes_mbs));
+ archive_wstring_empty(&(aes->aes_wcs));
+
+ aes->aes_set = AES_SET_UTF8;
+
+
+ sc = archive_string_conversion_from_charset(a, "UTF-8", 1);
+ if (sc == NULL)
+  return -1;
+ var_95 = archive_strcpy_l(&(aes->aes_mbs), utf8, sc);
+ if (a == NULL)
+  free_sconv_object(sc);
+ if (var_95 != 0)
+  return -1;
+ aes->aes_set = AES_SET_UTF8 | AES_SET_MBS;
+
+
+ if (archive_wstring_append_from_mbs(&(aes->aes_wcs), aes->aes_mbs.s,
+     aes->aes_mbs.length))
+  return -1;
+ aes->aes_set = AES_SET_UTF8 | AES_SET_WCS | AES_SET_MBS;
+
+
+ return 0;
+}

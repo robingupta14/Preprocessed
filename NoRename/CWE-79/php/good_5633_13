@@ -1,0 +1,863 @@
+<?php
+
+class XMLImporter {
+	
+	
+	public $notices = array();
+	
+	
+	public $errors = array();
+	
+			
+	public $totalreports = 0;
+	
+	
+	public $importedreports = 0;
+	
+	
+	private $totalcategories = 0;
+	
+	
+	private $totalforms = 0;
+	
+	
+	private $allowable = array(0,1);
+	
+	
+	private $categories_added = array();
+	
+	
+	private $category_translations_added = array();
+	
+	
+	private $forms_added = array();
+	
+	
+	private $fields_added = array();
+	
+	
+	private $field_options_added = array();
+	
+	
+	private $incidents_added = array();
+	
+	
+	private $incident_persons_added = array();
+	
+	
+	private $incident_responses_added = array();
+	
+	
+	private $locations_added = array();
+	
+	
+	private $incident_categories_added = array();
+	
+	
+	private $incident_media_added = array();
+	
+	
+	public function import($file)
+	{
+		
+		
+		$this->existing_categories = ORM::factory('category')->select_list('category_title','id');
+		$temp_cat = array(); 
+		foreach ($this->existing_categories as $title => $id)
+		{
+			$temp_cat[utf8::strtoupper($title)] = $id;
+		}
+		$this->existing_categories = $temp_cat;
+		
+		
+		$this->incident_ids = ORM::factory('incident')->select_list('id','id'); 
+	
+		
+		$this->existing_forms = ORM::factory('form')->select_list('form_title', 'id');
+		$temp_forms = array();
+		foreach ($this->existing_forms as $title => $id)
+		{
+			$temp_forms[utf8::strtoupper($title)] = $id;
+		}
+		$this->existing_forms = $temp_forms;
+	
+		
+		$form_fields = customforms::get_custom_form_fields(FALSE, '', FALSE);
+		$temp_fields = array();
+		foreach ($form_fields as $existing_field)
+		{
+			$field_name = $existing_field['field_name'];
+			$form_id = $existing_field['form_id'];
+			$field_id = $existing_field['field_id'];
+			$temp_fields[utf8::strtoupper($field_name)][$form_id] = $field_id;
+		}
+		$this->existing_fields = $temp_fields;
+		 
+		
+		$this->time = date("Y-m-d H:i:s",time());
+		
+		
+		$xml= new DOMDocument('1.0');
+		
+		
+		if (@$xml->load($file) !== FALSE)
+		{
+			$depcategories = $xml->getElementsByTagName('categories');
+			$depcustomforms = $xml->getElementsByTagName('custom_forms');
+			$depreports = $xml->getElementsByTagName('reports');
+			
+			if ($depcategories->length == 0 AND $depcustomforms->length == 0 AND $depreports->length == 0)
+			{
+				$this->errors[] = Kohana::lang('import.xml.missing_elements');
+			}
+		
+			
+			if( $depcategories->length > 0)
+			{	
+				$categories = $depcategories->item(0);
+				if ($categories->nodeValue != 'There are no categories on this deployment.')
+				{
+					if ($this->import_categories($categories) == false)
+					{
+						
+						$this->rollback();
+						return false;
+					}
+				}
+				else
+				{
+					$this->notices[] = Kohana::lang('import.xml.no_categories');
+				}	
+			}
+		
+			
+			if ($depcustomforms->length > 0)
+			{
+				$customforms = $depcustomforms->item(0);
+				if ($customforms->nodeValue != 'There are no custom forms on this deployment.')
+				{
+					if ($this->import_customforms($customforms) == false)
+					{
+						
+						$this->rollback();
+						return FALSE;
+					}
+				}
+				else
+				{
+					$this->notices[] = Kohana::lang('import.xml.no_custom_forms');
+				}	
+			}
+		
+			
+			if ($depreports->length > 0)
+			{
+				$reports = $depreports->item(0);
+				if ($reports->nodeValue != 'There are no reports on this deployment.')
+				{
+					if ($this->import_reports($reports) == false)
+					{
+						
+						$this->rollback();
+						return FALSE;						
+					}
+				}
+				else
+				{
+					$this->notices[] = Kohana::lang('import.xml.no_reports');
+				}
+			}	
+		}
+		
+		
+		else
+		{
+			$this->errors[] = Kohana::lang('import.xml.file_empty');;
+		}
+		
+		
+		return count($this->errors) === 0;
+	}
+	
+	
+	public function import_categories($categories)
+	{
+		
+		foreach ($categories->getElementsByTagName('category') as $category)
+		{
+			
+			$this->totalcategories++;
+			
+			
+			$cat_title = xml::get_node_text($category, 'title');
+			
+			
+			$cat_description = xml::get_node_text($category, 'description');
+				
+			
+			if ( ! $cat_title OR  ! $cat_description )
+			{
+				$this->errors[] = Kohana::lang('import.xml.category_error').$this->totalcategories;
+			}
+		
+			
+			else
+			{
+				
+				if ( ! isset($this->existing_categories[utf8::strtoupper($cat_title)]))
+				{
+					
+					$cat_color = xml::get_node_text($category, 'color', FALSE);
+					$cat_visible = $category->getAttribute('visible');
+					$cat_trusted = $category->getAttribute('trusted');
+					
+					
+					
+					$cat_parent = xml::get_node_text($category, 'parent');
+					if ($cat_parent)
+					{
+						$parent_id = isset($this->existing_categories[utf8::strtoupper($cat_parent)])
+						 			? $this->existing_categories[utf8::strtoupper($cat_parent)] 
+									: 0;
+					}	 	
+			
+					
+					$new_category = new Category_Model;
+					$new_category->category_title = $cat_title;
+					$new_category->category_description = $cat_description ? $cat_description : NULL;
+					$new_category->parent_id = isset($parent_id) ? $parent_id : 0;
+					$new_category->category_color = $cat_color ? $cat_color : '000000';
+					$new_category->category_visible = ( isset($cat_visible) AND in_array($cat_visible, $this->allowable)) ? $cat_visible : 1;
+					$new_category->category_trusted = ( isset($cat_trusted) AND in_array($cat_trusted, $this->allowable)) ? $cat_trusted : 0;
+					$new_category->category_position = count($this->existing_categories);
+					$new_category->save();
+				
+					
+					$this->existing_categories[utf8::strtoupper($cat_title)] = $new_category->id;
+					
+					
+					$this->categories_added[] = $new_category->id;
+					$this->notices[] = Kohana::lang('import.new_category').html::escape($cat_title);
+				}
+
+				
+				$c_translations = $category->getElementsByTagName('translations');
+				
+				
+				$cat_id = $this->existing_categories[utf8::strtoupper($cat_title)];
+		
+				
+				if ($c_translations->length > 0)
+				{
+					$cat_translations = $c_translations->item(0); 	
+					foreach ($cat_translations->getElementsByTagName('translation') as $translation)
+					{
+						
+						$locale = xml::get_node_text($translation,'locale', FALSE);
+						
+						
+						if ($locale)
+						{	
+							
+							$existing_translations = ORM::factory('category_lang')
+													->where('category_id',$cat_id)
+													->where('locale', $locale)
+													->find_all();
+
+							
+							if (count($existing_translations) == 0)
+							{
+								
+								$trans_title = xml::get_node_text($translation, 'translation_title');
+								
+								
+								$trans_description = xml::get_node_text($translation, 'translation_description');
+								
+								
+								if ( ! $trans_title)
+								{
+									$this->notices[] = Kohana::lang('import.xml.translation_title').$this->totalcategories
+														.': '.utf8::strtoupper($locale);
+								}
+								else
+								{
+									
+									$cl = new Category_Lang_Model();
+									$cl->locale = $locale;
+									$cl->category_id = $cat_id;
+									$cl->category_title = $trans_title;
+									$cl->category_description = $trans_description ? $trans_description : NULL;
+									$cl->save();
+									
+									
+									$this->category_translations_added[] = $cl->id;
+									$this->notices[] = Kohana::lang('import.xml.translation_added')
+														.'"'.utf8::strtoupper($locale).'" for '.$cat_title;
+								}
+							}	
+						}
+						
+						
+						else
+						{
+							$this->notices[] = Kohana::lang('import.xml.missing_localization').$this->totalcategories;
+						}
+					}	
+				}
+			}
+		}
+		
+		
+		
+		return count($this->errors) === 0;
+	}
+	
+	
+	public function import_customforms($customforms)
+	{
+		$forms = $customforms->getElementsByTagName('form');
+		foreach ($forms as $form)
+		{
+			
+			$this->totalforms++;
+			$totalfields = 0;
+			
+			
+			$title = xml::get_node_text($form, 'title');
+			
+			
+			if ( ! $title)
+			{
+				$this->errors[] = Kohana::lang('import.xml.missing_form_title').$this->totalforms;
+			}
+			
+			
+			else
+			{
+				
+				if ( ! isset($this->existing_forms[utf8::strtoupper($title)]))
+				{
+					
+					$form_active = $form->getAttribute('active');
+
+					
+					$active = (isset($form_active) AND in_array($form_active, $this->allowable))? $form_active : 1;
+					
+					
+					$description = xml::get_node_text($form, 'description');
+					
+					
+					$new_form = new Form_Model();
+					$new_form->form_title = $title;
+					$new_form->form_description = $description ? $description : NULL;
+					$new_form->form_active = $active;
+					$new_form->save();
+
+					
+					$this->existing_forms[utf8::strtoupper($title)] = $new_form->id;
+
+					
+					$this->forms_added[] = $new_form->id;
+					$this->notices[] = Kohana::lang('import.xml.new_form').'"'.$title.'"';
+				}
+
+				
+				$this_form = $this->existing_forms[utf8::strtoupper($title)];
+				$fields = $form->getElementsByTagName('field');
+				if ($fields->length > 0)
+				{
+					foreach ($fields as $field)
+					{
+						
+						$totalfields++;
+						
+						
+						$name = xml::get_node_text($field, 'name');
+					
+						
+						$field_type = $field->getAttribute('type');
+						$allowable_types = array(1,2,3,4,5,6,7);
+						
+						
+						$type = (isset($field_type) AND in_array($field_type, $allowable_types) )? $field_type : NULL;
+						
+						
+						if (! $name OR ! isset($type))
+						{
+							$this->notices[] = Kohana::lang('import.xml.field_error').'"'.$title.'" : Field 
+						}
+						
+						
+						else
+						{
+							
+							if ( ! isset($this->existing_fields[utf8::strtoupper($name)][$this_form]))
+							{
+								
+								$field_required = $field->getAttribute('required');
+								$required = (isset($field_required) AND in_array($field_required, $this->allowable)) ? $field_required : 0;
+								
+								
+								$field_visible = $field->getAttribute('visible_by');
+								$public_visible = (isset($field_visible) AND in_array($field_visible, $this->allowable)) ? $field_visible : 0;
+								
+								
+								$field_submit = $field->getAttribute('submit_by');
+								$public_submit = (isset($field_submit) AND in_array($field_submit, $this->allowable)) ? $field_submit : 0;
+
+								
+								$default = xml::get_node_text($field, 'default');
+								$default_values = $default ? $default : NULL;
+								
+								
+								
+								$default_required = array(5, 6, 7);
+								if ( ! isset($default_values) AND in_array($type, $default_required))
+								{
+									$this->notices[] = Kohana::lang('import.xml.field_default').'"'.$title.'" : Field "'.$name.'"';
+								}
+								
+								
+								else
+								{
+									
+									$new_field = new Form_Field_Model();
+									$new_field->form_id = $this_form;
+									$new_field->field_name = $name;
+									$new_field->field_type = $type;
+									$new_field->field_required = $required;
+									$new_field->field_default = isset($default_values) ? $default_values : NULL;
+									$new_field->field_ispublic_visible  = $public_visible;
+									$new_field->field_ispublic_submit  = $public_submit;
+									$new_field->save();
+									
+									
+									$this->existing_fields[utf8::strtoupper($name)][$this_form] = $new_field->id;
+									
+									
+									$this->fields_added[] = $new_field->id;
+									$this->notices[] = Kohana::lang('import.xml.new_field').'"'.$name.'"';
+									
+									
+									if ($field->hasAttribute('datatype') OR $field->hasAttribute('hidden'))
+									{
+										
+										$fieldid = $this->existing_fields[utf8::strtoupper($name)][$this_form];
+
+										if ($field->hasAttribute('datatype'))
+										{
+											
+											$existing_datatype = ORM::factory('form_field_option')
+																->where('form_field_id', $fieldid)
+																->where('option_name','field_datatype')
+																->find_all();
+											
+											if (count($existing_datatype) == 0)
+											{
+												$datatype = xml::get_node_text($field,'datatype', FALSE);
+												$allowed_types = array('email', 'phonenumber', 'numeric', 'text');
+												$field_datatype = ($datatype AND in_array($datatype, $allowed_types))? $datatype : NULL;
+
+												
+												if ($field_datatype != NULL)
+												{
+													$datatype_option = new Form_Field_Option_Model();
+													$this->_save_field_option($datatype_option, $fieldid, 'field_datatype', $field_datatype);
+
+													
+													$this->field_options_added[] = $datatype_option->id;
+													$this->notices[] = Kohana::lang('import.xml.field_datatype').'"'.$name.'"';
+												}
+											}								
+										}
+
+										if ($field->hasAttribute('hidden'))
+										{
+											
+											$existing_hidden = ORM::factory('form_field_option')
+																->where('form_field_id', $fieldid)
+																->where('option_name','field_hidden')
+																->find_all();
+
+											
+											if (count($existing_hidden) == 0)
+											{
+												$hidden = $field->getAttribute('hidden');
+												$field_hidden = ($hidden != '' AND in_array($hidden, $this->allowable)) ? $hidden : NULL;
+
+												
+												if ($field_hidden != NULL)
+												{
+													$hidden_option = new Form_Field_Option_Model();
+													$this->_save_field_option($hidden_option, $fieldid, 'field_hidden', $field_hidden);
+
+													
+													$this->field_options_added[] = $hidden_option->id;
+													$this->notices[] = Kohana::lang('import.xml.field_hidden').'"'.$name.'"';
+												}
+											} 
+										}
+										
+									}
+									
+								}
+								
+							}
+							
+						}
+						
+					}
+					
+				}
+				
+			}
+			
+		}
+		
+		
+		
+		return count($this->errors) === 0;
+	}
+	
+	
+	public function import_reports($reports)
+	{
+		
+		foreach ($reports->getElementsByTagName('report') as $report)
+		{
+			$this->totalreports++;
+			
+			$report_id = $report->getAttribute('id');
+			
+			
+			if (isset($report_id) AND isset($this->incident_ids[$report_id]))
+			{
+				$this->notices[] = Kohana::lang('import.incident_exists').$report_id;
+			}
+			
+			
+			else
+			{
+				
+				$locations = $report->getElementsByTagName('location');
+				
+				
+				if ($locations->length > 0)
+				{
+					$report_location = $locations->item(0);
+					
+					
+					$location_name = xml::get_node_text($report_location, 'name');
+					
+					
+					$longitude = xml::get_node_text($report_location, 'longitude');
+					
+					
+					$latitude = xml::get_node_text($report_location, 'latitude');
+									
+					if ($location_name)
+					{
+						
+						$location_geocoded = map::geocode($location_name);
+						
+						
+						$new_location = new Location_Model();
+						$new_location->location_name = $location_name ? $location_name : NULL;
+						$new_location->location_date = $this->time;
+						
+						
+						if ($latitude AND $longitude)
+						{
+							$new_location->latitude = $latitude ? $latitude: 0;
+							$new_location->longitude = $longitude ? $longitude: 0;
+							
+						}
+						else
+						{
+							
+							$new_location->latitude = $location_geocoded ? $location_geocoded['latitude'] : $latitude;
+							$new_location->longitude = $location_geocoded ? $location_geocoded['longitude'] : $longitude;
+						} 
+						$new_location->country_id = $location_geocoded ? $location_geocoded['country_id'] : 0;
+						$new_location->save();
+						
+						
+						$this->locations_added[] = $new_location->id;
+					}
+					
+				}
+				
+				
+				
+				$report_title = xml::get_node_text($report, 'title');
+				
+				
+				$report_date = xml::get_node_text($report, 'date');
+				
+				
+				if ( ! $report_title OR ! $report_date)
+				{
+					$this->errors[] = Kohana::lang('import.xml.incident_title_date').$this->totalreports;
+				}
+				
+				
+				if ( ! strtotime($report_date))
+				{
+					$this->errors[] = Kohana::lang('import.incident_date').$this->totalreports.': '.html::escape($report_date);
+				}
+				
+				
+				else
+				{
+					
+					$approved = $report->getAttribute('approved');
+					$report_approved = (isset($approved) AND in_array($approved, $this->allowable)) ? $approved : 0;
+					
+					
+					$verified = $report->getAttribute('verified');
+					$report_verified = (isset($verified) AND in_array($verified, $this->allowable)) ? $verified : 0;
+					
+					
+					$allowed_modes = array(1, 2, 3, 4);
+					$mode = $report->getAttribute('mode');
+					$report_mode = (isset($mode) AND in_array($mode, $allowed_modes)) ? $mode : 1;
+					
+					
+					$report_form = xml::get_node_text($report,'form_name', FALSE);
+					if ($report_form)
+					{
+						if (! isset($this->existing_forms[utf8::strtoupper($report_form)]))
+						{
+							$this->notices[] = Kohana::lang('import.xml.no_form_exists').$this->totalreports
+												.': "'.$report_form.'"';
+						}
+						
+						$form_id = isset($this->existing_forms[utf8::strtoupper($report_form)])
+						 			? $this->existing_forms[utf8::strtoupper($report_form)] 
+									: 1;
+					}
+					
+					
+					$dateadd = xml::get_node_text($report, 'dateadd');
+					
+					
+					$report_description = xml::get_node_text($report, 'description');
+
+					$new_report = new Incident_Model();
+					$new_report->location_id = isset($new_location) ? $new_location->id : 0;
+					$new_report->user_id = 0;
+					$new_report->incident_title = $report_title;
+					$new_report->incident_description = $report_description ? $report_description : '';
+					$new_report->incident_date = date("Y-m-d H:i:s",strtotime($report_date));
+					$new_report->incident_dateadd = ($dateadd AND strtotime($dateadd))? $dateadd : $this->time;
+					$new_report->incident_active = $report_approved;
+					$new_report->incident_verified = $report_verified;
+					$new_report->incident_mode = $report_mode;
+					$new_report->form_id = isset($form_id) ? $form_id : 1;
+					$new_report->save();
+					
+					
+					$this->importedreports++;
+					
+					
+					$this->incidents_added[] = $new_report->id;
+					
+					
+					
+					$reportcategories = $report->getElementsByTagName('report_categories') ;
+					if ($reportcategories->length > 0)
+					{
+						$report_categories = $reportcategories->item(0);
+						
+						foreach($report_categories->getElementsByTagName('category') as $r_category)
+						{
+							$category = trim($r_category->nodeValue);
+							$report_category = (isset($category) AND $category != '') ? $category : '';
+							if ($report_category != '' AND isset($this->existing_categories[utf8::strtoupper($report_category)]))
+							{
+								
+								$new_incident_category = new Incident_Category_Model();
+								$new_incident_category->incident_id = $new_report->id;
+								$new_incident_category->category_id = $this->existing_categories[utf8::strtoupper($report_category)];
+								$new_incident_category->save();
+								
+								
+								$this->incident_categories_added[] = $new_incident_category->id;
+							}
+							
+							if ($report_category != '' AND ! isset($this->existing_categories[utf8::strtoupper($report_category)]))
+							{
+								$this->notices[] = Kohana::lang('import.xml.no_category_exists').$this->totalreports.': "'.$report_category.'"';
+							}
+						}	
+					}
+						
+					
+					
+					$this_form = $new_report->form_id;
+					$reportfields = $report->getElementsByTagName('custom_fields');
+					if ($reportfields->length > 0)
+					{
+						$report_fields = $reportfields->item(0);
+						$custom_fields = $report_fields->getElementsByTagName('field');
+						if ($custom_fields->length > 0)
+						{
+							foreach ($custom_fields as $field)
+							{
+								
+								$field_name = $field->hasAttribute('name') ? xml::get_node_text($field, 'name', FALSE) : FALSE;
+								if ($field_name)
+								{
+									
+									if(isset($this->existing_fields[utf8::strtoupper($field_name)][$this_form]))
+									{
+										
+										$match_field_id = $this->existing_fields[utf8::strtoupper($field_name)][$this_form];
+										
+										
+										$match_fields = ORM::Factory('form_field', $match_field_id);
+										$match_field_type = $match_fields->field_type;
+										$match_field_defaults = $match_fields->field_default;
+											
+										
+										$field_response = trim($field->nodeValue);
+										if ($field_response != '')
+										{
+											
+											$new_form_response = new Form_Response_Model();
+											$new_form_response->incident_id = $new_report->id;
+											$new_form_response->form_field_id = $match_field_id;
+												
+											
+											
+											
+											$field_defaults = explode(',',$match_field_defaults);
+												
+											
+											if ($match_field_type == 5 OR $match_field_type == 7)
+											{
+												foreach ($field_defaults as $match_field_default)
+												{
+													
+													$new_form_response->form_response = strcasecmp($match_field_default, $field_response) == 0
+																						? $match_field_default 
+																						: NULL;
+												}
+											}
+												
+											
+											if ($match_field_type == 6)
+											{
+												
+												$responses = explode(',', $field_response);
+												$values = array();
+												foreach ($match_field_defaults as $match_field_default)
+												{
+													foreach ($responses as $response)
+													{
+														$values[] = strcasecmp($match_field_default, $response) == 0
+														 			? $match_field_default 
+																	: NULL;
+													}
+												}
+													
+												
+												$new_form_response->form_response = implode(",", $values);
+											}
+											
+											
+											else
+											{
+												$new_form_response->form_response = $field_response;
+											}
+												
+											
+											if ($new_form_response->form_response != NULL)
+											{
+												$new_form_response->save();
+											}
+												
+											
+											$this->incident_responses_added[] = $new_form_response->id;	
+										}								
+									}
+									else
+									{
+										$this->notices[] = Kohana::lang('import.xml.form_field_no_match')
+															.$this->totalreports.': "'.$field_name.'" on form "'.$new_report->form->form_title.'"';
+									}
+								}
+							}
+						}	
+					}
+				
+					
+					
+					
+					$personal_info = $report->getElementsByTagName('personal_info');
+					
+					
+					if ($personal_info->length > 0)
+					{
+						$report_info = $personal_info->item(0);
+
+						
+						$firstname = xml::get_node_text($report_info, 'first_name');
+
+						
+						$lastname = xml::get_node_text($report_info, 'last_name');
+
+						
+						$r_email = xml::get_node_text($report_info, 'email');	
+						$email = ($r_email AND valid::email($r_email)) ? $r_email : NULL;
+
+						$new_incident_person = new Incident_Person_Model();
+						$new_incident_person->incident_id = $new_report->id;
+						$new_incident_person->person_date = $new_report->incident_dateadd;
+
+						
+						if ($firstname OR $lastname OR $email != NULL)
+						{
+							$new_incident_person->person_first = $firstname ? $firstname: NULL;
+							$new_incident_person->person_last = $lastname ? $firstname: NULL;
+							$new_incident_person->person_email = $email;
+							$new_incident_person->save();
+
+							
+							$this->incident_persons_added[] = $new_incident_person->id;
+						}	
+					}			
+				}
+			}
+		}
+		
+		
+		
+		return count($this->errors) === 0;
+	}
+	
+	
+	private function rollback()
+	{
+		if (count($this->categories_added)) ORM::factory('category')->delete_all($this->categories_added);
+		if (count($this->category_translations_added)) ORM::factory('category_lang')->delete_all($this->category_translations_added);
+		if (count($this->forms_added)) ORM::factory('form')->delete_all($this->forms_added);
+		if (count($this->fields_added)) ORM::factory('form_field')->delete_all($this->fields_added);
+		if (count($this->field_options_added)) ORM::factory('form_field_option')->delete_all($this->field_options_added);
+		if (count($this->incidents_added)) ORM::factory('incident')->delete_all($this->incidents_added);
+		if (count($this->locations_added)) ORM::factory('location')->delete_all($this->locations_added);
+		if (count($this->incident_categories_added)) ORM::factory('incident_category')->delete_all($this->incident_categories_added);
+		if (count($this->incident_persons_added)) ORM::factory('incident_person')->delete_all($this->incident_persons_added);
+		if (count($this->incident_responses_added)) ORM::factory('form_response')->delete_all($this->incident_responses_added);
+	}
+	
+	
+	private function _save_field_option($model, $fieldid, $option_name, $option_value)
+	{
+		$model->form_field_id = $fieldid;
+		$model->option_name = $option_name;
+		$model->option_value = $option_value;
+		$model->save();
+	}
+}
+?>

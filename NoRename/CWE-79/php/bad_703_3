@@ -1,0 +1,389 @@
+<?php
+
+
+
+
+$User->check_user_session();
+
+
+$csrf = $User->Crypto->csrf_cookie ("create", "scan");
+
+
+
+
+
+if($Subnets->check_permission ($User->user, $_POST['subnetId']) != 3) 	{ $Result->show("danger", _('You do not have permissions to modify hosts in this subnet')."!", true, true); }
+
+
+
+if ($User->settings->enableSNMP!="1")           { $Result->show("danger", _("SNMP module disbled"), true); }
+
+$subnet = $Subnets->fetch_object ("subnets", "id", $_POST['subnetId']);
+if ($subnet===false)                            { $Result->show("danger", _("Invalid subnet Id"), true);  }
+
+
+$vlan = $Tools->fetch_object ("vlans", "vlanId", $subnet->vlanId);
+if ($vlan===false)                              { $Result->show("danger", _("Subnet must have VLAN assigned for MAc address query"), true);  }
+
+
+$Snmp = new phpipamSNMP ();
+
+
+$all_subnet_hosts = (array) $Addresses->fetch_subnet_addresses ($subnet->id);
+
+if (sizeof($all_subnet_hosts)>0) {
+    foreach ($all_subnet_hosts as $h) {
+        $subnet_ip_addresses[] = $Subnets->transform_address($h->ip_addr, "dotted");
+    }
+}
+
+
+$selected_ip_fields = $User->settings->IPfilter;
+$selected_ip_fields = explode(";", $selected_ip_fields);
+
+
+error_reporting(E_ERROR);
+
+
+$devices_used_arp = $Tools->fetch_multiple_objects ("devices", "snmp_queries", "%get_arp_table%", "id", true, true);
+$devices_used_mac = $Tools->fetch_multiple_objects ("devices", "snmp_queries", "%get_mac_table%", "id", true, true);
+
+
+if ($devices_used_arp !== false) {
+    foreach ($devices_used_arp as $d) {
+        
+        $permitted_sections = explode(";", $d->sections);
+        
+        if (in_array($subnet->sectionId, $permitted_sections)) {
+            $permitted_devices_arp[] = $d;
+        }
+    }
+}
+
+if ($devices_used_mac !== false) {
+    foreach ($devices_used_mac as $d) {
+        
+        $permitted_sections = explode(";", $d->sections);
+        
+        if (in_array($subnet->sectionId, $permitted_sections)) {
+            $permitted_devices_mac[] = $d;
+        }
+    }
+}
+
+
+if (!isset($permitted_devices_arp))                 { $Result->show("danger", _("No devices for SNMP ARP query available"), true); }
+if (!isset($permitted_devices_mac))                 { $Result->show("danger", _("No devices for SNMP MAC address query available"), true); }
+
+
+
+foreach ($permitted_devices_arp as $d) {
+    
+    $Snmp->set_snmp_device ($d);
+    
+    try {
+        $res = $Snmp->get_query("get_arp_table");
+        
+        if (sizeof($res)>0) {
+           
+           $debug[$d->hostname]["get_arp_table"] = $res;
+           
+           foreach ($res as $kr=>$r) {
+               
+               if ($Subnets->is_subnet_inside_subnet ($r['ip']."/32", $Subnets->transform_address($subnet->subnet, "dotted")."/".$subnet->mask)===false) { }
+               
+               elseif (in_array($r['ip'], $subnet_ip_addresses)) { }
+               
+               else {
+                   $found_arp[] = $r;
+               }
+           }
+        }
+    } catch (Exception $e) {}
+}
+
+
+if (!isset($found_arp))                         { $Result->show("danger", _("No new hosts found from ARP scan, MAC address scan will not be performed"), true); }
+
+
+
+foreach ($permitted_devices_mac as $d) {
+    
+    $Snmp->set_snmp_device ($d, $vlan->number);
+    
+    try {
+        $res = $Snmp->get_query("get_mac_table");
+        
+        if (sizeof($res)>0) {
+           
+           $debug[$d->hostname]["get_mac_table"] = $res;
+           
+           foreach ($res as $r) {
+               $r['device'] = $d->id;
+               $r['device_name'] = $d->hostname;
+               $found_mac[] = $r;
+           }
+        }
+    } catch (Exception $e) {}
+}
+
+
+
+if (!isset($found_mac))                         { $Result->show("danger", _("No MAC address found via MAC address scan"), true); }
+
+
+
+
+$k=0;
+foreach ($found_mac as $mac) {
+    foreach ($found_arp as $arp) {
+        
+        if ($mac['mac']==$arp['mac']) {
+            $found[$k]['ip']     = $arp['ip'];
+            $found[$k]['mac']    = $mac['mac'];
+            $found[$k]['port']   = $mac['port'];
+            $found[$k]['device'] = $mac['device'];
+            $found[$k]['device_name'] = $mac['device_name'];
+            $found[$k]['port_alias'] = $mac['port_alias'];
+            
+            $k++;
+        }
+    }
+}
+
+
+foreach ($found as $k1=>$f) {
+    foreach ($found as $k2=>$f1) {
+        if ($k1!=$k2) {
+            if ($f['mac']==$f1['mac'] && $f['device']==$f1['device']) {
+                unset($found[$k1]);
+            }
+        }
+    }
+
+    
+    if(strpos(strtolower($f['port']), "port-channel")!==false) {
+        unset($found[$k1]);
+    }
+}
+
+
+
+
+if(sizeof($found)==0 && isset($errors))          {
+    $Result->show("info", _("No new hosts found"), false);
+    $Result->show("warning", implode("<hr>", $errors), false);
+}
+
+elseif(sizeof($found)==0) 	                     { $Result->show("info", _("No new hosts found")."!", false); }
+
+else {
+	
+	$nsid = $subnet===false ? false : $subnet->nameserverId;
+
+    
+    $Tools = new Tools ($Database);
+    $required_fields = $Tools->fetch_custom_fields ('ipaddresses');
+    if($required_fields!==false) {
+        foreach ($required_fields as $k=>$f) {
+            if ($f['Null']!="NO") {
+                unset($required_fields[$k]);
+            }
+        }
+    }
+
+    
+	$colspan = 7 + sizeof(@$required_fields);
+	
+	if(in_array('port', $selected_ip_fields)) { $colspan++; }
+
+    
+    function sort_array($a, $b) {
+        
+        if ($a['ip']==$b['ip'])     { return 0; }
+        elseif ($a['ip']>$b['ip'])  { return 1; }
+        else                        { return -1; }
+    }
+    
+    usort($found, "sort_array");
+
+
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+    
+	if (isset($required_fields)) {
+		foreach ($required_fields as $field) {
+            
+		}
+    }
+	
+	
+
+	
+	$m=0;
+	foreach($found as $k=>$ip) {
+            
+    		
+    		$hostname = $DNS->resolve_address($ip['ip'], false, true, $nsid);
+
+    		
+    		if ($k!=0) {
+        		if ($found[$k]['ip'] != $found[$k-1]['ip']) {
+        		    
+        		}
+        		else {
+            		
+        		}
+    		}
+    		else {
+        		
+            }
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		if(strlen(@$ip['port_alias'])>0)
+    		
+    		
+    		
+    		if (isset($required_fields)) {
+        		foreach ($required_fields as $field) {
+        			
+        			$field['nameNew'] = str_replace(" ", "___", $field['name']);
+
+        			
+
+        			
+        			if(substr($field['type'], 0,3) == "set" || substr($field['type'], 0,4) == "enum") {
+        				
+        				$tmp = substr($field['type'], 0,3)=="set" ? explode(",", str_replace(array("set(", ")", "'"), "", $field['type'])) : explode(",", str_replace(array("enum(", ")", "'"), "", $field['type']));
+        				
+        				if($field['Null']!="NO") { array_unshift($tmp, ""); }
+
+        				
+        				foreach($tmp as $v) {
+        					if($v==@$address[$field['name']])	{  }
+        					else								{  }
+        				}
+        				
+        			}
+        			
+        			elseif($field['type'] == "date" || $field['type'] == "datetime") {
+        				
+        				if($timeP==0) {
+        					
+        					
+        					
+        					
+        					
+        					';
+        					
+        					';
+
+        					
+        					
+        				}
+        				$timeP++;
+
+        				
+        				if($field['type'] == "date")	{ $size = 10; $class='datepicker';		$format = "yyyy-MM-dd"; }
+        				else							{ $size = 19; $class='datetimepicker';	$format = "yyyy-MM-dd"; }
+
+        				
+        				if(!isset($address[$field['name']]))	{  }
+        				else									{  }
+        			}
+        			
+        			elseif($field['type'] == "tinyint(1)") {
+        				
+        				$tmp = array(0=>"No",1=>"Yes");
+        				
+        				if($field['Null']!="NO") { $tmp[2] = ""; }
+
+        				foreach($tmp as $k=>$v) {
+        					if(strlen(@$address[$field['name']])==0 && $k==2)	{  }
+        					elseif($k==@$address[$field['name']])				{  }
+        					else												{  }
+        				}
+        				
+        			}
+        			
+        			else {
+        				
+        			}
+
+                    
+        		}
+    		}
+    		
+    		
+    		
+
+    		$m++;
+	}
+
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+
+    
+    if (isset($errors)) {
+        
+        foreach ($errors as $e) {
+            
+        }
+    }
+}
+
+
+'>";
+
+
+
+foreach ($debug as $k=>$d) {
+     ".$k."<br>";
+}
+
+
+
+
+if($_POST['debug']==1) 				{  print_r($debug);  }
+
+?>

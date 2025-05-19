@@ -1,0 +1,865 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function fn_0( $var_0 ) {
+	$var_1 = array();
+	$var_2 = ( config_get( 'enable_profiles' ) == var_3 );
+	
+	foreach ( $var_0 as $var_4 ) {
+		switch( $var_4 ) {
+			case 'os':
+			case 'os_build':
+			case 'platform':
+				if( ! $var_2 ) {
+					continue 2;
+				}
+				
+				break;
+
+			case 'eta':
+				if( config_get( 'enable_eta' ) == var_5 ) {
+					continue 2;
+				}
+				break;
+
+			case 'projection':
+				if( config_get( 'enable_projection' ) == var_5 ) {
+					continue 2;
+				}
+				break;
+
+			case 'build':
+				if( config_get( 'enable_product_build' ) == var_5 ) {
+					continue 2;
+				}
+				break;
+
+			default:
+				
+				break;
+		}
+		$var_1[] = $var_4;
+	} 
+
+	return $var_1;
+}
+
+
+function fn_1() {
+	$var_6 = new class_0('BugData');
+	$var_1 = $var_6->getDefaultProperties();
+
+	$var_1['selection'] = null;
+	$var_1['edit'] = null;
+
+	
+	$var_1['overdue'] = null;
+
+	if( var_5 == config_get( 'enable_profiles' ) ) {
+		unset( $var_1['os'] );
+		unset( $var_1['os_build'] );
+		unset( $var_1['platform'] );
+	}
+
+	if( config_get( 'enable_eta' ) == var_5 ) {
+		unset( $var_1['eta'] );
+	}
+	
+	if( config_get( 'enable_projection' ) == var_5 ) { 
+		unset( $var_1['projection'] );
+	}
+	
+	if( config_get( 'enable_product_build' ) == var_5 ) {
+		unset( $var_1['build'] );
+	}
+
+	
+	unset( $var_1['_stats'] );
+	unset( $var_1['profile_id'] );
+	unset( $var_1['sticky'] );
+	unset( $var_1['loading'] );
+
+	return array_keys($var_1);
+}
+
+
+function fn_2() {
+	static $var_8 = null;
+
+	if ( is_null( $var_8 ) ) {
+		$var_8 = array();
+
+		$var_9 = event_signal( 'EVENT_FILTER_COLUMNS' );
+		foreach( $var_9 as $var_10 => $var_11 ) {
+			foreach( $var_11 as $var_12 => $var_13 ) {
+				if ( is_array( $var_13 ) ) {
+					foreach( $var_13 as $var_14 ) {
+						if ( class_exists( $var_14 ) && is_subclass_of( $var_14, 'MantisColumn' ) ) {
+							$var_15 = new $var_14();
+							$var_16 = utf8_strtolower( $var_10 . '_' . $var_15->var_17 );
+							$var_8[ $var_16 ] = $var_15;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return $var_8;
+}
+
+
+function fn_3( $var_18 ) {
+	$var_1 = fn_2();
+
+	foreach( $var_1 as $var_15 ) {
+		$var_15->cache( $var_18 );
+	}
+}
+
+
+function fn_4( $var_20 = null ) {
+	$var_1 = fn_1();
+
+	
+	$var_1 = array_merge( $var_1, array_keys( fn_2() ) );
+
+	
+	if( $var_20 === null ) {
+		$var_21 = helper_get_current_project();
+	} else {
+		$var_21 = $var_20;
+	}
+
+	$var_22 = custom_field_get_linked_ids( $var_21 );
+	foreach( $var_22 as $var_23 ) {
+		if( !custom_field_has_read_access_by_project_id( $var_23, $var_21 ) ) {
+			continue;
+		}
+
+		$var_24 = custom_field_get_definition( $var_23 );
+		$var_1[] = 'custom_' . $var_24['name'];
+	}
+
+	return $var_1;
+}
+
+
+function fn_5( $var_25 ) {
+	switch( $var_25 ) {
+		case 'description':
+		case 'steps_to_reproduce':
+		case 'additional_information':
+			return true;
+		default:
+			return false;
+	}
+}
+
+
+function fn_6( $var_25 ) {
+	if( strncmp( $var_25, 'custom_', 7 ) === 0 ) {
+		return utf8_substr( $var_25, 7 );
+	}
+
+	return null;
+}
+
+
+function fn_7( $var_26 ) {
+	$var_27 = utf8_strtolower( $var_26 );
+
+	$var_1 = explode( ',', $var_27 );
+	$var_28 = count($var_1);
+
+	for($var_29 = 0; $var_29 < $var_28; $var_29++) {
+		$var_1[$var_29] = trim($var_1[$var_29]);
+	}
+
+	return $var_1;
+}
+
+
+function fn_8( $var_25 ) {
+	$var_30 = fn_6( $var_25 );
+	if( $var_30 !== null ) {
+		$var_31 = custom_field_get_id_from_name( $var_30 );
+
+		if( $var_31 === false ) {
+			$var_30 = '@' . $var_30 . '@';
+		} else {
+			$var_24 = custom_field_get_definition( $var_31 );
+			$var_30 = lang_get_defaulted( $var_24['name'] );
+		}
+
+		return $var_30;
+	}
+
+	$var_11 = fn_2();
+	if ( isset( $var_11[ $var_25 ] ) ) {
+		$var_15 = $var_11[ $var_25 ];
+		return $var_15->var_32;
+	}
+
+	switch( $var_25 ) {
+		case 'attachment_count':
+			return lang_get( 'attachments' );
+		case 'bugnotes_count':
+			return '
+		case 'var_33':
+			return lang_get( 'category' );
+		case 'edit':
+			return '';
+		case 'handler_id':
+			return lang_get( 'assigned_to' );
+		case 'last_updated':
+			return lang_get( 'updated' );
+		case 'os_build':
+			return lang_get( 'os_version' );
+		case 'project_id':
+			return lang_get( 'email_project' );
+		case 'reporter_id':
+			return lang_get( 'reporter' );
+		case 'selection':
+			return '';
+		case 'sponsorship_total':
+			return sponsorship_get_currency();
+		case 'version':
+			return lang_get( 'product_version' );
+		case 'view_state':
+			return lang_get( 'view_status' );
+		default:
+			return lang_get_defaulted( $var_25 );
+	}
+}
+
+
+function fn_9( $var_34, $var_35, $var_36 ) {
+	$var_37 = array_map( 'utf8_strtolower', $var_36 );
+
+	
+	foreach( $var_35 as $var_4 ) {
+		if( !in_array( utf8_strtolower( $var_4 ), $var_37 ) ) {
+			error_parameters( $var_34, $var_4 );
+			trigger_error( var_38, var_39 );
+			return false;
+		}
+	}
+
+	
+	$var_40 = array();
+	foreach( $var_35 as $var_4 ) {
+		$var_41 = utf8_strtolower( $var_4 );
+		if( in_array( $var_4, $var_40 ) ) {
+			error_parameters( $var_34, $var_4 );
+			trigger_error( var_42, var_39 );
+		} else {
+			$var_40[] = $var_41;
+		}
+	}
+
+	return true;
+}
+
+
+function fn_10( $var_0, $var_36 ) {
+	$var_37 = array_values( array_map( 'utf8_strtolower', $var_36 ) );
+	$var_1 = array();
+
+	foreach( $var_0 as $var_4 ) {
+		if( in_array( utf8_strtolower( $var_4 ), $var_37 ) ) {
+			$var_1[] = $var_4;
+		}
+	}
+
+	return $var_1;
+}
+
+
+function fn_11( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'id' ), 'id', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'id' );
+	
+}
+
+
+function fn_12( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'email_project' ), 'project_id', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'project_id' );
+	
+}
+
+
+function fn_13( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'reporter' ), 'reporter_id', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'reporter_id' );
+	
+}
+
+
+function fn_14( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'assigned_to' ), 'handler_id', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'handler_id' );
+	
+}
+
+
+function fn_15( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'priority_abbreviation' ), 'priority', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'priority' );
+	
+}
+
+
+function fn_16( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'reproducibility' ), 'reproducibility', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'reproducibility' );
+	
+}
+
+
+function fn_17( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'projection' ), 'projection', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'projection' );
+	
+}
+
+
+function fn_18( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'eta' ), 'eta', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'eta' );
+	
+}
+
+
+function fn_19( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'resolution' ), 'resolution', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'resolution' );
+	
+}
+
+
+function fn_20( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'fixed_in_version' ), 'fixed_in_version', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'fixed_in_version' );
+	
+}
+
+
+function fn_21( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'target_version' ), 'target_version', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'target_version' );
+	
+}
+
+
+function fn_22( $var_43, $var_44, $var_45 = var_46 ) {
+	global $var_47;
+	
+	$var_48 = lang_get( 'view_status' );
+	$var_49 = '<img src="' . $var_47 . 'protected.gif" alt="' . $var_48 . '" title="' . $var_48 . '" />';
+	print_view_bug_sort_link( $var_49, 'view_state', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'view_state' );
+	
+}
+
+
+function fn_23( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'os' ), 'os', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'os' );
+	
+}
+
+
+function fn_24( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'os_version' ), 'os_build', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'os_build' );
+	
+}
+
+
+function fn_25( $var_43, $var_44, $var_45 = var_46 ) {
+	if( $var_45 != var_50 ) {
+		
+		print_view_bug_sort_link( lang_get( 'build' ), 'build', $var_43, $var_44, $var_45 );
+		print_sort_icon( $var_44, $var_43, 'build' );
+		
+	} else {
+		
+	}
+}
+
+
+function fn_26( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'platform' ), 'platform', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'platform' );
+	
+}
+
+
+function fn_27( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'product_version' ), 'version', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'version' );
+	
+}
+
+
+function fn_28( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'date_submitted' ), 'date_submitted', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'date_submitted' );
+	
+}
+
+
+function fn_29( $var_43, $var_44, $var_45 = var_46 ) {
+	global $var_47;
+	$var_51 = lang_get( 'attachment_count' );
+	$var_52 = "<img src=\"${var_47}attachment.png\" alt=\"$var_51\" title=\"$var_51\" />";
+	
+}
+
+
+function fn_30( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'category' ), 'category', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'category' );
+	
+}
+
+
+function fn_31( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( sponsorship_get_currency(), 'sponsorship_total', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'sponsorship_total' );
+	
+}
+
+
+function fn_32( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'severity' ), 'severity', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'severity' );
+	
+}
+
+
+function fn_33( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'status' ), 'status', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'status' );
+	
+}
+
+
+function fn_34( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'updated' ), 'last_updated', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'last_updated' );
+	
+}
+
+
+function fn_35( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	print_view_bug_sort_link( lang_get( 'summary' ), 'summary', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'summary' );
+	
+}
+
+
+function fn_36( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	
+	
+}
+
+
+function fn_37( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	
+	
+}
+
+
+function fn_38( $var_43, $var_44, $var_45 = var_46 ) {
+	
+	
+	
+}
+
+function fn_39( $var_43, $var_44, $var_45 = var_46 ) {
+	global $var_47;
+	
+	$var_53 = lang_get( 'overdue' );
+	$var_54 = '<img src="' . $var_47 . 'overdue.png" alt="' . $var_53 . '" title="' . $var_53 . '" />';
+	print_view_bug_sort_link( $var_54, 'due_date', $var_43, $var_44, $var_45 );
+	print_sort_icon( $var_44, $var_43, 'due_date' );
+	
+}
+
+
+function var_55( $var_56, $var_45 = var_46 ) {
+	global $var_57, $var_58;
+
+	
+	if( access_has_bug_level( $var_58, $var_56->var_59 ) ) {
+		$var_57 = true;
+		printf( "<input type=\"checkbox\" name=\"bug_arr[]\" value=\"%d\" />", $var_56->var_59 );
+	} else {
+		
+}
+
+
+function fn_40( $var_25, $var_60, $var_43, $var_44, $var_45=var_46 ) {
+	
+	if ( $var_60->var_61 ) {
+		print_view_bug_sort_link( string_display_line( $var_60->var_32 ), $var_25, $var_43, $var_44, $var_45 );
+		print_sort_icon( $var_44, $var_43, $var_25 );
+	} else {
+		
+	}
+	
+}
+
+
+function fn_41( $var_60, $var_56, $var_45 = var_46 ) {
+	if ( $var_45 != var_50 ) {
+		
+		$var_60->display( $var_56, $var_45 );
+		
+	} else {
+		$var_60->display( $var_56, $var_45 );
+	}
+}
+
+
+function var_63( $var_56, $var_45 = var_46 ) {
+	global $var_47, $var_58;
+
+	
+
+	if( !bug_is_readonly( $var_56->var_59 ) && access_has_bug_level( config_get( 'update_bug_threshold' ), $var_56->var_59 ) ) {
+		
+		
+		
+		
+	} else {
+		
+}
+
+
+function fn_42( $var_56, $var_45 = var_46 ) {
+	
+	if( var_3 == config_get( 'show_priority_text' ) ) {
+		print_formatted_priority_string( $var_56->var_64, $var_56->var_65 );
+	} else {
+		print_status_icon( $var_56->var_65 );
+	}
+	
+}
+
+
+function fn_43( $var_56, $var_45 = var_46 ) {
+	
+	print_bug_link( $var_56->var_59, false );
+	
+}
+
+
+function fn_44( $var_56, $var_45 = var_46 ) {
+	
+
+	if( $var_56->var_66 > 0 ) {
+		$var_67 = sponsorship_format_amount( $var_56->var_66 );
+		
+	}
+
+	
+}
+
+
+function var_68( $var_56, $var_45 = var_46 ) {
+	global $var_69;
+
+	
+	$var_70 = bug_get_bugnote_stats( $var_56->var_59 );
+	if( NULL !== $var_70 ) {
+		$var_71 = $var_70['count'];
+		$var_72 = $var_70['last_modified'];
+	} else {
+		$var_71 = 0;
+	}
+
+	
+	if( $var_71 > 0 ) {
+		$var_73 = $var_72 > strtotime( '-' . $var_69['highlight_changed'] . ' hours' );
+		if( $var_73 ) {
+			
+		}
+		print_link( string_get_bug_view_url( $var_56->var_59 ) . "&nbn=$var_71
+		if( $var_73 ) {
+			
+		}
+	} else {
+		
+}
+
+
+function print_column_attachment_count( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	global $var_47;
+
+	
+	
+	
+	$var_74 = 0;
+	if( file_can_view_bug_attachments( $var_56->var_59, null ) ) {
+		$var_74 = file_bug_attachment_count( $var_56->var_59 );
+	}
+
+	
+
+	if ( $var_74 > 0 ) {
+		$var_75 = string_get_bug_view_url( $var_56->var_59 ) . '
+		$var_76 = sprintf( lang_get( 'view_attachments_for_issue' ), $var_74, $var_56->var_59 );
+		if ( config_get( 'show_attachment_indicator' ) ) {
+			$var_77 = $var_74 . lang_get( 'word_separator' ) . lang_get( 'attachments' );
+			
+		} else {
+			
+		}
+	} else {
+		
+}
+
+
+function print_column_category_id( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	global $var_78, $var_79;
+
+	
+	$var_80 = project_get_field( $var_56->var_81, 'name' );
+
+	
+
+	
+ 	if( ON == config_get( 'show_bug_project_links' ) && helper_get_current_project() != $var_56->var_81 ) {
+		
+		print_view_bug_sort_link( string_display_line( $var_80 ), 'project_id', $var_78, $var_79, $var_45 );
+		
+	}
+
+	
+
+	
+}
+
+
+function print_column_severity( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	
+	print_formatted_severity_string( $var_56->var_64, $var_56->var_82 );
+	
+}
+
+
+function print_column_eta( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	
+}
+
+
+function print_column_projection( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	
+}
+
+
+function print_column_reproducibility( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	
+}
+
+
+function print_column_resolution( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	
+}
+
+
+function print_column_status( $var_56, $var_45 = COLUMNS_TARGET_VIEW_PAGE ) {
+	
+	printf( '<span class="var_83-var_64" var_32="%var_84">%var_84</var_85>', get_enum_element( 'var_86', $var_56->var_86 ), var_87( 'var_64', $var_56->var_64 ) );
+
+	
+	if(( var_3 == config_get( 'show_assigned_names' ) ) && ( $var_56->var_88 > 0 ) && ( access_has_project_level( config_get( 'view_handler_threshold' ), $var_56->var_81 ) ) ) {
+		printf( ' (%s)', prepare_user_name( $var_56->var_88 ) );
+	}
+	
+}
+
+
+function fn_45( $var_56, $var_45 = var_46 ) {
+	
+
+	
+	
+	if( $var_56->var_88 > 0 && ( helper_get_current_project() != var_89 || access_has_project_level( config_get( 'view_handler_threshold' ), $var_56->var_81 ) ) ) {
+		
+	}
+
+	
+}
+
+
+function fn_46( $var_56, $var_45 = var_46 ) {
+	
+	
+	
+}
+
+
+function fn_47( $var_56, $var_45 = var_46 ) {
+	
+	
+	
+}
+
+
+function fn_48( $var_56, $var_45 = var_46 ) {
+	global $var_69;
+
+	$var_90 = string_display_line( date( config_get( 'short_date_format' ), $var_56->var_91 ) );
+
+	
+	if( $var_56->var_91 > strtotime( '-' . $var_69['highlight_changed'] . ' hours' ) ) {
+		printf( '<span class="bold">%s</span>', $var_90 );
+	} else {
+		
+	}
+	
+}
+
+
+function fn_49( $var_56, $var_45 = var_46 ) {
+	$var_92 = string_display_line( date( config_get( 'short_date_format' ), $var_56->var_93 ) );
+
+	
+}
+
+
+function fn_50( $var_56, $var_45 = var_46 ) {
+	if( $var_45 == var_50 ) {
+		$var_94 = string_attribute( $var_56->var_95 );
+	} else {
+		$var_94 = string_display_line_links( $var_56->var_95 );
+	}
+
+	
+}
+
+
+function fn_51( $var_56, $var_45 = var_46 ) {
+	$var_96 = string_display_links( $var_56->var_97 );
+
+	
+}
+
+
+function fn_52( $var_56, $var_45 = var_46 ) {
+	$var_98 = string_display_links( $var_56->var_99 );
+
+	
+}
+
+
+function fn_53( $var_56, $var_45 = var_46 ) {
+	$var_100 = string_display_links( $var_56->var_101 );
+
+	
+}
+
+
+function fn_54( $var_56, $var_45 = var_46 ) {
+	
+
+	
+	
+	if( helper_get_current_project() != var_89 || access_has_project_level( config_get( 'roadmap_view_threshold' ), $var_56->var_81 ) ) {
+		
+	}
+
+	
+}
+
+
+function var_102( $var_56, $var_45 = var_46 ) {
+	global $var_47;
+
+	
+
+	if( var_103 == $var_56->var_104 ) {
+		$var_48 = lang_get( 'private' );
+		
+	} else {
+		
+}
+
+
+function fn_55( $var_56, $var_45 = var_46 ) {
+	if ( !access_has_bug_level( config_get( 'due_date_view_threshold' ), $var_56->var_59 ) ||
+		date_is_null( $var_56->var_105 ) ) {
+		
+	}
+
+	if ( bug_is_overdue( $var_56->var_59 ) ) {
+		
+	} else {
+		
+	}
+
+	
+
+	
+}
+
+
+function var_106( $var_56, $var_45 = var_46 ) {
+	global $var_47;
+
+	
+
+	if ( access_has_bug_level( config_get( 'due_date_view_threshold' ), $var_56->var_59 ) &&
+		!date_is_null( $var_56->var_105 ) &&
+		bug_is_overdue( $var_56->var_59 ) ) {
+		$var_53 = lang_get( 'overdue' );
+		$var_107 = $var_53 . '. Due date was: ' . string_display_line( date( config_get( 'short_date_format' ), $var_56->var_105 ) );
+		
+	} else {
+		
+}

@@ -1,0 +1,236 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+define('PHPWG_ROOT_PATH','./');
+session_cache_limiter('public');
+
+
+check_status(var_0);
+
+function fn_0($var_1)
+{
+  switch ( strtolower($var_1) )
+  {
+    case "jpe": case "jpeg":
+    case "jpg": $var_2="image/jpeg"; break;
+    case "png": $var_2="image/png"; break;
+    case "gif": $var_2="image/gif"; break;
+    case "tiff":
+    case "tif": $var_2="image/tiff"; break;
+    case "txt": $var_2="text/plain"; break;
+    case "html":
+    case "htm": $var_2="text/html"; break;
+    case "xml": $var_2="text/xml"; break;
+    case "pdf": $var_2="application/pdf"; break;
+    case "zip": $var_2="application/zip"; break;
+    case "ogg": $var_2="application/ogg"; break;
+    default: $var_2="application/octet-stream";
+  }
+  return $var_2;
+}
+
+function fn_1( $var_3, $var_4 )
+{
+  set_status_header( $var_3 );
+  
+  exit();
+}
+
+if ($conf['enable_formats'] and isset($var_5['format']))
+{
+  check_input_parameter('format', $var_5, false, var_6);
+
+  $var_7 = '
+SELECT
+    *
+  FROM '.var_8.'
+  WHERE format_id = '.$var_5['format'].'
+;';
+  $var_9 = query2array($var_7);
+
+  if (count($var_9) == 0)
+  {
+    fn_1(400, 'Invalid request - format');
+  }
+
+  $var_10 = $var_9[0];
+
+  $var_5['id'] = $var_10['image_id'];
+  $var_5['part'] = 'f'; 
+}
+
+
+if (!isset($var_5['id'])
+    or !is_numeric($var_5['id'])
+    or !isset($var_5['part'])
+    or !in_array($var_5['part'], array('e','r','f') ) )
+{
+  fn_1(400, 'Invalid request - id/part');
+}
+
+$var_7 = '
+SELECT * FROM '. var_11.'
+  WHERE id='.$var_5['id'].'
+;';
+
+$var_12 = pwg_db_fetch_assoc(pwg_query($var_7));
+if ( empty($var_12) )
+{
+  fn_1(404, 'Requested id not found');
+}
+
+
+$var_13 = false;
+if (is_admin() and isset($var_5['pwg_token']) and get_pwg_token() == $var_5['pwg_token'])
+{
+  $var_13 = true;
+  $user['enabled_high'] = true;
+}
+
+$var_14 = new class_0($var_12);
+
+
+
+$var_7='
+SELECT id
+  FROM '.var_15.'
+    INNER JOIN '.var_16.' ON category_id = id
+  WHERE image_id = '.$var_5['id'].'
+'.get_sql_condition_FandF(
+  array(
+      'forbidden_categories' => 'category_id',
+      'forbidden_images' => 'image_id',
+    ),
+  '    AND'
+  ).'
+  LIMIT 1
+;';
+if (!$var_13 and pwg_db_num_rows(pwg_query($var_7))<1 )
+{
+  fn_1(401, 'Access denied');
+}
+
+$var_17='';
+switch ($var_5['part'])
+{
+  case 'e':
+    if ( $var_14->is_original() and !$user['enabled_high'] )
+    {
+      $var_19 = new class_1(var_20, $var_14);
+      if ( !$var_19->same_as_source() )
+      {
+        fn_1(401, 'Access denied e');
+      }
+    }
+    $var_17 = get_element_path($var_12);
+    break;
+  case 'r':
+    $var_17 = original_to_representative( get_element_path($var_12), $var_12['representative_ext'] );
+    break;
+  case 'f' :
+    $var_17 = original_to_format(get_element_path($var_12), $var_10['ext']);
+    $var_12['file'] = get_filename_wo_extension($var_12['file']).'.'.$var_10['ext'];
+    break;
+}
+
+if ( empty($var_17) )
+{
+  fn_1(404, 'Requested file not found');
+}
+
+if ($var_5['part'] == 'e') {
+  pwg_log($var_5['id'], 'high');
+}
+else if ($var_5['part'] == 'e')
+{
+  pwg_log($var_5['id'], 'other');
+}
+else if ($var_5['part'] == 'f')
+{
+  pwg_log($var_5['id'], 'high', $var_10['format_id']);
+}
+
+$var_22 = array();
+
+$var_2 = null;
+if (!url_is_remote($var_17))
+{
+  if ( !@is_readable($var_17) )
+  {
+    fn_1(404, "Requested file not found - $var_17");
+  }
+  $var_22[] = 'Content-Length: '.@filesize($var_17);
+  if ( function_exists('mime_content_type') )
+  {
+    $var_2 = mime_content_type($var_17);
+  }
+
+  $var_23 = gmdate('D, d M Y H:i:s', filemtime($var_17)).' GMT';
+  $var_22[] = 'Last-Modified: '.$var_23;
+
+  
+  
+
+  if ('f' != $var_5['part'] and isset( $_SERVER['HTTP_IF_MODIFIED_SINCE'] ) )
+  {
+    set_status_header(304);
+    foreach ($var_22 as $var_24)
+    {
+      header( $var_24 );
+    }
+    exit();
+  }
+}
+
+if (!isset($var_2))
+{ 
+  $var_2 = fn_0( get_extension($var_17) );
+}
+
+$var_22[] = 'Content-Type: '.$var_2;
+
+if (isset($var_5['download']))
+{
+  $var_22[] = 'Content-Disposition: attachment; filename="'.$var_12['file'].'";';
+  $var_22[] = 'Content-Transfer-Encoding: binary';
+}
+else
+{
+  $var_22[] = 'Content-Disposition: inline; filename="'
+            .basename($var_17).'";';
+}
+
+foreach ($var_22 as $var_24)
+{
+  header( $var_24 );
+}
+
+
+if (ini_get('safe_mode') == 0)
+{
+  @set_time_limit(0);
+}
+
+@readfile($var_17);
+
+?>

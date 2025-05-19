@@ -1,0 +1,152 @@
+<?php namespace BookStack\Uploads;
+
+
+class AttachmentService extends UploadService
+{
+
+    
+    protected function getStorage()
+    {
+        $storageType = config('filesystems.attachments');
+
+        
+        if ($storageType === 'local') {
+            $storageType = 'local_secure';
+        }
+
+        return $this->fileSystem->disk($storageType);
+    }
+
+    
+    public function getAttachmentFromStorage(Attachment $attachment)
+    {
+        return $this->getStorage()->get($attachment->path);
+    }
+
+    
+    public function saveNewUpload(UploadedFile $uploadedFile, $page_id)
+    {
+        $attachmentName = $uploadedFile->getClientOriginalName();
+        $attachmentPath = $this->putFileInStorage($uploadedFile);
+        $largestExistingOrder = Attachment::where('uploaded_to', '=', $page_id)->max('order');
+
+        $attachment = Attachment::forceCreate([
+            'name' => $attachmentName,
+            'path' => $attachmentPath,
+            'extension' => $uploadedFile->getClientOriginalExtension(),
+            'uploaded_to' => $page_id,
+            'created_by' => user()->id,
+            'updated_by' => user()->id,
+            'order' => $largestExistingOrder + 1
+        ]);
+
+        return $attachment;
+    }
+
+    
+    public function saveUpdatedUpload(UploadedFile $uploadedFile, Attachment $attachment)
+    {
+        if (!$attachment->external) {
+            $this->deleteFileInStorage($attachment);
+        }
+
+        $attachmentName = $uploadedFile->getClientOriginalName();
+        $attachmentPath = $this->putFileInStorage($uploadedFile);
+
+        $attachment->name = $attachmentName;
+        $attachment->path = $attachmentPath;
+        $attachment->external = false;
+        $attachment->extension = $uploadedFile->getClientOriginalExtension();
+        $attachment->save();
+        return $attachment;
+    }
+
+    
+    public function saveNewFromLink(string $name, string $link, int $page_id): Attachment
+    {
+        $largestExistingOrder = Attachment::where('uploaded_to', '=', $page_id)->max('order');
+        return Attachment::forceCreate([
+            'name' => $name,
+            'path' => $link,
+            'external' => true,
+            'extension' => '',
+            'uploaded_to' => $page_id,
+            'created_by' => user()->id,
+            'updated_by' => user()->id,
+            'order' => $largestExistingOrder + 1
+        ]);
+    }
+
+    
+    public function updateFileOrderWithinPage(array $attachmentOrder, string $pageId)
+    {
+        foreach ($attachmentOrder as $index => $attachmentId) {
+            Attachment::query()->where('uploaded_to', '=', $pageId)
+                ->where('id', '=', $attachmentId)
+                ->update(['order' => $index]);
+        }
+    }
+
+
+    
+    public function updateFile(Attachment $attachment, array $requestData): Attachment
+    {
+        $attachment->name = $requestData['name'];
+
+        if (isset($requestData['link']) && trim($requestData['link']) !== '') {
+            $attachment->path = $requestData['link'];
+            if (!$attachment->external) {
+                $this->deleteFileInStorage($attachment);
+                $attachment->external = true;
+            }
+        }
+
+        $attachment->save();
+        return $attachment;
+    }
+
+    
+    public function deleteFile(Attachment $attachment)
+    {
+        if ($attachment->external) {
+            $attachment->delete();
+            return;
+        }
+        
+        $this->deleteFileInStorage($attachment);
+        $attachment->delete();
+    }
+
+    
+    protected function deleteFileInStorage(Attachment $attachment)
+    {
+        $storage = $this->getStorage();
+        $dirPath = dirname($attachment->path);
+
+        $storage->delete($attachment->path);
+        if (count($storage->allFiles($dirPath)) === 0) {
+            $storage->deleteDirectory($dirPath);
+        }
+    }
+
+    
+    protected function putFileInStorage(UploadedFile $uploadedFile)
+    {
+        $attachmentData = file_get_contents($uploadedFile->getRealPath());
+
+        $storage = $this->getStorage();
+        $basePath = 'uploads/files/' . Date('Y-m-M') . '/';
+
+        $uploadFileName = Illuminate\Support\Str::random(16) . '.' . $uploadedFile->getClientOriginalExtension();
+        while ($storage->exists($basePath . $uploadFileName)) {
+            $uploadFileName = Illuminate\Support\Str::random(3) . $uploadFileName;
+        }
+
+        $attachmentPath = $basePath . $uploadFileName;
+        try {
+            $storage->put($attachmentPath, $attachmentData);
+        } catch (Exception $e) {}
+
+        return $attachmentPath;
+    }
+}

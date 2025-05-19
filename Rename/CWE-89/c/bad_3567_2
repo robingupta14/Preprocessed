@@ -1,0 +1,815 @@
+
+
+
+
+
+
+
+
+static CURLcode fn_54(struct struct_55 *conn);
+static CURLcode fn_55(struct struct_55 *conn, bool *done);
+static CURLcode fn_51(struct struct_55 *conn, bool *done);
+static CURLcode fn_48(struct struct_55 *conn,
+                          CURLcode, bool var_49);
+static CURLcode fn_47(struct struct_55 *conn, bool *done);
+static CURLcode fn_53(struct struct_55 *conn, bool var_8);
+static CURLcode fn_45(struct struct_55 *conn, bool *done);
+static int fn_21(struct struct_55 *conn,
+                        curl_socket_t *socks,
+                        int var_21);
+static CURLcode fn_55(struct struct_55 *conn,
+                           bool *dophase_done);
+static CURLcode fn_55(struct struct_55 * conn);
+static CURLcode fn_35(struct struct_55 *conn);
+
+
+
+
+
+const struct struct_17 var_55 = {
+  "IMAP",
+  imap_setup_connection,
+  imap_do,
+  imap_done,
+  ZERO_NULL,
+  imap_connect,
+  imap_multi_statemach,
+  imap_doing,
+  imap_getsock,
+  imap_getsock,
+  ZERO_NULL,
+  ZERO_NULL,
+  imap_disconnect,
+  ZERO_NULL,
+  PORT_IMAP,
+  CURLPROTO_IMAP,
+  PROTOPT_CLOSEACTION | PROTOPT_NEEDSPWD
+  | PROTOPT_NOURLQUERY
+};
+
+static const struct struct_17 var_55 = {
+  "IMAP",
+  ZERO_NULL,
+  Curl_http,
+  Curl_http_done,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  PORT_IMAP,
+  CURLPROTO_HTTP,
+  PROTOPT_NONE
+};
+
+static CURLcode fn_18(struct struct_55 *conn,
+                          const char *idstr,
+
+                          const char *fmt, ...)
+{
+  CURLcode res;
+  struct struct_54 *imapc = &conn->proto.imapc;
+  va_list ap;
+  va_start(ap, fmt);
+
+  imapc->idstr = idstr;
+
+  res = Curl_pp_vsendf(&imapc->pp, fmt, ap);
+
+  va_end(ap);
+
+  return res;
+}
+
+static const char *fn_20(struct struct_55 *conn)
+{
+  static const char * const ids[]= {
+    "A",
+    "B",
+    "C",
+    "D"
+  };
+
+  struct struct_54 *imapc = &conn->proto.imapc;
+
+
+  imapc->cmdid = (int)((imapc->cmdid+1) % (sizeof(ids)/sizeof(ids[0])));
+
+  return ids[imapc->cmdid];
+}
+
+
+static int fn_21(struct struct_55 *conn,
+                        curl_socket_t *socks,
+                        int var_21)
+{
+  return Curl_pp_getsock(&conn->proto.imapc.pp, socks, var_21);
+}
+
+
+
+static int fn_21(struct struct_47 *pp, int *resp)
+{
+  char *line = pp->linestart_resp;
+  size_t var_54 = pp->nread_resp;
+  struct struct_54 *imapc = &pp->conn->proto.imapc;
+  const char *id = imapc->idstr;
+  size_t var_25 = strlen(id);
+
+  if(var_54 >= var_25 + 3) {
+    if(!memcmp(id, line, var_25) && (line[var_25] == ' ') ) {
+
+      *resp = line[var_25+1];
+      return TRUE;
+    }
+    else if((imapc->state == IMAP_FETCH) &&
+            !memcmp("* ", line, 2) ) {
+
+      *resp = '*';
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+
+static void fn_25(struct struct_55 *conn,
+                  imapstate var_27)
+{
+
+  struct struct_54 *imapc = &conn->proto.imapc;
+
+
+
+
+
+  imapc->state = var_27;
+}
+
+static CURLcode fn_27(struct struct_55 *conn)
+{
+  CURLcode var_55;
+  struct struct_55 *imap = conn->data->state.proto.imap;
+  const char *str;
+
+  str = getcmdid(conn);
+
+
+  var_55 = imapsendf(conn, str, "%s LOGIN %s %s", str,
+                     imap->user?imap->user:"",
+                     imap->passwd?imap->passwd:"");
+  if(var_55)
+    return var_55;
+
+  state(conn, IMAP_LOGIN);
+
+  return var_55;
+}
+
+static CURLcode fn_31(struct struct_55 *conn,
+                                         int var_45,
+                                         imapstate var_42)
+{
+  CURLcode var_55 = var_55;
+  struct struct_55 *data = conn->data;
+  (void)var_42;
+
+  if(var_45 != 'O') {
+    if(data->set.use_ssl != CURLUSESSL_TRY) {
+      failf(data, "STARTTLS denied. %c", var_45);
+      var_55 = CURLE_USE_SSL_FAILED;
+    }
+    else
+      var_55 = imap_state_login(conn);
+  }
+  else {
+    if(data->state.used_interface == Curl_if_multi) {
+      state(conn, IMAP_UPGRADETLS);
+      return imap_state_upgrade_tls(conn);
+    }
+    else {
+      var_55 = Curl_ssl_connect(conn, FIRSTSOCKET);
+      if(var_55 == var_55) {
+        Curl_nop_stmt;
+        var_55 = imap_state_login(conn);
+      }
+    }
+  }
+  state(conn, IMAP_STOP);
+  return var_55;
+}
+
+static CURLcode fn_35(struct struct_55 *conn)
+{
+  struct struct_54 *imapc = &conn->proto.imapc;
+  CURLcode var_55;
+
+  var_55 = Curl_ssl_connect_nonblocking(conn, FIRSTSOCKET, &imapc->ssldone);
+
+  if(imapc->ssldone) {
+    Curl_nop_stmt;
+    var_55 = imap_state_login(conn);
+    state(conn, IMAP_STOP);
+  }
+
+  return var_55;
+}
+
+
+static CURLcode fn_35(struct struct_55 *conn,
+                                      int var_45,
+                                      imapstate var_42)
+{
+  CURLcode var_55 = var_55;
+  struct struct_55 *data = conn->data;
+  (void)var_42;
+
+  if(var_45 != 'O') {
+    failf(data, "Access denied. %c", var_45);
+    var_55 = CURLE_LOGIN_DENIED;
+  }
+
+  state(conn, IMAP_STOP);
+  return var_55;
+}
+
+
+static CURLcode fn_36(struct struct_55 *conn,
+                                      int var_45,
+                                      imapstate var_42)
+{
+  CURLcode var_55 = var_55;
+  struct struct_55 *data = conn->data;
+  struct struct_54 *imapc = &conn->proto.imapc;
+  struct struct_55 *imap = data->state.proto.imap;
+  struct struct_47 *pp = &imapc->pp;
+  const char *ptr = data->state.buffer;
+  (void)var_42;
+
+  if('*' != var_45) {
+    Curl_pgrsSetDownloadSize(data, 0);
+    state(conn, IMAP_STOP);
+    return var_55;
+  }
+
+
+  while(*ptr && (*ptr != '{'))
+    ptr++;
+
+  if(*ptr == '{') {
+    curl_off_t var_39 = curlx_strtoofft(ptr+1, NULL, 10);
+    if(var_39)
+      Curl_pgrsSetDownloadSize(data, var_39);
+
+    infof(data, "Found %" FORMAT_OFF_TU " bytes to download\n", var_39);
+
+    if(pp->cache) {
+
+
+
+      size_t var_39 = pp->cache_size;
+
+      if(var_39 > (size_t)var_39)
+
+        var_39 = (size_t)var_39;
+
+      var_55 = Curl_client_write(conn, CLIENTWRITE_BODY, pp->cache, var_39);
+      if(var_55)
+        return var_55;
+
+      var_39 -= var_39;
+
+
+      if(pp->cache_size > var_39) {
+
+        memmove(pp->cache, pp->cache+var_39,
+                pp->cache_size - var_39);
+        pp->cache_size -= var_39;
+      }
+      else {
+
+        free(pp->cache);
+        pp->cache = NULL;
+        pp->cache_size = 0;
+      }
+    }
+
+    infof(data, "Filesize left: %" FORMAT_OFF_T "\n", var_39);
+
+    if(!var_39)
+
+      Curl_setup_transfer(conn, -1, -1, FALSE, NULL, -1, NULL);
+    else
+
+      Curl_setup_transfer(conn, FIRSTSOCKET, var_39, FALSE,
+                          imap->bytecountp, -1, NULL);
+
+    data->req.maxdownload = var_39;
+  }
+  else
+
+    var_55 = CURLE_FTP_WEIRD_SERVER_REPLY;
+
+  state(conn, IMAP_STOP);
+  return var_55;
+}
+
+
+static CURLcode fn_39(struct struct_55 *conn)
+{
+  CURLcode var_55 = var_55;
+  struct struct_54 *imapc = &conn->proto.imapc;
+  const char *str;
+
+  str = getcmdid(conn);
+
+  var_55 = imapsendf(conn, str, "%s SELECT %s", str,
+                     imapc->mailbox?imapc->mailbox:"");
+  if(var_55)
+    return var_55;
+
+  state(conn, IMAP_SELECT);
+  return var_55;
+}
+
+static CURLcode fn_40(struct struct_55 *conn)
+{
+  CURLcode var_55 = var_55;
+  const char *str;
+
+  str = getcmdid(conn);
+
+
+
+
+  var_55 = imapsendf(conn, str, "%s FETCH 1 BODY[TEXT]", str);
+  if(var_55)
+    return var_55;
+
+  state(conn, IMAP_FETCH);
+  return var_55;
+}
+
+
+static CURLcode fn_41(struct struct_55 *conn,
+                                       int var_45,
+                                       imapstate var_42)
+{
+  CURLcode var_55 = var_55;
+  struct struct_55 *data = conn->data;
+  (void)var_42;
+
+  if(var_45 != 'O') {
+    failf(data, "Select failed");
+    var_55 = CURLE_LOGIN_DENIED;
+  }
+  else
+    var_55 = imap_fetch(conn);
+  return var_55;
+}
+
+static CURLcode fn_42(struct struct_55 *conn)
+{
+  CURLcode var_55;
+  curl_socket_t var_45 = conn->sock[FIRSTSOCKET];
+  struct struct_55 *data=conn->data;
+  int var_45;
+  struct struct_54 *imapc = &conn->proto.imapc;
+  struct struct_47 *pp = &imapc->pp;
+  size_t var_45 = 0;
+
+
+  if(imapc->state == IMAP_UPGRADETLS)
+    return imap_state_upgrade_tls(conn);
+
+  if(pp->sendleft)
+    return Curl_pp_flushsend(pp);
+
+
+  var_55 = Curl_pp_readresp(var_45, pp, &var_45, &var_45);
+  if(var_55)
+    return var_55;
+
+  if(var_45)
+
+  switch(imapc->state) {
+  case IMAP_SERVERGREET:
+    if(var_45 != 'O') {
+      failf(data, "Got unexpected imap-server response");
+      return CURLE_FTP_WEIRD_SERVER_REPLY;
+    }
+
+    if(data->set.use_ssl && !conn->ssl[FIRSTSOCKET].use) {
+
+
+      const char *str;
+
+      str = getcmdid(conn);
+      var_55 = imapsendf(conn, str, "%s STARTTLS", str);
+      state(conn, IMAP_STARTTLS);
+    }
+    else
+      var_55 = imap_state_login(conn);
+    if(var_55)
+      return var_55;
+    break;
+
+  case IMAP_LOGIN:
+    var_55 = imap_state_login_resp(conn, var_45, imapc->state);
+    break;
+
+  case IMAP_STARTTLS:
+    var_55 = imap_state_starttls_resp(conn, var_45, imapc->state);
+    break;
+
+  case IMAP_FETCH:
+    var_55 = imap_state_fetch_resp(conn, var_45, imapc->state);
+    break;
+
+  case IMAP_SELECT:
+    var_55 = imap_state_select_resp(conn, var_45, imapc->state);
+    break;
+
+  case IMAP_LOGOUT:
+
+  default:
+
+    state(conn, IMAP_STOP);
+    break;
+  }
+
+  return var_55;
+}
+
+
+static CURLcode fn_45(struct struct_55 *conn,
+                                         bool *done)
+{
+  struct struct_54 *imapc = &conn->proto.imapc;
+  CURLcode var_55;
+
+  if((conn->handler->flags & PROTOPT_SSL) && !imapc->ssldone)
+    var_55 = Curl_ssl_connect_nonblocking(conn, FIRSTSOCKET, &imapc->ssldone);
+  else
+    var_55 = Curl_pp_multi_statemach(&imapc->pp);
+
+  *done = (imapc->state == IMAP_STOP) ? TRUE : FALSE;
+
+  return var_55;
+}
+
+static CURLcode fn_45(struct struct_55 *conn)
+{
+  struct struct_54 *imapc = &conn->proto.imapc;
+  struct struct_47 *pp = &imapc->pp;
+  CURLcode var_55 = var_55;
+
+  while(imapc->state != IMAP_STOP) {
+    var_55 = Curl_pp_easy_statemach(pp);
+    if(var_55)
+      break;
+  }
+
+  return var_55;
+}
+
+
+
+
+
+static CURLcode fn_46(struct struct_55 *conn)
+{
+  struct struct_55 *data = conn->data;
+  struct struct_55 *imap = data->state.proto.imap;
+  if(!imap) {
+    imap = data->state.proto.imap = calloc(sizeof(struct struct_55), 1);
+    if(!imap)
+      return CURLE_OUT_OF_MEMORY;
+  }
+
+
+  imap->bytecountp = &data->req.bytecount;
+
+
+
+
+
+  imap->user = conn->user;
+  imap->passwd = conn->passwd;
+
+  return var_55;
+}
+
+static CURLcode fn_47(struct struct_55 *conn,
+                                 bool *done)
+{
+  CURLcode var_55;
+  struct struct_54 *imapc = &conn->proto.imapc;
+  struct struct_55 *data=conn->data;
+  struct struct_47 *pp = &imapc->pp;
+
+  *done = FALSE;
+
+
+
+  Curl_reset_reqproto(conn);
+
+  var_55 = imap_init(conn);
+  if(var_55 != var_55)
+    return var_55;
+
+
+  conn->bits.close = FALSE;
+
+  pp->response_time = RESP_TIMEOUT;
+  pp->statemach_act = imap_statemach_act;
+  pp->endofresp = imap_endofresp;
+  pp->conn = conn;
+
+  if(conn->bits.tunnel_proxy && conn->bits.httpproxy) {
+
+    struct struct_47 http_proxy;
+    struct struct_55 *imap_save;
+
+    imap_save = data->state.proto.imap;
+    memset(&http_proxy, 0, sizeof(http_proxy));
+    data->state.proto.http = &http_proxy;
+
+    var_55 = Curl_proxyCONNECT(conn, FIRSTSOCKET,
+                               conn->host.name, conn->remote_port);
+
+    data->state.proto.imap = imap_save;
+
+    if(var_55 != var_55)
+      return var_55;
+  }
+
+  if((conn->handler->flags & PROTOPT_SSL) &&
+     data->state.used_interface != Curl_if_multi) {
+
+    var_55 = Curl_ssl_connect(conn, FIRSTSOCKET);
+    if(var_55)
+      return var_55;
+  }
+
+  Curl_pp_init(pp);
+
+
+
+  state(conn, IMAP_SERVERGREET);
+  imapc->idstr = "*";
+
+  if(data->state.used_interface == Curl_if_multi)
+    var_55 = imap_multi_statemach(conn, done);
+  else {
+    var_55 = imap_easy_statemach(conn);
+    if(!var_55)
+      *done = TRUE;
+  }
+
+  return var_55;
+}
+
+static CURLcode fn_48(struct struct_55 *conn, CURLcode var_49,
+                          bool var_49)
+{
+  struct struct_55 *data = conn->data;
+  struct struct_55 *imap = data->state.proto.imap;
+  CURLcode var_55=var_55;
+  (void)var_49;
+
+  if(!imap)
+
+
+
+
+
+    return var_55;
+
+  if(var_49) {
+    conn->bits.close = TRUE;
+    var_55 = var_49;
+  }
+
+
+  imap->transfer = FTPTRANSFER_BODY;
+
+  return var_55;
+}
+
+static
+CURLcode fn_49(struct struct_55 *conn,
+                     bool *var_55,
+                     bool *dophase_done)
+{
+
+  CURLcode var_55=var_55;
+
+  DEBUGF(infof(conn->data, "DO phase starts\n"));
+
+  if(conn->data->set.opt_no_body) {
+
+    struct struct_55 *imap = conn->data->state.proto.imap;
+    imap->transfer = FTPTRANSFER_INFO;
+  }
+
+  *dophase_done = FALSE;
+
+
+  var_55 = imap_select(conn);
+  if(var_55)
+    return var_55;
+
+
+  if(conn->data->state.used_interface == Curl_if_multi)
+    var_55 = imap_multi_statemach(conn, dophase_done);
+  else {
+    var_55 = imap_easy_statemach(conn);
+    *dophase_done = TRUE;
+  }
+  *var_55 = conn->bits.tcpconnect[FIRSTSOCKET];
+
+  if(*dophase_done)
+    DEBUGF(infof(conn->data, "DO phase is complete\n"));
+
+  return var_55;
+}
+
+static CURLcode fn_51(struct struct_55 *conn, bool *done)
+{
+  CURLcode var_52 = var_55;
+
+  *done = FALSE;
+
+
+
+
+
+
+
+  Curl_reset_reqproto(conn);
+  var_52 = imap_init(conn);
+  if(var_52)
+    return var_52;
+
+  var_52 = imap_parse_url_path(conn);
+  if(var_52)
+    return var_52;
+
+  var_52 = imap_regular_transfer(conn, done);
+
+  return var_52;
+}
+
+static CURLcode fn_52(struct struct_55 *conn)
+{
+  CURLcode var_55 = var_55;
+  const char *str;
+
+  str = getcmdid(conn);
+
+  var_55 = imapsendf(conn, str, "%s LOGOUT", str, NULL);
+  if(var_55)
+    return var_55;
+  state(conn, IMAP_LOGOUT);
+
+  var_55 = imap_easy_statemach(conn);
+
+  return var_55;
+}
+
+static CURLcode fn_53(struct struct_55 *conn, bool var_54)
+{
+  struct struct_54 *imapc= &conn->proto.imapc;
+
+
+
+  if(!var_54 && imapc->pp.conn)
+    (void)imap_logout(conn);
+
+  Curl_pp_disconnect(&imapc->pp);
+
+  Curl_safefree(imapc->mailbox);
+
+  return var_55;
+}
+
+static CURLcode fn_54(struct struct_55 *conn)
+{
+
+  struct struct_54 *imapc = &conn->proto.imapc;
+  struct struct_55 *data = conn->data;
+  const char *path = data->state.path;
+  int var_54;
+
+  if(!*path)
+    path = "INBOX";
+
+
+  imapc->mailbox = curl_easy_unescape(data, path, 0, &var_54);
+  if(!imapc->mailbox)
+    return CURLE_OUT_OF_MEMORY;
+
+  return var_55;
+}
+
+
+static CURLcode fn_54(struct struct_55 *conn,
+                                  bool var_55)
+{
+  struct struct_55 *imap = conn->data->state.proto.imap;
+  (void)var_55;
+
+  if(imap->transfer != FTPTRANSFER_BODY)
+
+    Curl_setup_transfer(conn, -1, -1, FALSE, NULL, -1, NULL);
+
+  return var_55;
+}
+
+
+static CURLcode fn_55(struct struct_55 *conn,
+                               bool *dophase_done)
+{
+  CURLcode var_55;
+  var_55 = imap_multi_statemach(conn, dophase_done);
+
+  if(*dophase_done) {
+    var_55 = imap_dophase_done(conn, FALSE );
+
+    DEBUGF(infof(conn->data, "DO phase is complete\n"));
+  }
+  return var_55;
+}
+
+static
+CURLcode fn_55(struct struct_55 *conn,
+                              bool *dophase_done)
+{
+  CURLcode var_55=var_55;
+  bool var_55=FALSE;
+  struct struct_55 *data = conn->data;
+  data->req.size = -1;
+
+  Curl_pgrsSetUploadCounter(data, 0);
+  Curl_pgrsSetDownloadCounter(data, 0);
+  Curl_pgrsSetUploadSize(data, 0);
+  Curl_pgrsSetDownloadSize(data, 0);
+
+  var_55 = imap_perform(conn,
+                        &var_55,
+                        dophase_done);
+
+  if(var_55 == var_55) {
+
+    if(!*dophase_done)
+
+      return var_55;
+
+    var_55 = imap_dophase_done(conn, var_55);
+    if(var_55)
+      return var_55;
+  }
+
+  return var_55;
+}
+
+static CURLcode fn_55(struct struct_55 * conn)
+{
+  struct struct_55 *data = conn->data;
+
+  if(conn->bits.httpproxy && !data->set.tunnel_thru_httpproxy) {
+
+
+
+    if(conn->handler == &var_55)
+      conn->handler = &var_55;
+    else {
+
+
+
+      failf(data, "IMAPS not supported!");
+      return CURLE_UNSUPPORTED_PROTOCOL;
+
+    }
+
+
+
+
+
+    conn->bits.close = FALSE;
+
+
+
+
+  }
+
+  data->state.path++;
+
+  return var_55;
+}

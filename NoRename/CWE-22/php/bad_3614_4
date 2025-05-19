@@ -1,0 +1,849 @@
+<?php
+
+
+
+
+
+$langs->load("companies");
+$langs->load("users");
+$langs->load("other");
+$langs->load("commercial");
+
+$mesg=''; $error=0; $errors=array();
+
+$action		= (GETPOST('action') ? GETPOST('action') : 'view');
+$confirm	= GETPOST('confirm');
+$id			= GETPOST("id");
+$socid		= GETPOST("socid");
+if ($user->societe_id) $socid=$user->societe_id;
+
+$object = new Contact($db);
+
+
+$object->getCanvas($id);
+$canvas = $object->canvas?$object->canvas:GETPOST("canvas");
+if (! empty($canvas))
+{
+    $objcanvas = new Canvas($db, $action);
+    $objcanvas->getCanvas('contact', 'contactcard', $canvas);
+}
+
+
+$result = restrictedArea($user, 'contact', $id, 'socpeople&societe', '', '', '', $objcanvas); 
+
+
+$hookmanager=new HookManager($db);
+$hookmanager->callHooks(array('contactcard'));
+
+
+
+
+$parameters=array('id'=>$id, 'objcanvas'=>$objcanvas);
+$reshook=$hookmanager->executeHooks('doActions',$parameters,$object,$action);    
+
+if (empty($reshook))
+{
+    
+    if (GETPOST("cancel") && GETPOST('backtopage'))
+    {
+        header("Location: ".GETPOST('backtopage'));
+        exit;
+    }
+
+	
+    if ($action == 'confirm_create_user' && $confirm == 'yes' && $user->rights->user->user->creer)
+    {
+        
+        $result = $object->fetch($_GET["id"]);
+
+        if ($result > 0)
+        {
+            $db->begin();
+
+            
+            $nuser = new User($db);
+            $result=$nuser->create_from_contact($object,$_POST["login"]);
+
+            if ($result > 0)
+            {
+                $result2=$nuser->setPassword($user,$_POST["password"],0,0,1);
+                if ($result2)
+                {
+                    $db->commit();
+                }
+                else
+                {
+                    $error=$nuser->error; $errors=$nuser->errors;
+                    $db->rollback();
+                }
+            }
+            else
+            {
+                $error=$nuser->error; $errors=$nuser->errors;
+                $db->rollback();
+            }
+        }
+        else
+        {
+            $error=$object->error; $errors=$object->errors;
+        }
+    }
+
+    
+    if ($action == 'add' && $user->rights->societe->contact->creer)
+    {
+        $db->begin();
+
+        if ($canvas) $object->canvas=$canvas;
+
+        $object->socid			= $_POST["socid"];
+        $object->name			= $_POST["name"];
+        $object->firstname		= $_POST["firstname"];
+        $object->civilite_id	= $_POST["civilite_id"];
+        $object->poste			= $_POST["poste"];
+        $object->address		= $_POST["address"];
+        $object->zip			= $_POST["zipcode"];
+        $object->town			= $_POST["town"];
+        $object->fk_pays		= $_POST["country_id"];
+        $object->fk_departement = $_POST["departement_id"];
+        $object->country_id		= $_POST["country_id"];
+        $object->state_id       = $_POST["departement_id"];
+        $object->email			= $_POST["email"];
+        $object->phone_pro		= $_POST["phone_pro"];
+        $object->phone_perso	= $_POST["phone_perso"];
+        $object->phone_mobile	= $_POST["phone_mobile"];
+        $object->fax			= $_POST["fax"];
+        $object->jabberid		= $_POST["jabberid"];
+        $object->priv			= $_POST["priv"];
+        $object->note			= $_POST["note"];
+
+        
+        $object->birthday = dol_mktime(0,0,0,$_POST["birthdaymonth"],$_POST["birthdayday"],$_POST["birthdayyear"]);
+        $object->birthday_alert = $_POST["birthday_alert"];
+
+        if (! $_POST["name"])
+        {
+            $error++; $errors[]=$langs->trans("ErrorFieldRequired",$langs->transnoentities("Lastname").' / '.$langs->transnoentities("Label"));
+            $action = 'create';
+        }
+
+        if ($_POST["name"])
+        {
+            $id =  $object->create($user);
+            if ($id <= 0)
+            {
+                $error++; $errors[]=($object->error?array($object->error):$object->errors);
+                $action = 'create';
+            }
+        }
+
+        if (! $error && $id > 0)
+        {
+            $db->commit();
+            if (GETPOST('backtopage')) $url=GETPOST('backtopage');
+            else $url='fiche.php?id='.$id;
+            Header("Location: ".$url);
+            exit;
+        }
+        else
+        {
+            $db->rollback();
+        }
+    }
+
+    if ($action == 'confirm_delete' && $confirm == 'yes' && $user->rights->societe->contact->supprimer)
+    {
+        $result=$object->fetch($_GET["id"]);
+
+        $object->old_name      = $_POST["old_name"];
+        $object->old_firstname = $_POST["old_firstname"];
+
+        $result = $object->delete();
+        if ($result > 0)
+        {
+            Header("Location: ".DOL_URL_ROOT.'/contact/list.php');
+            exit;
+        }
+        else
+        {
+            $error=$object->error; $errors[]=$object->errors;
+        }
+    }
+
+    if ($action == 'update' && ! $_POST["cancel"] && $user->rights->societe->contact->creer)
+    {
+        if (empty($_POST["name"]))
+        {
+            $error++; $errors=array($langs->trans("ErrorFieldRequired",$langs->transnoentities("Name").' / '.$langs->transnoentities("Label")));
+            $action = 'edit';
+        }
+
+        if (! count($errors))
+        {
+            $object->fetch($_POST["contactid"]);
+
+            $object->oldcopy=dol_clone($object);
+
+            $object->old_name		= $_POST["old_name"];
+            $object->old_firstname	= $_POST["old_firstname"];
+
+            $object->socid			= $_POST["socid"];
+            $object->name			= $_POST["name"];
+            $object->firstname		= $_POST["firstname"];
+            $object->civilite_id	= $_POST["civilite_id"];
+            $object->poste			= $_POST["poste"];
+
+            $object->address		= $_POST["address"];
+            $object->zip			= $_POST["zipcode"];
+            $object->town			= $_POST["town"];
+            $object->fk_departement	= $_POST["departement_id"];
+            $object->fk_pays		= $_POST["country_id"];
+            $object->state_id   	= $_POST["departement_id"];
+            $object->country_id		= $_POST["country_id"];
+
+            $object->email			= $_POST["email"];
+            $object->phone_pro		= $_POST["phone_pro"];
+            $object->phone_perso	= $_POST["phone_perso"];
+            $object->phone_mobile	= $_POST["phone_mobile"];
+            $object->fax			= $_POST["fax"];
+            $object->jabberid		= $_POST["jabberid"];
+            $object->priv			= $_POST["priv"];
+            $object->note			= $_POST["note"];
+
+            $result = $object->update($_POST["contactid"], $user);
+
+            if ($result > 0)
+            {
+                $object->old_name='';
+                $object->old_firstname='';
+            }
+            else
+            {
+                $error=$object->error; $errors=$object->errors;
+            }
+        }
+    }
+}
+
+
+
+
+$help_url='EN:Module_Third_Parties|FR:Module_Tiers|ES:Empresas';
+llxHeader('',$langs->trans("ContactsAddresses"),$help_url);
+
+$form = new Form($db);
+$formcompany = new FormCompany($db);
+
+$countrynotdefined=$langs->trans("ErrorSetACountryFirst").' ('.$langs->trans("SeeAbove").')';
+
+if ($socid > 0)
+{
+    $objsoc = new Societe($db);
+    $objsoc->fetch($socid);
+}
+
+if (is_object($objcanvas) && $objcanvas->displayCanvasExists())
+{
+    
+    
+    
+    if (! $objcanvas->hasActions() && $id)
+ 	{
+	     $object = new Societe($db);
+	     $object->fetch($id);                   
+ 	}
+	$objcanvas->assign_values($action, $id);	
+	$objcanvas->display_canvas();				
+}
+else
+{
+    
+    
+    
+
+    
+    if ($user->rights->societe->contact->supprimer)
+    {
+        if ($action == 'delete')
+        {
+            $ret=$form->form_confirm($_SERVER["PHP_SELF"]."?id=".$_GET["id"],$langs->trans("DeleteContact"),$langs->trans("ConfirmDeleteContact"),"confirm_delete",'',0,1);
+            if ($ret == 'html') 
+        }
+    }
+
+    
+    if ($id > 0)
+    {
+        
+        $object = new Contact($db);
+        $return=$object->fetch($id, $user);
+        if ($return <= 0)
+        {
+            dol_print_error('',$object->error);
+            $id=0;
+        }
+
+        
+        $head = contact_prepare_head($object);
+
+        dol_fiche_head($head, 'card', $langs->trans("ContactsAddresses"), 0, 'contact');
+    }
+
+    if ($user->rights->societe->contact->creer)
+    {
+        if ($action == 'create')
+        {
+            
+            $object->canvas=$canvas;
+
+            $object->fk_departement = $_POST["departement_id"];
+
+            
+            $object->country_id=$_POST["country_id"]?$_POST["country_id"]:$mysoc->country_id;
+            if ($object->country_id)
+            {
+            	$tmparray=getCountry($object->country_id,'all');
+                $object->pays_code    = $tmparray['code'];
+                $object->pays         = $tmparray['label'];
+                $object->country_code = $tmparray['code'];
+                $object->country      = $tmparray['label'];
+            }
+
+            print_fiche_titre($langs->trans("AddContact"));
+
+            
+            dol_htmloutput_errors($error,$errors);
+
+            if ($conf->use_javascript_ajax)
+            {
+                
+                
+								document.formsoc.submit();
+                        	});
+						})';
+                
+            }
+
+            
+            
+            
+            
+            
+            
+
+            
+            
+            
+
+            
+            if (empty($conf->global->SOCIETE_DISABLE_CONTACTS))
+            {
+                if ($socid > 0)
+                {
+                    
+                    
+                    
+                    
+                    
+                    
+                }
+                else {
+                    
+                    
+                    
+                }
+            }
+
+            
+            
+            
+            
+
+            
+
+            
+            if (($objsoc->typent_code == 'TE_PRIVATE' || ! empty($conf->global->CONTACT_USE_COMPANY_ADDRESS)) && dol_strlen(trim($object->address)) == 0) $object->address = $objsoc->address;	
+            
+
+            
+            if (($objsoc->typent_code == 'TE_PRIVATE' || ! empty($conf->global->CONTACT_USE_COMPANY_ADDRESS)) && dol_strlen(trim($object->zip)) == 0) $object->zip = $objsoc->zip;			
+            if (($objsoc->typent_code == 'TE_PRIVATE' || ! empty($conf->global->CONTACT_USE_COMPANY_ADDRESS)) && dol_strlen(trim($object->town)) == 0) $object->town = $objsoc->town;	
+            
+            ';
+            
+            
+
+            
+            if (dol_strlen(trim($object->fk_pays)) == 0) $object->fk_pays = $objsoc->country_id;	
+            
+            
+            if ($user->admin) 
+            
+
+            
+            if (empty($conf->global->SOCIETE_DISABLE_STATE))
+            {
+                
+                if ($object->country_id)
+                {
+                    
+                }
+                else
+                {
+                    
+                }
+                
+            }
+
+            
+            if (($objsoc->typent_code == 'TE_PRIVATE' || ! empty($conf->global->CONTACT_USE_COMPANY_ADDRESS)) && dol_strlen(trim($object->phone_pro)) == 0) $object->phone_pro = $objsoc->tel;	
+            
+            
+
+            if (($objsoc->typent_code == 'TE_PRIVATE' || ! empty($conf->global->CONTACT_USE_COMPANY_ADDRESS)) && dol_strlen(trim($object->fax)) == 0) $object->fax = $objsoc->fax;	
+            
+            
+
+            
+            if (($objsoc->typent_code == 'TE_PRIVATE' || ! empty($conf->global->CONTACT_USE_COMPANY_ADDRESS)) && dol_strlen(trim($object->email)) == 0) $object->email = $objsoc->email;	
+            
+
+            
+            
+
+            
+            
+            $selectarray=array('0'=>$langs->trans("ContactPublic"),'1'=>$langs->trans("ContactPrivate"));
+            
+            
+
+            
+            
+
+            
+
+
+            
+            print_fiche_titre('<div class="comboperso">'.$langs->trans("PersonalInformations").'</div>','','');
+
+            
+
+            
+            
+            $form=new Form($db);
+            if ($object->birthday)
+            {
+                
+            }
+            else
+            {
+                
+            }
+            
+
+            
+            if ($object->birthday_alert)
+            {
+                
+            }
+            else
+            {
+                
+            }
+            
+
+            
+
+
+            
+            
+            if (GETPOST('backtopage'))
+            {
+                 &nbsp; ';
+                
+            }
+            
+
+            
+        }
+        elseif ($action == 'edit' && ! empty($id))
+        {
+            
+
+            
+            if (isset($_POST["country_id"]) || $object->country_id)
+            {
+	            $tmparray=getCountry($object->country_id,'all');
+	            $object->pays_code    =	$tmparray['code'];
+	            $object->pays         =	$tmparray['label'];
+	            $object->country_code =	$tmparray['code'];
+	            $object->country      =	$tmparray['label'];
+            }
+
+            
+            dol_htmloutput_errors($error,$errors);
+
+            if ($conf->use_javascript_ajax)
+            {
+                
+                
+								document.formsoc.submit();
+							});
+						})';
+                
+            }
+
+            
+            
+            
+            
+            
+            
+            
+            
+            
+
+            
+            
+            
+            
+
+            
+            
+            
+
+            
+            if (empty($conf->global->SOCIETE_DISABLE_CONTACTS))
+            {
+                
+                
+                
+                
+                
+            }
+
+            
+            
+            
+            
+
+            
+
+            
+            
+
+            
+            
+            ';
+            
+            
+
+            
+            
+            
+            if ($user->admin) 
+            
+
+            
+            if (empty($conf->global->SOCIETE_DISABLE_STATE))
+            {
+                
+                
+                
+            }
+
+            
+            
+            
+
+            
+            
+
+            
+            
+            if ($conf->mailing->enabled)
+            {
+                $langs->load("mails");
+                
+                
+            }
+            else
+            {
+                </td>';
+            }
+            
+
+            
+            
+
+            
+            
+            $selectarray=array('0'=>$langs->trans("ContactPublic"),'1'=>$langs->trans("ContactPrivate"));
+            
+            
+
+            
+            
+            
+            
+
+            $object->load_ref_elements();
+
+            if ($conf->commande->enabled)
+            {
+                
+                
+                
+            }
+
+            if ($conf->propal->enabled)
+            {
+                
+                
+                
+            }
+
+            if ($conf->contrat->enabled)
+            {
+                
+                
+                
+            }
+
+            if ($conf->facture->enabled)
+            {
+                
+                
+                
+            }
+
+            
+            
+            if ($object->user_id)
+            {
+                $dolibarr_user=new User($db);
+                $result=$dolibarr_user->fetch($object->user_id);
+                
+            }
+            else 
+            
+
+            
+
+            
+            
+             ';
+            
+            
+
+            
+        }
+    }
+
+    if (! empty($id) && $action != 'edit')
+    {
+        $objsoc = new Societe($db);
+
+        
+
+        dol_htmloutput_errors($error,$errors);
+
+        if ($action == 'create_user')
+        {
+            
+            $login=dol_buildlogin($object->nom,$object->prenom);
+
+            $generated_password='';
+            if (! $ldap_sid) 
+            {
+                $generated_password=getRandomPassword('');
+            }
+            $password=$generated_password;
+
+            
+            $formquestion=array(
+            array('label' => $langs->trans("LoginToCreate"), 'type' => 'text', 'name' => 'login', 'value' => $login),
+            array('label' => $langs->trans("Password"), 'type' => 'text', 'name' => 'password', 'value' => $password),
+            
+            );
+            $text=$langs->trans("ConfirmCreateContact").'<br>';
+            if ($conf->societe->enabled)
+            {
+                if ($object->socid > 0) $text.=$langs->trans("UserWillBeExternalUser");
+                else $text.=$langs->trans("UserWillBeInternalUser");
+            }
+            $ret=$form->form_confirm($_SERVER["PHP_SELF"]."?id=".$object->id,$langs->trans("CreateDolibarrLogin"),$text,"confirm_create_user",$formquestion,'yes');
+            if ($ret == 'html') 
+        }
+
+        
+
+        
+        
+        
+        
+
+        
+        
+        
+
+        
+        if (empty($conf->global->SOCIETE_DISABLE_CONTACTS))
+        {
+            
+            if ($object->socid > 0)
+            {
+                $objsoc->fetch($object->socid);
+                
+            }
+            else
+            {
+                
+            }
+            
+        }
+
+        
+        
+        
+        
+
+        
+        
+
+        
+        
+        dol_print_address($object->address,'gmap','contact',$object->id);
+        
+
+        
+        
+        
+        if ($object->cp) ';
+        
+
+        
+        
+        $img=picto_from_langcode($object->country_code);
+        if ($img) 
+        
+        
+
+        
+        if (empty($conf->global->SOCIETE_DISABLE_STATE))
+        {
+            
+        }
+
+        
+        
+        
+
+        
+        
+
+        
+        
+        if ($conf->mailing->enabled)
+        {
+            $langs->load("mails");
+            
+            
+        }
+        else
+        {
+            </td>';
+        }
+        
+
+        
+        
+
+        
+        
+        
+
+        
+        
+        
+
+        $object->load_ref_elements();
+
+        if ($conf->commande->enabled)
+        {
+            
+            
+            
+        }
+
+        if ($conf->propal->enabled)
+        {
+            
+            
+            
+        }
+
+        if ($conf->contrat->enabled)
+        {
+            
+            
+            
+        }
+
+        if ($conf->facture->enabled)
+        {
+            
+            
+            
+        }
+
+        
+        if ($object->user_id)
+        {
+            $dolibarr_user=new User($db);
+            $result=$dolibarr_user->fetch($object->user_id);
+            
+        }
+        else 
+        
+
+        
+
+        
+
+        
+        if (! $user->societe_id)
+        {
+            
+
+            if ($user->rights->societe->contact->creer)
+            {
+                action=edit">'.$langs->trans('Modify').'</a>';
+            }
+
+            if (! $object->user_id && $user->rights->user->user->creer)
+            {
+                action=create_user">'.$langs->trans("CreateDolibarrLogin").'</a>';
+            }
+
+            if ($user->rights->societe->contact->supprimer)
+            {
+                action=delete">'.$langs->trans('Delete').'</a>';
+            }
+
+            
+        }
+
+        
+
+        
+
+        
+    }
+}
+
+
+llxFooter();
+
+$db->close();
+?>

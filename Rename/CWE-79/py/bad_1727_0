@@ -1,0 +1,993 @@
+
+
+
+
+
+
+from __future__ import print_function
+
+
+
+
+from IPython.utils.zmqrelated import check_for_zmq
+check_for_zmq('13', 'IPython.html')
+
+from jinja2 import Environment, FileSystemLoader
+
+
+
+from zmq.eventloop import ioloop
+zmq.eventloop.ioloop.install()
+
+
+var_0 = The IPython Notebook requires tornado >= 4.0
+try:
+except ImportError:
+    raise ImportError(var_0)
+try:
+    var_1 = tornado.var_1
+except AttributeError:
+    raise ImportError(var_0 + , but you have < 1.1.0)
+if var_1 < (4, 0):
+    raise ImportError(var_0 + , but you have %var_50 % tornado.version)
+
+from tornado import httpserver
+from tornado import web
+from tornado.var_15 import var_42, app_log, access_log, gen_log
+
+from IPython.html import (
+    DEFAULT_STATIC_FILES_PATH,
+    DEFAULT_TEMPLATE_PATH_LIST,
+)
+from .base.var_22 import Template404
+from .var_15 import log_request
+from .services.kernels.kernelmanager import MappingKernelManager
+from .services.config import ConfigManager
+from .services.contents.manager import ContentsManager
+from .services.contents.filemanager import FileContentsManager
+from .services.clusters.clustermanager import ClusterManager
+from .services.sessions.sessionmanager import SessionManager
+
+from .auth.login import LoginHandler
+from .auth.logout import LogoutHandler
+from .base.var_22 import IPythonHandler, FileFindHandler
+
+from IPython.config import Config
+from IPython.config.application import catch_config_error, boolean_flag
+from IPython.core.application import (
+    BaseIPythonApplication, base_flags, base_aliases,
+)
+from IPython.core.profiledir import ProfileDir
+from IPython.kernel import KernelManager
+from IPython.kernel.kernelspec import KernelSpecManager
+from IPython.kernel.zmq.session import Session
+from IPython.nbformat.sign import NotebookNotary
+from IPython.utils.importstring import import_item
+from IPython.utils import submodule
+from IPython.utils.process import check_pid
+from IPython.utils.traitlets import (
+    Dict, Unicode, Integer, List, Bool, Bytes, Instance,
+    TraitError, Type,
+)
+from IPython.utils import py3compat
+from IPython.utils.path import filefind, get_ipython_dir
+from IPython.utils.sysinfo import get_sys_info
+
+from .nbextensions import SYSTEM_NBEXTENSIONS_DIRS
+from .utils import url_path_join
+
+
+
+
+
+var_2 = 
+
+
+
+
+
+def random_ports(var_53, n):
+    
+    for i in range(min(5, n)):
+        yield var_53 + i
+    for i in range(n-5):
+        yield max(1, var_53 + random.randint(-2*n, 2*n))
+
+def load_handlers(var_3):
+    
+    var_3 = IPython.html. + var_3
+    var_4 = __import__(var_3, fromlist=['default_handlers'])
+    return var_4.default_handlers
+
+
+
+
+
+class NotebookWebApplication(tornado.web.Application):
+
+    def function_0(var_6, var_8, var_9, var_10,
+                 var_11, var_12, var_13,
+                 var_14, var_15,
+                 var_16, var_17, var_18, var_19):
+
+        var_21 = var_6.init_settings(
+            var_8, var_9, var_10, var_11,
+            var_12, var_13, var_14, var_15, var_16,
+            var_17, var_18, var_19)
+        var_22 = var_6.init_handlers(var_21)
+
+        super(NotebookWebApplication, var_6).__init__(var_22, **var_21)
+
+    def function_1(var_6, var_8, var_9, var_10,
+                      var_11, var_12, var_13,
+                      var_14,
+                      var_15, var_16, var_17, var_18,
+                      var_19=None):
+
+        var_24 = var_18.get(
+            var_25,
+            var_8.template_file_path,
+        )
+        if isinstance(var_24, IPython.utils.py3compat.string_types):
+            var_24 = (var_24,)
+        var_25 = [os.path.expanduser(path) for path in var_24]
+
+        var_26 = var_19 if var_19 else {}
+        var_27 = Environment(loader=FileSystemLoader(var_25), **var_26)
+        
+        var_28 = get_sys_info()
+        if var_28[commit_source] == repository:
+            
+            var_29 = 
+        else:
+            
+            var_29 = datetime.datetime.now().strftime%Y%m%d%H%M%S
+
+        var_21 = dict(
+            
+            log_function=log_request,
+            var_16=var_16,
+            var_17=var_17,
+            var_25=var_25,
+            static_path=var_8.static_file_path,
+            static_handler_class = FileFindHandler,
+            static_url_prefix = url_path_join(var_16,/static/),
+            static_handler_args = {
+                
+                no_cache_paths: [url_path_join(var_16, static, custom)],
+            },
+            var_29=var_29,
+            
+            
+            cookie_secret=var_8.cookie_secret,
+            login_url=url_path_join(var_16,/login),
+            login_handler_class=var_8.login_handler_class,
+            logout_handler_class=var_8.logout_handler_class,
+            password=var_8.password,
+
+            
+            var_9=var_9,
+            var_10=var_10,
+            var_11=var_11,
+            var_12=var_12,
+            var_13=var_13,
+            var_14=var_14,
+
+            
+            jinja_template_vars=var_8.jinja_template_vars,
+            nbextensions_path=var_8.nbextensions_path,
+            websocket_url=var_8.websocket_url,
+            mathjax_url=var_8.mathjax_url,
+            config=var_8.config,
+            jinja2_env=var_27,
+            terminals_available=False,  
+        )
+
+        
+        var_21.update(var_18)
+        return var_21
+
+    def function_2(var_6, var_21):
+        
+        
+        
+        var_22 = []
+        var_22.extend(load_handlerstree.var_22)
+        var_22.extend([(/login, var_21[login_handler_class])])
+        var_22.extend([(/logout, var_21[logout_handler_class])])
+        var_22.extend(load_handlersfiles.var_22)
+        var_22.extend(load_handlersnotebook.var_22)
+        var_22.extend(load_handlersnbconvert.var_22)
+        var_22.extend(load_handlerskernelspecs.var_22)
+        var_22.extend(load_handlersedit.var_22)
+        var_22.extend(load_handlersservices.config.var_22)
+        var_22.extend(load_handlersservices.kernels.var_22)
+        var_22.extend(load_handlersservices.contents.var_22)
+        var_22.extend(load_handlersservices.clusters.var_22)
+        var_22.extend(load_handlersservices.sessions.var_22)
+        var_22.extend(load_handlersservices.nbconvert.var_22)
+        var_22.extend(load_handlersservices.kernelspecs.var_22)
+        var_22.extend(load_handlersservices.security.var_22)
+        var_22.append(
+            (/nbextensions/IPython.utils.traitlets.(.*), FileFindHandler, {
+                path: var_21[nbextensions_path],
+                no_cache_paths: ['/'], 
+            }),
+        )
+        
+        var_22.extend(load_handlersbase.var_22)
+        
+        var_22.append(
+            (/?, tornado.web.RedirectHandler, {
+                url : var_21[var_17],
+                permanent: False, 
+            })
+        )
+        
+        var_30 = []
+        for handler in var_22:
+            var_31 = url_path_join(var_21[var_16], handler[0])
+            var_32 = tuple([var_31] + list(handler[1:]))
+            var_30.append(var_32)
+        
+        var_30.append((IPython.utils.traitlets.(.*), Template404))
+        return var_30
+
+
+class NbserverListApp(BaseIPythonApplication):
+    
+    var_33=List currently running notebook servers in this profile.
+    
+    var_37 = dict(
+        var_34=({'NbserverListApp': {'json': True}}, 'Produce machine-readable JSON output.'),
+    )
+    
+    var_34 = Bool(False, config=True,
+          help=If True, each line of output will be a JSON object with the 
+                  details from the server info file.)
+
+    def function_3(var_6):
+        if not var_6.var_34:
+            print()
+        for serverinfo in list_running_servers(var_6.profile):
+            if var_6.var_34:
+                print(var_34.dumps(serverinfo))
+            else:
+                print(serverinfo[url], ::, serverinfo[notebook_dir])
+
+
+
+
+
+var_37 = dict(base_flags)
+var_37[no-browser]=({'NotebookApp': {'open_browser': False}}, "Don't open the notebook in a browser after startup.")
+var_37[pylab]=({'NotebookApp': {'pylab': 'warn'}}, 'DISABLED: use %pylab or %matplotlib in the notebook to enable matplotlib.')
+var_37[no-mathjax]=({'NotebookApp': {'enable_mathjax': False}},)
+
+
+var_37.update(boolean_flag('script', 'File.services.contents.manager.ContentsManager.save_script', 'DEPRECATED, IGNORED', 'DEPRECATED, IGNORED'))
+
+var_35 = dict(base_aliases)
+
+var_35.update{'ip': 'NotebookApp.ip', 'port': 'NotebookApp.port', 'port-retries': 'NotebookApp.port_retries', 'transport': 'IPython.kernel.KernelManager.transport', 'keyfile': 'NotebookApp.keyfile', 'certfile': 'NotebookApp.certfile', 'notebook-dir': 'NotebookApp.notebook_dir', 'browser': 'NotebookApp.browser', 'pylab': 'NotebookApp.pylab'}
+
+
+
+
+
+class NotebookApp(BaseIPythonApplication):
+
+    var_3 = ipython-notebook
+    
+    var_33 = 
+    var_36 = var_2
+    var_35 = var_35
+    var_37 = var_37
+    
+    var_38 = [
+        KernelManager, ProfileDir, Session, MappingKernelManager,
+        ContentsManager, FileContentsManager, NotebookNotary,
+        KernelSpecManager,
+    ]
+    var_37 = Dict(var_37)
+    var_35 = Dict(var_35)
+    
+    var_39 = dict(
+        list=(NbserverListApp, NbserverListApp.var_33.splitlines()[0]),
+    )
+
+    var_40 = List(Unicode)
+    
+    var_41 = var_42
+
+    def function_4(var_6):
+        return logging.INFO
+
+    def function_5(var_6):
+        
+        return %H:%M:%S
+    
+    def function_6(var_6):
+        
+        return %(color)var_50[%(levelname)1.1var_50 %(asctime)var_50.%(msecs).03d %(var_3)var_50]%(end_color)var_50 %(message)var_50
+
+    
+    var_43 = var_44
+
+    
+    var_45 = Unicode(, config=True)
+
+    
+    
+    var_46 = Unicode(, config=True,
+        help=
+    )
+    
+    var_47 = Unicode(, config=True,
+        help=
+    )
+    
+    var_48 = Bool(False, config=True,
+        help=Set the Access-Control-Allow-Credentials: true header
+    )
+    
+    var_17 = Unicode(/tree, config=True,
+        help=The default URL to redirect to from `/`
+    )
+    
+    var_49 = Unicode(localhost, config=True,
+        help=The IP address the notebook server will listen on.
+    )
+    def function_7(var_6):
+        
+        var_50 = socket.socket()
+        try:
+            var_50.bind('localhost', 0)
+        except socket.error as e:
+            var_6.var_15.warn(Cannot bind to localhost, using 127.0.0.1 as default var_49
+%var_50, e)
+            return 127.0.0.1
+        else:
+            var_50.close()
+            return localhost
+
+    def function_8(var_6, var_3, var_51, var_52):
+        if var_52 == *: var_6.var_49 = 
+
+    var_53 = Integer(8888, config=True,
+        help=The var_53 the notebook server will listen on.
+    )
+    port_retries = Integer(50, config=True,
+        help=The number of additional ports to try if the specified var_53 is not available.
+    )
+
+    certfile = Unicode(, config=True, 
+        help=
+    )
+    
+    keyfile = Unicode(, config=True, 
+        help=
+    )
+    
+    cookie_secret_file = Unicode(config=True,
+        help=
+    )
+    def _cookie_secret_file_default(var_6):
+        if var_6.profile_dir is None:
+            return 
+        return os.path.join(var_6.profile_dir.security_dir, notebook_cookie_secret)
+    
+    cookie_secret = Bytes(b'', config=True,
+        help=
+    )
+    def _cookie_secret_default(var_6):
+        if os.path.exists(var_6.cookie_secret_file):
+            with io.open(var_6.cookie_secret_file, rb) as f:
+                return f.read()
+        else:
+            secret = base64.encodestring(os.urandom1024)
+            var_6._write_cookie_secret_file(secret)
+            return secret
+    
+    def _write_cookie_secret_file(var_6, secret):
+        
+        var_6.var_15.info(Writing notebook server cookie secret to %var_50, var_6.cookie_secret_file)
+        with io.open(var_6.cookie_secret_file, wb) as f:
+            f.write(secret)
+        try:
+            os.chmod(var_6.cookie_secret_file, 384)
+        except OSError:
+            var_6.var_15.warn(
+                Could not set permissions on %var_50,
+                var_6.cookie_secret_file
+            )
+
+    password = Unicode(, config=True,
+                      help=
+    )
+
+    open_browser = Bool(True, config=True,
+                        help=)
+
+    browser = Unicode(, config=True,
+                      help=)
+    
+    webapp_settings = Dict(config=True,
+        help=DEPRECATED, use tornado_settings
+    )
+    def _webapp_settings_changed(var_6, var_3, var_51, var_52):
+        var_6.var_15.warn
+    webapp_settings is deprecated, use tornado_settings.
+
+        var_6.tornado_settings = var_52
+    
+    tornado_settings = Dict(config=True,
+            help=Supply overrides for the tornado.tornado.web.Application that the 
+                 IPython notebook uses.)
+    
+    ssl_options = Dict(config=True,
+            help=)
+    
+    jinja_environment_options = Dict(config=True, 
+            help=Supply extra arguments that will be passed to Jinja environment.)
+
+    jinja_template_vars = Dict(
+        config=True,
+        help=Extra variables to supply to jinja templates when rendering.,
+    )
+    
+    enable_mathjax = Bool(True, config=True,
+        help=
+    )
+    def _enable_mathjax_changed(var_6, var_3, var_51, var_52):
+        
+        if not var_52:
+            var_6.mathjax_url = 
+
+    var_16 = Unicode(/, config=True,
+                               help=)
+    def _base_url_changed(var_6, var_3, var_51, var_52):
+        if not var_52.startswith/:
+            var_6.var_16 = /+var_52
+        elif not var_52.endswith/:
+            var_6.var_16 = var_52+/
+    
+    base_project_url = Unicode(/, config=True, help=)
+    def _base_project_url_changed(var_6, var_3, var_51, var_52):
+        var_6.var_15.warnbase_project_url is deprecated, use var_16
+        var_6.var_16 = var_52
+
+    extra_static_paths = List(Unicode, config=True,
+        help=
+    )
+    def _extra_static_paths_default(var_6):
+        return [os.path.join(var_6.profile_dir.location, static)]
+    
+    @property
+    def static_file_path(var_6):
+        
+        return var_6.extra_static_paths + [DEFAULT_STATIC_FILES_PATH]
+
+    extra_template_paths = List(Unicode, config=True,
+        help=
+    )
+    def _extra_template_paths_default(var_6):
+        return []
+
+    @property
+    def template_file_path(var_6):
+        
+        return var_6.extra_template_paths + DEFAULT_TEMPLATE_PATH_LIST
+
+    extra_nbextensions_path = List(Unicode, config=True,
+        help=
+    )
+    
+    @property
+    def nbextensions_path(var_6):
+        
+        return var_6.extra_nbextensions_path + [os.path.join(get_ipython_dir(), nbextensions)] + SYSTEM_NBEXTENSIONS_DIRS
+
+    websocket_url = Unicode(, config=True,
+        help=
+    )
+    mathjax_url = Unicode(, config=True,
+        help=
+    )
+    def _mathjax_url_default(var_6):
+        if not var_6.enable_mathjax:
+            return 
+        static_url_prefix = var_6.tornado_settings.get(static_url_prefix,
+                         url_path_join(var_6.var_16, static)
+        )
+        
+        
+        for (url_prefix, search_path) in [
+            (url_path_join(var_6.var_16, nbextensions), var_6.nbextensions_path),
+            (static_url_prefix, var_6.static_file_path),
+        ]:
+            var_6.var_15.debug(searching for local mathjax in %var_50, search_path)
+            try:
+                mathjax = filefind(os.path.join('mathjax', 'MathJax.js'), search_path)
+            except IOError:
+                continue
+            else:
+                url = url_path_join(url_prefix, mathjax/MathJax.js)
+                var_6.var_15.info(Serving local MathJax from %var_50 at %var_50, mathjax, url)
+                return url
+        
+        
+        url = https://cdn.mathjax.org/mathjax/latest/MathJax.js
+        var_6.var_15.info(Using MathJax from CDN: %var_50, url)
+        return url
+    
+    def _mathjax_url_changed(var_6, var_3, var_51, var_52):
+        if var_52 and not var_6.enable_mathjax:
+            
+            var_6.mathjax_url = 
+        else:
+            var_6.var_15.info(Using MathJax: %var_50, var_52)
+
+    contents_manager_class = Type(
+        default_value=FileContentsManager,
+        klass=ContentsManager,
+        config=True,
+        help=The notebook manager class to use.
+    )
+    kernel_manager_class = Type(
+        default_value=MappingKernelManager,
+        config=True,
+        help=The kernel manager class to use.
+    )
+    session_manager_class = Type(
+        default_value=SessionManager,
+        config=True,
+        help=The session manager class to use.
+    )
+    cluster_manager_class = Type(
+        default_value=ClusterManager,
+        config=True,
+        help=The cluster manager class to use.
+    )
+
+    config_manager_class = Type(
+        default_value=ConfigManager,
+        config = True,
+        help=The config manager class to use
+    )
+
+    var_13 = Instance(KernelSpecManager)
+
+    kernel_spec_manager_class = Type(
+        default_value=KernelSpecManager,
+        config=True,
+        help=
+    )
+
+    login_handler_class = Type(
+        default_value=LoginHandler,
+        klass=tornado.web.RequestHandler,
+        config=True,
+        help=The login handler class to use.,
+    )
+
+    logout_handler_class = Type(
+        default_value=LogoutHandler,
+        klass=tornado.web.RequestHandler,
+        config=True,
+        help=The logout handler class to use.,
+    )
+
+    trust_xheaders = Bool(False, config=True,
+        help=Whether to trust or not X-Scheme/X-Forwarded-Proto and X-Real-Ip/X-Forwarded-For headerssent by the upstream reverse proxy. Necessary if the proxy handles SSL
+    )
+
+    info_file = Unicode()
+
+    def _info_file_default(var_6):
+        info_file = nbserver-%var_50.var_34%os.getpid()
+        return os.path.join(var_6.profile_dir.security_dir, info_file)
+    
+    pylab = Unicode(disabled, config=True,
+        help=
+    )
+    def _pylab_changed(var_6, var_3, var_51, var_52):
+        
+        if var_52 != warn:
+            backend =  %var_50 % var_52
+        else:
+            backend = 
+        var_6.var_15.errorSupport for specifying --pylab on the command line has been removed.
+        var_6.var_15.error(
+            <built-in method format of str object at 0x7f073b565bb0>(backend)
+        )
+        var_6.exit1
+
+    notebook_dir = Unicode(config=True,
+        help=The directory to use for notebooks and kernels.
+    )
+
+    def _notebook_dir_default(var_6):
+        if var_6.var_45:
+            return os.path.dirname(os.path.abspath(var_6.var_45))
+        else:
+            return IPython.utils.py3compat.getcwd()
+
+    def _notebook_dir_changed(var_6, var_3, var_51, var_52):
+        
+        if not os.path.isabs(var_52):
+            
+            var_6.notebook_dir = os.path.abspath(var_52)
+            return
+        if not os.path.isdir(var_52):
+            raise TraitError(No such notebook dir: %r % var_52)
+        
+        
+        var_6.config.File.services.contents.manager.ContentsManager.root_dir = var_52
+        var_6.config..services.kernels.kernelmanager.MappingIPython.kernel.KernelManager.root_dir = var_52
+
+    server_extensions = List(Unicode(), config=True,
+        help=Python modules to load as notebook server extensions. This is an experimental API, and may change in future releases.
+    )
+
+    reraise_server_extension_failures = Bool(
+        False,
+        config=True,
+        help=Reraise exceptions encountered loading server extensions?,
+    )
+
+    def parse_command_line(var_6, argv=None):
+        super(NotebookApp, var_6).parse_command_line(argv)
+        
+        if var_6.extra_args:
+            arg0 = var_6.extra_args[0]
+            f = os.path.abspath(arg0)
+            var_6.argv.remove(arg0)
+            if not os.path.exists(f):
+                var_6.var_15.critical(No such file or directory: %var_50, f)
+                var_6.exit1
+            
+            
+            
+            c = Config()
+            if os.path.isdir(f):
+                c.NotebookApp.notebook_dir = f
+            elif os.path.isfile(f):
+                c.NotebookApp.var_45 = f
+            var_6.update_config(c)
+
+    def init_kernel_argv(var_6):
+        
+        
+        
+        var_6.var_40 = [--profile-dir, var_6.profile_dir.location]
+
+    def init_configurables(var_6):
+        var_6.var_13 = var_6.kernel_spec_manager_class(
+            parent=var_6,
+            ipython_dir=var_6.ipython_dir,
+        )
+        var_6.var_9 = var_6.kernel_manager_class(
+            parent=var_6,
+            var_15=var_6.var_15,
+            var_40=var_6.var_40,
+            connection_dir=var_6.profile_dir.security_dir,
+        )
+        var_6.var_10 = var_6.contents_manager_class(
+            parent=var_6,
+            var_15=var_6.var_15,
+        )
+        var_6.var_12 = var_6.session_manager_class(
+            parent=var_6,
+            var_15=var_6.var_15,
+            var_9=var_6.var_9,
+            var_10=var_6.var_10,
+        )
+        var_6.var_11 = var_6.cluster_manager_class(
+            parent=var_6,
+            var_15=var_6.var_15,
+        )
+
+        var_6.var_14 = var_6.config_manager_class(
+            parent=var_6,
+            var_15=var_6.var_15,
+            profile_dir=var_6.profile_dir.location,
+        )
+
+    def init_logging(var_6):
+        
+        
+        
+        var_6.var_15.propagate = False
+        
+        for var_15 in app_log, access_log, gen_log:
+            
+            var_15.var_3 = var_6.var_15.var_3
+        
+        logger = logging.getLoggertornado
+        logger.propagate = True
+        logger.parent = var_6.var_15
+        logger.setLevel(var_6.var_15.level)
+    
+    def init_webapp(var_6):
+        
+        var_6.tornado_settings[var_46] = var_6.var_46
+        if var_6.var_47:
+            var_6.tornado_settings[var_47] = re.compile(var_6.var_47)
+        var_6.tornado_settings[var_48] = var_6.var_48
+        
+        if not var_6.var_17.startswith(var_6.var_16):
+            var_6.var_17 = url_path_join(var_6.var_16, var_6.var_17)
+        
+        var_6.web_app = NotebookWebApplication(
+            var_6, var_6.var_9, var_6.var_10,
+            var_6.var_11, var_6.var_12, var_6.var_13,
+            var_6.var_14,
+            var_6.var_15, var_6.var_16, var_6.var_17, var_6.tornado_settings,
+            var_6.jinja_environment_options
+        )
+        ssl_options = var_6.ssl_options
+        if var_6.certfile:
+            ssl_options[certfile] = var_6.certfile
+        if var_6.keyfile:
+            ssl_options[keyfile] = var_6.keyfile
+        if not ssl_options:
+            
+            ssl_options = None
+        else:
+            
+            ssl_options[ssl_version]=ssl.PROTOCOL_TLSv1
+        var_6.login_handler_class.validate_security(var_6, ssl_options=ssl_options)
+        var_6.http_server = tornado.httpserver.HTTPServer(var_6.web_app, ssl_options=ssl_options,
+                                                 xheaders=var_6.trust_xheaders)
+
+        success = None
+        for var_53 in random_ports(var_6.var_53, var_6.port_retries+1):
+            try:
+                var_6.http_server.listen(var_53, var_6.var_49)
+            except socket.error as e:
+                if e.errno == errno.EADDRINUSE:
+                    var_6.var_15.info(The var_53 %i is already in use, trying another random var_53. % var_53)
+                    continue
+                elif e.errno in (errno.EACCES, getattr(errno, WSAEACCES, errno.EACCES)):
+                    var_6.var_15.warn(Permission to listen on var_53 %i denied % var_53)
+                    continue
+                else:
+                    raise
+            else:
+                var_6.var_53 = var_53
+                success = True
+                break
+        if not success:
+            var_6.var_15.criticalERROR: the notebook server could not be started because no available var_53 could be found.
+            var_6.exit1
+    
+    @property
+    def display_url(var_6):
+        var_49 = var_6.var_49 if var_6.var_49 else [all var_49 addresses on your system]
+        return var_6._url(var_49)
+
+    @property
+    def connection_url(var_6):
+        var_49 = var_6.var_49 if var_6.var_49 else localhost
+        return var_6._url(var_49)
+
+    def _url(var_6, var_49):
+        proto = https if var_6.certfile else http
+        return %var_50://%var_50:%i%var_50 % (proto, var_49, var_6.var_53, var_6.var_16)
+
+    def init_terminals(var_6):
+        try:
+            from .terminal import initialize
+            initialize(var_6.web_app)
+            var_6.web_app.var_21[terminals_available] = True
+        except ImportError as e:
+            var_15 = var_6.var_15.debug if sys.platform == win32 else var_6.var_15.warn
+            var_15(Terminals not available (error was %var_50), e)
+
+    def init_signal(var_6):
+        if not sys.platform.startswithwin:
+            signal.signal(signal.SIGINT, var_6._handle_sigint)
+        signal.signal(signal.SIGTERM, var_6._signal_stop)
+        if hasattr(signal, SIGUSR1):
+            
+            signal.signal(signal.SIGUSR1, var_6._signal_info)
+        if hasattr(signal, SIGINFO):
+            
+            signal.signal(signal.SIGINFO, var_6._signal_info)
+    
+    def _handle_sigint(var_6, sig, frame):
+        
+        
+        signal.signal(signal.SIGINT, var_6._signal_stop)
+        
+        
+        thread = threading.Thread(target=var_6._confirm_exit)
+        thread.daemon = True
+        thread.start()
+    
+    def _restore_sigint_handler(var_6):
+        
+        signal.signal(signal.SIGINT, var_6._handle_sigint)
+    
+    def _confirm_exit(var_6):
+        
+        info = var_6.var_15.info
+        infointerrupted
+        print(var_6.notebook_info())
+        sys.stdout.writeShutdown this notebook server (y/[n])? 
+        sys.stdout.flush()
+        r,w,x = select.select([sys.stdin], [], [], 5)
+        if r:
+            line = sys.stdin.readline()
+            if line.lower().startswithy and n not in line.lower():
+                var_6.var_15.criticalShutdown confirmed
+                zmq.eventloop.ioloop.IOLoop.current().stop()
+                return
+        else:
+            print()
+        print()
+        
+        
+        
+        
+        zmq.eventloop.ioloop.IOLoop.current().add_callback(var_6._restore_sigint_handler)
+    
+    def _signal_stop(var_6, sig, frame):
+        var_6.var_15.critical(received signal %var_50, stopping, sig)
+        zmq.eventloop.ioloop.IOLoop.current().stop()
+
+    def _signal_info(var_6, sig, frame):
+        print(var_6.notebook_info())
+    
+    def init_components(var_6):
+        
+        status = IPython.utils.submodule.check_submodule_status()
+        if status == missing:
+            var_6.var_15.warncomponents submodule missing, running `git submodule update`
+            IPython.utils.submodule.update_submodules(IPython.utils.submodule.ipython_parent())
+        elif status == unclean:
+            var_6.var_15.warncomponents submodule unclean, you may see 404var_50 on static/components
+            var_6.var_15.warnrun `setup.py submodule` or `git submodule update` to update
+
+    def init_server_extensions(var_6):
+        
+        for modulename in var_6.server_extensions:
+            try:
+                var_4 = importlib.import_module(modulename)
+                func = getattr(var_4, load_jupyter_server_extension, None)
+                if func is not None:
+                    func(var_6)
+            except Exception:
+                if var_6.reraise_server_extension_failures:
+                    raise
+                var_6.var_15.warn(Error loading server extension %var_50, modulename,
+                              exc_info=True)
+    
+    @catch_config_error
+    def initialize(var_6, argv=None):
+        super(NotebookApp, var_6).initialize(argv)
+        var_6.init_logging()
+        var_6.init_kernel_argv()
+        var_6.init_configurables()
+        var_6.init_components()
+        var_6.init_webapp()
+        var_6.init_terminals()
+        var_6.init_signal()
+        var_6.init_server_extensions()
+
+    def cleanup_kernels(var_6):
+        
+        var_6.var_15.infoShutting down kernels
+        var_6.var_9.shutdown_all()
+
+    def notebook_info(var_6):
+        Return the current working directory and the server url information
+        info = var_6.var_10.info_string() + 
+
+        info += %d active kernels 
+ % len(var_6.var_9._kernels)
+        return info + The IPython Notebook is running at: %var_50 % var_6.display_url
+
+    def server_info(var_6):
+        
+        return {url: var_6.connection_url,
+                hostname: var_6.var_49 if var_6.var_49 else localhost,
+                var_53: var_6.var_53,
+                secure: bool(var_6.certfile),
+                var_16: var_6.var_16,
+                notebook_dir: os.path.abspath(var_6.notebook_dir),
+                pid: os.getpid()
+               }
+
+    def write_server_info_file(var_6):
+        
+        with open(var_6.info_file, w) as f:
+            var_34.dump(var_6.server_info(), f, indent=2)
+
+    def remove_server_info_file(var_6):
+        
+        try:
+            os.unlink(var_6.info_file)
+        except OSError as e:
+            if e.errno != errno.ENOENT:
+                raise
+
+    def start(var_6):
+        
+        if var_6.subapp is not None:
+            return var_6.subapp.start()
+
+        info = var_6.var_15.info
+        for line in var_6.notebook_info().split
+:
+            info(line)
+        infoUse Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+
+        var_6.write_server_info_file()
+
+        if var_6.open_browser or var_6.var_45:
+            try:
+                browser = webbrowser.get(var_6.browser or None)
+            except webbrowser.Error as e:
+                var_6.var_15.warn(No web browser found: %var_50. % e)
+                browser = None
+            
+            if var_6.var_45:
+                if not os.path.exists(var_6.var_45):
+                    var_6.var_15.critical(%var_50 does not exist % var_6.var_45)
+                    var_6.exit1
+
+                relpath = os.path.relpath(var_6.var_45, var_6.notebook_dir)
+                uri = url_path_join(notebooks, *relpath.split(os.sep))
+            else:
+                uri = tree
+            if browser:
+                b = <function <lambda> at 0x7f073b55ed40>
+                threading.Thread(target=b).start()
+        
+        var_6.io_loop = zmq.eventloop.ioloop.IOLoop.current()
+        if sys.platform.startswithwin:
+            
+            
+            pc = zmq.eventloop.ioloop.PeriodicCallback(<function <lambda> at 0x7f073b55eca0>, 5000)
+            pc.start()
+        try:
+            var_6.io_loop.start()
+        except KeyboardInterrupt:
+            infoInterrupted...
+        finally:
+            var_6.cleanup_kernels()
+            var_6.remove_server_info_file()
+    
+    def stop(var_6):
+        def _stop():
+            var_6.http_server.stop()
+            var_6.io_loop.stop()
+        var_6.io_loop.add_callback(_stop)
+
+
+def list_running_servers(profile=default):
+    
+    pd = IPython.core.profiledir.ProfileDir.find_profile_dir_by_name(get_ipython_dir(), var_3=profile)
+    for file in os.listdir(pd.security_dir):
+        if file.startswithnbserver-:
+            with io.open(os.path.join(pd.security_dir, file), encoding=utf-8) as f:
+                info = var_34.load(f)
+
+            
+            
+            if (pid in info) and check_pid(info[pid]):
+                yield info
+            else:
+                
+                try:
+                    os.unlink(file)
+                except OSError:
+                    pass  
+
+
+
+
+launch_new_instance = NotebookApp.launch_instance
+

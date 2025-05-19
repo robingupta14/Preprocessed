@@ -1,0 +1,329 @@
+<?php
+
+
+
+abstract class class_admin_controller extends class_abstract_controller {
+
+    
+    private $arrOutput;
+
+    
+    public function __construct($strSystemid = "") {
+
+        parent::__construct($strSystemid);
+
+        
+        if($this->getArrModule("template") == "") {
+            $this->setArrModuleEntry("template", "/main.tpl");
+        }
+
+        if($this->getParam("folderview") != "") {
+            $this->setArrModuleEntry("template", "/folderview.tpl");
+        }
+
+        $this->objToolkit = class_carrier::getInstance()->getObjToolkit("admin");
+
+        
+        $this->getObjLang()->setStrTextLanguage($this->objSession->getAdminLanguage(true));
+    }
+
+    
+    public function getModuleData($strName, $bitCache = true) {
+        return class_module_system_module::getPlainModuleData($strName, $bitCache);
+
+    }
+
+    
+    public function getModuleSystemid($strModule) {
+        $objModule = class_module_system_module::getModuleByName($strModule);
+        if($objModule != null) {
+            return $objModule->getSystemid();
+        }
+        else {
+            return "";
+        }
+    }
+
+    
+    public function getModuleDescription() {
+        $strDesc = $this->getLang("module_description");
+        if($strDesc != "!module_description!") {
+            return $strDesc;
+        }
+        else {
+            return "";
+        }
+    }
+
+    
+
+    
+    protected function getHistory($intPosition = 0) {
+        $objHistory = new class_history();
+        return $objHistory->getAdminHistory($intPosition);
+    }
+
+
+    
+
+    
+    public final function getModuleOutput() {
+
+        
+        if($this->strOutput == "" && class_response_object::getInstance()->getStrRedirectUrl() != "") {
+            return "";
+        }
+
+
+        $this->validateAndUpdateCurrentAspect();
+
+        
+        $this->arrOutput["content"] = $this->strOutput;
+        if($this->getArrModule("template") != "/folderview.tpl") {
+            $this->arrOutput["path"] = class_admin_helper::getAdminPathNavi($this->getArrOutputNaviEntries(), $this->getArrModule("modul"));
+            $this->arrOutput["moduleSitemap"] = $this->objToolkit->getAdminSitemap($this->getArrModule("modul"));
+            $this->arrOutput["moduletitle"] = $this->getOutputModuleTitle();
+            $this->arrOutput["actionTitle"] = $this->getOutputActionTitle();
+            if(class_module_system_aspect::getActiveObjectCount() > 1) {
+                $this->arrOutput["aspectChooser"] = $this->objToolkit->getAspectChooser($this->getArrModule("modul"), $this->getAction(), $this->getSystemid());
+            }
+            $this->arrOutput["login"] = $this->getOutputLogin();
+            $this->arrOutput["quickhelp"] = $this->getQuickHelp();
+        }
+        $this->arrOutput["languageswitch"] = (class_module_system_module::getModuleByName("languages") != null ? class_module_system_module::getModuleByName("languages")->getAdminInstanceOfConcreteModule()->getLanguageSwitch() : "");
+        $this->arrOutput["module_id"] = $this->getArrModule("moduleId");
+        $this->arrOutput["webpathTitle"] = urldecode(str_replace(array("http:
+        $this->arrOutput["head"] = "<script type=\"text/javascript\">KAJONA_DEBUG = ".$this->objConfig->getDebug("debuglevel")."; KAJONA_WEBPATH = '"._webpath_."'; KAJONA_BROWSER_CACHEBUSTER = "._system_browser_cachebuster_.";</script>";
+
+        
+        $this->onRenderOutput($this->arrOutput);
+
+        
+        
+        $strTemplateID = "";
+        if($this->getParam("peClose") == 1 || $this->getParam("pe") == 1) {
+            
+            try {
+                $strTemplate = "/folderview.tpl";
+                $strTemplateID = $this->objTemplate->readTemplate($strTemplate, "", false, true);
+            }
+            catch(class_exception $objException) {}
+            }
+        }
+        else {
+            $strTemplateID = $this->objTemplate->readTemplate(class_adminskin_helper::getPathForSkin($this->objSession->getAdminSkin()) . $this->getArrModule("template"), "", true);
+        }
+        return $this->objTemplate->fillTemplate($this->arrOutput, $strTemplateID);
+    }
+
+    
+    protected function onRenderOutput(&$arrContent) {
+
+    }
+
+    
+    private function validateAndUpdateCurrentAspect() {
+        if(_xmlLoader_ === true || $this->getArrModule("template") == "/folderview.tpl") {
+            return;
+        }
+
+        $objModule = $this->getObjModule();
+        $strCurrentAspect = class_module_system_aspect::getCurrentAspectId();
+        if($objModule != null && $objModule->getStrAspect() != "") {
+            $arrAspects = explode(",", $objModule->getStrAspect());
+            if(count($arrAspects) == 1 && $arrAspects[0] != $strCurrentAspect) {
+                $objAspect = new class_module_system_aspect($arrAspects[0]);
+                if($objAspect->rightView())
+                    class_module_system_aspect::setCurrentAspectId($arrAspects[0]);
+            }
+
+        }
+    }
+
+    
+    protected function getQuickHelp() {
+        $strReturn = "";
+        $strText = "";
+        $strTextname = "";
+
+        
+        
+        if($this->getParam("module") == "pages_content" && ($this->getParam("action") == "edit" || $this->getParam("action") == "new")) {
+            $objElement = null;
+            if($this->getParam("action") == "edit") {
+                $objElement = new class_module_pages_pageelement($this->getSystemid());
+            }
+            else if($this->getParam("action") == "new") {
+                $strPlaceholderElement = $this->getParam("element");
+                $objElement = class_module_pages_element::getElement($strPlaceholderElement);
+            }
+            
+            $strElementClass = str_replace(".php", "", $objElement->getStrClassAdmin());
+            
+            if($strElementClass != "") {
+                
+                $objElement = new $strElementClass();
+                $strTextname = $this->getObjLang()->stringToPlaceholder("quickhelp_" . $objElement->getArrModule("name"));
+                $strText = class_carrier::getInstance()->getObjLang()->getLang($strTextname, $objElement->getArrModule("modul"));
+            }
+        }
+        else {
+            $strTextname = $this->getObjLang()->stringToPlaceholder("quickhelp_" . $this->getAction());
+            $strText = $this->getLang($strTextname);
+        }
+
+        if($strText != "!" . $strTextname . "!") {
+            
+            $strReturn .= $this->objToolkit->getQuickhelp($strText);
+        }
+
+        return $strReturn;
+    }
+
+    
+    protected function getArrOutputNaviEntries() {
+        $arrReturn = array(
+            class_link::getLinkAdmin("dashboard", "", "", $this->getLang("modul_titel", "dashboard")),
+            class_link::getLinkAdmin($this->getArrModule("modul"), "", "", $this->getOutputModuleTitle())
+        );
+
+        
+        $strActionName = $this->getObjLang()->stringToPlaceholder("action_".$this->getAction());
+        $strAction = $this->getLang($strActionName);
+        if($strAction != "!" . $strActionName . "!") {
+            $arrReturn[] = class_link::getLinkAdmin($this->getArrModule("modul"), $this->getAction(), "&systemid=" . $this->getSystemid(), $strAction);
+        }
+
+        return $arrReturn;
+    }
+
+    
+    public function getOutputModuleNavi() {
+        return array();
+    }
+
+    
+    public function getModuleRightNaviEntry() {
+        $arrLinks = array();
+        $arrLinks[] = array("", "");
+        $arrLinks[] = array("right", class_link::getLinkAdmin("right", "change", "&changemodule=".$this->getArrModule("modul"), $this->getLang("commons_module_permissions")));
+        return $arrLinks;
+    }
+
+    
+    protected function getOutputModuleTitle() {
+        if($this->getLang("modul_titel") != "!modul_titel!") {
+            return $this->getLang("modul_titel");
+        }
+        else {
+            return $this->getArrModule("modul");
+        }
+    }
+
+    
+    protected function getOutputActionTitle() {
+        return $this->getOutputModuleTitle();
+    }
+
+    
+    protected function getOutputLogin() {
+        $objLogin = new class_module_login_admin();
+        return $objLogin->getLoginStatus();
+    }
+
+    
+    public function action($strAction = "") {
+
+        if($strAction != "") {
+            $this->setAction($strAction);
+        }
+
+        $strAction = $this->getAction();
+
+        
+        $strMethodName = "action" . uniStrtoupper($strAction[0]) . uniSubstr($strAction, 1);
+
+        if(method_exists($this, $strMethodName)) {
+
+            
+            $objAnnotations = new class_reflection(get_class($this));
+
+            $strPermissions = $objAnnotations->getMethodAnnotationValue($strMethodName, "@permissions");
+            if($strPermissions !== false) {
+
+                if(validateSystemid($this->getSystemid()) && class_objectfactory::getInstance()->getObject($this->getSystemid()) != null) {
+                    $objObjectToCheck = class_objectfactory::getInstance()->getObject($this->getSystemid());
+                }
+                else {
+                    $objObjectToCheck = $this->getObjModule();
+                }
+
+                if(!class_carrier::getInstance()->getObjRights()->validatePermissionString($strPermissions, $objObjectToCheck)) {
+                    class_response_object::getInstance()->setStrStatusCode(class_http_statuscodes::SC_UNAUTHORIZED);
+                    $this->strOutput = $this->objToolkit->warningBox($this->getLang("commons_error_permissions"));
+                    $objException = new class_exception("you are not authorized/authenticated to call this action", class_exception::$level_ERROR);
+                    $objException->setIntDebuglevel(0);
+                    $objException->processException();
+                    return $this->strOutput;
+                }
+            }
+
+
+            
+            if(_xmlLoader_ === true) {
+                
+
+                if(!$objAnnotations->hasMethodAnnotation($strMethodName, "@xml") && substr(get_class($this), -3) != "xml") {
+                    throw new class_exception("called method " . $strMethodName . " not allowed for xml-requests", class_exception::$level_FATALERROR);
+                }
+
+                if($this->getArrModule("modul") != $this->getParam("module") && ($this->getParam("module") != "messaging")) {
+                    class_response_object::getInstance()->setStrStatusCode(class_http_statuscodes::SC_UNAUTHORIZED);
+                    throw new class_exception("you are not authorized/authenticated to call this action", class_exception::$level_FATALERROR);
+                }
+            }
+
+            $this->strOutput = $this->$strMethodName();
+        }
+        else {
+            $objReflection = new ReflectionClass($this);
+            
+            if($this->getArrModule("template") == "/login.tpl" && $this->getParam("pe") != "") {
+                throw new class_exception("You have to be logged in to use the portal editor!!!", class_exception::$level_ERROR);
+            }
+
+            if(get_class($this) == "class_module_login_admin_xml") {
+                class_response_object::getInstance()->setStrStatusCode(class_http_statuscodes::SC_UNAUTHORIZED);
+                throw new class_exception("you are not authorized/authenticated to call this action", class_exception::$level_FATALERROR);
+            }
+
+            $this->strOutput = $this->objToolkit->warningBox("called method " . $strMethodName . " not existing for class " . $objReflection->getName());
+            $objException = new class_exception("called method " . $strMethodName . " not existing for class " . $objReflection->getName(), class_exception::$level_ERROR);
+            $objException->setIntDebuglevel(0);
+            $objException->processException();
+        }
+
+        return $this->strOutput;
+    }
+
+
+    
+    public function adminReload($strUrlToLoad) {
+        
+        $strUrlToLoad = str_replace("_webpath_", _webpath_, $strUrlToLoad);
+        $strUrlToLoad = str_replace("_indexpath_", _indexpath_, $strUrlToLoad);
+        
+        if($this->getParam("peClose") == "") {
+            class_response_object::getInstance()->setStrRedirectUrl($strUrlToLoad);
+        }
+    }
+
+    
+    public function getLanguageToWorkOn() {
+        $objSystemCommon = new class_module_system_common();
+        return $objSystemCommon->getStrAdminLanguageToWorkOn();
+    }
+
+
+}
+

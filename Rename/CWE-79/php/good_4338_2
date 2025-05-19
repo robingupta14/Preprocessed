@@ -1,0 +1,145 @@
+<?php
+
+
+class class_0 extends var_0
+{
+    public function fn_0()
+    {
+        header('Content-Type: application/json');
+        if (!(int) $var_1->var_2->var_3->var_4 && !Configuration::get('PRODUCT_COMMENTS_ALLOW_GUESTS')) {
+            $var_1->ajaxRender(
+                json_encode(
+                    [
+                        'success' => false,
+                        'error' => $var_1->trans(
+                            'You need to be [1]logged in[/1] or [2]create an account[/2] to post your review.',
+                            [
+                                '[1]' => '<a href="' . $var_1->var_2->var_7->getPageLink('my-account') . '">',
+                                '[/1]' => '</a>',
+                                '[2]' => '<a href="' . $var_1->var_2->var_7->getPageLink('authentication&create_account=1') . '">',
+                                '[/2]' => '</a>',
+                            ],
+                            'Modules.Productcomments.Shop'
+                        ),
+                    ]
+                )
+            );
+
+            return false;
+        }
+
+        $var_9 = (int) Tools::getValue('id_product');
+        $var_10 = Tools::getValue('comment_title');
+        $var_11 = Tools::getValue('comment_content');
+        $var_12 = Tools::getValue('customer_name');
+        $var_13 = Tools::getValue('criterion');
+
+        
+        $var_14 = $var_1->var_2->var_15->getContainer()->get('product_comment_repository');
+        $var_18 = $var_14->isPostAllowed(
+            $var_9,
+            (int) $var_1->var_2->var_3->var_4,
+            (int) $var_1->var_2->var_3->var_19
+        );
+        if (!$var_18) {
+            $var_1->ajaxRender(
+                json_encode(
+                    [
+                        'success' => false,
+                        'error' => $var_1->trans('You are not allowed to post a review at the moment, please try again later.', [], 'Modules.Productcomments.Shop'),
+                    ]
+                )
+            );
+
+            return false;
+        }
+
+        
+        $var_20 = $var_1->var_21->get('doctrine.orm.entity_manager');
+
+        
+        $var_22 = new class_1();
+        $var_22
+            ->setProductId($var_9)
+            ->setTitle($var_10)
+            ->setContent($var_11)
+            ->setCustomerName($var_12)
+            ->setCustomerId($var_1->var_2->var_3->var_4)
+            ->setGuestId($var_1->var_2->var_3->var_19)
+            ->setDateAdd(new \var_31('now', new \var_32('UTC')))
+        ;
+        $var_20->persist($var_22);
+        $var_1->fn_1($var_22, $var_13);
+
+        
+        $var_35 = $var_1->fn_2($var_22);
+        if (!empty($var_35)) {
+            $var_1->ajaxRender(
+                json_encode(
+                    [
+                        'success' => false,
+                        'errors' => $var_35,
+                    ]
+                )
+            );
+
+            return false;
+        }
+
+        $var_20->flush();
+
+        $var_1->ajaxRender(
+            json_encode(
+                [
+                    'success' => true,
+                    'product_comment' => $var_22->toArray(),
+                ]
+            )
+        );
+    }
+
+    
+    private function fn_1(var_23 $var_22, array $var_13)
+    {
+        
+        $var_20 = $var_1->var_21->get('doctrine.orm.entity_manager');
+        $var_39 = $var_20->getRepository(var_41\var_42\var_23\var_43\var_44::var_45);
+        $var_46 = 0;
+
+        foreach ($var_13 as $var_47 => $var_48) {
+            $var_49 = $var_39->findOneById($var_47);
+            $var_51 = new class_2(
+                $var_22,
+                $var_49,
+                $var_48
+            );
+
+            $var_20->persist($var_51);
+            $var_46 += $var_48;
+        }
+
+        $var_46 /= count($var_13);
+        $var_22->setGrade($var_46);
+    }
+
+    
+    private function fn_2(var_23 $var_22)
+    {
+        $var_35 = [];
+        if (empty($var_22->getTitle())) {
+            $var_35[] = $var_1->trans('Title cannot be empty', [], 'Modules.Productcomments.Shop');
+        } elseif (strlen($var_22->getTitle()) > var_41\var_42\var_23\var_43\var_23::var_54) {
+            $var_35[] = $var_1->trans('Title cannot be more than %s characters', [var_41\var_42\var_23\var_43\var_23::var_54], 'Modules.Productcomments.Shop');
+        }
+
+        if (!$var_22->getCustomerId()) {
+            if (empty($var_22->getCustomerName())) {
+                $var_35[] = $var_1->trans('Customer name cannot be empty', [], 'Modules.Productcomments.Shop');
+            } elseif (strlen($var_22->getCustomerName()) > var_41\var_42\var_23\var_43\var_23::var_57) {
+                $var_35[] = $var_1->trans('Customer name cannot be more than %s characters', [var_41\var_42\var_23\var_43\var_23::var_57], 'Modules.Productcomments.Shop');
+            }
+        }
+
+        return $var_35;
+    }
+}

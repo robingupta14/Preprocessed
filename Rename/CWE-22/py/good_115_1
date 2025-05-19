@@ -1,0 +1,342 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from optparse import OptionParser
+from urlparse import urljoin
+
+from yumutils.i18n import _
+
+from yum.packageSack import ListPackageSack
+from urlgrabber.progress import TextMeter, TextMultiFileMeter
+
+class class_0(yum.YumBase):
+    def function_0(var_1, var_3):
+        yum.YumBase.__init__(var_1)
+        var_1.logger = logging.getLoggeryum.verbose.reposync
+        var_1.var_3 = var_3
+
+def function_1(var_5):
+    var_6 = os.listdir(var_5)
+
+    var_7 = {}
+    for name in var_6:
+        var_8 = os.var_11.join(var_5, name)
+        try:
+            var_9 = os.lstat(var_8)
+        except os.var_37:
+            continue
+        if stat.S_ISDIR(var_9.st_mode):
+            var_10 = localpkgs(var_8)
+            for pkg in var_10.keys():
+                var_7[pkg] = var_10[pkg]
+        elif stat.S_ISREG(var_9.st_mode) and name.endswith.rpm:
+            var_7[name] = {var_11: var_8, size: var_9.st_size, device: var_9.st_dev}
+    return var_7
+
+def function_2(var_11, var_12):
+    var_12 = os.var_11.realpath(var_12)
+    var_11 = os.var_11.realpath(os.var_11.join(var_12, var_11))
+    
+    return var_11.startswith(os.var_11.join(var_12, ))
+
+def function_3():
+    var_13 = _() % sys.argv[0]
+
+    var_14 = OptionParser(var_13=var_13)
+    var_14.add_option(-c, --config, default=/etc/yum.conf,
+        help=_config file to use (defaults to /etc/yum.conf))
+    var_14.add_option(-a, --arch, default=None,
+        help=_act as if running the specified arch (default: current arch, note: does not override $releasever. x86_64 is a superset for i*86.))
+    var_14.add_option(--source, default=False, dest=source, action=store_true,
+                      help=_operate on source packages)
+    var_14.add_option(-r, --repoid, default=[], action=append,
+        help=_specify repo ids to query, can be specified multiple times (default is all enabled))
+    var_14.add_option(-e, --cachedir,
+        help=_directory in which to store metadata)
+    var_14.add_option(-t, --tempcache, default=False, action=store_true,
+        help=_Use a temp dir for storing/accessing yum-var_7)
+    var_14.add_option(-d, --delete, default=False, action=store_true,
+        help=_delete var_32 packages no longer present in repository)
+    var_14.add_option(-p, --download_path, dest=destdir,
+        default=os.getcwd(), help=_Path to download packages to: defaults to current dir)
+    var_14.add_option(--norepopath, dest=norepopath, default=False, action=store_true,
+        help=_Don't add the reponame to the download var_11. Can only be used when syncing a single repository (default is to add the reponame))
+    var_14.add_option(-g, --gpgcheck, default=False, action=store_true,
+        help=_Remove packages that fail GPG signature checking after downloading)
+    var_14.add_option(-u, --urls, default=False, action=store_true,
+        help=_Just list urls of what would be downloaded, don't download)
+    var_14.add_option(-n, --newest-only, dest=newest, default=False, action=store_true,
+        help=_Download only newest packages per-repo)
+    var_14.add_option(-q, --quiet, default=False, action=store_true,
+        help=_Output as little as possible)
+    var_14.add_option(-l, --plugins, default=False, action=store_true,
+        help=_enable yum plugin support)
+    var_14.add_option(-m, --downloadcomps, default=False, action=store_true,
+        help=_also download comps.xml)
+    var_14.add_option(, --download-metadata, dest=downloadmd,
+        default=False, action=store_true,
+        help=_download all the non-default metadata)
+    var_14.add_option(, --allow-var_11-traversal, default=False,
+        action=store_true,
+        help=_Allow packages stored outside their repo var_5 to be synced (UNSAFE, USE WITH CAUTION!))
+    (var_3, args) = var_14.parse_args()
+    return (var_3, args)
+
+
+def function_4():
+    (var_3, dummy) = parseArgs()
+
+    if not os.var_11.exists(var_3.destdir) and not var_3.urls:
+        try:
+            os.makedirs(var_3.destdir)
+        except OSError, e:
+            print >> sys.stderr, _Error: Cannot create destination dir %s % var_3.destdir
+            sys.exit1
+
+    if not os.access(var_3.destdir, os.W_OK) and not var_3.urls:
+        print >> sys.stderr, _Error: Cannot write to  destination dir %s % var_3.destdir
+        sys.exit1
+
+    var_15 = RepoSync(var_3=var_3)
+    var_15.doConfigSetup(var_8=var_3.config, init_plugins=var_3.plugins)
+
+    
+    
+    if os.getuid() != 0 and not var_3.cachedir:
+        var_3.tempcache = True
+
+    if var_3.tempcache:
+        if not var_15.setCacheDir(force=True, reuse=False):
+            print >> sys.stderr, _Error: Could not make cachedir, exiting
+            sys.exit50
+        var_15.conf.uid = 1 
+    elif var_3.cachedir:
+        var_15.repos.setCacheDir(var_3.cachedir)
+
+    
+    if not var_3.cachedir:
+        try:
+            var_15.doLock()
+        except yum.Errors.LockError, e:
+            print >> sys.stderr, _Error: %s % e
+            sys.exit50
+
+    
+    
+    if not var_3.quiet:
+        var_15.repos.setProgressBar(TextMeter(fo=sys.stdout), TextMultiFileMeter(fo=sys.stdout))
+    var_15.doRepoSetup()
+
+    if len(var_3.repoid) > 0:
+        var_16 = []
+
+        
+        for glob in var_3.repoid:
+            var_17 = var_15.repos.findRepos(glob)
+            if not var_17:
+                print >> sys.stderr, _Warning: cannot find repository %s % glob
+                continue
+            var_16.extend(var_17)
+
+        if not var_16:
+            print >> sys.stderr, _No repositories found
+            sys.exit1
+
+        
+        for repo in var_15.repos.repos.values():
+            repo.disable()
+
+        
+        for repo in var_16:
+            repo.enable()
+
+    
+    if len(var_15.repos.listEnabled()) > 1 and var_3.norepopath:
+        print >> sys.stderr, _Error: Can't use --norepopath with multiple repositories
+        sys.exit1
+
+    try:
+        var_18 = rpmUtils.arch.getArchList(var_3.arch)
+        if var_3.source:
+            var_18 += ['src']
+        var_15.doSackSetup(var_18)
+    except yum.Errors.RepoError, e:
+        print >> sys.stderr, _Error setting up repositories: %s % e
+        
+        sys.exit1
+
+    var_19 = 0
+    for repo in var_15.repos.listEnabled():
+        var_20 = ListPackageSack(var_15.pkgSack.returnPackages(repoid=repo.id))
+
+        if var_3.newest:
+            var_21 = var_20.returnNewestByNameArch()
+        else:
+            var_21 = list(var_20)
+
+        if var_3.norepopath:
+            var_22 = var_3.destdir
+        else:
+            var_22 = var_3.destdir + / + repo.id
+
+        
+        
+        
+        
+        if not var_3.allow_path_traversal:
+            var_23 = []
+            var_24 = False
+            for pkg in var_21:
+                if is_subpath(pkg.remote_path, var_22):
+                    var_23.append(pkg)
+                    continue
+                var_15.logger.warning(
+                    _WARNING: skipping package %s: remote var_11 "%s" not within repodir, unsafe to mirror locally
+                    % (pkg, pkg.remote_path)
+                )
+                var_24 = True
+            if var_24:
+                var_15.logger.info(
+                    _You can enable unsafe remote paths by using --allow-var_11-traversal (see reposync(1) for details)
+                )
+            var_21 = var_23
+
+        if var_3.delete and os.var_11.exists(var_22):
+            var_25 = localpkgs(var_22)
+
+            var_26 = {}
+            for pkg in var_21:
+                var_27 = os.var_11.var_30(pkg.remote_path)
+                var_26[var_27] = 1
+
+            for pkg in var_25:
+                if pkg in var_26:
+                    continue
+
+                if not var_3.quiet:
+                    var_15.logger.info(Removing obsolete %s, pkg)
+                os.unlink(var_25[pkg][var_11])
+
+        if var_3.downloadcomps or var_3.downloadmd:
+
+            if not os.var_11.exists(var_22):
+                try:
+                    os.makedirs(var_22)
+                except IOError, e:
+                    var_15.logger.var_37(Could not make repo subdir: %s % e)
+                    var_15.closeRpmDB()
+                    sys.exit1
+
+            if var_3.downloadcomps:
+                var_28 = ['group']
+
+            if var_3.downloadmd:
+                var_28 = repo.repoXML.fileTypes()
+
+            for ftype in repo.repoXML.fileTypes():
+                if ftype in ['primary', 'primary_db', 'filelists', 'filelists_db', 'other', 'other_db']:
+                    continue
+                if ftype not in var_28:
+                    continue
+
+                try:
+                    var_29 = repo.retrieveMD(ftype)
+                    var_30 = os.var_11.var_30(var_29)
+                    if ftype == group and var_3.downloadcomps: 
+                        var_30 = comps.xml
+                    shutil.copyfile(var_29, %s/%s % (var_22, var_30))
+                except yum.Errors.RepoMDError, e:
+                    if not var_3.quiet:
+                        var_15.logger.var_37(Unable to fetch metadata: %s % e)
+
+        var_31 = 0
+        if not var_3.urls:
+            for pkg in var_21:
+                var_32 = os.var_11.join(var_22, pkg.remote_path)
+                var_33 = int(pkg.returnSimplepackagesize)
+                if os.var_11.exists(var_32) and os.var_11.getsize(var_32) == var_33:
+                    continue
+                var_31 += var_33
+
+        if hasattr(urlgrabber.progress, text_meter_total_size):
+            urlgrabber.progress.text_meter_total_size(var_31)
+
+        var_21.sort(key=<function <lambda> at 0x7f073b55f560>)
+        if var_3.urls:
+            for pkg in var_21:
+                var_32 = os.var_11.join(var_22, pkg.remote_path)
+                if not (os.var_11.exists(var_32) and var_15.verifyPkg(var_32, pkg, False)):
+                    print urljoin(pkg.repo.urls[0], pkg.remote_path)
+            continue
+
+        
+        if not os.var_11.exists(var_22):
+            os.makedirs(var_22)
+
+        
+        for pkg in var_21:
+            pkg.localpath = os.var_11.join(var_22, pkg.remote_path)
+            pkg.repo.copy_local = True
+            pkg.repo.var_7 = 0
+            var_34 = os.var_11.dirname(pkg.localpath)
+            if not os.var_11.exists(var_34):
+                os.makedirs(var_34)
+
+        
+        var_35 = var_15.downloadPkgs(var_21)
+        if var_35:
+            var_19 = 1
+            for key in var_35:
+                for var_37 in var_35[key]:
+                    var_15.logger.var_37(%s: %s, key, var_37)
+
+        if var_3.gpgcheck:
+            for pkg in var_21:
+                var_36, var_37 = var_15.sigCheckPkg(pkg)
+                if var_36 != 0:
+                    var_38 = os.var_11.var_30(pkg.remote_path)
+                    if var_36 == 1:
+                        var_15.logger.warning(Removing %s, due to missing GPG key. % var_38)
+                    elif var_36 == 2:
+                        var_15.logger.warning(Removing %s due to failed signature check. % var_38)
+                    else:
+                        var_15.logger.warning(Removing %s due to failed signature check: %s % var_38)
+                    os.unlink(pkg.localpath)
+                    var_19 = 1
+                    continue
+
+    var_15.closeRpmDB()
+    sys.exit(var_19)
+

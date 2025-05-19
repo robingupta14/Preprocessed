@@ -1,0 +1,477 @@
+<?php
+
+class var_0 extends var_1 {
+	
+	static $var_2 = "\"Sort\"";
+	
+	
+	static function fn_0($var_3) {
+		
+		if(!file_exists(var_4)) Filesystem::makeFolder(var_4);
+
+		$var_3 = trim(Director::makeRelative($var_3));
+		
+		$var_3 = preg_replace('/^\/?(.*)\/?$/', '$1', $var_3);
+		$var_5 = explode("/",$var_3);
+
+		$var_6 = 0;
+		$var_7 = null;
+		foreach($var_5 as $var_8) {
+			if(!$var_8) continue; 
+			$var_7 = DataObject::get_one(
+				"Folder", 
+				sprintf(
+					"\"Name\" = '%s' AND \"ParentID\" = %d",
+					Convert::raw2sql($var_8), 
+					(int)$var_6
+				)
+			);
+			if(!$var_7) {
+				$var_7 = new class_0();
+				$var_7->var_9 = $var_6;
+				$var_7->var_10 = $var_8;
+				$var_7->var_11 = $var_8;
+				$var_7->write();
+			}
+			if(!file_exists($var_7->getFullPath())) {
+				Filesystem::makeFolder($var_7->getFullPath());
+			}
+			$var_6 = $var_7->var_14;
+		}
+
+		return $var_7;
+	}
+	
+	
+	function fn_1() {
+		$var_6 = (int)$var_16->var_14; 
+		$var_17 = 0;
+		$var_18 = 0;
+
+		
+		$var_19 = DB::query("SELECT \"Name\" FROM \"File\" WHERE \"ParentID\" = $var_6 GROUP BY \"Name\" HAVING count(*) > 1")->column();
+		if($var_19) foreach($var_19 as $var_21) {
+			$var_21 = Convert::raw2sql($var_21);
+			
+			$var_22 = DB::query("SELECT \"ID\" FROM \"File\" WHERE \"Name\" = '$var_21' AND \"ParentID\" = $var_6")->column();
+			if($var_22) {
+				$var_23 = array_shift($var_22);
+				foreach($var_22 as $var_24) {
+					DB::query("UPDATE \"File\" SET \"ParentID\" = $var_23 WHERE \"ParentID\" = $var_24");
+					DB::query("DELETE FROM \"File\" WHERE \"ID\" = $var_24");
+				}
+			} else {
+				user_error("Inconsistent database issue: SELECT ID FROM \"File\" WHERE Name = '$var_21' AND ParentID = $var_6 should have returned data", var_25);
+			}
+		}
+
+		
+		
+		
+		$var_26 = DB::query("SELECT * FROM \"File\" WHERE \"ParentID\" = $var_6");
+		$var_27 = array();
+		if($var_26) {
+			foreach($var_26 as $var_28) {
+				$var_29 = $var_28['ClassName'];
+				if(!$var_29) $var_29 = "File";
+				$var_27[$var_28['Name']] = new $var_29($var_28);
+			}
+		}
+		$var_30 = $var_27;
+		
+		
+		
+		$var_31 = $var_16->var_32;
+		
+		if(!$var_16->var_33) die($var_16->var_14 . " - " . $var_16->var_32);
+		
+
+		if(file_exists($var_31)) {
+			$var_34 = scandir($var_31);
+			foreach($var_34 as $var_35) {
+				if($var_35[0] == '.' || $var_35[0] == '_' || substr($var_35,0,6) == 'Thumbs' || $var_35 == 'web.config') {
+					continue;
+				}
+
+				
+				if(isset($var_27[$var_35])) {
+					$var_36 = $var_27[$var_35];
+					if(( !( $var_36 instanceof var_0 ) && is_dir($var_31 . $var_35) ) 
+					|| (( $var_36 instanceof var_0 ) && !is_dir($var_31 . $var_35)) ) {
+						DB::query("DELETE FROM \"File\" WHERE \"ID\" = $var_36->var_14");
+						unset($var_27[$var_35]);						
+					}
+				}
+				
+				
+				if(isset($var_27[$var_35])) {
+					$var_36 = $var_27[$var_35];
+					unset($var_30[$var_35]);
+				} else {
+					$var_17++;
+					$var_37 = $var_16->fn_2($var_35);
+					$var_36 = DataObject::get_by_id("File", $var_37);
+				}
+					
+				if( $var_36 && is_dir($var_31 . $var_35)) {
+					$var_39 = $var_36->fn_1();
+					$var_17 += $var_39['added'];
+					$var_18 += $var_39['deleted'];
+				}
+				
+				
+				$var_36->destroy();
+				$var_36 = null;
+			}
+			
+			
+			if(isset($var_30)) foreach($var_30 as $var_41) {
+				DB::query("DELETE FROM \"File\" WHERE \"ID\" = $var_41->var_14");
+				$var_18++;
+			}
+		} else {
+			DB::query("DELETE FROM \"File\" WHERE \"ID\" = $var_16->var_14");
+		}
+		
+		return array('added' => $var_17, 'deleted' => $var_18);
+	}
+
+	
+	function fn_2($var_42) {
+		
+		$var_31 = $var_16->var_32;
+		if(is_dir($var_31 . $var_42)) {
+			$var_29 = "Folder";
+		} else {
+			
+			$var_43 = strtolower(substr($var_42,strrpos($var_42,'.')+1));
+			switch($var_43) {
+				case "gif": case "jpg": case "jpeg": case "png": $var_29 = "Image"; break;
+				default: $var_29 = "File";
+			}
+		}
+
+		if(Member::currentUser()) $var_44 = Member::currentUser()->var_14;
+		else $var_44 = 0;
+		
+		$var_45 = Convert::raw2sql($var_16->var_33 . $var_42);
+		if($var_29 == 'Folder' ) $var_45 .= '/';
+
+		$var_42 = Convert::raw2sql($var_42);
+		
+		DB::query("INSERT INTO \"File\" 
+			(\"ClassName\", \"ParentID\", \"OwnerID\", \"Name\", \"Filename\", \"Created\", \"LastEdited\", \"Title\")
+			VALUES ('$var_29', $var_16->var_14, $var_44, '$var_42', '$var_45', " . DB::getConn()->now() . ',' . DB::getConn()->now() . ", '$var_42')");
+			
+		return DB::getGeneratedID("File");
+	}
+
+	
+	function fn_3($var_47) {
+		if(!is_array($var_47)) {
+			user_error("Folder::addUploadToFolder() Not passed an array.  Most likely, the form hasn't got the right enctype", var_48);
+		}
+		if(!isset($var_47['size'])) {
+			return;
+		}
+		
+		$var_49 = var_50;
+		
+
+		
+		$var_51 = str_replace(' ', '-',$var_47['name']);
+		$var_51 = ereg_replace('[^A-Za-z0-9+.-]+','',$var_51);
+		$var_51 = ereg_replace('-+', '-',$var_51);
+
+		while($var_51[0] == '_' || $var_51[0] == '.') {
+			$var_51 = substr($var_51, 1);
+		}
+
+		$var_51 = $var_16->var_52 . $var_51;
+		Filesystem::makeFolder(dirname("$var_49/$var_51"));
+		
+		$var_53 = array('.gz', '.bz', '.bz2');
+		
+		$var_43 = "";
+		if(preg_match('/^(.*)(\.[^.]+)$/', $var_51, $var_54)) {
+			$var_51 = $var_54[1];
+			$var_43 = $var_54[2];
+			
+			if(in_array($var_43, $var_53) && preg_match('/^(.*)(\.[^.]+)$/', $var_51, $var_54)) {
+				$var_51 = $var_54[1];
+				$var_43 = $var_54[2] . $var_43;
+			}
+		}
+		$var_55 = $var_51;
+
+		$var_56 = 1;
+		while(file_exists("$var_49/$var_51$var_43")) {
+			$var_56++;
+			$var_57 = $var_51;
+			
+			if(strpos($var_51, '.') !== false) {
+				$var_51 = ereg_replace('[0-9]*(\.[^.]+$)', $var_56 . '\\1', $var_51);
+			} elseif(strpos($var_51, '_') !== false) {
+				$var_51 = ereg_replace('_([^_]+$)', '_' . $var_56, $var_51);
+			} else {
+				$var_51 .= "_$var_56";
+			}
+			
+			if($var_57 == $var_51 && $var_56 > 2) user_error("Couldn't fix $var_51$var_43 with $var_56", var_48);
+		}
+		
+		if (move_uploaded_file($var_47['tmp_name'], "$var_49/$var_51$var_43")) {
+			
+			return $var_16->fn_2(basename($var_51 . $var_43));
+		} else {
+			if(!file_exists($var_47['tmp_name'])) user_error("Folder::addUploadToFolder: '$var_47[var_58]' doesn't exist", var_48);
+			else user_error("Folder::addUploadToFolder: Couldn't copy '$var_47[var_58]' to '$var_49/$var_51$var_43'", var_48);
+			return false;
+		}
+	}
+	
+	function fn_4() {
+		return new class_1(true);
+	}
+	
+	
+	
+
+	function fn_5() {
+		return parent::fn_5() . "/";
+	}
+		
+	function var_59() {
+		if($var_16->var_14 && ($var_22 = $var_16->AllChildren())) {
+			foreach($var_22 as $var_36) {
+				if(!$var_16->var_33 || !$var_16->var_10 || !file_exists($var_16->getFullPath())) {
+					$var_36->setField('Name',null);
+					$var_36->var_33 = null;
+				}
+				$var_36->delete();
+			}
+		}
+
+		
+		if($var_16->var_33 && $var_16->var_10 && file_exists($var_16->getFullPath())) {
+			$var_63 = glob( $var_16->getFullPath() . '
+	function deleteDatabaseOnly() {
+		if($children = $this->myChildren()) {
+			foreach($children as $child) $child->deleteDatabaseOnly();
+		}
+
+		parent::deleteDatabaseOnly();
+	}
+	
+	public function myChildren() {
+		
+		$ancestors = ClassInfo::ancestry($this->class);
+		foreach($ancestors as $i => $a) {
+			if(isset($baseClass) && $baseClass === -1) {
+				$baseClass = $a;
+				break;
+			}
+			if($a == "DataObject") $baseClass = -1;
+		}
+		
+		$g = DataObject::get($baseClass, "\"ParentID\" = " . $this->ID);
+		return $g;
+	}
+	
+	
+	public function hasChildren() {
+		return (bool)DB::query("SELECT COUNT(*) FROM \"File\" WHERE ParentID = "
+			. (int)$this->ID)->value();
+	}
+
+	
+	public function hasChildFolders() {
+		$SQL_folderClasses = Convert::raw2sql(ClassInfo::subclassesFor('var_0'));
+		
+		return (bool)DB::query("SELECT COUNT(*) FROM \"File\" WHERE \"ParentID\" = " . (int)$var_16->var_14
+			. " AND \"ClassName\" IN ('" . implode("','", $var_64) . "')")->value();
+	}
+	
+	
+	public function fn_6() {
+		parent::fn_6();
+
+		
+		
+		if($var_16->var_14 && ($var_22 = $var_16->AllChildren())) {
+			foreach($var_22 as $var_36) {
+				$var_36->fn_6();
+				$var_36->write();
+			}
+		}
+	}
+	
+	
+	function fn_7(){
+		
+	}
+
+	
+	function fn_8() {
+		$var_67 = new class_2(
+			$var_16,
+			"Files",
+			"File", 
+			array("Title" => _t('Folder.TITLE', "Title"), "Filename" => _t('Folder.FILENAME', "Filename")),
+			""
+		);
+		$var_67->setFolder($var_16);
+		$var_67->setPopupCaption(_t('Folder.VIEWEDITASSET', "View/Edit Asset"));
+
+		$var_70 = ($var_16->var_14 && $var_16->var_14 != "root") ? new class_3();
+		if( $var_16->canEdit() ) {
+			$var_72 = new class_4('deletemarked',_t('Folder.DELSELECTED','Delete selected files'), 'delete');
+			$var_72->includeDefaultJS(false);
+		} else {
+			$var_72 = new class_5('deletemarked');
+		}
+
+		$var_74 = new class_6(
+			new class_5(),
+			new class_7("Root", 
+				new class_8(),
+					$var_70,
+					$var_67,
+					$var_72,
+					new class_5(),
+					new class_5()
+				),
+				new class_8(), 
+					new class_9("URL", _t('Folder.URL', 'URL')),
+					new class_9("ClassName", _t('Folder.TYPE','Type')),
+					new class_9("Created", _t('Folder.CREATED','First Uploaded')),
+					new class_9("LastEdited", _t('Folder.LASTEDITED','Last Updated'))
+				),
+				new var_75(),
+					new class_10("UploadIframe",
+						$var_16->fn_9()
+					)
+				)
+				
+			),
+			new class_5()
+		);
+		
+		if(!$var_16->canEdit()) {
+			$var_74->removeFieldFromTab("Root", "Upload");
+		}
+
+		$var_16->extend('updateCMSFields', $var_74);
+		
+		return $var_74;
+	}
+	
+	
+	public function fn_10() {
+		$var_80 = DB::query("SELECT DISTINCT \"FileID\" FROM \"SiteTree_ImageTracking\"");
+		$var_81 = array();
+		$var_82 = '';
+		$var_83 = ClassInfo::subclassesFor('SiteTree');
+		
+		if($var_80->numRecords() > 0) {
+			while($var_85 = $var_80->next()) {
+				$var_82 .= $var_85['FileID'] . ','; 
+			}
+		}
+
+		foreach($var_83 as $var_29) {
+			$var_87 = singleton($var_29)->extendedSQL();
+			$var_89 = $var_87->execute()->column();
+			if(!count($var_89)) continue;
+			
+			foreach(singleton($var_29)->has_one() as $var_92 => $var_93) {
+				if($var_93 == 'Image' || $var_93 == 'File') {
+					$var_94 = $var_92 .'ID';
+					$var_87 = singleton($var_29)->extendedSQL("$var_94 > 0");
+					$var_87->var_95 = true;
+					$var_87->var_96 = array($var_94);
+					$var_81 = array_merge($var_81, $var_87->execute()->column());
+
+				} elseif($var_93 == 'Folder') {
+ 					
+				}
+			}
+		}
+		
+		if($var_81) {
+ 			return "\"File\".\"ID\" NOT IN (" . implode(', ', $var_81) . ") AND (\"ClassName\" = 'File' OR \"ClassName\" = 'Image')";
+
+		} else {
+			return "(\"ClassName\" = 'File' OR \"ClassName\" = 'Image')";
+		}
+		return $var_82;
+	}
+
+	
+	function fn_9() {
+		return <<<HTML
+		<iframe name="AssetAdmin_upload" src="admin/assets/uploadiframe/{$var_16->var_14}" id="AssetAdmin_upload" border="0" style="border-style none !important; width: 97%; min-height: 300px; height: 100%; height: expression(document.body.clientHeight) !important;">
+		</iframe>
+HTML;
+	}
+	
+	
+	function fn_11() {
+		return DataObject::get("Folder", "\"ParentID\" = " . (int)$var_16->var_14);
+	}
+}
+
+
+class class_11 extends var_97 {
+	protected $var_98;
+	
+	public function fn_12($var_98) {
+		$var_16->var_98 = $var_98;
+		parent::fn_12(new class_6());
+	}
+		
+	public function fn_13() {
+		if($var_16->var_22->Count() == 0) {
+			$var_101 = new class_4("delete_unused_thumbnails", _t('Folder.DELETEUNUSEDTHUMBNAILS', 'Delete unused thumbnails'));
+			$var_101->includeDefaultJS(false) ;
+
+			$var_16->var_22 = new class_6(
+				new class_10(),
+				$var_16->fn_14(),
+				new class_12(
+					new class_10(),
+					$var_101
+				)
+			);
+			$var_16->var_22->setForm($var_16->var_104);
+		}
+		return $var_16->var_22;
+	}
+	
+	public function fn_15() {
+		$var_106 = "";
+		foreach($var_16->fn_13() as $var_36) {
+			$var_106 .= $var_36->fn_15();
+		}
+		return $var_106;
+	}
+
+
+	
+	protected function fn_14() {
+		$var_82 = $var_16->var_98->fn_10();
+        $var_107 = new class_2(
+            $var_16->var_98,
+            "AssetList",
+            "File", 
+			array("Title" => _t('Folder.TITLE', "Title"), "LinkedURL" => _t('Folder.FILENAME', "Filename")), 
+            "",
+            $var_82
+        );
+		$var_107->setPopupCaption(_t('Folder.VIEWASSET', "View Asset"));
+        $var_107->setPermissions(array("show","delete"));
+        $var_107->var_109 = false;
+        return $var_107;
+	}
+}
+?>

@@ -1,0 +1,964 @@
+<?php
+
+
+class var_0 extends var_1
+{
+    const var_2 = 1;
+    const var_3 = 1;
+    const var_4 = 1;
+
+    public function fn_0()
+    {
+        parent::fn_0();
+
+    }
+    
+    public function fn_1()
+    {
+        session()->forget('paymentMethod'); 
+        session()->forget('shippingMethod'); 
+        session()->forget('orderID'); 
+        
+        
+        $var_6 = sc_get_plugin_installed('shipping');
+        $var_7 = sc_get_all_plugin('shipping');
+        $var_8 = array();
+        foreach ($var_6 as $var_9) {
+            if (array_key_exists($var_9['key'], $var_7)) {
+                $var_10 = sc_get_class_plugin_config('shipping', $var_9['key']);
+                $var_8[$var_9['key']] = (new $var_10)->getData();
+            }
+        }
+
+        
+        $var_12 = sc_get_plugin_installed('payment');
+        $var_13 = sc_get_all_plugin('payment');
+        $var_14 = array();
+        foreach ($var_12 as $var_9) {
+            if (array_key_exists($var_9['key'], $var_13)) {
+                $var_10 = $var_13[$var_9['key']].'\AppConfig';
+                $var_14[$var_9['key']] = (new $var_10)->getData();
+            }
+        }        
+
+        
+        $var_15 = sc_get_plugin_installed('total');
+        $var_16 = sc_get_all_plugin('total');
+        $var_17 = array();
+        foreach ($var_15 as $var_9) {
+            if (array_key_exists($var_9['key'], $var_16)) {
+                $var_10 = $var_16[$var_9['key']].'\AppConfig';
+                $var_17[$var_9['key']] = (new $var_10)->getData();
+            }
+        } 
+
+        
+        $var_18 = auth()->user();
+        if ($var_18) {
+            $var_20 = $var_18->getAddressDefault();
+            if ($var_20) {
+                $var_22 = [
+                    'first_name'      => $var_20->var_23,
+                    'last_name'       => $var_20->var_24,
+                    'first_name_kana' => $var_20->var_25,
+                    'last_name_kana'  => $var_20->var_26,
+                    'email'           => $var_18->var_27,
+                    'address1'        => $var_20->var_28,
+                    'address2'        => $var_20->var_29,
+                    'postcode'        => $var_20->var_30,
+                    'company'         => $var_18->var_31,
+                    'country'         => $var_20->var_32,
+                    'phone'           => $var_20->var_33,
+                    'comment'         => '',
+                ];
+            } else {
+                $var_22 = [
+                    'first_name'      => $var_18->var_23,
+                    'last_name'       => $var_18->var_24,
+                    'first_name_kana' => $var_18->var_25,
+                    'last_name_kana'  => $var_18->var_26,
+                    'email'           => $var_18->var_27,
+                    'address1'        => $var_18->var_28,
+                    'address2'        => $var_18->var_29,
+                    'postcode'        => $var_18->var_30,
+                    'company'         => $var_18->var_31,
+                    'country'         => $var_18->var_32,
+                    'phone'           => $var_18->var_33,
+                    'comment'         => '',
+                ];
+            }
+
+        } else {
+            $var_22 = [
+                'first_name'      => '',
+                'last_name'       => '',
+                'first_name_kana' => '',
+                'last_name_kana'  => '',
+                'postcode'        => '',
+                'company'         => '',
+                'email'           => '',
+                'address1'        => '',
+                'address2'        => '',
+                'country'         => '',
+                'phone'           => '',
+                'comment'         => '',
+            ];
+        }
+        $var_34 = session('shippingAddress') ?? $var_22;
+        $var_35 = var_36\var_37\var_38\var_39\var_40::getObjectOrderTotal();
+        $var_41 = '';
+        if(sc_captcha_method() && in_array('checkout', sc_captcha_page())) {
+            if (view()->exists(sc_captcha_method()->var_43.'::render')){
+                $var_44 = [
+                    'titleButton' => trans('cart.checkout'),
+                    'idForm' => 'form-process',
+                    'idButtonForm' => 'button-form-process',
+                ];
+                $var_41 = view(sc_captcha_method()->var_43.'::render', $var_44)->render();
+            }
+        }
+
+        sc_check_view($var_46->var_47 . '.screen.shop_cart');
+        return view(
+            $var_46->var_47 . '.screen.shop_cart',
+            [
+                'title'           => trans('front.cart_title'),
+                'description'     => '',
+                'keyword'         => '',
+                'cart'            => Cart::instance('default')->content(),
+                'shippingMethod'  => $var_8,
+                'paymentMethod'   => $var_14,
+                'totalMethod'     => $var_17,
+                'addressList'     => $var_18 ? $var_18->var_49 : [],
+                'dataTotal'       => var_36\var_37\var_38\var_39\var_40::processDataTotal($var_35),
+                'shippingAddress' => $var_34,
+                'countries'       => var_36\var_37\var_38\var_39\var_50::getCodeAll(),
+                'attributesGroup' => var_36\var_37\var_38\var_39\var_51::pluck('name', 'id')->all(),
+                'viewCaptcha'     => $var_41,
+                'layout_page'     => 'shop_cart',
+            ]
+        );
+    }
+
+    
+    public function fn_2()
+    {
+        $var_18 = auth()->user();
+        if (Cart::instance('default')->count() == 0) {
+            return redirect(sc_route('cart'));
+        }
+
+        
+        if (!sc_config('shop_allow_guest') && !$var_18) {
+            return redirect(sc_route('login'));
+        }
+
+        $var_54 = request()->all();
+
+        $var_55 = [
+            'first_name'     => 'required|max:100',
+            'email'          => 'required|string|email|max:255',
+        ];
+        
+        if (!sc_config('shipping_off')) {
+            $var_55['shippingMethod'] = 'required';
+        }
+        
+        if (!sc_config('payment_off')) {
+            $var_55['paymentMethod'] = 'required';
+        }
+
+        if (sc_config('customer_lastname')) {
+            if (sc_config('customer_lastname_required')) {
+                $var_55['last_name'] = 'required|string|max:100';
+            } else {
+                $var_55['last_name'] = 'nullable|string|max:100';
+            }
+        }
+        if (sc_config('customer_address1')) {
+            if (sc_config('customer_address1_required')) {
+                $var_55['address1'] = 'required|string|max:100';
+            } else {
+                $var_55['address1'] = 'nullable|string|max:100';
+            }
+        }
+
+        if (sc_config('customer_address2')) {
+            if (sc_config('customer_address2_required')) {
+                $var_55['address2'] = 'required|string|max:100';
+            } else {
+                $var_55['address2'] = 'nullable|string|max:100';
+            }
+        }
+        if (sc_config('customer_phone')) {
+            if (sc_config('customer_phone_required')) {
+                $var_55['phone'] = 'required|regex:/^0[^0][0-9\-]{7,13}$/';
+            } else {
+                $var_55['phone'] = 'nullable|regex:/^0[^0][0-9\-]{7,13}$/';
+            }
+        }
+        if (sc_config('customer_country')) {
+            $var_56 = (new class_2)->pluck('code')->toArray();
+            if (sc_config('customer_country_required')) {
+                $var_55['country'] = 'required|string|min:2|in:'. implode(',', $var_56);
+            } else {
+                $var_55['country'] = 'nullable|string|min:2|in:'. implode(',', $var_56);
+            }
+        }
+
+        if (sc_config('customer_postcode')) {
+            if (sc_config('customer_postcode_required')) {
+                $var_55['postcode'] = 'required|min:5';
+            } else {
+                $var_55['postcode'] = 'nullable|min:5';
+            }
+        }
+        if (sc_config('customer_company')) {
+            if (sc_config('customer_company_required')) {
+                $var_55['company'] = 'required|string|max:100';
+            } else {
+                $var_55['company'] = 'nullable|string|max:100';
+            }
+        } 
+
+        if (sc_config('customer_name_kana')) {
+            if (sc_config('customer_name_kana_required')) {
+                $var_55['first_name_kana'] = 'required|string|max:100';
+                $var_55['last_name_kana'] = 'required|string|max:100';
+            } else {
+                $var_55['first_name_kana'] = 'nullable|string|max:100';
+                $var_55['last_name_kana'] = 'nullable|string|max:100';
+            }
+        }
+
+        $var_59 = [
+            'last_name.required'      => trans('validation.required',['attribute'=> trans('cart.last_name')]),
+            'first_name.required'     => trans('validation.required',['attribute'=> trans('cart.first_name')]),
+            'email.required'          => trans('validation.required',['attribute'=> trans('cart.email')]),
+            'address1.required'       => trans('validation.required',['attribute'=> trans('cart.address1')]),
+            'address2.required'       => trans('validation.required',['attribute'=> trans('cart.address2')]),
+            'phone.required'          => trans('validation.required',['attribute'=> trans('cart.phone')]),
+            'country.required'        => trans('validation.required',['attribute'=> trans('cart.country')]),
+            'postcode.required'       => trans('validation.required',['attribute'=> trans('cart.postcode')]),
+            'company.required'        => trans('validation.required',['attribute'=> trans('cart.company')]),
+            'sex.required'            => trans('validation.required',['attribute'=> trans('cart.sex')]),
+            'birthday.required'       => trans('validation.required',['attribute'=> trans('cart.birthday')]),
+            'email.email'             => trans('validation.email',['attribute'=> trans('cart.email')]),
+            'phone.regex'             => trans('validation.regex',['attribute'=> trans('cart.phone')]),
+            'postcode.min'            => trans('validation.min',['attribute'=> trans('cart.postcode')]),
+            'country.min'             => trans('validation.min',['attribute'=> trans('cart.country')]),
+            'first_name.max'          => trans('validation.max',['attribute'=> trans('cart.first_name')]),
+            'email.max'               => trans('validation.max',['attribute'=> trans('cart.email')]),
+            'address1.max'            => trans('validation.max',['attribute'=> trans('cart.address1')]),
+            'address2.max'            => trans('validation.max',['attribute'=> trans('cart.address2')]),
+            'last_name.max'           => trans('validation.max',['attribute'=> trans('cart.last_name')]),
+            'birthday.date'           => trans('validation.date',['attribute'=> trans('cart.birthday')]),
+            'birthday.date_format'    => trans('validation.date_format',['attribute'=> trans('cart.birthday')]),
+            'shippingMethod.required' => trans('cart.validation.shippingMethod_required'),
+            'paymentMethod.required'  => trans('cart.validation.paymentMethod_required'),
+        ];
+
+        if(sc_captcha_method() && in_array('checkout', sc_captcha_page())) {
+            $var_54['captcha_field'] = $var_54[sc_captcha_method()->getField()] ?? '';
+            $var_55['captcha_field'] = ['required', 'string', new \var_36\var_37\var_60\var_61];
+        }
+
+
+        $var_62 = var_63\var_64\var_65\var_66::make(
+            $var_54, 
+            $var_55, 
+            $var_59
+        );
+        if ($var_62->fails()) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($var_62->errors());
+        }
+
+        
+        if (!sc_config('shipping_off')) {
+            session(['shippingMethod' => request('shippingMethod')]);
+        }
+
+        
+        if (!sc_config('payment_off')) {
+            session(['paymentMethod' => request('paymentMethod')]);
+        }
+
+        
+        session(['address_process' => request('address_process')]);
+        
+        session(
+            [
+                'shippingAddress' => [
+                    'first_name'      => request('first_name'),
+                    'last_name'       => request('last_name'),
+                    'first_name_kana' => request('first_name_kana'),
+                    'last_name_kana'  => request('last_name_kana'),
+                    'email'           => request('email'),
+                    'country'         => request('country'),
+                    'address1'        => request('address1'),
+                    'address2'        => request('address2'),
+                    'phone'           => request('phone'),
+                    'postcode'        => request('postcode'),
+                    'company'         => request('company'),
+                    'comment'         => request('comment'),
+                ],
+            ]
+        );
+
+        
+        $var_72 = [];
+        $var_73 = Cart::instance('default')->content()->toArray();
+        foreach ($var_73 as $var_74 => $var_75) {
+            $var_72[$var_75['id']] = ($var_72[$var_75['id']] ?? 0) + $var_75['qty'];
+        }
+        $var_76 = var_36\var_37\var_38\var_39\var_77::whereIn('id', array_keys($var_72))->pluck('minimum', 'id')->all();
+        $var_78 = [];
+        foreach ($var_76 as $var_79 => $var_80) {
+            if ($var_72[$var_79] < $var_80) {
+                $var_78[$var_79] = $var_80;
+            }
+        }
+        if (count($var_78)) {
+            return redirect(sc_route('cart'))->with('arrErrorQty', $var_78);
+        }
+        
+
+        return redirect(sc_route('checkout'));
+    }
+
+    
+    public function fn_3()
+    {
+        
+        if (
+            !session('shippingAddress')
+        ) {
+            return redirect(sc_route('cart'));
+        }
+        $var_34 = session('shippingAddress');
+
+
+        
+        if (sc_config('shipping_off')) {
+            $var_82 = null;
+        } else {
+            if (!session('shippingMethod')) {
+                return redirect(sc_route('cart'));
+            }
+            $var_8 = session('shippingMethod');
+            $var_83 = sc_get_class_plugin_config('Shipping', $var_8);
+            $var_82 = (new $var_83)->getData();
+        }
+
+        
+        if (sc_config('payment_off')) {
+            $var_84 = null;
+        } else {
+            if (!session('paymentMethod')) {
+                return redirect(sc_route('cart'));
+            }
+            $var_14 = session('paymentMethod');
+            $var_85 = sc_get_class_plugin_config('Payment', $var_14);
+            $var_84 = (new $var_85)->getData();
+        }
+
+
+        $var_35 = var_36\var_37\var_38\var_39\var_40::getObjectOrderTotal();
+        $var_86 = var_36\var_37\var_38\var_39\var_40::processDataTotal($var_35);
+
+        
+        session(['dataTotal' => $var_86]);
+
+        sc_check_view($var_46->var_47 . '.screen.shop_checkout');
+        return view(
+            $var_46->var_47 . '.screen.shop_checkout',
+            [
+                'title'              => trans('front.checkout_title'),
+                'cart'               => Cart::instance('default')->content(),
+                'dataTotal'          => $var_86,
+                'paymentMethodData'  => $var_84,
+                'shippingMethodData' => $var_82,
+                'shippingAddress'    => $var_34,
+                'attributesGroup'    => var_36\var_37\var_38\var_39\var_51::getListAll(),
+                'layout_page'        => 'shop_cart',
+            ]
+        );
+    }
+
+    
+    public function fn_4()
+    {
+        $var_54      = request()->all();
+        $var_87 = $var_54['product_id'];
+        $var_88       = $var_54['qty'] ?? 0;
+        $var_89   = $var_54['storeId'] ?? config('app.storeId');
+
+        
+        $var_90 = $var_54['form_attr'] ?? null;
+        $var_91  = 0;
+        if ($var_90) {
+            foreach ($var_90 as $var_74 => $var_92) {
+                $var_91 += explode('__', $var_92)[1] ??0;
+            }
+        }
+        
+
+        $var_93 = (new class_3)->getDetail($var_87, null, $var_89);
+
+        if (!$var_93) {
+            return response()->json(
+                [
+                    'error' => 1,
+                    'msg' => trans('front.notfound'),
+                ]
+            );
+        }
+        
+
+        if ($var_93->allowSale()) {
+            $var_97 = array();
+            $var_97 = $var_90;
+            $var_98 = array(
+                'id'      => $var_87,
+                'name'    => $var_93->var_99,
+                'qty'     => $var_88,
+                'price'   => $var_93->getFinalPrice() + $var_91,
+                'tax'     => $var_93->getTaxValue(),
+                'storeId' => $var_89,
+            );
+            if ($var_97) {
+                $var_98['options'] = $var_97;
+            }
+            Cart::instance('default')->add($var_98);
+            return redirect(sc_route('cart'))
+                ->with(
+                    ['success' => trans('cart.success', ['instance' => 'cart'])]
+                );
+        } else {
+            return redirect(sc_route('cart'))
+                ->with(
+                    ['error' => trans('cart.dont_allow_sale')]
+                );
+        }
+
+    }
+
+    
+    public function fn_5(var_103 $var_104)
+    {
+        $var_18 = auth()->user();
+        $var_105 = $var_18->var_106 ?? 0;
+        
+        if (Cart::instance('default')->count() == 0) {
+            return redirect()->route('home');
+        }
+        
+        if (!sc_config('shop_allow_guest') && !$var_18) {
+            return redirect(sc_route('login'));
+        } 
+
+        $var_54 = request()->all();
+        if (!$var_54) {
+            return redirect(sc_route('cart'));
+        } else {
+            $var_86       = session('dataTotal') ?? [];
+            $var_34 = session('shippingAddress') ?? [];
+            $var_14   = session('paymentMethod') ?? '';
+            $var_8  = session('shippingMethod') ?? '';
+            $var_108 = session('address_process') ?? '';
+        }
+
+        
+        $var_109 = (new class_1)->sumValueTotal('subtotal', $var_86); 
+        $var_111      = (new class_1)->sumValueTotal('tax', $var_86); 
+        $var_112 = (new class_1)->sumValueTotal('shipping', $var_86); 
+        $var_113 = (new class_1)->sumValueTotal('discount', $var_86); 
+        $var_114 = (new class_1)->sumValueTotal('received', $var_86); 
+        $var_115    = (new class_1)->sumValueTotal('total', $var_86);
+        
+
+        $var_122['customer_id']     = $var_105;
+        $var_122['subtotal']        = $var_109;
+        $var_122['shipping']        = $var_112;
+        $var_122['discount']        = $var_113;
+        $var_122['received']        = $var_114;
+        $var_122['tax']             = $var_111;
+        $var_122['payment_status']  = self::var_3;
+        $var_122['shipping_status'] = self::var_4;
+        $var_122['status']          = self::var_2;
+        $var_122['currency']        = sc_currency_code();
+        $var_122['exchange_rate']   = sc_currency_rate();
+        $var_122['total']           = $var_115;
+        $var_122['balance']         = $var_115 + $var_114;
+        $var_122['email']           = $var_34['email'];
+        $var_122['first_name']      = $var_34['first_name'];
+        $var_122['payment_method']  = $var_14;
+        $var_122['shipping_method'] = $var_8;
+        $var_122['user_agent']      = $var_104->header('User-Agent');
+        $var_122['ip']              = $var_104->ip();
+        $var_122['created_at']      = date('Y-m-d H:i:s');
+
+        if (!empty($var_34['last_name'])) {
+            $var_122['last_name']       = $var_34['last_name'];
+        }
+        if (!empty($var_34['first_name_kana'])) {
+            $var_122['first_name_kana']       = $var_34['first_name_kana'];
+        }
+        if (!empty($var_34['last_name_kana'])) {
+            $var_122['last_name_kana']       = $var_34['last_name_kana'];
+        }
+        if (!empty($var_34['address1'])) {
+            $var_122['address1']       = $var_34['address1'];
+        }
+        if (!empty($var_34['address2'])) {
+            $var_122['address2']       = $var_34['address2'];
+        }
+        if (!empty($var_34['country'])) {
+            $var_122['country']       = $var_34['country'];
+        }
+        if (!empty($var_34['phone'])) {
+            $var_122['phone']       = $var_34['phone'];
+        }
+        if (!empty($var_34['postcode'])) {
+            $var_122['postcode']       = $var_34['postcode'];
+        }
+        if (!empty($var_34['company'])) {
+            $var_122['company']       = $var_34['company'];
+        }
+        if (!empty($var_34['comment'])) {
+            $var_122['comment']       = $var_34['comment'];
+        }
+
+        $var_118 = [];
+        foreach (Cart::instance('default')->content() as $var_119) {
+            $var_121['product_id']  = $var_119->var_106;
+            $var_121['name']        = $var_119->var_99;
+            $var_121['price']       = sc_currency_value($var_119->var_120);
+            $var_121['qty']         = $var_119->var_88;
+            $var_121['store_id']    = $var_119->var_89;
+            $var_121['attribute']   = ($var_119->var_97) ? json_encode($var_119->var_97) : null;
+            $var_121['total_price'] = sc_currency_value($var_119->var_120) * $var_119->var_88;
+            $var_118[]          = $var_121;
+        }
+
+        
+        session(['dataOrder' => $var_122]);
+        session(['arrCartDetail' => $var_118]);
+
+        
+        $var_123 = (new class_4)->createOrder($var_122, $var_86, $var_118);
+
+        if ($var_123['error'] == 1) {
+            return redirect(sc_route('cart'))->with(['error' => $var_123['msg']]);
+        }
+        
+        session(['orderID' => $var_123['orderID']]);
+
+        
+        if ($var_108 == 'new') {
+            $var_126 = [
+                'first_name'      => $var_34['first_name'] ?? '',
+                'last_name'       => $var_34['last_name'] ?? '',
+                'first_name_kana' => $var_34['first_name_kana'] ?? '',
+                'last_name_kana'  => $var_34['last_name_kana'] ?? '',
+                'postcode'        => $var_34['postcode'] ?? '',
+                'address1'        => $var_34['address1'] ?? '',
+                'address2'        => $var_34['address2'] ?? '',
+                'country'         => $var_34['country'] ?? '',
+                'phone'           => $var_34['phone'] ?? '',
+            ];
+            var_36\var_37\var_38\var_39\var_127::find($var_105)->addresses()->save(new class_5(sc_clean($var_126)));
+            session()->forget('address_process'); 
+        }
+
+        $var_14 = sc_get_class_plugin_controller('Payment', session('paymentMethod'));
+
+        if ($var_14) {
+            
+            return (new $var_14)->processOrder();
+        } else {
+            return (new class_0)->completeOrder();
+        }
+    }
+
+    
+    public function fn_6(var_103 $var_104)
+    {
+        if (!$var_104->ajax()) {
+            return redirect(sc_route('cart'));
+        }
+        $var_54     = request()->all();
+        $var_132 = $var_54['instance'] ?? 'default';
+        $var_106       = $var_54['id'] ?? '';
+        $var_89  = $var_54['storeId'] ?? config('app.storeId');
+        $var_73     = Cart::instance($var_132);
+
+        $var_93 = (new class_3)->getDetail($var_106, null, $var_89);
+        if (!$var_93) {
+            return response()->json(
+                [
+                    'error' => 1,
+                    'msg' => trans('front.notfound'),
+                ]
+            );
+        }
+        switch ($var_132) {
+            case 'default':
+                if ($var_93->var_133->count() || $var_93->var_134 == var_135) {
+                    
+                    
+                    return response()->json(
+                        [
+                            'error' => 1,
+                            'redirect' => $var_93->getUrl(),
+                            'msg' => '',
+                        ]
+                    );
+                }
+
+                
+                if ($var_93->allowSale()) {
+                    $var_73->add(
+                        array(
+                            'id'      => $var_106,
+                            'name'    => $var_93->var_99,
+                            'qty'     => 1,
+                            'price'   => $var_93->getFinalPrice(),
+                            'tax'     => $var_93->getTaxValue(),
+                            'storeId' => $var_89,
+                        )
+                    );
+                } else {
+                    return response()->json(
+                        [
+                            'error' => 1,
+                            'msg' => trans('cart.dont_allow_sale'),
+                        ]
+                    );
+                }
+                break;
+
+            default:
+                
+                ${'arrID' . $var_132} = array_keys($var_73->content()->groupBy('id')->toArray());
+                if (!in_array($var_106, ${'arrID' . $var_132})) {
+                    try {
+                        $var_73->add(
+                            array(
+                                'id'      => $var_106,
+                                'name'    => $var_93->var_99,
+                                'qty'     => 1,
+                                'price'   => $var_93->getFinalPrice(),
+                                'tax'     => $var_93->getTaxValue(),
+                                'storeId' => $var_89,
+                            )
+                        );
+                    } catch (\var_138 $var_139) {
+                        return response()->json(
+                            [
+                                'error' => 1,
+                                'msg' => $var_139->getMessage(),
+                            ]
+                        );
+                    }
+
+                } else {
+                    return response()->json(
+                        [
+                            'error' => 1,
+                            'msg' => trans('cart.exist', ['instance' => $var_132]),
+                        ]
+                    );
+                }
+                break;
+        }
+
+        $var_141 = Cart::getListCart($var_132);
+        return response()->json(
+            [
+                'error'      => 0,
+                'count_cart' => $var_141['count'],
+                'instance'   => $var_132,
+                'subtotal'   => $var_141['subtotal'],
+                'msg'        => trans('cart.success', ['instance' => ($var_132 == 'default') ? 'cart' : $var_132]),
+            ]
+        );
+
+    }
+
+    
+    public function fn_7(var_103 $var_104)
+    {
+        if (!$var_104->ajax()) {
+            return redirect(sc_route('cart'));
+        }
+        $var_54    = request()->all();
+        $var_106      = $var_54['id'] ?? '';
+        $var_142   = $var_54['rowId'] ?? '';
+        $var_143 = $var_54['new_qty'] ?? 0;
+        $var_89 = $var_54['storeId'] ?? config('app.storeId');
+        $var_93 = (new class_3)->getDetail($var_106, null, $var_89);
+        
+        if (!$var_93) {
+            return response()->json(
+                [
+                    'error' => 1,
+                    'msg' => trans('front.notfound'),
+                ]
+            );
+        }
+        
+        if ($var_93->var_144 < $var_143 && !sc_config('product_buy_out_of_stock', $var_93->var_145)) {
+            return response()->json(
+                [
+                    'error' => 1,
+                    'msg' => trans('cart.over', ['item' => $var_93->var_146]),
+                ]
+            );
+        } else {
+            Cart::instance('default')->update($var_142, ($var_143) ? $var_143 : 0);
+            return response()->json(
+                [
+                    'error' => 0,
+                ]
+            );
+        }
+
+    }
+
+    
+    public function fn_8()
+    {
+
+        $var_148 = Cart::instance('wishlist')->content();
+        sc_check_view($var_46->var_47 . '.screen.shop_wishlist');
+        return view(
+            $var_46->var_47 . '.screen.shop_wishlist',
+            array(
+                'title'       => trans('front.wishlist'),
+                'description' => '',
+                'keyword'     => '',
+                'wishlist'    => $var_148,
+                'layout_page' => 'shop_cart',
+            )
+        );
+    }
+
+    
+    public function fn_9()
+    {
+        $var_149 = Cart::instance('compare')->content();
+
+        sc_check_view($var_46->var_47 . '.screen.shop_compare');
+        return view(
+            $var_46->var_47 . '.screen.shop_compare',
+            array(
+                'title'       => trans('front.compare'),
+                'description' => '',
+                'keyword'     => '',
+                'compare'     => $var_149,
+                'layout_page' => 'shop_cart',
+            )
+        );
+    }
+
+    
+    public function fn_10($var_132 = 'default')
+    {
+        Cart::instance($var_132)->destroy();
+        return redirect(sc_route('cart'));
+    }
+
+    
+    public function fn_11($var_106 = null)
+    {
+        if ($var_106 === null) {
+            return redirect(sc_route('cart'));
+        }
+
+        if (array_key_exists($var_106, Cart::instance('default')->content()->toArray())) {
+            Cart::instance('default')->remove($var_106);
+        }
+        return redirect(sc_route('cart'));
+    }
+
+    
+    public function fn_12($var_106 = null)
+    {
+        if ($var_106 === null) {
+            return redirect()->route('wishlist');
+        }
+
+        if (array_key_exists($var_106, Cart::instance('wishlist')->content()->toArray())) {
+            Cart::instance('wishlist')->remove($var_106);
+        }
+        return redirect()->route('wishlist');
+    }
+
+    
+    public function fn_13($var_106 = null)
+    {
+        if ($var_106 === null) {
+            return redirect()->route('compare');
+        }
+
+        if (array_key_exists($var_106, Cart::instance('compare')->content()->toArray())) {
+            Cart::instance('compare')->remove($var_106);
+        }
+        return redirect()->route('compare');
+    }
+
+    
+    public function var_130()
+    {
+        $var_152 = session('orderID') ??0;
+        if ($var_152 == 0){
+            return redirect()->route('home', ['error' => 'Error Order ID!']);
+        }
+        Cart::destroy(); 
+
+        $var_14 = session('paymentMethod');
+        $var_8 = session('shippingMethod');
+        $var_17 = session('totalMethod', []);
+
+        $var_153 = sc_get_class_plugin_config('Payment', $var_14);
+        if (method_exists($var_153, 'endApp')) {
+            (new $var_153)->endApp();
+        }
+
+        $var_155 = sc_get_class_plugin_config('Shipping', $var_8);
+        if (method_exists($var_155, 'endApp')) {
+            (new $var_155)->endApp();
+        }
+
+        if ($var_17 && is_array($var_17)) {
+            foreach ($var_17 as $var_156 => $var_157) {
+                $var_158 = sc_get_class_plugin_config('Total', $var_156);
+                if (method_exists($var_158, 'endApp')) {
+                    (new $var_158)->endApp(['orderID' => $var_152, 'code' => $var_157]);
+                }
+            }
+        }
+
+        session()->forget('paymentMethod'); 
+        session()->forget('shippingMethod'); 
+        session()->forget('totalMethod'); 
+        session()->forget('otherMethod'); 
+        session()->forget('dataTotal'); 
+        session()->forget('dataOrder'); 
+        session()->forget('arrCartDetail'); 
+        session()->forget('orderID'); 
+
+        if (sc_config('order_success_to_admin') || sc_config('order_success_to_customer')) {
+            $var_54 = var_36\var_37\var_38\var_39\var_124::with('details')->find($var_152)->toArray();
+            $var_160 = (new class_6)->where('group', 'order_success_to_admin')->where('status', 1)->first();
+            $var_163 = (new class_6)->where('group', 'order_success_to_customer')->where('status', 1)->first();
+            if ($var_160 || $var_163) {
+
+                $var_164 = '';
+                $var_164 .= '<tr>
+                                    <td>' . trans('email.order.sort') . '</td>
+                                    <td>' . trans('email.order.sku') . '</td>
+                                    <td>' . trans('email.order.name') . '</td>
+                                    <td>' . trans('email.order.price') . '</td>
+                                    <td>' . trans('email.order.qty') . '</td>
+                                    <td>' . trans('email.order.total') . '</td>
+                                </tr>';
+                foreach ($var_54['details'] as $var_74 => $var_165) {
+                    $var_164 .= '<tr>
+                                    <td>' . ($var_74 + 1) . '</td>
+                                    <td>' . $var_165['sku'] . '</td>
+                                    <td>' . $var_165['name'] . '</td>
+                                    <td>' . sc_currency_render($var_165['price'], '', '', '', false) . '</td>
+                                    <td>' . number_format($var_165['qty']) . '</td>
+                                    <td align="right">' . sc_currency_render($var_165['total_price'], '', '', '', false) . '</td>
+                                </tr>';
+                }
+                $var_166 = [
+                    '/\{\{\$title\}\}/',
+                    '/\{\{\$orderID\}\}/',
+                    '/\{\{\$firstName\}\}/',
+                    '/\{\{\$lastName\}\}/',
+                    '/\{\{\$toname\}\}/',
+                    '/\{\{\$address\}\}/',
+                    '/\{\{\$address1\}\}/',
+                    '/\{\{\$address2\}\}/',
+                    '/\{\{\$email\}\}/',
+                    '/\{\{\$phone\}\}/',
+                    '/\{\{\$comment\}\}/',
+                    '/\{\{\$orderDetail\}\}/',
+                    '/\{\{\$subtotal\}\}/',
+                    '/\{\{\$shipping\}\}/',
+                    '/\{\{\$discount\}\}/',
+                    '/\{\{\$total\}\}/',
+                ];
+                $var_167 = [
+                    trans('order.send_mail.new_title') . '
+                    $orderID,
+                    $data['var_23'],
+                    $var_54['last_name'],
+                    $var_54['first_name'].' '.$var_54['last_name'],
+                    $var_54['address1'] . ' ' . $var_54['address2'],
+                    $var_54['address1'],
+                    $var_54['address2'],
+                    $var_54['email'],
+                    $var_54['phone'],
+                    $var_54['comment'],
+                    $var_164,
+                    sc_currency_render($var_54['subtotal'], '', '', '', false),
+                    sc_currency_render($var_54['shipping'], '', '', '', false),
+                    sc_currency_render($var_54['discount'], '', '', '', false),
+                    sc_currency_render($var_54['total'], '', '', '', false),
+                ];
+
+                if (sc_config('order_success_to_admin') && $var_160) {
+                    $var_48 = $var_160->var_168;
+                    $var_48 = preg_replace($var_166, $var_167, $var_48);
+                    $var_44 = [
+                        'content' => $var_48,
+                    ];
+                    $var_169 = [
+                        'to' => sc_store('email'),
+                        'subject' => trans('order.send_mail.new_title') . '
+                    ];
+                    sc_send_mail($this->templatePath . '.var_170.var_171', $var_44, $var_169, []);
+                }
+                if (sc_config('order_success_to_customer') && $var_163) {
+                    $var_172 = $var_163->var_168;
+                    $var_172 = preg_replace($var_166, $var_167, $var_172);
+                    $var_44 = [
+                        'content' => $var_172,
+                    ];
+                    $var_169 = [
+                        'to' => $var_54['email'],
+                        'replyTo' => sc_store('email'),
+                        'subject' => trans('order.send_mail.new_title'),
+                    ];
+                    sc_send_mail($var_46->var_47 . '.mail.order_success_to_customer', $var_44, $var_169, []);
+                }
+            }
+
+        }
+
+        return redirect()->route('order.success')->with('orderID', $var_152);
+    }
+
+    
+    public function fn_14(){
+
+        if (!session('orderID')) {
+            return redirect()->route('home');
+        }
+        sc_check_view($var_46->var_47 . '.screen.shop_order_success');
+        return view(
+            $var_46->var_47 . '.screen.shop_order_success',
+            [
+                'title' => trans('order.success.title'),
+                'layout_page' =>'shop_cart',
+            ]
+        );
+    }
+
+}

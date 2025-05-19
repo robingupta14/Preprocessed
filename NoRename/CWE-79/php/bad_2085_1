@@ -1,0 +1,221 @@
+<?php
+
+
+defined('ACCESS') or die('no direct access');
+
+abstract class Base
+{
+    
+    private $_helpers = array();
+
+    
+    public function addHelper($name, $type, $obj)
+    {
+        $this->_helpers[$type][$name] = $obj;
+    }
+
+    
+    public function getHelper($name, $type)
+    {
+        return $this->_helpers[$type][$name];
+    }
+
+    
+    private $_request;
+
+    
+    private $_translator;
+
+    
+    private $_router;
+
+    
+    private $_data = array();
+
+    
+    private $_modRewrite;
+
+    
+    public function get($key)
+    {
+        if (isset($this->_data[$key])) {
+            return $this->_data[$key];
+        }
+
+        return null;
+    }
+
+    
+    public function set($key, $value)
+    {
+        $this->_data[$key] = $value;
+    }
+
+    
+    public function __construct(\Ilch\Request $request, \Ilch\Translator $translator, \Ilch\Router $router)
+    {
+        $this->_request = $request;
+        $this->_translator = $translator;
+        $this->_router = $router;
+    }
+
+    
+    public function getRequest()
+    {
+        return $this->_request;
+    }
+    
+    
+    public function getRouter()
+    {
+        return $this->_router;
+    }
+
+    
+    public function getTranslator()
+    {
+        return $this->_translator;
+    }
+
+    
+    public function getUser()
+    {
+        return \Ilch\Registry::get('user');
+    }
+
+    
+    public function getTrans($key, $placeholders = array())
+    {
+        return $this->getTranslator()->trans($key, $placeholders);
+    }
+
+    
+    public function getBaseUrl($url = '')
+    {
+        return BASE_URL.'/'.$url;
+    }
+
+   
+    public function getLayoutUrl($url = '')
+    {
+        if (empty($url)) {
+            return BASE_URL.'/application/layouts/'.$this->_layoutKey.'/';
+        }
+
+        return BASE_URL.'/application/layouts/'.$this->_layoutKey.'/'.$url;
+    }
+
+    
+    public function getStaticUrl($url = '')
+    {
+        if (empty($url)) {
+            return BASE_URL.'/static/';
+        }
+
+        return BASE_URL.'/static/'.$url;
+    }
+
+    
+    public function escape($string)
+    {
+        return htmlspecialchars($string, ENT_QUOTES);
+    }
+
+    
+    public function getUrl($urlArray = array(), $route = null, $secure  = false)
+    {
+        $config = \Ilch\Registry::get('config');
+
+        if($config !== null && $this->_modRewrite === null) {
+            $this->_modRewrite = (bool)$config->get('mod_rewrite');
+        }
+
+        if (empty($urlArray)) {
+            return BASE_URL;
+        }
+
+        if (is_string($urlArray)) {
+            return BASE_URL.'/index.php/'.$urlArray;
+        }
+
+        $urlParts = array();
+
+        if (!isset($urlArray['module'])) {
+            $urlParts[] = $this->getRequest()->getModuleName();
+        } else {
+            $urlParts[] = $urlArray['module'];
+            unset($urlArray['module']);
+        }
+
+        if (!isset($urlArray['controller'])) {
+            $urlParts[] = $this->getRequest()->getControllerName();
+        } else {
+            $urlParts[] = $urlArray['controller'];
+            unset($urlArray['controller']);
+        }
+
+        if (!isset($urlArray['action'])) {
+            $urlParts[] = $this->getRequest()->getActionName();
+        } else {
+            $urlParts[] = $urlArray['action'];
+            unset($urlArray['action']);
+        }
+
+        foreach ($urlArray as $key => $value) {
+            $urlParts[] = $key.'/'.$value;
+        }
+        
+        if ($secure) {
+            $token = uniqid();
+            $_SESSION['token'][$token] = $token;
+            $urlParts[] = 'ilch_token/'.$token;
+        }
+
+        $s = '';
+
+        if (($this->getRequest()->isAdmin() && $route === null) || ($route !== null && $route == 'admin')) {
+            $s = 'admin/';
+        }
+
+        if ($this->_modRewrite && empty($s)) {
+            return BASE_URL.'/'.$s.implode('/', $urlParts);
+        } else {
+            return BASE_URL.'/index.php/'.$s.implode('/', $urlParts);
+        }
+    }
+
+    
+    public function getTokenField()
+    {
+        $token = md5(uniqid());
+        $_SESSION['token'][$token] = $token;
+
+        return '<input type="hidden" name="ilch_token" value="'.$token.'" />'."\n";
+    }
+
+    
+    public function loadTime()
+    {
+        $startTime = \Ilch\Registry::get('startTime');
+
+        return microtime(true) - $startTime;
+    }
+
+    
+    public function queryCount()
+    {
+        $db = \Ilch\Registry::get('db');
+
+        return $db->queryCount();
+    }
+
+    
+    public function limitString($str, $length)
+    {
+        if (strlen($str) <= $length) {
+            return $str;
+        } else {
+            return preg_replace("/[^ ]*$/", '', substr($str, 0, $length)).'...';
+        }
+    }
+}

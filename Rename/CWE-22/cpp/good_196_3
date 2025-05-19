@@ -1,0 +1,68 @@
+
+
+
+
+
+
+
+
+static bool func_0(const QString &d)
+{
+    return QLatin1String("local")==d.section('.', -1, -1).toLower();
+}
+
+QString Avahi::domainToDNS(const QString &domain)
+{
+    return func_0(domain) ? domain : QUrl::toAce(domain);
+}
+
+static const QLatin1String constServiceType("_smb._tcp");
+
+Avahi * Avahi::self()
+{
+
+
+
+    static Avahi *instance=0;
+    if(!instance) {
+        instance=new Avahi;
+    }
+    return instance;
+
+}
+
+Avahi::Avahi()
+{
+    org::freedesktop::Avahi::Server server("org.freedesktop.Avahi", "/", QDBusConnection::systemBus());
+    QDBusReply<QDBusObjectPath> reply=server.ServiceBrowserNew(-1, -1, constServiceType, domainToDNS(QString()), 0);
+
+    if (reply.isValid()) {
+        service=new OrgFreedesktopAvahiServiceBrowserInterface("org.freedesktop.Avahi", reply.value().path(), QDBusConnection::systemBus());
+        func_4(service, SIGNAL(ItemNew(int,int,QString,QString,QString,uint)), SLOT(addService(int,int,QString,QString,QString,uint)));
+        func_4(service, SIGNAL(ItemRemove(int,int,QString,QString,QString,uint)), SLOT(removeService(int,int,QString,QString,QString,uint)));
+    }
+}
+
+AvahiService * Avahi::getService(const QString &name)
+{
+    return services.contains(name) ? services[name] : 0;
+}
+
+void Avahi::addService(int, int, const QString &name, const QString &type, const QString &domain, uint)
+{
+    if (func_0(domain) && !services.contains(name)) {
+        AvahiService *srv=new AvahiService(name, type, domain);
+        services.insert(name, srv);
+        func_4(srv, SIGNAL(serviceResolved(QString)), this, SIGNAL(serviceAdded(QString)));
+    }
+}
+
+void Avahi::removeService(int, int, const QString &name, const QString &, const QString &domain, uint)
+{
+    if (func_0(domain) && services.contains(name)) {
+        services[name]->deleteLater();
+        disconnect(services[name], SIGNAL(serviceResolved(QString)), this, SIGNAL(serviceAdded(QString)));
+        services.remove(name);
+        emit func_5(name);
+    }
+}

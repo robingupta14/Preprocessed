@@ -1,0 +1,154 @@
+<?php
+
+
+if (!defined('BASEPATH')) {
+    exit('No direct script access allowed');
+}
+
+
+class SurveysGroupsController extends Survey_Common_Action
+{
+
+    
+    public function view($id)
+    {
+        $this->render('view', array(
+            'model'=>$this->loadModel($id),
+        ));
+    }
+
+    
+    public function create()
+    {
+        $model = new SurveysGroups;
+
+        
+        
+
+        if (Yii::app()->getRequest()->getPost('SurveysGroups')) {
+            $model->attributes = Yii::app()->getRequest()->getPost('SurveysGroups');
+            $model->created_by = $model->owner_id = Yii::app()->user->id;
+            if ($model->save()) {
+                $this->getController()->redirect($this->getController()->createUrl('admin/survey/sa/listsurveys').'
+            }
+        }
+
+        $aData['model'] = $model;
+        $aData['fullpagebar']['savebutton']['form'] = 'surveys-groups-form';
+        $aData['fullpagebar']['returnbutton'] = array(
+            'url'=>'admin/survey/sa/listsurveys
+            'text'=>gT('Close'),
+        );
+
+        $this->_renderWrappedTemplate('surveysgroups', 'create', $aData);
+    }
+
+    
+    public function update($id)
+    {
+        $model = $this->loadModel($id);
+
+        if (isset($_POST['SurveysGroups'])) {
+            $model->attributes = $_POST['SurveysGroups'];
+
+
+                
+                if (!empty($_POST['SurveysGroups']['parent_id'])){
+                    $sgid = $_POST['SurveysGroups']['parent_id'] ;
+                    $ParentSurveyGroup = $this->loadModel($sgid);
+                    $aParentsGsid = $ParentSurveyGroup->getAllParents(true);
+
+                    if ( in_array( $model->gsid, $aParentsGsid  ) ) {
+                        Yii::app()->setFlashMessage(gT("A child group can't be set as parent group"), 'error');
+                        $this->getController()->redirect($this->getController()->createUrl('admin/survey/sa/listsurveys').'
+                    }
+                }
+
+            if ($model->save()) {
+                    $this->getController()->redirect($this->getController()->createUrl('admin/survey/sa/listsurveys').'
+            }
+        }
+
+        $aData['model'] = $model;
+        $oSurveySearch = new Survey('search');
+        $oSurveySearch->gsid = $model->gsid;
+        $aData['oSurveySearch'] = $oSurveySearch;
+
+        $oTemplateOptions           = new TemplateConfiguration();
+        $oTemplateOptions->scenario = 'surveygroup';
+        $aData['templateOptionsModel'] = $oTemplateOptions;
+
+        
+        if (Yii::app()->request->getParam('pageSize')) {
+            Yii::app()->user->setState('pageSizeTemplateView', (int) Yii::app()->request->getParam('pageSize'));
+        }
+        $aData['pageSize'] = Yii::app()->user->getState('pageSizeTemplateView', Yii::app()->params['defaultPageSize']); 
+
+        $this->_renderWrappedTemplate('surveysgroups', 'update', $aData);
+    }
+
+    
+    public function delete($id)
+    {
+        $oGroupToDelete = $this->loadModel($id);
+        $sGroupTitle    = $oGroupToDelete->title;
+
+        if ($oGroupToDelete->hasSurveys) {
+            Yii::app()->setFlashMessage(gT("You can't delete a group if it's not empty!"), 'error');
+            $this->getController()->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin/survey/sa/listsurveys '));
+        } elseif ($oGroupToDelete->hasChildGroups) {
+            Yii::app()->setFlashMessage(gT("You can't delete a group because one or more groups depend on it as parent!"), 'error');
+            $this->getController()->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin/survey/sa/listsurveys '));
+        } else {
+            $oGroupToDelete->delete();
+
+            
+            if (!isset($_GET['ajax'])) {
+                Yii::app()->setFlashMessage(sprintf(gT("The survey group '%s' was deleted."), $sGroupTitle), 'success');
+                $this->getController()->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin/survey/sa/listsurveys '));
+            }
+        }
+    }
+
+    
+    public function index()
+    {
+        $model = new SurveysGroups('search');
+        $aData['model'] = $model;
+        $this->_renderWrappedTemplate('surveysgroups', 'index', $aData);
+    }
+
+    
+    public function admin()
+    {
+        $model = new SurveysGroups('search');
+        $model->unsetAttributes(); 
+        if (isset($_GET['SurveysGroups'])) {
+                    $model->attributes = $_GET['SurveysGroups'];
+        }
+
+        $this->render('admin', array(
+            'model'=>$model,
+        ));
+    }
+
+
+    
+    public function loadModel($id)
+    {
+        $model = SurveysGroups::model()->findByPk($id);
+        if ($model === null) {
+                    throw new CHttpException(404, 'The requested page does not exist.');
+        }
+        return $model;
+    }
+
+    
+    protected function performAjaxValidation($model)
+    {
+        if (isset($_POST['ajax']) && $_POST['ajax'] === 'surveys-groups-form') {
+            
+            Yii::app()->end();
+        }
+    }
+}

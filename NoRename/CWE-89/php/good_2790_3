@@ -1,0 +1,149 @@
+<?php
+
+
+
+
+define('NOTOKENRENEWAL',1); 
+
+if (isset($_GET["modulepart"]) && $_GET["modulepart"] == 'bittorrent' && ! defined("NOLOGIN"))
+{
+	define("NOLOGIN",1);
+	define("NOCSRFCHECK",1);	
+}
+if (! defined('NOREQUIREMENU')) define('NOREQUIREMENU','1');
+if (! defined('NOREQUIREHTML')) define('NOREQUIREHTML','1');
+if (! defined('NOREQUIREAJAX')) define('NOREQUIREAJAX','1');
+
+
+function llxHeader() { }
+
+function llxFooter() { }
+
+
+
+$encoding = '';
+$action=GETPOST('action','alpha');
+$original_file=GETPOST('file','alpha');	
+$modulepart=GETPOST('modulepart','alpha');
+$urlsource=GETPOST('urlsource','alpha');
+$entity=GETPOST('entity','int')?GETPOST('entity','int'):$conf->entity;
+
+
+if (empty($modulepart)) accessforbidden('Bad value for parameter modulepart');
+if ($modulepart == 'fckeditor') $modulepart='medias';   
+
+$socid=0;
+if ($user->societe_id > 0) $socid = $user->societe_id;
+
+
+if (in_array($modulepart,array('facture_paiement','unpaid')))
+{
+	if (! $user->rights->societe->client->voir || $socid) $original_file='private/'.$user->id.'/'.$original_file;	
+}
+
+
+
+
+
+
+
+
+
+$type = 'application/octet-stream';
+if (GETPOST('type','alpha')) $type=GETPOST('type','alpha');
+else $type=dol_mimetype($original_file);
+
+
+$attachment = true;
+if (preg_match('/\.(html|htm)$/i',$original_file)) $attachment = false;
+if (isset($_GET["attachment"])) $attachment = GETPOST("attachment",'alpha')?true:false;
+if (! empty($conf->global->MAIN_DISABLE_FORCE_SAVEAS)) $attachment=false;
+
+
+$original_file = str_replace("../","/", $original_file);
+
+
+$refname=basename(dirname($original_file)."/");
+
+
+if (empty($modulepart)) accessforbidden('Bad value for parameter modulepart');
+$check_access = dol_check_secure_access_document($modulepart, $original_file, $entity, $refname);
+$accessallowed              = $check_access['accessallowed'];
+$sqlprotectagainstexternals = $check_access['sqlprotectagainstexternals'];
+$fullpath_original_file     = $check_access['original_file'];               
+
+
+if ($user->societe_id > 0)
+{
+	if ($sqlprotectagainstexternals)
+	{
+		$resql = $db->query($sqlprotectagainstexternals);
+		if ($resql)
+		{
+			$num=$db->num_rows($resql);
+			$i=0;
+			while ($i < $num)
+			{
+				$obj = $db->fetch_object($resql);
+				if ($user->societe_id != $obj->fk_soc)
+				{
+					$accessallowed=0;
+					break;
+				}
+				$i++;
+			}
+		}
+	}
+}
+
+
+
+if (! $accessallowed)
+{
+	accessforbidden();
+}
+
+
+
+if (preg_match('/\.\./',$fullpath_original_file) || preg_match('/[<>|]/',$fullpath_original_file))
+{
+	dol_syslog("Refused to deliver file ".$fullpath_original_file);
+	
+	exit;
+}
+
+
+clearstatcache();
+
+$filename = basename($fullpath_original_file);
+
+
+dol_syslog("document.php download $fullpath_original_file filename=$filename content-type=$type");
+$fullpath_original_file_osencoded=dol_osencode($fullpath_original_file);	
+
+
+if (! file_exists($fullpath_original_file_osencoded))
+{
+	dol_syslog("ErrorFileDoesNotExists: ".$fullpath_original_file);
+	
+	exit;
+}
+
+
+top_httphead($type);
+header('Content-Description: File Transfer');
+if ($encoding)   header('Content-Encoding: '.$encoding);
+
+if ($attachment) header('Content-Disposition: attachment; filename="'.$filename.'"');
+else header('Content-Disposition: inline; filename="'.$filename.'"');
+header('Content-Length: ' . dol_filesize($fullpath_original_file));
+
+header('Cache-Control: Public, must-revalidate');
+header('Pragma: public');
+
+
+
+
+readfile($fullpath_original_file_osencoded);
+
+if (is_object($db)) $db->close();

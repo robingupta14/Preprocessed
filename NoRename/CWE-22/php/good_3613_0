@@ -1,0 +1,994 @@
+<?php
+
+
+
+
+
+$langs->load("companies");
+$langs->load("commercial");
+$langs->load("other");
+$langs->load("bills");
+$langs->load("orders");
+$langs->load("agenda");
+
+$action=GETPOST('action','alpha');
+$backtopage=GETPOST('backtopage','alpha');
+
+
+$socid = GETPOST('socid','int');
+$id = GETPOST('id','int');
+if ($user->societe_id) $socid=$user->societe_id;
+
+
+$error=GETPOST("error");
+
+$cactioncomm = new CActionComm($db);
+$actioncomm = new ActionComm($db);
+$contact = new Contact($db);
+
+
+
+
+if ($action == 'add_action')
+{
+	$error=0;
+
+    if (empty($backtopage))
+    {
+        if ($socid > 0) $backtopage = DOL_URL_ROOT.'/societe/agenda.php?socid='.$socid;
+        else $backtopage=DOL_URL_ROOT.'/comm/action/index.php';
+    }
+
+    if ($_POST["contactid"])
+	{
+		$result=$contact->fetch($_POST["contactid"]);
+	}
+
+	if ($_POST['cancel'])
+	{
+		header("Location: ".$backtopage);
+		exit;
+	}
+
+    $fulldayevent=$_POST["fullday"];
+
+    
+	$datep=dol_mktime($fulldayevent?'00':$_POST["aphour"], $fulldayevent?'00':$_POST["apmin"], 0, $_POST["apmonth"], $_POST["apday"], $_POST["apyear"]);
+	$datef=dol_mktime($fulldayevent?'23':$_POST["p2hour"], $fulldayevent?'59':$_POST["p2min"], $fulldayevent?'59':'0', $_POST["p2month"], $_POST["p2day"], $_POST["p2year"]);
+
+	
+	if (! $datef && $_POST["percentage"] == 100)
+	{
+		$error++;
+		$action = 'create';
+		$mesg='<div class="error">'.$langs->trans("ErrorFieldRequired",$langs->trans("DateEnd")).'</div>';
+	}
+
+	
+	if (! $_POST["actioncode"])
+	{
+		$error++;
+		$action = 'create';
+		$mesg='<div class="error">'.$langs->trans("ErrorFieldRequired",$langs->trans("Type")).'</div>';
+	}
+	else
+	{
+		$result=$cactioncomm->fetch($_POST["actioncode"]);
+	}
+
+	
+	$actioncomm->type_id = $cactioncomm->id;
+	$actioncomm->type_code = $cactioncomm->code;
+	$actioncomm->priority = isset($_POST["priority"])?$_POST["priority"]:0;
+	$actioncomm->fulldayevent = $_POST["fullday"]?1:0;
+	$actioncomm->location = isset($_POST["location"])?$_POST["location"]:'';
+	$actioncomm->label = trim($_POST["label"]);
+	if (! $_POST["label"])
+	{
+		if ($_POST["actioncode"] == 'AC_RDV' && $contact->getFullName($langs))
+		{
+			$actioncomm->label = $langs->transnoentitiesnoconv("TaskRDVWith",$contact->getFullName($langs));
+		}
+		else
+		{
+			if ($langs->trans("Action".$actioncomm->type_code) != "Action".$actioncomm->type_code)
+			{
+				$actioncomm->label = $langs->transnoentitiesnoconv("Action".$actioncomm->type_code)."\n";
+			}
+			else $actioncomm->label = $cactioncomm->libelle;
+		}
+	}
+	$actioncomm->fk_project = isset($_POST["projectid"])?$_POST["projectid"]:0;
+	$actioncomm->datep = $datep;
+	$actioncomm->datef = $datef;
+	$actioncomm->percentage = isset($_POST["percentage"])?$_POST["percentage"]:0;
+	$actioncomm->duree=(($_POST["dureehour"] * 60) + $_POST["dureemin"]) * 60;
+
+	$usertodo=new User($db);
+	if ($_POST["affectedto"] > 0)
+	{
+		$usertodo->fetch($_POST["affectedto"]);
+	}
+	$actioncomm->usertodo = $usertodo;
+	$userdone=new User($db);
+	if ($_POST["doneby"] > 0)
+	{
+		$userdone->fetch($_POST["doneby"]);
+	}
+	$actioncomm->userdone = $userdone;
+
+	$actioncomm->note = trim($_POST["note"]);
+	if (isset($_POST["contactid"])) $actioncomm->contact = $contact;
+	if (GETPOST("socid") > 0)
+	{
+		$societe = new Societe($db);
+		$societe->fetch(GETPOST("socid"));
+		$actioncomm->societe = $societe;
+	}
+
+	
+	if ($_POST["add_webcal"] == 'on' && $conf->webcalendar->enabled) $actioncomm->use_webcal=1;
+	if ($_POST["add_phenix"] == 'on' && $conf->phenix->enabled) $actioncomm->use_phenix=1;
+
+	
+	if ($actioncomm->type_code == 'AC_RDV' && ($datep == '' || $datef == ''))
+	{
+		$error++;
+		$action = 'create';
+		$mesg='<div class="error">'.$langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("DateEnd")).'</div>';
+	}
+	if ($datea && $_POST["percentage"] == 0)
+	{
+		$error++;
+		$action = 'create';
+		$mesg='<div class="error">'.$langs->trans("ErrorStatusCantBeZeroIfStarted").'</div>';
+	}
+
+	if (! $_POST["apyear"] && ! $_POST["adyear"])
+	{
+		$error++;
+		$action = 'create';
+		$mesg='<div class="error">'.$langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("Date")).'</div>';
+	}
+
+	if (! $error)
+	{
+		$db->begin();
+
+		
+		$idaction=$actioncomm->add($user);
+
+		if ($idaction > 0)
+		{
+			if (! $actioncomm->error)
+			{
+				$db->commit();
+				if (! empty($backtopage))
+				{
+					dol_syslog("Back to ".$backtopage);
+					Header("Location: ".$backtopage);
+				}
+				elseif($idaction)
+				{
+					Header("Location: ".DOL_URL_ROOT.'/comm/action/fiche.php?id='.$idaction);
+				}
+				else
+				{
+					Header("Location: ".DOL_URL_ROOT.'/comm/action/index.php');
+				}
+				exit;
+			}
+			else
+			{
+				
+				$db->rollback();
+				$id=$idaction;
+				$langs->load("errors");
+				$error=$langs->trans($actioncomm->error);
+			}
+		}
+		else
+		{
+			$db->rollback();
+			$id=$idaction;
+			$langs->load("errors");
+			$error=$langs->trans($actioncomm->error);
+		}
+	}
+}
+
+
+if ($action == 'confirm_delete' && GETPOST("confirm") == 'yes')
+{
+	$actioncomm = new ActionComm($db);
+	$actioncomm->fetch($id);
+
+	if ($user->rights->agenda->myactions->delete
+		|| $user->rights->agenda->allactions->delete)
+	{
+		$result=$actioncomm->delete();
+
+		if ($result >= 0)
+		{
+			Header("Location: index.php");
+			exit;
+		}
+		else
+		{
+			$mesg=$actioncomm->error;
+		}
+	}
+}
+
+
+if ($action == 'update')
+{
+	if (! $_POST["cancel"])
+	{
+        $fulldayevent=$_POST["fullday"];
+
+	    
+		if ($_POST["aphour"] == -1) $_POST["aphour"]='0';
+		if ($_POST["apmin"] == -1) $_POST["apmin"]='0';
+		if ($_POST["p2hour"] == -1) $_POST["p2hour"]='0';
+		if ($_POST["p2min"] == -1) $_POST["p2min"]='0';
+		
+		
+
+		$actioncomm = new Actioncomm($db);
+		$actioncomm->fetch($id);
+
+		$datep=dol_mktime($fulldayevent?'00':$_POST["aphour"], $fulldayevent?'00':$_POST["apmin"], 0, $_POST["apmonth"], $_POST["apday"], $_POST["apyear"]);
+		$datef=dol_mktime($fulldayevent?'23':$_POST["p2hour"], $fulldayevent?'59':$_POST["p2min"], $fulldayevent?'59':'0', $_POST["p2month"], $_POST["p2day"], $_POST["p2year"]);
+
+		$actioncomm->label       = $_POST["label"];
+		$actioncomm->datep       = $datep;
+		$actioncomm->datef       = $datef;
+		
+		
+		$actioncomm->percentage  = $_POST["percentage"];
+		$actioncomm->priority    = $_POST["priority"];
+        $actioncomm->fulldayevent= $_POST["fullday"]?1:0;
+		$actioncomm->location    = isset($_POST["location"])?$_POST["location"]:'';
+		$actioncomm->societe->id = $_POST["socid"];
+		$actioncomm->contact->id = $_POST["contactid"];
+		$actioncomm->fk_project  = $_POST["projectid"];
+		$actioncomm->note        = $_POST["note"];
+		$actioncomm->pnote       = $_POST["note"];
+
+		if (! $datef && $_POST["percentage"] == 100)
+		{
+			$error=$langs->trans("ErrorFieldRequired",$langs->trans("DateEnd"));
+			$action = 'edit';
+		}
+
+		
+		$usertodo=new User($db);
+		if ($_POST["affectedto"])
+		{
+			$usertodo->fetch($_POST["affectedto"]);
+		}
+		$actioncomm->usertodo = $usertodo;
+		$userdone=new User($db);
+		if ($_POST["doneby"])
+		{
+			$userdone->fetch($_POST["doneby"]);
+		}
+		$actioncomm->userdone = $userdone;
+
+		if (! $error)
+		{
+			$db->begin();
+
+			$result=$actioncomm->update($user);
+
+			if ($result > 0)
+			{
+				$db->commit();
+			}
+			else
+			{
+				$db->rollback();
+			}
+		}
+	}
+
+	if ($result < 0)
+	{
+		$langs->load("errors");
+		$mesg='<div class="error">'.$langs->trans($actioncomm->error).'</div>';
+	}
+	else
+	{
+        if (! empty($backtopage))
+        {
+            header("Location: ".$backtopage);
+            exit;
+        }
+	}
+}
+
+
+
+
+$help_url='EN:Module_Agenda_En|FR:Module_Agenda|ES:M&omodulodulo_Agenda';
+llxHeader('',$langs->trans("Agenda"),$help_url);
+
+$form = new Form($db);
+$htmlactions = new FormActions($db);
+
+
+if ($action == 'create')
+{
+	$contact = new Contact($db);
+
+	if (GETPOST("contactid"))
+	{
+		$result=$contact->fetch(GETPOST("contactid"));
+		if ($result < 0) dol_print_error($db,$contact->error);
+	}
+
+    if ($conf->use_javascript_ajax)
+    {
+        
+        
+                                jQuery(".fulldaystartmin").attr(\'disabled\', false);
+                                jQuery(".fulldayendhour").attr(\'disabled\', false);
+                                jQuery(".fulldayendmin").attr(\'disabled\', false);
+                            }
+                            else
+                            {
+                                jQuery(".fulldaystarthour").attr(\'disabled\', true);
+                                jQuery(".fulldaystartmin").attr(\'disabled\', true);
+                                jQuery(".fulldayendhour").attr(\'disabled\', true);
+                                jQuery(".fulldayendmin").attr(\'disabled\', true);
+                                jQuery(".fulldaystarthour").val("00");
+                                jQuery(".fulldaystartmin").val("00");
+                                
+                                
+                                jQuery(".fulldayendhour").val("23");
+                                jQuery(".fulldayendmin").val("59");
+                        }
+                    }
+                    setdatefields();
+                    jQuery("
+                        setdatefields();
+                    });
+                    jQuery("
+                        if (jQuery("
+                        {
+                            if (jQuery("
+                        }
+                        if (jQuery("
+                        {
+                            jQuery("
+                        }
+                   });
+                   jQuery("
+                        if (jQuery("
+                        else jQuery("
+                   });
+               })';
+        
+    }
+
+	
+	
+	
+	
+
+	if (GETPOST("actioncode") == 'AC_RDV') print_fiche_titre($langs->trans("AddActionRendezVous"));
+	else print_fiche_titre($langs->trans("AddAnAction"));
+
+	dol_htmloutput_mesg($mesg);
+
+	
+
+	
+	
+	if (GETPOST("actioncode"))
+	{
+		
+		$cactioncomm->fetch(GETPOST("actioncode"));
+		
+	}
+	else
+	{
+		$htmlactions->select_type_actions($actioncomm->type_code, "actioncode");
+	}
+	
+
+	
+	
+
+    
+    
+
+	
+	$datep=$actioncomm->datep;
+	if (GETPOST('datep','int',1)) $datep=dol_stringtotime(GETPOST('datep','int',1),0);
+	
+	if (GETPOST("afaire") == 1) $form->select_date($datep,'ap',1,1,0,"action",1,1,0,0,'fulldayend');
+	else if (GETPOST("afaire") == 2) $form->select_date($datep,'ap',1,1,1,"action",1,1,0,0,'fulldayend');
+	else $form->select_date($datep,'ap',1,1,1,"action",1,1,0,0,'fulldaystart');
+	
+	
+	$datef=$actioncomm->datef;
+    if (GETPOST('datef','int',1)) $datef=dol_stringtotime(GETPOST('datef','int',1),0);
+	
+	if (GETPOST("afaire") == 1) $form->select_date($datef,'p2',1,1,1,"action",1,1,0,0,'fulldayend');
+	else if (GETPOST("afaire") == 2) $form->select_date($datef,'p2',1,1,1,"action",1,1,0,0,'fulldayend');
+	else $form->select_date($datef,'p2',1,1,1,"action",1,1,0,0,'fulldayend');
+	
+
+	
+	
+	
+	$percent=-1;
+	if (isset($_GET['percentage']) || isset($_POST['percentage']))
+	{
+		$percent=GETPOST('percentage');
+	}
+	else
+	{
+		if (GETPOST("afaire") == 1) $percent=0;
+		if (GETPOST("afaire") == 2) $percent=100;
+	}
+	
+	
+
+    
+    
+
+	
+
+	
+
+	
+
+	
+	$var=false;
+	
+	$form->select_users(GETPOST("affectedto")?GETPOST("affectedto"):($actioncomm->usertodo->id > 0 ? $actioncomm->usertodo : $user),'affectedto',1);
+	
+
+	
+	
+	$form->select_users(GETPOST("doneby")?GETPOST("doneby"):($percent==100?$actioncomm->userdone:0),'doneby',1);
+	
+
+	
+	
+	
+
+	
+	
+	if (GETPOST("socid") > 0)
+	{
+		$societe = new Societe($db);
+		$societe->fetch(GETPOST("socid"));
+		
+		
+	}
+	else
+	{
+		
+	}
+	
+
+	
+	if (GETPOST("contactid") > 0 || GETPOST("socid") > 0)
+	{
+		
+		$form->select_contacts(GETPOST("socid"),GETPOST('contactid'),'contactid',1);
+		
+	}
+
+	
+	if ($conf->projet->enabled)
+	{
+		
+		$langs->load("project");
+
+		
+		$numproject=select_projects($societe->id,GETPOST("projectid")?GETPOST("projectid"):$projectid,'projectid');
+		if ($numproject==0)
+		{
+			 <a href="../../projet/fiche.php?socid='.$societe->id.'&action=create">'.$langs->trans("AddProject").'</a>';
+		}
+		
+	}
+
+	if (GETPOST("datep") && preg_match('/^([0-9][0-9][0-9][0-9])([0-9][0-9])([0-9][0-9])$/',GETPOST("datep"),$reg))
+	{
+		$actioncomm->datep=dol_mktime(0,0,0,$reg[2],$reg[3],$reg[1]);
+	}
+
+	
+	
+	
+	
+
+	add_row_for_calendar_link();
+
+    
+    
+    $doleditor=new DolEditor('note',($_POST["note"]?$_POST["note"]:$actioncomm->note),'',280,'dolibarr_notes','In',true,true,$conf->fckeditor->enabled,ROWS_7,90);
+    $doleditor->Create();
+    
+
+	
+
+	
+	
+	 &nbsp; ';
+	
+	
+
+	
+}
+
+
+if ($id)
+{
+	if ($error)
+	{
+		dol_htmloutput_errors($error);
+	}
+	if ($mesg)
+	{
+		dol_htmloutput_mesg($mesg);
+	}
+
+	$act = new ActionComm($db);
+	$result=$act->fetch($id);
+	if ($result < 0)
+	{
+		dol_print_error($db,$act->error);
+		exit;
+	}
+
+	$societe = new Societe($db);
+	if ($act->societe->id)
+	{
+		$result=$societe->fetch($act->societe->id);
+	}
+	$act->societe = $societe;
+
+	if ($act->author->id > 0)   { $tmpuser=new User($db); $res=$tmpuser->fetch($act->author->id); $act->author=$tmpuser; }
+	if ($act->usermod->id > 0)  { $tmpuser=new User($db); $res=$tmpuser->fetch($act->usermod->id); $act->usermod=$tmpuser; }
+	if ($act->usertodo->id > 0) { $tmpuser=new User($db); $res=$tmpuser->fetch($act->usertodo->id); $act->usertodo=$tmpuser; }
+	if ($act->userdone->id > 0) { $tmpuser=new User($db); $res=$tmpuser->fetch($act->userdone->id); $act->userdone=$tmpuser; }
+
+	$contact = new Contact($db);
+	if ($act->contact->id)
+	{
+		$result=$contact->fetch($act->contact->id,$user);
+	}
+	$act->contact = $contact;
+
+	
+
+	$head=actions_prepare_head($act);
+	dol_fiche_head($head, 'card', $langs->trans("Action"),0,'action');
+
+	$now=dol_now();
+	$delay_warning=$conf->global->MAIN_DELAY_ACTIONS_TODO*24*60*60;
+
+	
+	if ($action == 'delete')
+	{
+		$ret=$form->form_confirm("fiche.php?id=".$id,$langs->trans("DeleteAction"),$langs->trans("ConfirmDeleteAction"),"confirm_delete",'','',1);
+		if ($ret == 'html') 
+	}
+
+	if ($action == 'edit')
+	{
+	    if ($conf->use_javascript_ajax)
+        {
+            
+            
+                                    jQuery(".fulldaystartmin").attr(\'disabled\', false);
+                                    jQuery(".fulldayendhour").attr(\'disabled\', false);
+                                    jQuery(".fulldayendmin").attr(\'disabled\', false);
+                                }
+                                else
+                                {
+                                    jQuery(".fulldaystarthour").attr(\'disabled\', true);
+                                    jQuery(".fulldaystartmin").attr(\'disabled\', true);
+                                    jQuery(".fulldayendhour").attr(\'disabled\', true);
+                                    jQuery(".fulldayendmin").attr(\'disabled\', true);
+                                    jQuery(".fulldaystarthour").val("00");
+                                    jQuery(".fulldaystartmin").val("00");
+                                    
+                                    
+                                    jQuery(".fulldayendhour").val("23");
+                                    jQuery(".fulldayendmin").val("59");
+                            }
+                        }
+                        setdatefields();
+                        jQuery("
+                            setdatefields();
+                        });
+                   })';
+            
+        }
+
+        
+		
+		
+		
+		
+		
+		
+
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+        
+        
+
+		
+		
+		if (GETPOST("afaire") == 1) $form->select_date($act->datep,'ap',1,1,0,"action",1,1,0,0,'fulldaystart');
+		else if (GETPOST("afaire") == 2) $form->select_date($act->datep,'ap',1,1,1,"action",1,1,0,0,'fulldaystart');
+		else $form->select_date($act->datep,'ap',1,1,1,"action",1,1,0,0,'fulldaystart');
+		
+		
+		
+		if (GETPOST("afaire") == 1) $form->select_date($act->datef,'p2',1,1,1,"action",1,1,0,0,'fulldayend');
+		else if (GETPOST("afaire") == 2) $form->select_date($act->datef,'p2',1,1,1,"action",1,1,0,0,'fulldayend');
+		else $form->select_date($act->datef,'p2',1,1,1,"action",1,1,0,0,'fulldayend');
+		
+
+		
+		
+		$percent=GETPOST("percentage")?GETPOST("percentage"):$act->percentage;
+		
+		
+
+        
+        
+
+		
+
+		
+		$var=false;
+		
+		
+		
+
+		
+		
+		
+		
+
+		
+		
+		
+		
+
+		
+
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+
+		
+		if ($conf->projet->enabled)
+		{
+			
+			$langs->load("project");
+
+			
+			$numprojet=select_projects($act->societe->id,$act->fk_project,'projectid');
+			if ($numprojet==0)
+			{
+				 <a href="../../projet/fiche.php?socid='.$societe->id.'&action=create">'.$langs->trans("AddProject").'</a>';
+			}
+			
+		}
+
+		
+		
+		
+		
+
+		
+		if (! empty($act->fk_element) && ! empty($act->elementtype))
+		{
+			
+			
+		}
+
+        
+        
+        
+        $doleditor=new DolEditor('note',$act->note,'',240,'dolibarr_notes','In',true,true,$conf->fckeditor->enabled,ROWS_5,90);
+        $doleditor->Create();
+        
+
+		
+
+		
+		 &nbsp; <input type="submit" class="button" name="cancel" value="'.$langs->trans("Cancel").'">';
+		
+
+		
+	}
+	else
+	{
+		
+		
+
+		
+		
+		
+		
+
+		
+		
+
+		
+		
+
+        
+        
+
+		
+		
+		if (! $act->fulldayevent) 
+		else 
+		if ($act->percentage == 0 && $act->datep && $act->datep < ($now - $delay_warning)) 
+		
+		
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+		
+
+		
+		
+        if (! $act->fulldayevent) 
+		else 
+		if ($act->percentage > 0 && $act->percentage < 100 && $act->datef && $act->datef < ($now- $delay_warning)) 
+		
+
+		
+		
+		
+		
+
+        
+        
+
+		
+
+		
+		$var=false;
+		
+		if ($act->author->id > 0) 
+		else ';
+		
+
+		
+		
+		if ($act->usertodo->id > 0) 
+		
+
+		
+		
+		if ($act->userdone->id > 0) 
+		
+
+		
+
+		
+		
+		if ($act->societe->id && $act->type_code == 'AC_TEL')
+		{
+			if ($act->societe->fetch($act->societe->id))
+			{
+				
+			}
+		}
+		
+		
+		
+		if ($act->contact->id > 0)
+		{
+			
+			if ($act->contact->id && $act->type_code == 'AC_TEL')
+			{
+				if ($act->contact->fetch($act->contact->id))
+				{
+					
+				}
+			}
+		}
+		else
+		{
+			
+		}
+
+		
+
+		
+		if ($conf->projet->enabled)
+		{
+			
+			if ($act->fk_project)
+			{
+				$project=new Project($db);
+				$project->fetch($act->fk_project);
+				
+			}
+			
+		}
+
+		
+		
+		
+		
+
+		
+		if (! empty($act->fk_element) && ! empty($act->elementtype))
+		{
+			
+			
+		}
+
+		
+		
+		
+		
+
+		
+	}
+
+	
+
+
+	
+
+	
+
+	if ($action != 'edit')
+	{
+		if ($user->rights->agenda->allactions->create ||
+		   (($act->author->id == $user->id || $act->usertodo->id == $user->id) && $user->rights->agenda->myactions->create))
+		{
+			
+		}
+		else
+		{
+			
+		}
+		else
+		{
+			
+}
+
+$db->close();
+
+llxFooter();
+
+
+
+function add_row_for_calendar_link()
+{
+	global $conf,$langs,$user;
+	$nbtr=0;
+
+	
+	if ($conf->webcalendar->enabled)
+	{
+		if ($conf->global->PHPWEBCALENDAR_SYNCRO != 'never')
+		{
+			$langs->load("other");
+
+			
+
+			if (! $user->webcal_login)
+			{
+				
+				
+				
+				
+				$nbtr++;
+			}
+			else
+			{
+				if ($conf->global->PHPWEBCALENDAR_SYNCRO == 'always')
+				{
+					
+				}
+				else
+				{
+					
+					
+					$nbtr++;
+				}
+			}
+		}
+	}
+
+	if ($conf->phenix->enabled)
+	{
+		if ($conf->global->PHPPHENIX_SYNCRO != 'never')
+		{
+			$langs->load("other");
+
+			
+
+			if (! $user->phenix_login)
+			{
+				
+				
+				
+				
+				$nbtr++;
+			}
+			else
+			{
+				if ($conf->global->PHPPHENIX_SYNCRO == 'always')
+				{
+					
+				}
+				else
+				{
+					
+					
+					$nbtr++;
+				}
+			}
+		}
+	}
+
+	return $nbtr;
+}
+
+
+?>

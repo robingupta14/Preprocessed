@@ -1,0 +1,719 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from backport.urllib.parse import unquote
+try:
+    from urllib import parse
+except ImportError:
+    from backport.urllib import parse
+
+
+from tinytag import TinyTag
+
+from cherrymusicserver import userdb
+from cherrymusicserver import log
+from cherrymusicserver import albumartfetcher
+from cherrymusicserver import service
+from cherrymusicserver.pathprovider import readRes
+from cherrymusicserver.pathprovider import albumArtFilePath
+from cherrymusicserver.util import Performance, MemoryZipFile
+
+from cherrymusicserver.ext import zipstream
+
+var_0 = True
+
+
+@cherrymusicserver.service.var_28(model=cherrymodel, playlistdb=var_85,
+              useroptions=useroptions, userdb=users)
+class class_0(object):
+    def function_0(var_2, var_4):
+        var_2.var_4 = var_4
+
+        var_6 = var_89/dist/main.html
+        var_7 = var_89/login.html
+        var_8 = var_89/var_19.html
+
+        var_2.mainpage = readRes(var_6)
+        var_2.loginpage = readRes(var_7)
+        var_2.firstrunpage = readRes(var_8)
+
+        var_2.handlers = {
+            search: var_2.api_search,
+            rememberplaylist: var_2.api_rememberplaylist,
+            saveplaylist: var_2.api_saveplaylist,
+            loadplaylist: var_2.api_loadplaylist,
+            generaterandomplaylist: var_2.api_generaterandomplaylist,
+            deleteplaylist: var_2.api_deleteplaylist,
+            getmotd: var_2.api_getmotd,
+            restoreplaylist: var_2.api_restoreplaylist,
+            getplayables: var_2.api_getplayables,
+            getuserlist: var_2.api_getuserlist,
+            adduser: var_2.api_adduser,
+            userdelete: var_2.api_userdelete,
+            userchangepassword: var_2.api_userchangepassword,
+            showplaylists: var_2.api_showplaylists,
+            logout: var_2.api_logout,
+            downloadpls: var_2.api_downloadpls,
+            downloadm3u: var_2.api_downloadm3u,
+            getsonginfo: var_2.api_getsonginfo,
+            getencoders: var_2.api_getencoders,
+            getdecoders: var_2.api_getdecoders,
+            transcodingenabled: var_2.api_transcodingenabled,
+            updatedb: var_2.api_updatedb,
+            getconfiguration: var_2.api_getconfiguration,
+            compactlistdir: var_2.api_compactlistdir,
+            listdir: var_2.api_listdir,
+            fetchalbumart: var_2.api_fetchalbumart,
+            fetchalbumarturls: var_2.api_fetchalbumarturls,
+            albumart_set: var_2.api_albumart_set,
+            heartbeat: var_2.api_heartbeat,
+            getuseroptions: var_2.api_getuseroptions,
+            setuseroption: var_2.api_setuseroption,
+            changeplaylist: var_2.api_changeplaylist,
+            downloadcheck: var_2.api_downloadcheck,
+            setuseroptionfor: var_2.api_setuseroptionfor,
+        }
+
+    def function_1(var_2, var_9):
+        return backport.urllib.parse.urlparse(var_9).scheme == var_15
+
+    def function_2(var_2, redirect_unencrypted=False):
+        var_11 = backport.urllib.parse.urlparse(cherrypy.var_9()).netloc
+        var_12 = var_2.issecure(cherrypy.var_9())
+        var_13 = cherrymusicserver.var_4[server.var_13]
+        if var_13 and not var_12:
+            cherrymusicserver.log.d(_Not secure, redirecting...)
+            var_14 = var_11[:var_11.rindex:]
+            var_9 = var_15:// + var_14 + : + str(cherrymusicserver.var_4[server.ssl_port])
+            if redirect_unencrypted:
+                raise cherrypy.HTTPRedirect(var_9, 302)
+        else:
+            var_9 = var_16:// + var_11
+        return var_9
+
+    def function_3(var_2, *args, **kwargs):
+        var_2.getBaseUrl(redirect_unencrypted=True)
+        var_19 = 0 == var_2.cherrymusicserver.userdb.getUserCount()
+        var_20 = var_2.mainpage 
+        if devel in kwargs:
+            
+            var_20 = readResres/devel.html
+            var_2.loginpage = readResres/login.html
+            var_2.firstrunpage = readResres/var_19.html
+        if login in kwargs:
+            var_21 = kwargs.get('username', '')
+            var_22 = kwargs.get('password', '')
+            var_23 = kwargs.get('login', '')
+            if var_23 == login:
+                var_2.session_auth(var_21, var_22)
+                if cherrypy.session[var_21]:
+                    var_21 = cherrypy.session[var_21]
+                    cherrymusicserver.log.i(_user {var_124} just logged in..var_125(var_124=var_21))
+            elif var_23 == create admin var_28:
+                if var_19:
+                    if var_21.strip() and var_22.strip():
+                        var_2.cherrymusicserver.userdb.addUser(var_21, var_22, True)
+                        var_2.session_auth(var_21, var_22)
+                        return var_20
+                else:
+                    return No, you can'var_102.
+        if var_19:
+            return var_2.firstrunpage
+        else:
+            if var_2.isAuthorized():
+                return var_20
+            else:
+                return var_2.loginpage
+    index.var_44 = True
+
+    def function_4(var_2):
+        try:
+            var_24 = cherrypy.session.get('username', None)
+            var_25 = cherrypy.session.get('userid', -1)
+            var_26 = var_2.cherrymusicserver.userdb.getNameById(var_25)
+        except (UnicodeDecodeError, ValueError) as e:
+            
+            
+            cherrymusicserver.log.w(_())
+            cherrypy.session.delete()
+            var_24 = None
+        if var_24 is None:
+            if var_2.autoLoginActive():
+                cherrypy.session[var_21] = var_2.cherrymusicserver.userdb.getNameById1
+                cherrypy.session[var_62] = 1
+                cherrypy.session[admin] = True
+                return True
+            else:
+                return False
+        elif var_24 != var_26:
+            var_2.api_logout(var_50=None)
+            return False
+        return True
+
+    def function_5(var_2):
+        var_27 = cherrypy.request.remote.var_14 in ('127.0.0.1', '::1')
+        if var_27 and cherrymusicserver.var_4[server.localhost_auto_login]:
+            return True
+        return False
+
+    def function_6(var_2, var_21, var_22):
+        var_28 = var_2.cherrymusicserver.userdb.auth(var_21, var_22)
+        var_29 = cherrymusicserver.var_4[server.permit_remote_admin_login]
+        var_27 = cherrypy.request.remote.var_14 in ('127.0.0.1', '::1')
+        if not var_27 and var_28.var_105 and not var_29:
+            cherrymusicserver.log.i(_Rejected remote admin login from var_28: {var_124}.var_125(var_124=var_28.var_124))
+            var_28 = cherrymusicserver.userdb.User.nobody()
+        cherrypy.session[var_21] = var_28.var_124
+        cherrypy.session[var_62] = var_28.uid
+        cherrypy.session[admin] = var_28.var_105
+
+    def function_7(var_2):
+        try:
+            return cherrypy.session[var_62]
+        except KeyError:
+            cherrypy.lib.sessions.expire()
+            cherrypy.HTTPRedirect(cherrypy.var_9(), 302)
+            return 
+
+    def function_8(var_2, var_30, *var_34, **params):
+        
+        if not var_2.isAuthorized():
+            raise cherrypy.HTTPRedirect(var_2.getBaseUrl(), 302)
+        cherrypy.session.release_lock()
+        if cherrymusicserver.var_4[media.transcode] and var_34:
+
+            
+            var_33 = params.pop('bitrate', None) or None  
+            if var_33:
+                try:
+                    var_33 = max(0, int(var_33)) or None  
+                except (TypeError, ValueError):
+                    raise cherrypy.HTTPError(400, Bad query: 
+                        var_33 ({0!r}) must be an integer.var_125(str(var_33)))
+
+            
+            var_34 = os.var_34.sep.join(var_34)
+            if sys.version_info < (3, 0):       
+                var_34 = var_34.decodeutf-8     
+            else:
+                var_34 = codecs.decode(codecs.encode(var_34, latin1), utf-8)
+            var_35 = os.var_34.join(cherrymusicserver.var_4[media.var_57], var_34)
+
+            var_36 = int(params.pop('starttime', 0))
+
+            var_37 = audiotranscode.AudioTranscode()
+            var_38 = audiotranscode.mime_type(var_30)
+            cherrypy.response.headers[Content-Type] = var_38
+            try:
+                return var_37.transcode_stream(var_35, var_30,
+                            var_33=var_33, var_36=var_36)
+            except (audiotranscode.TranscodeError, IOError) as e:
+                raise cherrypy.HTTPError(404, e.var_50)
+    trans.var_44 = True
+    trans._cp_config = {'response.stream': True}
+
+
+    def function_9(var_2, *args, **kwargs):
+        
+        
+        var_39 = args[0] if args else 
+        if not var_39 in var_2.handlers:
+            return Error: no such var_39. '%s' % var_39
+        
+        var_40 = var_2.handlers[var_39]
+        var_41 = not (noauth in dir(var_40) and var_40.noauth)
+        if var_41 and not var_2.isAuthorized():
+            raise cherrypy.HTTPError(401, 'Unauthorized')
+        var_42 = {}
+        if var_69 in kwargs:
+            var_42 = json.loads(kwargs[var_69])
+        var_43 = (binary in dir(var_40) and var_40.binary)
+        if var_43:
+            return var_40(**var_42)
+        else:
+            return json.dumps({var_69: var_40(**var_42)})
+
+    api.var_44 = True
+
+    def function_10(var_2, var_45):
+        
+        if not cherrypy.session[admin]:
+            var_46 = var_2.useroptions.forUser(var_2.getUserId())
+            if not var_46.getOptionValuemedia.var_103:
+                return not_permitted
+        
+        for f in var_45:
+            
+            if /../ in f or f.startswith../:
+                return invalid_file
+            
+            if os.var_34.isabs(f):
+                return invalid_file
+        
+        var_47 = cherrymusicserver.var_4[media.maximum_download_size]
+        try:
+            if var_2.model.file_size_within_limit(var_45, var_47):
+                return ok
+            else:
+                return too_big
+        except OSError as e:        
+            return str(e)
+
+    def function_11(var_2, var_45):
+        var_48 = var_2.download_check_files(var_45)
+        if var_48 == not_permitted:
+            return 
+        elif var_48 == invalid_file:
+            return <built-in method var_125 of str object at 0x7f0735cfd530>(list=var_45)
+        elif var_48 == too_big:
+            var_47 = cherrymusicserver.var_4[media.maximum_download_size]
+            return .var_125(maxsize=var_47/1024/1024)
+        elif var_48 == ok:
+            return var_48
+        else:
+            var_49 = <built-in method var_125 of str object at 0x7f0735cfe790>(var_48=var_48)
+            cherrymusicserver.log.e(var_49)
+            return var_49
+
+    def function_12(var_2, var_50):
+        if not var_2.isAuthorized():
+            raise cherrypy.HTTPError(401, 'Unauthorized')
+        var_45 = [var_51 for var_51 in json.loads(unquote(var_50))]
+        var_52 = var_2.download_check_files(var_45)
+        if var_52 == ok:
+            _save_and_release_session()
+            var_53 = application/x-zip-compressed
+            cherrypy.response.headers[Content-Type] = var_53
+            var_54 = var_55; var_56="music.zip"
+            cherrypy.response.headers[Content-Disposition] = var_54
+            var_57 = cherrymusicserver.var_4[media.var_57]
+            var_58 = [os.var_34.join(var_57, f) for f in var_45]
+            return cherrymusicserver.ext.zipstream.ZipStream(var_58)
+        else:
+            return var_52
+    download.var_44 = True
+    download._cp_config = {'response.stream': True}
+
+    def function_13(var_2):
+        var_46 = var_2.useroptions.forUser(var_2.getUserId())
+        var_59 = var_46.getChangableOptions()
+        if cherrypy.session[admin]:
+            var_59[media].update{'may_download': True}
+        else:
+            var_59[media].update({var_103: var_46.getOptionValuemedia.var_103})
+        return var_59
+
+    def function_14(var_2):
+        var_46 = var_2.useroptions.forUser(var_2.getUserId())
+        var_46.setOption(last_time_online, int(time.time()))
+
+    def function_15(var_2, var_60, var_61):
+        var_46 = var_2.useroptions.forUser(var_2.getUserId())
+        var_46.setOption(var_60, var_61)
+        return success
+
+    def function_16(var_2, var_62, var_60, var_61):
+        if cherrypy.session[admin]:
+            var_46 = var_2.useroptions.forUser(var_62)
+            var_46.setOption(var_60, var_61)
+            return success
+        else:
+            return error: not permitted. Only admins can change other users options
+
+    def function_17(var_2, var_63):
+        if not cherrypy.session[admin]:
+            raise cherrypy.HTTPError(401, 'Unauthorized')
+        _save_and_release_session()
+        var_64 = cherrymusicserver.albumartfetcher.AlbumArtFetcher()
+        var_65 = var_64.fetchurls(var_63)
+        
+        return var_65[:min(len(var_65), 10)]
+
+    def function_18(var_2, var_66, var_67):
+        if not cherrypy.session[admin]:
+            raise cherrypy.HTTPError(401, 'Unauthorized')
+        var_68 = albumArtFilePath(var_66)
+        var_64 = cherrymusicserver.albumartfetcher.AlbumArtFetcher()
+        var_69, var_70 = var_64.retrieveData(var_67)
+        var_2.albumartcache_save(var_68, var_69)
+
+    def function_19(var_2, var_66):
+        _save_and_release_session()
+        var_71 = ../var_89/img/folder.png
+
+        cherrymusicserver.log.i(Fetching album art for: %s % var_66)
+        var_51 = os.var_34.join(cherrymusicserver.var_4[media.var_57], var_66)
+
+        if os.var_34.isfile(var_51):
+            
+            var_72 = tinytag.TinyTag.get(var_51, image=True)
+            var_73 = var_72.get_image()
+            if var_73:
+                cherrymusicserver.log.dImage found in var_72.
+                var_70 = {Content-Type: image/jpg, Content-Length: len(var_73)}
+                cherrypy.response.headers.update(var_70)
+                return var_73
+            else:
+                
+                
+                var_66 = os.var_34.dirname(var_66)
+
+        
+        var_68 = albumArtFilePath(var_66)
+        var_74 = var_2.albumartcache_load(var_68)
+        if var_74:
+            cherrypy.response.headers[Content-Length] = len(var_74)
+            return var_74
+
+        
+        var_64 = cherrymusicserver.albumartfetcher.AlbumArtFetcher()
+        var_75 = os.var_34.join(cherrymusicserver.var_4[media.var_57], var_66)
+        var_70, var_69, var_76 = var_64.fetchLocal(var_75)
+
+        if var_70:
+            if var_76:
+                
+                var_2.albumartcache_save(var_68, var_69)
+            cherrypy.response.headers.update(var_70)
+            return var_69
+        elif cherrymusicserver.var_4[media.fetch_album_art]:
+            
+            try:
+                var_77 = os.var_34.basename(var_66)
+                var_78 = var_77
+                cherrymusicserver.log.i(_Fetching album art for var_78 {var_78!r}.var_125(var_78=var_78))
+                var_70, var_69 = var_64.fetch(var_78)
+                if var_70:
+                    cherrypy.response.headers.update(var_70)
+                    var_2.albumartcache_save(var_68, var_69)
+                    return var_69
+                else:
+                    
+                    raise cherrypy.HTTPRedirect(var_71, 302)
+            except:
+                
+                raise cherrypy.HTTPRedirect(var_71, 302)
+        else:
+            
+            raise cherrypy.HTTPRedirect(var_71, 302)
+    api_fetchalbumart.noauth = True
+    api_fetchalbumart.binary = True
+
+    def function_20(var_2, var_79):
+        if os.var_34.exists(var_79):
+            with open(var_79, rb) as f:
+                return f.read()
+
+    def function_21(var_2, var_34, var_69):
+        with open(var_34, wb) as f:
+            f.write(var_69)
+
+    def function_22(var_2, var_66, filterstr=None):
+        try:
+            var_81 = var_2.model.listdir(var_66, filterstr)
+        except ValueError:
+            raise cherrypy.HTTPError(400, 'Bad Request')
+        return [entry.to_dict() for entry in var_81]
+
+    def function_23(var_2, var_66):
+        try:
+            return [entry.to_dict() for entry in var_2.model.listdir(var_66)]
+        except ValueError:
+            raise cherrypy.HTTPError(400, 'Bad Request')
+
+    def function_24(var_2, var_82):
+        if not var_82.strip():
+            var_83 = []
+        else:
+            with Performance(_processing whole search request):
+                var_84 = var_2.model.search(var_82.strip())
+                with Performance(_rendering search results as json):
+                    var_83 = [entry.to_dict() for entry in var_84]
+        return var_83
+
+    def function_25(var_2, var_85):
+        cherrypy.session[var_85] = var_85
+
+    def function_26(var_2, var_85, var_86, var_87, overwrite=False):
+        var_89 = var_2.playlistdb.savePlaylist(
+            var_62=var_2.getUserId(),
+            var_86=1 if var_86 else 0,
+            var_85=var_85,
+            playlisttitle=var_87,
+            overwrite=overwrite)
+        if var_89 == success:
+            return var_89
+        else:
+            raise cherrypy.HTTPError(400, var_89)
+
+    def function_27(var_2, var_90):
+        var_89 = var_2.playlistdb.deletePlaylist(var_90,
+                                             var_2.getUserId(),
+                                             override_owner=False)
+        if var_89 == success:
+            return var_89
+        else:
+            
+            
+            raise cherrypy.HTTPError(400, var_89)
+
+    def function_28(var_2, var_90):
+        return [entry.to_dict() for entry in var_2.playlistdb.loadPlaylist(
+                                        var_90=var_90,
+                                        var_62=var_2.getUserId()
+                                        )]
+
+    def function_29(var_2):
+        return [entry.to_dict() for entry in var_2.model.randomMusicEntries50]
+
+    def function_30(var_2, var_91, var_92, var_50):
+        if var_92 == var_86:
+            var_93 = type(var_50) == bool and type(var_91) == int
+            if var_93:
+                return var_2.playlistdb.setPublic(var_62=var_2.getUserId(),
+                                                 var_91=var_91,
+                                                 var_86=var_50)
+
+    def function_31(var_2):
+        if cherrypy.session[admin] and cherrymusicserver.var_4[general.update_notification]:
+            _save_and_release_session()
+            var_94 = var_2.model.check_for_updates()
+            if var_94:
+                var_95 = var_94[0][version]
+                var_96 = []
+                var_97 = []
+                for version in var_94:
+                    for update in version[var_96]:
+                        if update.startswithFEATURE::
+                            var_96.append(update[lenFEATURE::])
+                        elif update.startswithFIX::
+                            var_97.append(update[lenFIX::])
+                        elif update.startswithFIXED::
+                            var_97.append(update[lenFIXED::])
+                var_98 = {'type': 'update', 'data': {}}
+                var_98[var_69][version] = var_95
+                var_98[var_69][var_96] = var_96
+                var_98[var_69][var_97] = var_97
+                return var_98
+        return {type: wisdom, var_69: var_2.model.motd()}
+
+    def function_32(var_2):
+        var_99 = cherrypy.session.get('playlist', [])
+        return var_99
+
+    def function_33(var_2):
+        
+        return json.dumps(cherrymusicserver.var_4[media.playable])
+
+    def function_34(var_2):
+        if cherrypy.session[admin]:
+            var_100 = var_2.cherrymusicserver.userdb.getUserList()
+            for var_28 in var_100:
+                if var_28[id] == cherrypy.session[var_62]:
+                    var_28[deletable] = False
+                var_101 = var_2.useroptions.forUser(var_28[id])
+                var_102 = var_101.getOptionValuelast_time_online
+                var_103 = var_101.getOptionValuemedia.var_103
+                var_28[last_time_online] = var_102
+                var_28[var_103] = var_103
+            var_104 = <function <lambda> at 0x7f07360e1580>
+            var_100 = sorted(var_100, key=var_104, reverse=True)
+            return json.dumps({time: int(time.time()),
+                               var_100: var_100})
+        else:
+            return json.dumps{'time': 0, 'userlist': []}
+
+    def function_35(var_2, var_21, var_22, var_105):
+        if cherrypy.session[admin]:
+            if var_2.cherrymusicserver.userdb.addUser(var_21, var_22, var_105):
+                return added new var_28: %s % var_21
+            else:
+                return error, cannot add new var_28! % var_21
+        else:
+            return You didn'var_102 think that would work, did you?
+
+    def function_36(var_2, var_106, var_107, var_21=):
+        var_109 = var_21 == 
+        if var_109:
+            var_21 = cherrypy.session[var_21]
+            var_110 = var_2.cherrymusicserver.userdb.auth(var_21, var_106)
+            var_111 = cherrymusicserver.userdb.User.nobody() != var_110
+            if not var_111:
+                raise cherrypy.HTTPError(403, 'Forbidden')
+        if var_109 or cherrypy.session[admin]:
+            return var_2.cherrymusicserver.userdb.changePassword(var_21, var_107)
+        else:
+            raise cherrypy.HTTPError(403, 'Forbidden')
+
+    def function_37(var_2, var_62):
+        var_112 = cherrypy.session[var_62] == var_62
+        if cherrypy.session[admin] and not var_112:
+            var_113 = var_2.cherrymusicserver.userdb.deleteUser(var_62)
+            return success if var_113 else failed
+        else:
+            return You didn'var_102 think that would work, did you?
+
+    def function_38(var_2, var_119=var_120, var_115=):
+        var_116 = var_2.playlistdb.showPlaylists(var_2.getUserId(), var_115)
+        var_117 = int(time.time())
+        var_118 = False
+        
+        for pl in var_116:
+            pl[var_21] = var_2.cherrymusicserver.userdb.getNameById(pl[var_62])
+            pl[type] = var_85
+            pl[var_121] = var_117 - pl[var_120]
+        if var_119[0] == -:
+            var_118 = True
+            var_119 = var_119[1:]
+        if not var_119 in ('username', 'age', 'title', 'default'):
+            var_119 = var_120
+        if var_119 == default:
+            var_119 = var_121
+            var_118 = False
+        var_116 = sorted(var_116, key=<function <lambda> at 0x7f07360e1580>, reverse = var_118)
+        return var_116
+
+    def function_39(var_2):
+        cherrypy.lib.sessions.expire()
+    api_logout.no_auth = True
+
+    def function_40(var_2, var_91, var_122):
+        var_62 = var_2.getUserId()
+        var_123 = var_2.playlistdb.createPLS(var_91=var_91, var_62=var_62, addrstr=var_122)
+        var_124 = var_2.playlistdb.getName(var_91, var_62)
+        if var_123 and var_124:
+            return var_2.serve_string_as_file(var_123, var_124+.var_123)
+    api_downloadpls.binary = True
+
+    def function_41(var_2, var_91, var_122):
+        var_62 = var_2.getUserId()
+        var_123 = var_2.playlistdb.createM3U(var_91=var_91, var_62=var_62, addrstr=var_122)
+        var_124 = var_2.playlistdb.getName(var_91, var_62)
+        if var_123 and var_124:
+            return var_2.serve_string_as_file(var_123, var_124+.m3u)
+    api_downloadm3u.binary = True
+
+    def function_42(var_2, var_125, all=False, var_122=):
+        var_62 = var_2.getUserId()
+        if not var_62:
+            raise cherrypy.HTTPError(401, _Please log in)
+        var_122 = (var_122.strip().rstrip/ + cherrymusicserver.var_4[server.rootpath]).rstrip/
+
+        var_125 = var_125.lower()
+        if var_125 == m3u:
+            var_127 = var_2.playlistdb.createM3U
+        elif var_125 == var_123:
+            var_127 = var_2.playlistdb.createPLS
+        else:
+            raise cherrypy.HTTPError(400,
+                _Unknown var_85 var_125: {var_125!r}.var_125(var_125=var_125))
+
+        var_116 = var_2.playlistdb.showPlaylists(var_62, include_public=all)
+        if not var_116:
+            raise cherrypy.HTTPError(404, _No var_116 found)
+
+        with MemoryZipFile() as zip:
+            for pl in var_116:
+                var_91 = pl[var_91]
+                var_128 = var_127(var_91=var_91, var_62=var_62, addrstr=var_122)
+                var_124 = var_2.playlistdb.getName(var_91, var_62) + . + var_125
+                if not pl[owner]:
+                    var_21 = var_2.cherrymusicserver.userdb.getNameById(pl[var_62])
+                    var_124 =  var_21 + / + var_124
+                zip.writestr(var_124, var_128)
+
+        var_53 = application/x-zip-compressed
+        var_54 = var_55; var_56="playlists.zip"
+        cherrypy.response.headers[Content-Type] = var_53
+        cherrypy.response.headers[Content-Disposition] = var_54
+        return zip.getbytes()
+    export_playlists.var_44 = True
+
+    def function_43(var_2, var_34):
+        var_57 = cherrymusicserver.var_4[media.var_57]
+        var_129 = os.var_34.join(var_57, var_34)
+        return json.dumps(cherrymusicserver.metainfo.getSongInfo(var_129).dict())
+
+    def function_44(var_2):
+        return json.dumps(audiotranscode.getEncoders())
+
+    def function_45(var_2):
+        return json.dumps(audiotranscode.getDecoders())
+
+    def function_46(var_2):
+        return json.dumps(cherrymusicserver.var_4[media.transcode])
+
+    def function_47(var_2):
+        var_2.model.updateLibrary()
+        return success
+
+    def function_48(var_2):
+        var_130 = {
+            transcodingenabled: cherrymusicserver.var_4[media.transcode],
+            fetchalbumart: cherrymusicserver.var_4[media.fetch_album_art],
+            var_105: cherrypy.session[admin],
+            var_21: cherrypy.session[var_21],
+            servepath: serve/,
+            transcodepath: trans/,
+            auto_login: var_2.autoLoginActive(),
+            version: cherrymusicserver.REPO_VERSION or cherrymusicserver.VERSION,
+        }
+        if cherrymusicserver.var_4[media.transcode]:
+            var_131 = list(var_2.model.var_37.available_decoder_formats())
+            var_130[getdecoders] = var_131
+            var_132 = list(var_2.model.var_37.available_encoder_formats())
+            var_130[getencoders] = var_132
+        else:
+            var_130[getdecoders] = []
+            var_130[getencoders] = []
+        return var_130
+
+    def function_49(var_2, var_133, var_56):
+        var_134 = var_55; var_56="+filename+"
+        cherrypy.response.headers[Content-Type] = application/x-download
+        cherrypy.response.headers[Content-Disposition] = var_134
+        return codecs.encode(var_133, UTF-8)
+
+
+def _save_and_release_session():
+    
+    cherrypy.session.save()
+    var_135 = cherrypy.serving.request.var_135[before_finalize]
+    var_136 = cherrypy.lib.sessions.save
+    var_135[:] = [var_137 for var_137 in var_135 if var_137.callback is not var_136]
+    
+    

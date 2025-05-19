@@ -1,0 +1,867 @@
+<?php
+
+class Versioned extends DataObjectDecorator {
+	
+	protected $stages;
+	
+	
+	protected $defaultStage;
+	
+	
+	protected $liveStage;
+	
+	
+	public $migratingVersion;
+	
+	
+	protected static $cache_versionnumber;
+	
+	
+	static $db_for_versions_table = array(
+		"RecordID" => "Int",
+		"Version" => "Int",
+		"WasPublished" => "Boolean",
+		"AuthorID" => "Int",
+		"PublisherID" => "Int"				
+	);
+	
+	
+	static $indexes_for_versions_table = array(
+		'RecordID_Version' => '(RecordID,Version)',
+		'RecordID' => true,
+		'Version' => true,
+		'AuthorID' => true,
+		'PublisherID' => true,
+	);
+
+	
+	static function reset() {
+		self::$reading_mode = '';
+
+		Session::clear('readingMode');
+	}
+	
+	
+	function __construct($stages) {
+		parent::__construct();
+
+		if(!is_array($stages)) {
+			$stages = func_get_args();
+		}
+		$this->stages = $stages;
+		$this->defaultStage = reset($stages);
+		$this->liveStage = array_pop($stages);
+	}
+	
+	function extraStatics() {
+		return array(
+			'db' => array(
+				'Version' => 'Int',
+			),
+			'has_many' => array(
+				'Versions' => 'SiteTree',
+			)
+		);
+	}
+	
+	function augmentSQL(SQLQuery &$query) {
+		
+		if($date = Versioned::current_archived_date()) {
+			foreach($query->from as $table => $dummy) {
+				if(!isset($baseTable)) {
+					$baseTable = $table;
+				}
+				$query->renameTable($table, $table . '_versions');
+				$query->replaceText("\"$table\".\"ID\"", "\"$table\".\"RecordID\"");
+				
+				
+				foreach(self::$db_for_versions_table as $name => $type) {
+					$query->select[] = sprintf('"%s_versions"."%s"', $baseTable, $name);
+				}
+				$query->select[] = sprintf('"%s_versions"."%s" AS "ID"', $baseTable, 'RecordID');
+
+				if($table != $baseTable) {
+					$query->from[$table] .= " AND \"{$table}_versions\".\"Version\" = \"{$baseTable}_versions\".\"Version\"";
+				}
+			}
+
+			
+			$archiveTable = $this->requireArchiveTempTable($baseTable, $date);
+			$query->from[$archiveTable] = "INNER JOIN \"$archiveTable\"
+				ON \"$archiveTable\".\"ID\" = \"{$baseTable}_versions\".\"RecordID\" 
+				AND \"$archiveTable\".\"Version\" = \"{$baseTable}_versions\".\"Version\"";
+
+		
+		} else if(Versioned::current_stage() && Versioned::current_stage() != $this->defaultStage 
+					&& array_search(Versioned::current_stage(), $this->stages) !== false) {
+			foreach($query->from as $table => $dummy) {
+				$query->renameTable($table, $table . '_' . Versioned::current_stage());
+			}
+		}
+	}
+	
+	
+	private static $archive_tables = array();
+	
+	
+	public static function on_db_reset() {
+		
+		$db = DB::getConn();
+		foreach(self::$archive_tables as $tableName) {
+			if(method_exists($db, 'dropTable')) $db->dropTable($tableName);
+			else $db->query("DROP TABLE \"$tableName\"");
+		}
+
+		
+		self::$archive_tables = array();
+	}
+	
+	
+	protected static function requireArchiveTempTable($baseTable, $date = null) {
+		if(!isset(self::$archive_tables[$baseTable])) {
+			self::$archive_tables[$baseTable] = DB::createTable("_Archive$baseTable", array(
+				"ID" => "INT NOT NULL",
+				"Version" => "INT NOT NULL",
+			), null, array('temporary' => true));
+		}
+		
+		if(!DB::query("SELECT COUNT(*) FROM \"" . self::$archive_tables[$baseTable] . "\"")->value()) {
+			if($date) $dateClause = "WHERE \"LastEdited\" <= '$date'";
+			else $dateClause = "";
+
+			DB::query("INSERT INTO \"" . self::$archive_tables[$baseTable] . "\"
+				SELECT \"RecordID\", max(\"Version\") FROM \"{$baseTable}_versions\"
+				$dateClause
+				GROUP BY \"RecordID\"");
+		}
+		
+		return self::$archive_tables[$baseTable];
+	}
+
+	
+	protected static $versionableExtensions = array('Translatable' => 'lang');
+	
+	function augmentDatabase() {
+		$classTable = $this->owner->class;
+		
+		$isRootClass = ($this->owner->class == ClassInfo::baseDataClass($this->owner->class));
+
+		
+		$allSuffixes = array();
+		foreach (Versioned::$versionableExtensions as $versionableExtension => $suffixes) {
+			if ($this->owner->hasExtension($versionableExtension)) {
+				$allSuffixes = array_merge($allSuffixes, (array)$suffixes);
+				foreach ((array)$suffixes as $suffix) {
+					$allSuffixes[$suffix] = $versionableExtension;
+				}
+			}
+		}
+
+		
+		array_push($allSuffixes,'');
+
+		foreach ($allSuffixes as $key => $suffix) {
+			
+			if (!is_int($key)) continue;
+			
+			if ($suffix) $table = "{$classTable}_$suffix";
+			else $table = $classTable;
+
+			if($fields = DataObject::database_fields($this->owner->class)) {
+				$indexes = $this->owner->databaseIndexes();
+				if ($suffix && ($ext = $this->owner->getExtensionInstance($allSuffixes[$suffix]))) {
+					if (!$ext->isVersionedTable($table)) continue;
+					$ext->setOwner($this->owner);
+					$fields = $ext->fieldsInExtraTables($suffix);
+					$ext->clearOwner();
+					$indexes = $fields['indexes'];
+					$fields = $fields['db'];
+				}
+			
+				
+				foreach($this->stages as $stage) {
+					
+					if($stage != $this->defaultStage) {
+						DB::requireTable("{$table}_$stage", $fields, $indexes, false);
+					}
+	
+					
+					
+				}
+				
+				if($isRootClass) {
+					
+					$versionFields = array_merge(
+						self::$db_for_versions_table,
+						(array)$fields
+					);
+				
+					$versionIndexes = array_merge(
+						self::$indexes_for_versions_table,
+						(array)$indexes
+					);
+				} else {
+					
+					$versionFields = array_merge(
+						array(
+							"RecordID" => "Int",
+							"Version" => "Int",
+						),
+						(array)$fields
+					);
+				
+					$versionIndexes = array_merge(
+						array(
+							'RecordID_Version' => array('type' => 'unique', 'value' => 'RecordID,Version'),
+							'RecordID' => true,
+							'Version' => true,
+						),
+						(array)$indexes
+					);
+				}
+				
+				if(DB::getConn()->hasTable("{$table}_versions")) {
+					
+					
+					$duplications = DB::query("SELECT MIN(\"ID\") AS \"ID\", \"RecordID\", \"Version\" 
+						FROM \"{$table}_versions\" GROUP BY \"RecordID\", \"Version\" 
+						HAVING COUNT(*) > 1");
+						
+					foreach($duplications as $dup) {
+						DB::alteration_message("Removing {$table}_versions duplicate data for "
+							."{$dup['RecordID']}/{$dup['Version']}" ,"deleted");
+						DB::query("DELETE FROM \"{$table}_versions\" WHERE \"RecordID\" = {$dup['RecordID']}
+							AND \"Version\" = {$dup['Version']} AND \"ID\" != {$dup['ID']}");
+					}
+					
+					
+					
+					if(!$isRootClass && ($versionedTables = ClassInfo::dataClassesFor($table))) {
+						
+						foreach($versionedTables as $child) {
+							if($table == $child) break; 
+							
+							$count = DB::query("
+								SELECT COUNT(*) FROM \"{$table}_versions\"
+								LEFT JOIN \"{$child}_versions\" 
+									ON \"{$child}_versions\".\"RecordID\" = \"{$table}_versions\".\"RecordID\"
+									AND \"{$child}_versions\".\"Version\" = \"{$table}_versions\".\"Version\"
+								WHERE \"{$child}_versions\".\"ID\" IS NULL
+							")->value();
+
+							if($count > 0) {
+								DB::alteration_message("Removing orphaned versioned records", "deleted");
+								
+								$effectedIDs = DB::query("
+									SELECT \"{$table}_versions\".\"ID\" FROM \"{$table}_versions\"
+									LEFT JOIN \"{$child}_versions\" 
+										ON \"{$child}_versions\".\"RecordID\" = \"{$table}_versions\".\"RecordID\"
+										AND \"{$child}_versions\".\"Version\" = \"{$table}_versions\".\"Version\"
+									WHERE \"{$child}_versions\".\"ID\" IS NULL
+								")->column();
+
+								if(is_array($effectedIDs)) {
+									foreach($effectedIDs as $key => $value) {
+										DB::query("DELETE FROM \"{$table}_versions\" WHERE \"{$table}_versions\".\"ID\" = '$value'");
+									}
+								}
+							}
+						}
+					}
+				}
+
+				DB::requireTable("{$table}_versions", $versionFields, $versionIndexes);
+			} else {
+				DB::dontRequireTable("{$table}_versions");
+				foreach($this->stages as $stage) {
+					if($stage != $this->defaultStage) DB::dontrequireTable("{$table}_$stage");
+				}
+			}
+		}
+	}
+	
+	
+	function augmentWrite(&$manipulation) {
+		$tables = array_keys($manipulation);
+		$version_table = array();
+		foreach($tables as $table) {
+			$baseDataClass = ClassInfo::baseDataClass($table);
+			
+			$isRootClass = ($table == $baseDataClass);
+			
+			
+			if( !$this->canBeVersioned($table) ) {
+				unset($manipulation[$table]);
+				continue;
+			}
+			$id = $manipulation[$table]['id'] ? $manipulation[$table]['id'] : $manipulation[$table]['fields']['ID'];;
+			if(!$id) user_error("Couldn't find ID in " . var_export($manipulation[$table], true), E_USER_ERROR);
+			
+			$rid = isset($manipulation[$table]['RecordID']) ? $manipulation[$table]['RecordID'] : $id;
+
+			$newManipulation = array(
+				"command" => "insert",
+				"fields" => isset($manipulation[$table]['fields']) ? $manipulation[$table]['fields'] : null
+			);
+			
+			if($this->migratingVersion) {
+				$manipulation[$table]['fields']['Version'] = $this->migratingVersion;
+			}
+
+			
+			
+			if(!isset($manipulation[$table]['fields']['Version'])) {
+				
+				$data = DB::query("SELECT * FROM \"$table\" WHERE \"ID\" = $id")->record();
+				if($data) foreach($data as $k => $v) {
+					if (!isset($newManipulation['fields'][$k])) $newManipulation['fields'][$k] = "'" . DB::getConn()->addslashes($v) . "'";
+				}
+
+				
+				$newManipulation['fields']['RecordID'] = $rid;
+				unset($newManipulation['fields']['ID']);
+
+				
+				if (isset($version_table[$table])) $nextVersion = $version_table[$table];
+				else unset($nextVersion);
+
+				if($rid && !isset($nextVersion)) $nextVersion = DB::query("SELECT MAX(\"Version\") + 1 FROM \"{$baseDataClass}_versions\" WHERE \"RecordID\" = $rid")->value();
+				
+				$newManipulation['fields']['Version'] = $nextVersion ? $nextVersion : 1;
+				
+				if($isRootClass) {
+					$userID = (Member::currentUser()) ? Member::currentUser()->ID : 0;
+					$newManipulation['fields']['AuthorID'] = $userID;
+				}
+				
+
+
+				$manipulation["{$table}_versions"] = $newManipulation;
+
+				
+				$manipulation[$table]['fields']['Version'] = $newManipulation['fields']['Version'];
+				$version_table[$table] = $nextVersion;
+			}
+			
+			
+			if($manipulation[$table]['fields']['Version'] < 0) unset($manipulation[$table]['fields']['Version']);
+
+			if(!$this->hasVersionField($table)) unset($manipulation[$table]['fields']['Version']);
+			
+			
+			if(isset($manipulation[$table]['fields']['Version'])) $thisVersion = $manipulation[$table]['fields']['Version'];
+			
+			
+			if(Versioned::current_stage() && Versioned::current_stage() != $this->defaultStage) {
+				
+				if($manipulation[$table]['command']=='insert') {
+					DB::query("DELETE FROM \"{$table}\" WHERE \"ID\"='$id'");
+				}
+				
+				$newTable = $table . '_' . Versioned::current_stage();
+				$manipulation[$newTable] = $manipulation[$table];
+				unset($manipulation[$table]);
+			}
+		}
+		
+		
+		if($this->migratingVersion) $this->migrateVersion(null);
+
+		
+		if(isset($thisVersion)) $this->owner->Version = str_replace("'","",$thisVersion);
+	}
+
+	
+	function onAfterSkippedWrite() {
+		$this->migrateVersion(null);
+	}
+	
+	
+	function canBeVersioned($table) {
+		return ClassInfo::exists($table) 
+			&& ClassInfo::is_subclass_of($table, 'DataObject')
+			&& DataObject::has_own_table($table);
+	}
+	
+	
+	function hasVersionField($table) {
+		$rPos = strrpos($table,'_');
+		if(($rPos !== false) && in_array(substr($table,$rPos), $this->stages)) {
+			$tableWithoutStage = substr($table,0,$rPos);
+		} else {
+			$tableWithoutStage = $table;
+		}
+		return ('DataObject' == get_parent_class($tableWithoutStage));
+	}
+	function extendWithSuffix($table) {
+		foreach (Versioned::$versionableExtensions as $versionableExtension => $suffixes) {
+			if ($this->owner->hasExtension($versionableExtension)) {
+				$ext = $this->owner->getExtensionInstance($versionableExtension);
+				$ext->setOwner($this->owner);
+				$table = $ext->extendWithSuffix($table);
+				$ext->clearOwner();
+			}
+		}
+		return $table;
+	}
+
+	
+	
+	
+	function latestPublished() {
+		
+		$table1 = $this->owner->class;
+		while( ($p = get_parent_class($table1)) != "DataObject") $table1 = $p;
+		
+		$table2 = $table1 . "_$this->liveStage";
+
+		return DB::query("SELECT \"$table1\".\"Version\" = \"$table2\".\"Version\" FROM \"$table1\" INNER JOIN \"$table2\" ON \"$table1\".\"ID\" = \"$table2\".\"ID\" WHERE \"$table1\".\"ID\" = ".  $this->owner->ID)->value();
+	}
+	
+	
+	function publish($fromStage, $toStage, $createNewVersion = false) {
+		$baseClass = $this->owner->class;
+		while( ($p = get_parent_class($baseClass)) != "DataObject") $baseClass = $p;
+		$extTable = $this->extendWithSuffix($baseClass);
+		
+		if(is_numeric($fromStage)) {
+			$from = Versioned::get_version($baseClass, $this->owner->ID, $fromStage);
+		} else {
+			$this->owner->flushCache();
+			$from = Versioned::get_one_by_stage($baseClass, $fromStage, "\"{$baseClass}\".\"ID\" = {$this->owner->ID}");
+		}
+		
+		$publisherID = isset(Member::currentUser()->ID) ? Member::currentUser()->ID : 0;
+		if($from) {
+			$from->forceChange();
+			if($createNewVersion) {
+				$latest = self::get_latest_version($baseClass, $this->owner->ID);
+				$this->owner->Version = $latest->Version + 1;
+			} else {
+				$from->migrateVersion($from->Version);
+			}
+			
+			
+			DB::query("UPDATE \"{$extTable}_versions\" SET \"WasPublished\" = '1', \"PublisherID\" = $publisherID WHERE \"RecordID\" = $from->ID AND \"Version\" = $from->Version");
+
+			$oldMode = Versioned::get_reading_mode();
+			Versioned::reading_stage($toStage);
+
+			$conn = DB::getConn();
+			if(method_exists($conn, 'allowPrimaryKeyEditing')) $conn->allowPrimaryKeyEditing($baseClass, true);
+			$from->write();
+			if(method_exists($conn, 'allowPrimaryKeyEditing')) $conn->allowPrimaryKeyEditing($baseClass, false);
+
+			$from->destroy();
+			
+			Versioned::set_reading_mode($oldMode);
+		} else {
+			user_error("Can't find {$this->owner->URLSegment}/{$this->owner->ID} in stage $fromStage", E_USER_WARNING);
+		}
+	}
+	
+	
+	function migrateVersion($version) {
+		$this->migratingVersion = $version;
+	}
+	
+	
+	function stagesDiffer($stage1, $stage2) {
+		$table1 = $this->baseTable($stage1);
+		$table2 = $this->baseTable($stage2);
+		
+		if(!is_numeric($this->owner->ID)) {
+			return true;
+		}
+            
+		
+		
+		$stagesAreEqual = DB::query("SELECT CASE WHEN \"$table1\".\"Version\"=\"$table2\".\"Version\" THEN 1 ELSE 0 END FROM \"$table1\" INNER JOIN \"$table2\" ON \"$table1\".\"ID\" = \"$table2\".\"ID\" AND \"$table1\".\"ID\" = {$this->owner->ID}")->value();
+		return !$stagesAreEqual;
+	}
+	
+	function Versions($filter = "", $sort = "", $limit = "", $join = "", $having = "") {
+		return $this->allVersions($filter, $sort, $limit, $join, $having);
+	}
+	
+	
+	function allVersions($filter = "", $sort = "", $limit = "", $join = "", $having = "") {
+		
+		$oldMode = self::get_reading_mode();
+		self::reading_stage('Stage');
+
+		$query = $this->owner->extendedSQL($filter, $sort, $limit, $join, $having);
+
+		foreach($query->from as $table => $tableJoin) {
+			if($tableJoin[0] == '"') $baseTable = str_replace('"','',$tableJoin);
+			else if (substr($tableJoin,0,5) != 'INNER') $query->from[$table] = "LEFT JOIN \"$table\" ON \"$table\".\"RecordID\" = \"{$baseTable}_versions\".\"RecordID\" AND \"$table\".\"Version\" = \"{$baseTable}_versions\".\"Version\"";
+			$query->renameTable($table, $table . '_versions');
+		}
+		
+		
+		foreach(self::$db_for_versions_table as $name => $type) {
+			$query->select[] = sprintf('"%s_versions"."%s"', $baseTable, $name);
+		}
+		
+		$query->where[] = "\"{$baseTable}_versions\".\"RecordID\" = '{$this->owner->ID}'";
+		$query->orderby = ($sort) ? $sort : "\"{$baseTable}_versions\".\"LastEdited\" DESC, \"{$baseTable}_versions\".\"Version\" DESC";
+		
+		$records = $query->execute();
+		$versions = new DataObjectSet();
+		
+		foreach($records as $record) {
+			$versions->push(new Versioned_Version($record));
+		}
+		
+		Versioned::set_reading_mode($oldMode);
+		return $versions;
+	}
+	
+	
+	function compareVersions($from, $to) {
+		$fromRecord = Versioned::get_version($this->owner->class, $this->owner->ID, $from);
+		$toRecord = Versioned::get_version($this->owner->class, $this->owner->ID, $to);
+		
+		$diff = new DataDifferencer($fromRecord, $toRecord);
+		return $diff->diffedData();
+	}
+	
+	
+	function baseTable($stage = null) {
+		$tableClasses = ClassInfo::dataClassesFor($this->owner->class);
+		$baseClass = array_shift($tableClasses);
+		return (!$stage || $stage == $this->defaultStage) ? $baseClass : $baseClass . "_$stage";		
+	}
+		
+	
+	
+	
+	static function choose_site_stage() {
+		if(isset($_GET['stage'])) {
+			$stage = ucfirst(strtolower($_GET['stage']));
+			
+			if(!in_array($stage, array('Stage', 'Live'))) $stage = 'Live';
+
+			Session::set('readingMode', 'Stage.' . $stage);
+		}
+		if(isset($_GET['archiveDate'])) {
+			Session::set('readingMode', 'Archive.' . $_GET['archiveDate']);
+		}
+		
+		if($mode = Session::get('readingMode')) {
+			Versioned::set_reading_mode($mode);
+		} else {
+			Versioned::reading_stage("Live");
+		}
+
+		if(!headers_sent()) {
+			if(Versioned::current_stage() == 'Live') {
+				Cookie::set('bypassStaticCache', null, 0, null, null, false, true );
+			} else {
+				Cookie::set('bypassStaticCache', '1', 0, null, null, false, true );
+			}
+		}
+	}
+	
+	
+	static function set_reading_mode($mode) {
+		Versioned::$reading_mode = $mode;
+	}
+	
+	
+	static function get_reading_mode() {
+		return Versioned::$reading_mode;
+	}
+	
+	
+	static function get_live_stage() {
+		return "Live";
+	}
+	
+	
+	static function current_stage() {
+		$parts = explode('.', Versioned::get_reading_mode());
+		if($parts[0] == 'Stage') return $parts[1];
+	}
+	
+	
+	static function current_archived_date() {
+		$parts = explode('.', Versioned::get_reading_mode());
+		if($parts[0] == 'Archive') return $parts[1];
+	}
+	
+	
+	static function reading_stage($stage) {
+		Versioned::set_reading_mode('Stage.' . $stage);
+	}
+	
+	
+	static function reading_archived_date($date) {
+		Versioned::set_reading_mode('Archive.' . $date);
+	}
+	
+	
+	
+	static function get_one_by_stage($class, $stage, $filter = '', $cache = true, $orderby = '') {
+		$oldMode = Versioned::get_reading_mode();
+		Versioned::reading_stage($stage);
+		
+		singleton($class)->flushCache();
+		$result = DataObject::get_one($class, $filter, $cache, $orderby);
+		singleton($class)->flushCache();
+
+		Versioned::set_reading_mode($oldMode);
+		return $result;
+	}
+	
+	
+	static function get_versionnumber_by_stage($class, $stage, $id, $cache = true) {
+		$baseClass = ClassInfo::baseDataClass($class);
+		$stageTable = ($stage == 'Stage') ? $baseClass : "{$baseClass}_{$stage}";
+
+		
+		if($cache && isset(self::$cache_versionnumber[$baseClass][$stage][$id])) {
+			return self::$cache_versionnumber[$baseClass][$stage][$id];
+		}
+		
+		
+		$version = DB::query("SELECT \"Version\" FROM \"$stageTable\" WHERE \"ID\" = $id")->value();
+		
+		
+		if($cache) {
+			if(!isset(self::$cache_versionnumber[$baseClass])) self::$cache_versionnumber[$baseClass] = array();
+			if(!isset(self::$cache_versionnumber[$baseClass][$stage])) self::$cache_versionnumber[$baseClass][$stage] = array();
+			self::$cache_versionnumber[$baseClass][$stage][$id] = $version;
+		}
+		
+		return $version;
+	}
+	
+	
+	static function prepopulate_versionnumber_cache($class, $stage, $idList = null) {
+		$filter = "";
+		if($idList) {
+			
+			foreach($idList as $id) if(!is_numeric($id)) user_error("Bad ID passed to Versioned::prepopulate_versionnumber_cache() in \$idList: " . $id, E_USER_ERROR);
+			$filter = "WHERE \"ID\" IN(" .implode(", ", $idList) . ")";
+		}
+		
+		$baseClass = ClassInfo::baseDataClass($class);
+		$stageTable = ($stage == 'Stage') ? $baseClass : "{$baseClass}_{$stage}";
+
+		$versions = DB::query("SELECT \"ID\", \"Version\" FROM \"$stageTable\" $filter")->map();
+		foreach($versions as $id => $version) {
+			self::$cache_versionnumber[$baseClass][$stage][$id] = $version;
+		}
+	}
+	
+	
+	static function get_by_stage($class, $stage, $filter = '', $sort = '', $join = '', $limit = '', $containerClass = 'DataObjectSet') {
+		$oldMode = Versioned::get_reading_mode();
+		Versioned::reading_stage($stage);
+		$result = DataObject::get($class, $filter, $sort, $join, $limit, $containerClass);
+		Versioned::set_reading_mode($oldMode);
+		return $result;
+	}
+	
+	function deleteFromStage($stage) {
+		$oldMode = Versioned::get_reading_mode();
+		Versioned::reading_stage($stage);
+		$clone = clone $this->owner;
+		$result = $clone->delete();
+		Versioned::set_reading_mode($oldMode);
+
+		
+		$baseClass = ClassInfo::baseDataClass($this->owner->class);
+		self::$cache_versionnumber[$baseClass][$stage][$this->owner->ID] = null;
+
+		return $result;
+	}
+	
+	function writeToStage($stage, $forceInsert = false) {
+		$oldMode = Versioned::get_reading_mode();
+		Versioned::reading_stage($stage);
+		$result = $this->owner->write(false, $forceInsert);
+		Versioned::set_reading_mode($oldMode);
+		return $result;
+	}
+		
+	
+	function buildVersionSQL($filter = "", $sort = "") {
+		$query = $this->owner->extendedSQL($filter,$sort);
+		foreach($query->from as $table => $join) {
+			if($join[0] == '"') $baseTable = str_replace('"','',$join);
+			else $query->from[$table] = "LEFT JOIN \"$table\" ON \"$table\".\"RecordID\" = \"{$baseTable}_versions\".\"RecordID\" AND \"$table\".\"Version\" = \"{$baseTable}_versions\".\"Version\"";
+			$query->renameTable($table, $table . '_versions');
+		}
+		
+		
+		foreach(self::$db_for_versions_table as $name => $type) {
+			$query->select[] = sprintf('"%s_versions"."%s"', $baseTable, $name);
+		}
+		$query->select[] = sprintf('"%s_versions"."%s" AS "ID"', $baseTable, 'RecordID');
+		
+		return $query;
+	}
+
+	static function build_version_sql($className, $filter = "", $sort = "") {
+		$query = singleton($className)->extendedSQL($filter,$sort);
+		foreach($query->from as $table => $join) {
+			if($join[0] == '"') $baseTable = str_replace('"','',$join);
+			else $query->from[$table] = "LEFT JOIN \"$table\" ON \"$table\".\"RecordID\" = \"{$baseTable}_versions\".\"RecordID\" AND \"$table\".\"Version\" = \"{$baseTable}_versions\".\"Version\"";
+			$query->renameTable($table, $table . '_versions');
+		}
+		
+		
+		foreach(self::$db_for_versions_table as $name => $type) {
+			$query->select[] = sprintf('"%s_versions"."%s"', $baseTable, $name);
+		}
+		$query->select[] = sprintf('"%s_versions"."%s" AS "ID"', $baseTable, 'RecordID');
+		
+		return $query;
+	}
+	
+	
+	static function get_latest_version($class, $id) {
+		$oldMode = Versioned::get_reading_mode();
+		Versioned::set_reading_mode('');
+
+		$baseTable = ClassInfo::baseDataClass($class);
+		$query = singleton($class)->buildVersionSQL("\"{$baseTable}\".\"RecordID\" = $id", "\"{$baseTable}\".\"Version\" DESC");
+		$query->limit = 1;
+		$record = $query->execute()->record();
+		if(!$record) return;
+		
+		$className = $record['ClassName'];
+		if(!$className) {
+			Debug::show($query->sql());
+			Debug::show($record);
+			user_error("Versioned::get_version: Couldn't get $class.$id", E_USER_ERROR);
+		}
+
+		Versioned::set_reading_mode($oldMode);
+
+		return new $className($record);
+	}
+
+	
+	static function get_including_deleted($class, $filter = "", $sort = "") {
+		$query = self::get_including_deleted_query($class, $filter, $sort);
+		
+		
+		$SNG = singleton($class);
+		return $SNG->buildDataObjectSet($query->execute(), 'DataObjectSet', null, $class);
+	}
+	
+	
+	static function get_including_deleted_query($class, $filter = "", $sort = "") {
+		$oldMode = Versioned::get_reading_mode();
+		Versioned::set_reading_mode('');
+
+		$SNG = singleton($class);
+		
+		
+		$query = $SNG->buildVersionSQL($filter, $sort);
+		$baseTable = ClassInfo::baseDataClass($class);
+		$archiveTable = self::requireArchiveTempTable($baseTable);
+		$query->from[$archiveTable] = "INNER JOIN \"$archiveTable\"
+			ON \"$archiveTable\".\"ID\" = \"{$baseTable}_versions\".\"RecordID\"
+			AND \"$archiveTable\".\"Version\" = \"{$baseTable}_versions\".\"Version\"";
+
+		Versioned::set_reading_mode($oldMode);
+		return $query;
+	}
+	
+	
+	static function get_version($class, $id, $version) {
+		$oldMode = Versioned::get_reading_mode();
+		Versioned::set_reading_mode('');
+
+		$baseTable = ClassInfo::baseDataClass($class);
+		$query = singleton($class)->buildVersionSQL("\"{$baseTable}\".\"RecordID\" = $id AND \"{$baseTable}\".\"Version\" = $version");
+		$record = $query->execute()->record();
+		$className = $record['ClassName'];
+		if(!$className) {
+			Debug::show($query->sql());
+			Debug::show($record);
+			user_error("Versioned::get_version: Couldn't get $class.$id, version $version", E_USER_ERROR);
+		}
+
+		Versioned::set_reading_mode($oldMode);
+		return new $className($record);
+	}
+
+	
+	static function get_all_versions($class, $id, $version) {
+		$baseTable = ClassInfo::baseDataClass($class);
+		$query = singleton($class)->buildVersionSQL("\"{$baseTable}\".\"RecordID\" = $id AND \"{$baseTable}\".\"Version\" = $version");
+		$record = $query->execute()->record();
+		$className = $record['ClassName'];
+		if(!$className) {
+			Debug::show($query->sql());
+			Debug::show($record);
+			user_error("Versioned::get_version: Couldn't get $class.$id, version $version", E_USER_ERROR);
+		}
+		return new $className($record);
+	}
+	
+	function contentcontrollerInit($controller) {
+		self::choose_site_stage();
+	}
+	function modelascontrollerInit($controller) {
+		self::choose_site_stage();
+	}
+	
+	protected static $reading_mode = null;
+	
+	function updateFieldLabels(&$labels) {
+		$labels['Versions'] = _t('Versioned.has_many_Versions', 'Versions', PR_MEDIUM, 'Past Versions of this page');
+	}
+	
+	function flushCache() {
+		self::$cache_versionnumber = array();
+	}
+
+	
+	function cacheKeyComponent() {
+		return 'stage-'.self::current_stage();
+	}
+}
+
+
+class Versioned_Version extends ViewableData {
+	protected $record;
+	protected $object;
+	
+	function __construct($record) {
+		$this->record = $record;
+		$record['ID'] = $record['RecordID'];
+		$className = $record['ClassName'];
+		
+		$this->object = new $className($record);
+		$this->failover = $this->object;
+		
+		parent::__construct();
+	}
+	
+	function PublishedClass() {
+		return $this->record['WasPublished'] ? 'published' : 'internal';
+	}
+	
+	function Author() {
+		return DataObject::get_by_id("Member", $this->record['AuthorID']);
+	}
+	
+	function Publisher() {
+		if( !$this->record['WasPublished'] )
+			return null;
+			
+		return DataObject::get_by_id("Member", $this->record['PublisherID']);
+	}
+	
+	function Published() {
+		return !empty( $this->record['WasPublished'] );
+	}
+}
+
+?>

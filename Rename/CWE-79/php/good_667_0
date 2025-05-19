@@ -1,0 +1,534 @@
+<?php
+if ( ! defined( 'ABSPATH' ) ) var_0; 
+
+if ( ! class_exists( 'WP_List_Table' ) )
+
+
+class class_0 extends var_1 {
+	
+	protected $var_2 = array();
+	
+	protected $var_3 = array();
+	
+	protected $var_4 = array();
+	
+	protected function fn_0() {
+		if ( empty( $var_6->var_4 ) ) {
+			$var_7 = get_user_by( 'id', get_current_user_id() );
+			if ( ! $var_7 ) {
+				wp_die( 'Not allowed here.' );
+			}
+
+			$var_8   = strtolower( key( $var_7->var_9 ) );
+			$var_10 = array();
+
+			foreach ( $var_6->var_3 as $var_11 => $var_12 ) {
+				if ( $var_11 === $var_8 ) {
+					$var_10 = array_merge( $var_10, $var_12 );
+
+					break;
+				}
+			}
+
+			
+			if ( is_super_admin() || current_user_can( 'view_all_aryo_activity_log' ) ) {
+				$var_10 = $var_6->var_3['administrator'];
+			}
+
+			if ( empty( $var_10 ) ) {
+				wp_die( 'Not allowed here.' );
+			}
+
+			$var_6->var_4 = array_unique( $var_10 );
+		}
+		return $var_6->var_4;
+	}
+
+	protected function fn_1() {
+		$var_14 = array();
+
+		foreach ( $var_6->var_2 as $var_11 => $var_15 ) {
+			if ( current_user_can( $var_11 ) || current_user_can( 'view_all_aryo_activity_log' ) ) {
+				$var_14 = array_merge( $var_14, $var_15 );
+			}
+		}
+
+		if ( empty( $var_14 ) ) {
+			wp_die( 'Not allowed here.' );
+		}
+
+		$var_14 = array_unique( $var_14 );
+
+		$var_16 = array();
+		foreach ( $var_14 as $var_17 )
+			$var_16[] .= '`object_type` = \'' . $var_17 . '\'';
+		
+		$var_18 = array();
+		foreach ( $var_6->fn_0() as $var_19 )
+			$var_18[] .= '`user_caps` = \'' . $var_19 . '\'';
+
+		return 'AND (' . implode( ' OR ', $var_16 ) . ') AND (' . implode( ' OR ', $var_18 ) . ')';
+	}
+	
+	public function fn_2( $var_21 ) {
+		return ucwords( str_replace( '_', ' ', __( $var_21, 'aryo-activity-log' ) ) );
+	}
+
+	public function fn_3( $var_22 = array() ) {
+		parent::fn_3(
+			array(
+				'singular'  => 'activity',
+				'screen' => isset( $var_22['screen'] ) ? $var_22['screen'] : null,
+			)
+		);
+		
+		$var_6->var_2 = apply_filters(
+			'aal_init_roles',
+			array(
+				
+				'manage_options' => array( 'Core', 'Export', 'Post', 'Taxonomy', 'User', 'Options', 'Attachment', 'Plugin', 'Widget', 'Theme', 'Menu', 'Comments' ),
+				
+				'edit_pages'     => array( 'Post', 'Taxonomy', 'Attachment', 'Comments' ),
+			)
+		);
+
+		$var_6->var_3 = apply_filters(
+			'aal_init_caps',
+			array(
+				'administrator' => array( 'administrator', 'editor', 'author', 'guest' ),
+				'editor'        => array( 'editor', 'author', 'guest' ),
+				'author'        => array( 'author', 'guest' ),
+			)
+		);
+
+		add_screen_option(
+			'per_page',
+			array(
+				'default' => 50,
+				'label'   => __( 'Activities', 'aryo-activity-log' ),
+				'option'  => 'edit_aal_logs_per_page',
+			)
+		);
+
+		add_filter( 'set-screen-option', array( &$var_6, 'set_screen_option' ), 10, 3 );
+		set_screen_options();
+	}
+
+	public function fn_4() {
+		$var_24 = array(
+			'date'        => __( 'Date', 'aryo-activity-log' ),
+			'author'      => __( 'Author', 'aryo-activity-log' ),
+			'ip'          => __( 'IP', 'aryo-activity-log' ),
+			'type'        => __( 'Type', 'aryo-activity-log' ),
+			'label'       => __( 'Label', 'aryo-activity-log' ),
+			'action'      => __( 'Action', 'aryo-activity-log' ),
+			'description' => __( 'Description', 'aryo-activity-log' ),
+		);
+
+		return $var_24;
+	}
+	
+	public function fn_5() {
+		return array(
+			'ip' => 'hist_ip',
+			'date' => array( 'hist_time', true ),
+		);
+	}
+
+	public function fn_6( $var_26, $var_27 ) {
+		$var_28 = '';
+		
+		switch ( $var_27 ) {
+			case 'action' :
+				$var_28 = $var_6->fn_2( $var_26->var_21 );
+				break;
+			case 'date' :
+				$var_28  = sprintf( '<strong>' . __( '%s ago', 'aryo-activity-log' ) . '</strong>', human_time_diff( $var_26->var_29, current_time( 'timestamp' ) ) );
+				$var_28 .= '<br />' . date( 'd/m/Y', $var_26->var_29 );
+				$var_28 .= '<br />' . date( 'H:i:s', $var_26->var_29 );
+				break;
+			case 'ip' :
+				$var_28 = $var_26->var_30;
+				break;
+			default :
+				if ( isset( $var_26->$var_27 ) )
+					$var_28 = $var_26->$var_27;
+		}
+
+		$var_28 = apply_filters( 'aal_table_list_column_default', $var_28, $var_26, $var_27 );
+		
+		return $var_28;
+	}
+	
+	public function fn_7( $var_26 ) {
+		global $var_31;
+		
+		if ( ! empty( $var_26->var_32 ) && 0 !== (int) $var_26->var_32 ) {
+			$var_7 = get_user_by( 'id', $var_26->var_32 );
+			if ( $var_7 instanceof var_33 && 0 !== $var_7->var_34 ) {
+				
+				return sprintf(
+					'<a href="%s">%s <span class="aal-author-name">%s</span></a><br /><small>%s</small>',
+					get_edit_user_link( $var_7->var_34 ),
+					get_avatar( $var_7->var_34, 40 ),
+					$var_7->var_35,
+					isset( $var_7->roles[0] ) && isset( $var_31->role_names[ $var_7->roles[0] ] ) ? $var_31->role_names[ $var_7->roles[0] ] : __( 'Unknown', 'aryo-activity-log' )
+				);
+			}
+		}
+		return sprintf(
+			'<span class="aal-author-name">%s</span>',
+			__( 'N/A', 'aryo-activity-log' )
+		);
+	}
+
+	public function fn_8( $var_26 ) {
+		$var_28 = __( $var_26->var_36, 'aryo-activity-log' );
+		
+		$var_28 = apply_filters( 'aal_table_list_column_type', $var_28, $var_26 );
+		return $var_28;
+	}
+
+	public function fn_9( $var_26 ) {
+		$var_28 = '';
+		if ( ! empty( $var_26->var_37 ) ) {
+			$var_38     = get_post_type_object( $var_26->var_37 );
+			$var_28 = ! empty( $var_38->var_39 ) ? $var_38->var_39 : $var_26->var_37;
+		}
+
+		$var_28 = apply_filters( 'aal_table_list_column_label', $var_28, $var_26 );
+		return $var_28;
+	}
+	
+	public function fn_10( $var_26 ) {
+		$var_28 = esc_html( $var_26->var_40 );
+		
+		switch ( $var_26->var_36 ) {
+			case 'Post' :
+				$var_28 = sprintf( '<a href="%s">%s</a>', get_edit_post_link( $var_26->var_41 ), esc_html( $var_26->var_40 ) );
+				break;
+			
+			case 'Taxonomy' :
+				if ( ! empty( $var_26->var_41 ) )
+					$var_28 = sprintf( '<a href="%s">%s</a>', get_edit_term_link( $var_26->var_41, $var_26->var_37 ), esc_html( $var_26->var_40 ) );
+				break;
+			
+			case 'Comments' :
+				if ( ! empty( $var_26->var_41 ) && $var_42 = get_comment( $var_26->var_41 ) ) {
+					$var_28 = sprintf( '<a href="%s">%s 
+				}
+				break;
+			
+			case 'var_43' :
+				if ( 'all' === $var_26->var_40 ) {
+					$var_28 = __( 'All', 'aryo-activity-log' );
+				} else {
+					$var_38 = get_post_type_object( $var_26->var_40 );
+					$var_28 = ! empty( $var_38->var_39 ) ? $var_38->var_39 : $var_26->var_40;
+				}
+				var_44;
+
+			case 'var_45' :
+			case 'var_46' :
+				$return = __( $var_26->var_40, 'aryo-activity-log' );
+				break;
+		}
+		
+		$var_28 = apply_filters( 'aal_table_list_column_description', $var_28, $var_26 );
+		
+		return $var_28;
+	}
+	
+	public function fn_11( $var_47 ) {
+		if ( 'top' == $var_47 ) {
+			$var_6->fn_12( __( 'Search', 'aryo-activity-log' ), 'aal-search' );
+		}
+		?>
+		<div class="tablenav <?php  ?>">
+			<?php
+			$var_6->fn_13( $var_47 );
+			$var_6->pagination( $var_47 );
+			?>
+			<br class="clear" />
+		</div>
+		<?php
+	}
+	
+	public function fn_14() {
+		
+		$var_52 = apply_filters( 'aal_record_actions', array() );
+		?>
+			<?php if ( count( $var_52 ) > 1 ) : ?>
+			<div class="alignleft actions recordactions">
+				<select name="aal-record-action">
+					<option value=""><?php  ?></option>
+					<?php foreach ( $var_52 as $var_53 => $var_54 ) : ?>
+					<option value="<?php  ?>"><?php  ?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<?php else : 
+				$var_54 = reset( $var_52 );
+				$var_53 = key( $var_52 );
+			?>
+			<input type="hidden" name="aal-record-action" value="<?php  ?>">
+			<?php endif; ?>
+			
+			<button type="submit" name="aal-record-actions-submit" id="record-actions-submit" class="button button-primary" value="1">
+				<?php 
+				
+				if ( array_key_exists( 'aal-filter', $var_55 ) ) {
+					
+				} else {
+					
+				}
+				?>
+			</button>
+			
+			<?php wp_nonce_field( 'aal_actions_nonce', 'aal_actions_nonce' ); ?>
+		<?php
+	}
+
+	public function fn_13( $var_47 ) {
+		global $var_56;
+		
+		if ( 'bottom' === $var_47 ) {
+			$var_6->fn_14();
+		}
+
+		if ( 'top' !== $var_47 )
+			return;
+
+		
+
+		$var_57 = $var_56->get_results(
+			'SELECT DISTINCT `user_id` FROM `' . $var_56->var_59 . '`
+				WHERE 1 = 1
+				' . $var_6->fn_1() . '
+				GROUP BY `user_id`
+				ORDER BY `user_id`
+			;'
+		);
+
+		$var_60 = $var_56->get_results(
+			'SELECT DISTINCT `object_type` FROM `' . $var_56->var_59 . '`
+				WHERE 1 = 1
+				' . $var_6->fn_1() . '
+				GROUP BY `object_type`
+				ORDER BY `object_type`
+			;'
+		);
+
+		
+		if ( $var_57 || $var_60 ) {
+			if ( ! isset( $_REQUEST['dateshow'] ) )
+				$_REQUEST['dateshow'] = '';
+
+			$var_61 = array(
+				'' => __( 'All Time', 'aryo-activity-log' ),
+				'today' => __( 'Today', 'aryo-activity-log' ),
+				'yesterday' => __( 'Yesterday', 'aryo-activity-log' ),
+				'week' => __( 'Week', 'aryo-activity-log' ),
+				'month' => __( 'Month', 'aryo-activity-log' ),
+			);
+			
+			foreach ( $var_61 as $var_11 => $var_62 )
+				printf( '<option value="%s"%s>%s</option>', $var_11, selected( $_REQUEST['dateshow'], $var_11, false ), $var_62 );
+			
+
+			submit_button( __( 'Filter', 'aryo-activity-log' ), 'button', 'aal-filter', false, array( 'id' => 'activity-query-submit' ) );
+		}
+
+		if ( $var_57 ) {
+			if ( ! isset( $_REQUEST['capshow'] ) )
+				$_REQUEST['capshow'] = '';
+
+			$var_63 = array();
+			foreach ( $var_6->fn_0() as $var_19 ) {
+				$var_63[ $var_19 ] = __( ucwords( $var_19 ), 'aryo-activity-log' );
+			}
+
+			if ( ! empty( $var_63 ) ) {
+				
+				printf( '<option value="">%s</option>', __( 'All Roles', 'aryo-activity-log' ) );
+				foreach ( $var_63 as $var_11 => $var_62 ) {
+					printf( '<option value="%s"%s>%s</option>', $var_11, selected( $_REQUEST['capshow'], $var_11, false ), $var_62 );
+				}
+				
+			}
+			
+			if ( ! isset( $_REQUEST['usershow'] ) )
+				$_REQUEST['usershow'] = '';
+
+			$var_63 = array();
+			foreach ( $var_57 as $var_64 ) {
+				if ( 0 === (int) $var_64->var_32 ) {
+					$var_63[0] = __( 'N/A', 'aryo-activity-log' );
+					continue;
+				}
+
+				$var_7 = get_user_by( 'id', $var_64->var_32 );
+				if ( $var_7 )
+					$var_63[ $var_7->var_34 ] = $var_7->var_65;
+			}
+
+			if ( ! empty( $var_63 ) ) {
+				
+				printf( '<option value="">%s</option>', __( 'All Users', 'aryo-activity-log' ) );
+				foreach ( $var_63 as $var_11 => $var_62 ) {
+					printf( '<option value="%s"%s>%s</option>', $var_11, selected( $_REQUEST['usershow'], $var_11, false ), $var_62 );
+				}
+				
+			}
+		}
+
+		if ( $var_60 ) {
+			if ( ! isset( $_REQUEST['typeshow'] ) )
+				$_REQUEST['typeshow'] = '';
+
+			$var_63 = array();
+			foreach ( $var_60 as $var_17 )
+				$var_63[] = sprintf( '<option value="%s"%s>%s</option>', $var_17->var_36, selected( $_REQUEST['typeshow'], $var_17->var_36, false ), __( $var_17->var_36, 'aryo-activity-log' ) );
+
+			
+			printf( '<option value="">%s</option>', __( 'All Types', 'aryo-activity-log' ) );
+			
+			
+		}
+
+
+		$var_52 = $var_56->get_results(
+			'SELECT DISTINCT `action` FROM  `' . $var_56->var_59 . '`
+				WHERE 1 = 1
+				' . $var_6->fn_1() . '
+				GROUP BY `action`
+				ORDER BY `action`
+			;'
+		);
+
+		if ( $var_52 ) {
+			if ( ! isset( $_REQUEST['showaction'] ) )
+				$_REQUEST['showaction'] = '';
+
+			$var_63 = array();
+			foreach ( $var_52 as $var_17 )
+				$var_63[] = sprintf( '<option value="%s"%s>%s</option>', $var_17->var_21, selected( $_REQUEST['showaction'], $var_17->var_21, false ), $var_6->fn_2( $var_17->var_21 ) );
+
+			
+			printf( '<option value="">%s</option>', __( 'All Actions', 'aryo-activity-log' ) );
+			
+			
+		}
+
+		
+	}
+	
+	public function fn_15() {
+		global $var_56;
+	
+		$var_66        = $var_6->get_items_per_page( 'edit_aal_logs_per_page', 20 );
+		$var_6->var_68 = array( $var_6->fn_4(), get_hidden_columns( $var_6->var_69 ), $var_6->fn_5() );
+		$var_16                 = ' WHERE 1 = 1';
+
+		if ( ! isset( $_REQUEST['order'] ) || ! in_array( $_REQUEST['order'], array( 'desc', 'asc' ) ) ) {
+			$_REQUEST['order'] = 'DESC';
+		}
+		if ( ! isset( $_REQUEST['orderby'] ) || ! in_array( $_REQUEST['orderby'], array( 'hist_time', 'hist_ip' ) ) ) {
+			$_REQUEST['orderby'] = 'hist_time';
+		}
+		
+		if ( ! empty( $_REQUEST['typeshow'] ) ) {
+			$var_16 .= $var_56->prepare( ' AND `object_type` = %s', $_REQUEST['typeshow'] );
+		}
+
+		if ( isset( $_REQUEST['showaction'] ) && '' !== $_REQUEST['showaction'] ) {
+			$var_16 .= $var_56->prepare( ' AND `action` = %s', $_REQUEST['showaction'] );
+		}
+
+		if ( isset( $_REQUEST['usershow'] ) && '' !== $_REQUEST['usershow'] ) {
+			$var_16 .= $var_56->prepare( ' AND `user_id` = %d', $_REQUEST['usershow'] );
+		}
+
+		if ( isset( $_REQUEST['capshow'] ) && '' !== $_REQUEST['capshow'] ) {
+			$var_16 .= $var_56->prepare( ' AND `user_caps` = %s', strtolower( $_REQUEST['capshow'] ) );
+		}
+
+		if ( isset( $_REQUEST['dateshow'] ) && in_array( $_REQUEST['dateshow'], array( 'today', 'yesterday', 'week', 'month' ) ) ) {
+			$var_71 = current_time( 'timestamp' );
+
+			
+			$var_72 = mktime( 0, 0, 0, date( 'm', $var_71 ), date( 'd', $var_71 ), date( 'Y', $var_71 ) );;
+			$var_73 = mktime( 23, 59, 59, date( 'm', $var_71 ), date( 'd', $var_71 ), date( 'Y', $var_71 ) );
+			
+			if ( 'yesterday' === $_REQUEST['dateshow'] ) {
+				$var_72 = strtotime( 'yesterday', $var_72 );
+				$var_73 = mktime( 23, 59, 59, date( 'm', $var_72 ), date( 'd', $var_72 ), date( 'Y', $var_72 ) );
+			} elseif ( 'week' === $_REQUEST['dateshow'] ) {
+				$var_72 = strtotime( '-1 week', $var_72 );
+			} elseif ( 'month' === $_REQUEST['dateshow'] ) {
+				$var_72 = strtotime( '-1 month', $var_72 );
+			}
+			
+			$var_16 .= $var_56->prepare( ' AND `hist_time` > %d AND `hist_time` < %d', $var_72, $var_73 );
+		}
+
+		if ( isset( $_REQUEST['s'] ) ) {
+			
+			$var_16 .= $var_56->prepare( ' AND `object_name` LIKE %s', '%' . $var_56->esc_like( $_REQUEST['s'] ) . '%' );
+		}
+
+		$var_75 = ( $var_6->get_pagenum() - 1 ) * $var_66;
+
+		
+		$var_77 = $var_56->get_var(
+			'SELECT COUNT(`histid`) FROM  `' . $var_56->var_59 . '`
+				' . $var_16 . '
+					' . $var_6->fn_1()
+		);
+
+		$var_79 = filter_input( var_80, 'orderby', var_81 );
+		if ( empty( $var_79 ) ) {
+			$var_79 = 'hist_time'; 
+		}
+
+		$var_82 = strtoupper( $_REQUEST['order'] );
+		if ( empty( $var_82 ) || ! in_array( $var_82, array( 'DESC', 'ASC' ) ) ) {
+			$var_82 = 'DESC'; 
+		}
+
+		$var_6->var_83 = $var_56->get_results( $var_56->prepare(
+			'SELECT * FROM `' . $var_56->var_59 . '`
+				' . $var_16 . '
+					' . $var_6->fn_1() . '
+					ORDER BY ' . $var_79 . ' ' . $var_82 . '
+					LIMIT %d, %d;',
+			$var_75,
+			$var_66
+		) );
+
+		$var_6->set_pagination_args( array(
+			'total_items' => $var_77,
+			'per_page' => $var_66,
+			'total_pages' => ceil( $var_77 / $var_66 ),
+		) );
+	}
+	
+	public function fn_16( $var_85, $var_86, $var_62 ) {
+		if ( 'edit_aal_logs_per_page' === $var_86 )
+			return $var_62;
+		return $var_85;
+	}
+
+	public function fn_12( $var_87, $var_88 ) {
+		$var_89 = isset( $_REQUEST['s'] ) ? sanitize_text_field( $_REQUEST['s'] ) : '';
+
+		$var_88 = $var_88 . '-search-input';
+		?>
+		<p class="search-box">
+			<label class="screen-reader-text" for="<?php  ?>:</label>
+			<input type="search" id="<?php  ?>" />
+			<?php submit_button( $var_87, 'button', false, false, array('id' => 'search-submit') ); ?>
+		</p>
+	<?php
+	}
+}

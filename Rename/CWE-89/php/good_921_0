@@ -1,0 +1,358 @@
+<?php
+
+
+class class_0 {
+	
+	public static function fn_0() {
+		return ( has_filter( 'wp_statistics_active_pages' ) ) ? apply_filters( 'wp_statistics_active_pages', true ) : Option::get( 'pages' );
+	}
+
+	
+	public static function fn_1() {
+
+		
+		$var_0 = array( "type" => "unknown", "id" => 0 );
+
+		
+		$var_1 = get_queried_object_id();
+		if ( is_numeric( $var_1 ) and $var_1 > 0 ) {
+			$var_0['id'] = $var_1;
+		}
+
+		
+		if ( class_exists( 'WooCommerce' ) ) {
+			if ( is_product() ) {
+				return wp_parse_args( array( "type" => "product" ), $var_0 );
+			}
+		}
+
+		
+		if ( is_front_page() || is_home() ) {
+			return wp_parse_args( array( "type" => "home" ), $var_0 );
+		}
+
+		
+		if ( is_attachment() ) {
+			$var_0['type'] = "attachment";
+		}
+
+		
+		if ( is_archive() ) {
+			$var_0['type'] = "archive";
+		}
+
+		
+		if ( is_singular() ) {
+			$var_0['type'] = "post";
+		}
+
+		
+		if ( is_page() ) {
+			$var_0['type'] = "page";
+		}
+
+		
+		if ( is_category() ) {
+			$var_0['type'] = "category";
+		}
+
+		
+		if ( is_tag() ) {
+			$var_0['type'] = "post_tag";
+		}
+
+		
+		if ( is_tax() ) {
+			$var_0['type'] = "tax";
+		}
+
+		
+		if ( is_author() ) {
+			$var_0['type'] = "author";
+		}
+
+		
+		$var_2 = filter_var( get_search_query( false ), var_3 );
+		if ( trim( $var_2 ) != "" ) {
+			return array( "type" => "search", "id" => 0, "search_query" => $var_2 );
+		}
+
+		
+		if ( is_404() ) {
+			$var_0['type'] = "404";
+		}
+
+		
+		if ( is_feed() ) {
+			$var_0['type'] = "feed";
+		}
+
+		
+		if ( Helper::is_login_page() ) {
+			$var_0['type'] = "loginpage";
+		}
+
+		return apply_filters( 'wp_statistics_current_page', $var_0 );
+	}
+
+	
+	public static function fn_2() {
+		return apply_filters( 'wp_statistics_track_all_pages', Option::get( 'track_all_pages' ) || is_single() || is_page() || is_front_page() );
+	}
+
+	
+	public static function fn_3() {
+
+		
+		$var_4     = parse_url( site_url(), var_5 );
+		$var_6 = strlen( $var_4 );
+
+		
+		$var_7     = parse_url( home_url(), var_5 );
+		$var_8 = strlen( $var_7 );
+
+		
+		$var_9 = $_SERVER["REQUEST_URI"];
+
+		
+		if ( $var_6 > $var_8 ) {
+			if ( substr( $var_9, 0, $var_6 ) == $var_4 ) {
+				$var_9 = substr( $var_9, $var_6 );
+			}
+
+			if ( substr( $var_9, 0, $var_8 ) == $var_7 ) {
+				$var_9 = substr( $var_9, $var_8 );
+			}
+		} else {
+			if ( substr( $var_9, 0, $var_8 ) == $var_7 ) {
+				$var_9 = substr( $var_9, $var_8 );
+			}
+
+			if ( substr( $var_9, 0, $var_6 ) == $var_4 ) {
+				$var_9 = substr( $var_9, $var_6 );
+			}
+		}
+
+		
+		$var_9 = filter_var( $var_9, var_3 );
+
+		
+		if ( $var_9 == '' ) {
+			$var_9 = '/';
+		}
+
+		return apply_filters( 'wp_statistics_page_uri', $var_9 );
+	}
+
+	
+	public static function fn_4() {
+
+		
+		$var_0 = self::fn_1();
+
+		
+		$var_9 = class_0::fn_3();
+
+		
+		if ( array_key_exists( "search_query", $var_0 ) and ! empty( $var_0["search_query"] ) ) {
+			$var_9 = "?s=" . $var_0['search_query'];
+		}
+
+		
+		if ( $var_0['type'] == "loginpage" ) {
+			$var_9 = Helper::RemoveQueryStringUrl( $var_9 );
+		}
+
+		
+		if ( Option::get( 'strip_uri_parameters' ) and array_key_exists( "search_query", $var_0 ) === false ) {
+			$var_10 = explode( '?', $var_9 );
+			if ( $var_10 !== false ) {
+				$var_9 = $var_10[0];
+			}
+		}
+
+		
+		return substr( $var_9, 0, 255 );
+	}
+
+	
+	public static function fn_5() {
+		global $var_11;
+
+		
+		$var_0 = self::fn_1();
+
+		
+		if ( $var_0['type'] == "unknown" ) {
+			return false;
+		}
+
+		
+		$var_9 = self::fn_4();
+
+		
+		$var_12 = $var_11->get_row( "SELECT `page_id` FROM `" . DB::table( 'pages' ) . "` WHERE `date` = '" . TimeZone::getCurrentDate( 'Y-m-d' ) . "' " . ( array_key_exists( "search_query", $var_0 ) === true ? "AND `uri` = '" . esc_sql( $var_9 ) . "'" : "" ) . "AND `type` = '{$var_0['type']}' AND `id` = {$var_0['id']}", var_14 );
+
+		
+		if ( null !== $var_12 ) {
+
+			$var_11->query( $var_11->prepare( "UPDATE `" . DB::table( 'pages' ) . "` SET `count` = `count` + 1 WHERE `date` = '" . TimeZone::getCurrentDate( 'Y-m-d' ) . "' " . ( array_key_exists( "search_query", $var_0 ) === true ? "AND `uri` = '" . esc_sql( $var_9 ) . "'" : "" ) . "AND `type` = '{$var_0['type']}' AND `id` = %d", $var_0['id'] ) );
+			$var_17 = $var_12['page_id'];
+
+		} else {
+
+			
+			$var_18 = array(
+				'uri'   => $var_9,
+				'date'  => TimeZone::getCurrentDate( 'Y-m-d' ),
+				'count' => 1,
+				'id'    => $var_0['id'],
+				'type'  => $var_0['type']
+			);
+			$var_18 = apply_filters( 'wp_statistics_pages_information', $var_18 );
+
+			
+			$var_17 = self::fn_6( $var_18 );
+		}
+
+		return ( isset( $var_17 ) ? $var_17 : false );
+	}
+
+	
+	public static function fn_6( $var_19 = array() ) {
+		global $var_11;
+
+		
+		add_filter( 'query', array( '\WP_STATISTICS\DB', 'insert_ignore' ), 10 );
+
+		
+		$var_11->insert( DB::table( 'pages' ), $var_19 );
+
+		
+		$var_17 = $var_11->var_21;
+
+		
+		remove_filter( 'query', array( '\WP_STATISTICS\DB', 'insert_ignore' ), 10 );
+
+		
+		do_action( 'wp_statistics_save_page', $var_17, $var_19 );
+
+		return $var_17;
+	}
+
+	
+	public static function fn_7( $var_17, $var_22 = 'post' ) {
+
+		
+		$var_23      = array();
+		$var_24 = array(
+			'link'      => '',
+			'edit_link' => '',
+			'object_id' => $var_17,
+			'title'     => '-',
+			'meta'      => array()
+		);
+
+		if ( ! empty( $var_22 ) ) {
+			switch ( $var_22 ) {
+				case "product":
+				case "attachment":
+				case "post":
+				case "page":
+					$var_23 = array(
+						'title'     => esc_html( get_the_title( $var_17 ) ),
+						'link'      => get_the_permalink( $var_17 ),
+						'edit_link' => get_edit_post_link( $var_17 ),
+						'meta'      => array(
+							'post_type' => get_post_type( $var_17 )
+						)
+					);
+					break;
+				case "category":
+				case "post_tag":
+				case "tax":
+					$var_25 = get_term( $var_17 );
+					$var_23  = array(
+						'title'     => esc_html( $var_25->var_26 ),
+						'link'      => ( is_wp_error( get_term_link( $var_17 ) ) === true ? '' : get_term_link( $var_17 ) ),
+						'edit_link' => get_edit_term_link( $var_17 ),
+						'meta'      => array(
+							'taxonomy'         => $var_25->var_27,
+							'term_taxonomy_id' => $var_25->var_28,
+							'count'            => $var_25->var_29,
+						)
+					);
+					break;
+				case "home":
+					$var_23 = array(
+						'title' => __( 'Home Page', 'wp-statistics' ),
+						'link'  => get_site_url()
+					);
+					break;
+				case "author":
+					$var_30 = get_userdata( $var_17 );
+					$var_23       = array(
+						'title'     => ( $var_30->var_31 != "" ? esc_html( $var_30->var_31 ) : esc_html( $var_30->var_32 . ' ' . $var_30->var_33 ) ),
+						'link'      => get_author_posts_url( $var_17 ),
+						'edit_link' => get_edit_user_link( $var_17 ),
+					);
+					break;
+				case "feed":
+					$var_36['title'] = __( 'Feed', 'wp-statistics' );
+					break;
+				case "loginpage":
+					$var_36['title'] = __( 'Login Page', 'wp-statistics' );
+					break;
+				case "search":
+					$var_36['title'] = __( 'Search Page', 'wp-statistics' );
+					break;
+				case "404":
+					$var_36['title'] = __( '404 not found', 'wp-statistics' );
+					break;
+				case "archive":
+					$var_36['title'] = __( 'Post Archive', 'wp-statistics' );
+					break;
+			}
+		}
+
+		return wp_parse_args( $var_23, $var_24 );
+	}
+
+	
+	public static function fn_8( $var_34 = array() ) {
+		global $var_11;
+
+		
+		$var_24 = array(
+			'per_page' => 10,
+			'paged'    => 1
+		);
+		$var_34     = wp_parse_args( $var_34, $var_24 );
+
+		
+		$var_35   = array();
+		$var_36 = $var_11->get_results( "SELECT `pages`.`uri`,`pages`.`id`,`pages`.`type`, SUM(`pages`.`count`) + IFNULL(`historical`.`value`, 0) AS `count_sum` FROM `" . DB::table( 'pages' ) . "` `pages` LEFT JOIN `" . DB::table( 'historical' ) . "` `historical` ON `pages`.`uri`=`historical`.`uri` AND `historical`.`category`='uri' GROUP BY `uri` ORDER BY `count_sum` DESC LIMIT " . ( $var_34['paged'] - 1 ) * $var_34['per_page'] . "," . $var_34['per_page'] );
+		foreach ( $var_36 as $var_38 ) {
+
+			
+			$var_39 = class_0::fn_7( $var_38->var_1, $var_38->var_22 );
+
+			
+			$var_35[] = array(
+				'title'     => $var_39['title'],
+				'link'      => $var_39['link'],
+				'str_url'   => htmlentities( urldecode( $var_38->var_40 ), var_41 ),
+				'hits_page' => Menus::admin_url( 'pages', array( 'page-uri' => htmlentities( $var_38->var_40, var_41 ) ) ), 
+				'number'    => number_format_i18n( $var_38->var_42 )
+			);
+		}
+
+		return $var_35;
+	}
+
+	
+	public static function fn_9( $var_43 = 'uri' ) {
+		global $var_11;
+		return $var_11->get_var( "SELECT COUNT(*) FROM `" . DB::table( 'pages' ) . "` `pages` GROUP BY `{$var_43}`" );
+	}
+}

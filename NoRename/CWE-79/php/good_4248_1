@@ -1,0 +1,96 @@
+<?php
+
+
+
+
+
+class ButtonController extends AbstractController
+{
+    
+    public function indexAction(Request $request)
+    {
+        $referer = $request->server->get('HTTP_REFERER', '');
+
+        
+        
+        $new_page = empty($_SESSION[SESSION_PREFIX . 'last_visited_page'])
+            || $_SESSION[SESSION_PREFIX . 'last_visited_page'] != $referer;
+
+        
+        if ($referer && isset($_SESSION[SESSION_PREFIX . 'threadid']) && $new_page) {
+            $thread = Mibew\Thread::load($_SESSION[SESSION_PREFIX . 'threadid']);
+            if ($thread && $thread->state != Mibew\Thread::STATE_CLOSED) {
+                $msg = getlocal(
+                    "Visitor navigated to {0}",
+                    array(safe_htmlspecialchars($referer)),
+                    $thread->locale,
+                    true
+                );
+                $thread->postMessage(Mibew\Thread::KIND_FOR_AGENT, $msg);
+            }
+        }
+        $_SESSION[SESSION_PREFIX . 'last_visited_page'] = $referer;
+
+        $image = $request->query->get('i', '');
+        if (!preg_match("/^\w+$/", $image)) {
+            $image = 'mibew';
+        }
+
+        $lang = $request->query->get('lang', '');
+        if (!preg_match("/^[\w-]{2,5}$/", $lang)) {
+            $lang = '';
+        }
+        if (!$lang || !locale_is_available($lang)) {
+            $lang = get_current_locale();
+        }
+
+        $group_id = $request->query->get('group', '');
+        if (!preg_match("/^\d{1,8}$/", $group_id)) {
+            $group_id = false;
+        }
+        if ($group_id) {
+            if (Mibew\Settings::get('enablegroups') == '1') {
+                $group = group_by_id($group_id);
+                if (!$group) {
+                    $group_id = false;
+                }
+            } else {
+                $group_id = false;
+            }
+        }
+
+        
+        $image_postfix = has_online_operators($group_id) ? "on" : "off";
+        $file_name = "locales/${lang}/button/${image}_${image_postfix}.png";
+        $content_type = 'image/png';
+        if (!is_readable($file_name)) {
+            
+            $file_name = "locales/${lang}/button/${image}_${image_postfix}.gif";
+            $content_type = 'image/gif';
+        }
+
+        $fh = fopen($file_name, 'rb');
+        if ($fh) {
+            
+            $file_size = filesize($file_name);
+            $content = fread($fh, $file_size);
+            fclose($fh);
+            $response = new Response($content, 200);
+
+            
+            $response->headers->set('Content-Type', $content_type);
+            $response->headers->set('Content-Length', $file_size);
+        } else {
+            $response = new Response('Not found', 404);
+        }
+
+        
+        $response->headers->addCacheControlDirective('no-cache', true);
+        $response->headers->addCacheControlDirective('no-store', true);
+        $response->headers->addCacheControlDirective('must-revalidate', true);
+        $response->setExpires(new \DateTime('yesterday noon'));
+        $response->headers->set('Pragma', 'no-cache');
+
+        return $response;
+    }
+}

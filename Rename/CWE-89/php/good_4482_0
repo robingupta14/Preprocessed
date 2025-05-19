@@ -1,0 +1,174 @@
+<?php
+
+
+
+class class_0 extends \var_0\var_1 {
+
+
+    public function fn_0() {
+
+        if ($var_2 = $var_3->param('auth')) {
+
+            if (!\var_5($var_2['user']) || !\var_5($var_2['password'])) {
+                return ['success' => false, 'error' => 'Pre-condition failed'];
+            }
+
+            if (isset($var_2['user']) && $var_3->var_6->helper('utils')->isEmail($var_2['user'])) {
+                $var_2['email'] = $var_2['user'];
+                $var_2['user']  = '';
+            }
+
+            if (!$var_3->var_6->helper('csfr')->isValid('login', $var_3->param('csfr'), true)) {
+                $var_3->var_6->trigger('cockpit.authentication.failed', [$var_2, 'Csfr validation failed']);
+                return ['success' => false, 'error' => 'Csfr validation failed'];
+            }
+
+            $var_11 = $var_3->module('cockpit')->authenticate($var_2);
+
+            if ($var_11 && !$var_3->module('cockpit')->hasaccess('cockpit', 'backend', @$var_11['group'])) {
+                $var_11 = null;
+            }
+
+            if ($var_11) {
+                $var_3->var_6->trigger('cockpit.authentication.success', [&$var_11]);
+                $var_3->module('cockpit')->setUser($var_11);
+            } else {
+                $var_3->var_6->trigger('cockpit.authentication.failed', [$var_2, 'User not found']);
+            }
+
+            if ($var_3->var_6->var_16->is('ajax')) {
+                return $var_11 ? ['success' => true, 'user' => $var_11, 'avatar'=> md5($var_11['email'])] : ['success' => false, 'error' => 'User not found'];
+            } else {
+                $var_3->reroute('/');
+            }
+
+        }
+
+        return false;
+    }
+
+
+    public function fn_1() {
+
+        $var_19 = '/';
+
+        if ($var_3->param('to') && \var_20($var_3->param('to'), 0, 1) == '/') {
+            $var_19 = $var_3->param('to');
+        }
+
+        return $var_3->render('cockpit:views/layouts/login.php', compact('redirectTo'));
+    }
+
+    public function fn_2() {
+
+        $var_3->module('cockpit')->fn_2();
+
+        if ($var_3->var_6->var_16->is('ajax')) {
+            return ['logout' => true];
+        } else {
+            $var_3->reroute('/auth/login?logout=1');
+        }
+    }
+
+    public function fn_3() {
+
+        return $var_3->render('cockpit:views/layouts/forgotpassword.php');
+    }
+
+    public function fn_4() {
+
+        if ($var_11 = $var_3->param('user')) {
+
+            $var_23 = ['active' => true];
+
+            if ($var_3->var_6->helper('utils')->isEmail($var_11)) {
+                $var_23['email'] = $var_11;
+            } else {
+                $var_23['user'] = $var_11;
+            }
+
+            $var_11 = $var_3->var_6->var_24->findOne('cockpit/accounts', $var_23);
+
+            if (!$var_11) {
+                return $var_3->stop(['error' => $var_3('i18n')->get('User does not exist')], 404);
+            }
+
+            $var_28  = uniqid('rp-'.bin2hex(random_bytes(16)));
+            $var_29 = $var_3->var_6->param('', $var_3->var_6->getSiteUrl(true).'/auth/newpassword');
+            $var_2   = ['_id' => $var_11['_id'], '_reset_token' => $var_28];
+
+            $var_3->var_6->var_24->save('cockpit/accounts', $var_2);
+            $var_32 = $var_3->var_6->view('cockpit:emails/recover.php', compact('user','token','target'));
+
+            try {
+                $var_34 = $var_3->var_6->var_35->mail(
+                    $var_11['email'],
+                    $var_3->param('subject', $var_3->var_6->getSiteUrl().' - '.$var_3('i18n')->get('Password Recovery')),
+                    $var_32
+                );
+            } catch (\var_37 $var_38) {
+                $var_34 = $var_38->getMessage();
+            }
+
+            if ($var_34 !== true) {
+                return $var_3->stop(['error' => $var_3('i18n')->get($var_34)], 404);
+            }
+
+            return ['message' => $var_3('i18n')->get('Recovery email sent')];
+        }
+
+        return $var_3->stop(['error' => $var_3('i18n')->get('User required')], 412);
+    }
+
+    public function fn_5() {
+
+        if ($var_28 = $var_3->param('token')) {
+
+            if (!\var_5($var_28)) {
+                return false;
+            }
+
+            $var_11 = $var_3->var_6->var_24->findOne('cockpit/accounts', ['_reset_token' => $var_28]);
+
+            if (!$var_11) {
+                return false;
+            }
+
+            $var_11 = [
+                'md5email' => md5($var_11['email']),
+                'user' => $var_11['name'],
+                'name' => $var_11['user'],
+            ];
+
+            return $var_3->render('cockpit:views/layouts/newpassword.php', compact('user', 'token'));
+        }
+
+        return false;
+
+    }
+
+    public function fn_6() {
+
+        if ($var_28 = $var_3->param('token')) {
+
+            if (!\var_5($var_28)) {
+                return false;
+            }
+
+            $var_11 = $var_3->var_6->var_24->findOne('cockpit/accounts', ['_reset_token' => $var_28]);
+            $var_40 = trim($var_3->param('password'));
+
+            if (!$var_11 || !$var_40) {
+                return false;
+            }
+
+            $var_2 = ['_id' => $var_11['_id'], 'password' =>$var_3->var_6->hash($var_40), '_reset_token' => null];
+
+            $var_3->var_6->var_24->save('cockpit/accounts', $var_2);
+
+            return ['success' => true, 'message' => $var_3('i18n')->get('Password updated')];
+        }
+
+        return $var_3->stop(['error' => $var_3('i18n')->get('Token required')], 412);
+    }
+}

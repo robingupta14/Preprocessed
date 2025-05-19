@@ -1,0 +1,190 @@
+<?php
+
+
+
+if (! defined('PMA_NO_VARIABLES_IMPORT')) {
+    define('PMA_NO_VARIABLES_IMPORT', true);
+}
+
+
+$GLOBALS['js_include'][] = 'openlayers/OpenLayers.js';
+$GLOBALS['js_include'][] = 'jquery/jquery.svg.js';
+$GLOBALS['js_include'][] = 'jquery/jquery.mousewheel.js';
+$GLOBALS['js_include'][] = 'jquery/jquery.event.drag-2.0.js';
+$GLOBALS['js_include'][] = 'tbl_gis_visualization.js';
+$GLOBALS['js_include'][] = 'OpenStreetMap.js';
+
+
+ob_start();
+
+
+$url_params['goto'] = $cfg['DefaultTabDatabase'];
+$url_params['back'] = 'sql.php';
+
+
+
+
+$var_0 = PMA_DBI_try_query($var_1);
+
+$var_2 = PMA_DBI_get_fields_meta($var_0);
+
+
+$var_3 = array(); $var_4 = array();
+foreach ($var_2 as $var_5) {
+    if ($var_5->var_6 == 'geometry') {
+        $var_4[] = $var_5->var_7;
+    } else {
+        $var_3[] = $var_5->var_7;
+    }
+}
+
+
+$var_8 = array();
+if (PMA_isValid($_REQUEST['visualizationSettings'], 'array')) {
+    $var_8 = $_REQUEST['visualizationSettings'];
+}
+
+if (! isset($var_8['labelColumn']) && isset($var_3[0])) {
+    $var_8['labelColumn'] = '';
+}
+
+
+if (! isset($var_8['spatialColumn'])) {
+    $var_8['spatialColumn'] = $var_4[0];
+}
+
+
+$var_9 = PMA_GIS_modifyQuery($var_1, $var_8);
+$var_10 = PMA_DBI_try_query($var_9);
+
+$var_11 = array();
+while ($var_12 = PMA_DBI_fetch_assoc($var_10)) {
+    $var_11[] = $var_12;
+}
+
+
+if (! isset($_REQUEST['displayVisualization'])) {
+    $var_8['choice'] = 'useBaseLayer';
+    foreach ($var_11 as $var_12) {
+        if ($var_12['srid'] == 0) {
+            unset($var_8['choice']);
+            break;
+        }
+    }
+}
+
+if (isset($_REQUEST['saveToFile'])) {
+    $var_13 = $_REQUEST['fileName'];
+    if ($var_13 == '') {
+        $var_13 = $var_8['spatialColumn'];
+    }
+
+    $var_14 = $_REQUEST['fileFormat'];
+    PMA_GIS_saveToFile($var_11, $var_8, $var_14, $var_13);
+    exit();
+}
+
+$var_15 = (var_16 == 'IE' && var_17 <= 8) ? false : true;
+$var_18 = $var_15 ? 'svg' : 'png';
+
+
+$var_19 = PMA_GIS_visualizationResults($var_11, $var_8, $var_18);
+
+
+?>
+<!-- Display visulalization options -->
+<div id="div_view_options">
+<form method="post" action="tbl_gis_visualization.php">
+<?php  ?>
+<fieldset>
+    <legend><?php  ?></legend>
+    <div id="placeholder" style="width:<?php echo(htmlspecialchars($var_8['width'])); ?>px;height:<?php echo(htmlspecialchars($var_8['height'])); ?>px;">
+        <?php  ?>
+    </div>
+    <div id="openlayersmap"></div>
+    <input type="hidden" id="pmaThemeImage" value="<?php echo($GLOBALS['pmaThemeImage']); ?>" />
+
+    <script language="javascript" type="text/javascript">
+        function drawOpenLayers() {
+            <?php  ?>
+        }
+    </script>
+
+    <input type="hidden" name="sql_query" id="sql_query" value="<?php  ?>" />
+
+    <table class="gis_table">
+    <tr><td><label for="width"><?php  ?></label></td>
+        <td><input type="text" name="visualizationSettings[width]" id="width" value="<?php  ?>" /></td>
+    </tr>
+
+    <tr><td><label for="height"><?php  ?></label></td>
+        <td><input type="text" name="visualizationSettings[height]" id="height" value="<?php  ?>" /></td>
+    </tr>
+
+    <tr><td><label for="labelColumn"><?php  ?></label></td>
+        <td><select name="visualizationSettings[labelColumn]" id="labelColumn">
+            <option value=""><?php  ?></option>
+        <?php
+            foreach ($var_3 as $var_20) {
+                echo('<option value="' . htmlspecialchars($var_20) . '"');
+                if ($var_20 == $var_8['labelColumn']) {
+                    echo(' selected="selected"');
+                }
+                echo('>' . htmlspecialchars($var_20) . '</option>');
+            }
+        ?>
+        </select></td>
+    </tr>
+
+    <tr><td><label for="spatial Column"><?php  ?></label></td>
+        <td><select name="visualizationSettings[spatialColumn]" id="spatialColumn">
+        <?php
+            foreach ($var_4 as $var_21) {
+                echo('<option value="' . htmlspecialchars($var_21) . '"');
+                if ($var_21 == $var_8['spatialColumn']) {
+                    echo(' selected="selected"');
+                }
+                echo('>' . htmlspecialchars($var_21) . '</option>');
+            }
+        ?>
+        </select></td>
+    </tr>
+    <tr><td class="choice" colspan="2">
+        <input type="checkbox" name="visualizationSettings[choice]" id="choice" value="useBaseLayer"
+        <?php
+            if (isset($var_8['choice'])) {
+                echo(' checked="checked"');
+            }
+        ?>
+        />
+        <label for="choice"><?php  ?></label>
+    </td></tr>
+    <tr><td></td>
+        <td class="button"><input type="submit" name="displayVisualization" value="<?php  ?>" /></td>
+    </tr>
+    <tr><td class="save"><?php  ?></td></tr>
+    <tr><td><label for="fileName"><?php  ?></label></td>
+        <td><input type="text" name="fileName" id="fileName" /></td>
+    </tr>
+    <tr><td><label for="fileFormat"><?php  ?></label></td>
+        <td><select name="fileFormat" id="fileFormat">
+            <option value="png">PNG</option>
+            <option value="pdf">PDF</option>
+            <?php
+            if ($var_15) {
+                
+            }
+            ?>
+        </select></td>
+    </tr>
+    <tr><td></td>
+        <td class="button"><input type="submit" name="saveToFile" value="<?php  ?>" /></td>
+    </tr>
+    </table>
+</fieldset>
+</form>
+</div>
+<?php
+
+
+?>

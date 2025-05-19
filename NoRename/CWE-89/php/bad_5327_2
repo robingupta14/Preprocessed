@@ -1,0 +1,935 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class expRecord {
+    protected $classinfo = null;
+    public $classname = '';
+
+    
+    public $tablename = '';
+    public $identifier = 'id';
+    public $rank_by_field = '';
+    
+    public $grouping_sql = '';
+
+    
+    public $has_extended_fields = array();  
+    public $has_one = array();  
+    public $has_many = array();  
+    public $has_many_self = array();
+    public $has_and_belongs_to_many = array();
+    public $has_and_belongs_to_self = array();
+    
+    public $default_sort_field = '';
+    public $default_sort_direction = '';
+    
+    public $get_assoc_for = array();
+
+    
+    protected $attachable_item_types = array();
+    
+    public $attachable_items_to_save;
+    
+    public $get_attachable_for = array();
+
+    
+    public $validate = array();
+    public $do_not_validate = array();
+
+    public $supports_revisions = false;  
+    public $needs_approval = false;  
+
+    
+    static function isSearchable() {
+        return false;
+    }
+
+    
+    function __construct($params = null, $get_assoc = true, $get_attached = true) {
+        global $db;
+
+        
+        
+        if (empty($params)) {
+            $params       = array();
+            $get_assoc    = false;
+            $get_attached = false;
+        }
+
+        
+        $this->classinfo = new ReflectionClass($this);
+        $this->classname = $this->classinfo->getName();
+        $this->tablename = isset($this->table) ? $this->table : $this->classinfo->getName();
+
+        $supports_revisions = $this->supports_revisions && ENABLE_WORKFLOW;
+        $needs_approval = $this->needs_approval && ENABLE_WORKFLOW;
+
+        
+        
+
+        
+        if (!is_object($params) && !is_array($params)) {
+            $where = '';
+            if (is_numeric($params)) {
+                $this->build($db->selectArray($this->tablename, $this->identifier . '=' . $params, null, $supports_revisions));
+                $identifier = $this->identifier;
+                $params     = array($identifier => $params); 
+            } else {
+                
+                $values = $db->selectArray($this->tablename, "sef_url='" . expString::sanitize($params) . "'", null, $supports_revisions, $needs_approval);
+                
+                if (empty($values)) $values = $db->selectArray($this->tablename, "title='" . expString::sanitize($params) . "'", null, $supports_revisions, $needs_approval);
+                $this->build($values);
+                $params = array('title'=> $params);
+            }
+        } else {
+            
+            $this->build($params);
+        }
+
+        
+        if (!empty($this->publish)) {
+            $this->publish_date = $this->publish;
+        } elseif (!empty($this->edited_at)) {
+            $this->publish_date = $this->edited_at;
+        } elseif (!empty($this->created_at)) {
+            $this->publish_date = $this->created_at;
+        }
+
+        
+        
+        if (is_array($params)){
+            $params['except']         = isset($params['except']) ? $params['except'] : array();
+            $params['cascade_except'] = isset($params['cascade_except']) ? $params['cascade_except'] : false;
+
+            if ($get_assoc)
+                $this->getAssociatedObjectsForThisModel($params['except'], $params['cascade_except']);
+        } elseif (is_object($params)) {
+            $params->except         = isset($params->except) ? $params->except : array();
+            $params->cascade_except = isset($params->cascade_except) ? $params->cascade_except : false;
+
+            if ($get_assoc)
+                $this->getAssociatedObjectsForThisModel($params->except, $params->cascade_except);
+        }
+        if ($get_attached) $this->getAttachableItems();
+    }
+
+    
+    public function find($range = 'all', $where = null, $order = null, $limit = null, $limitstart = 0, $get_assoc = true, $get_attached = true, $except = array(), $cascade_except = false) {
+        global $db, $user;
+
+        if (is_numeric($range)) {
+            $where = $this->identifier . '=' . intval($range); 
+            $range = 'first';
+        }
+
+        $sql = empty($where) ? 1 : $where;
+        
+
+
+        $supports_revisions = $this->supports_revisions && ENABLE_WORKFLOW;
+        if (ENABLE_WORKFLOW && $this->needs_approval) {
+            $needs_approval = $user->id;
+        } else {
+            $needs_approval = false;
+        }
+
+        if (strcasecmp($range, 'all') == 0) {  
+
+            $limitsql = empty($limit) ? '' : ' LIMIT ' . $limitstart . ',' . $limit;
+            return $db->selectExpObjects($this->tablename, $sql, $this->classname, $get_assoc, $get_attached, $except, $cascade_except, $order, $limitsql, $supports_revisions, $needs_approval);
+        } elseif (strcasecmp($range, 'revisions') == 0) {  
+
+            $limitsql = empty($limit) ? '' : ' LIMIT ' . $limitstart . ',' . $limit;
+            return $db->selectExpObjects($this->tablename, $sql, $this->classname, $get_assoc, $get_attached, $except, $cascade_except, $order, $limitsql);
+        } elseif (strcasecmp($range, 'first') == 0) {  
+
+            $limitsql = ' LIMIT 0,1';
+            $records = $db->selectExpObjects($this->tablename, $sql, $this->classname, $get_assoc, $get_attached, $except, $cascade_except, $order, $limitsql, $supports_revisions, $needs_approval);
+            return empty($records) ? null : $records[0];
+        } elseif (strcasecmp($range, 'bytitle') == 0) {  
+            $limitsql = ' LIMIT 0,1';
+            $records = $db->selectExpObjects($this->tablename, "title='" . $where . "' OR sef_url='" . $where . "'", $this->classname, $get_assoc, $get_attached, $except, $cascade_except, $order, $limitsql, $supports_revisions, $needs_approval);
+            return empty($records) ? null : $records[0];
+        } elseif (strcasecmp($range, 'count') == 0) {  
+            return $db->countObjects($this->tablename, $sql, $supports_revisions, $needs_approval);
+        } elseif (strcasecmp($range, 'in') == 0) {  
+            if (!is_array($where)) return array();
+            foreach ($where as $id)
+                $records[] = new $this->classname($id);
+            return $records;
+        } elseif (strcasecmp($range, 'bytag') == 0) {  
+            if (!is_int($where))  $where = $db->selectObject($db->prefix . 'expTags',"title='" . $where . "' OR sef_url='" . $where . "'");
+            $sql = 'SELECT DISTINCT m.id FROM ' . $db->prefix . $this->tablename . ' m ';
+            $sql .= 'JOIN ' . $db->prefix . 'content_expTags ct ';
+            $sql .= 'ON m.id = ct.content_id WHERE ct.exptags_id=' . intval($where) . " AND ct.content_type='" . $this->classname . "'";
+            if ($supports_revisions) $sql .= " AND revision_id=(SELECT MAX(revision_id) FROM `" . $db->prefix . $this->tablename . "` WHERE ct.exptags_id=" . intval($where) . " AND ct.content_type='" . $this->classname . "'";
+            $tag_assocs = $db->selectObjectsBySql($sql);
+            $records    = array();
+            foreach ($tag_assocs as $assoc) {
+                $records[] = new $this->classname($assoc->id);
+            }
+            return $records;
+        } elseif (strcasecmp($range, 'bycat') == 0) {  
+            if (!is_int($where))  $where = $db->selectObject($db->prefix . 'expCats',"title='" . $where . "' OR sef_url='" . $where . "'");
+            $sql = 'SELECT DISTINCT m.id FROM ' . $db->prefix . $this->tablename . ' m ';
+            $sql .= 'JOIN ' . $db->prefix . 'content_expCats ct ';
+            $sql .= 'ON m.id = ct.content_id WHERE ct.expcats_id=' . intval($where) . " AND ct.content_type='" . $this->classname . "'";
+            if ($supports_revisions) $sql .= " AND revision_id=(SELECT MAX(revision_id) FROM `" . $db->prefix . $this->tablename . "` WHERE ct.expcats_id=" . intval($where) . " AND ct.content_type='" . $this->classname . "'";
+            $cat_assocs = $db->selectObjectsBySql($sql);
+            $records    = array();
+            foreach ($cat_assocs as $assoc) {
+                $records[] = new $this->classname($assoc->id);
+            }
+            return $records;
+        }
+    }
+
+    
+    public function findBy($column, $value, $get_assoc = true, $get_attached = true, $except = array(), $cascade_except = false) {
+
+
+        $where = "`" . $column . "`=";
+        if (!is_numeric($value)) $where .= "'";
+        $where .= $value;
+        if (!is_numeric($value)) $where .= "'";
+        return $this->find('first', $where, null, null, 0, $get_assoc, $get_attached, $except, $cascade_except);
+    }
+
+    
+    public function findValue($range = 'all', $column, $where=null, $order=null, $distinct=false) {
+        global $db;
+
+        if (strcasecmp($range, 'all') == 0) {  
+            return $db->selectColumn($this->tablename, $column, $where, $order, $distinct);
+        } elseif (strcasecmp($range, 'first') == 0) {  
+            return $db->selectValue($this->tablename, $column, $where);
+        }
+        return false;
+    }
+
+    
+    public function update($params = array()) {
+        if (is_array($params) && isset($params['current_revision_id'])) {
+            $params['revision_id'] = $params['current_revision_id'];
+            unset($params['current_revision_id']);
+        }
+        $this->checkForAttachableItems($params);
+        $this->build($params);
+        if (is_array($params)) {
+            $this->save((isset($params['_validate']) ? $params['_validate'] : true));
+        } elseif (is_object($params)) {
+            $this->save((isset($params->_validate) ? $params->_validate : true));
+        } else {
+            $this->save(true);
+        }
+    }
+
+    
+    public function refresh() {
+        if (empty($this->id))
+            return false;
+        $this->__construct($this->id);
+    }
+
+    
+    public function build($params = array()) {
+        global $db;
+
+        
+        if (!is_array($params) && !is_object($params)) $params = array();
+
+        
+        $table = $db->getDataDefinition($this->tablename);
+
+        
+        if (is_array($params) && ((!empty($params['module']) || !empty($params['controller'])) && !empty($params['src']))) {
+            $mod = !empty($params['module']) ? $params['module'] : (!empty($params['controller']) ? $params['controller'] : null);
+            if (empty($params['module'])) $params['module'] = $params['controller'];
+            $params['location_data'] = serialize(expCore::makeLocation($mod, $params['src']));
+        } elseif (is_object($params) && ((!empty($params->module) || !empty($params->controller)) && !empty($params->src))) {
+            $mod = !empty($params->module) ? $params->module : (!empty($params->controller) ? $params->controller : null);
+            if (empty($params->module)) $params->module = $params->controller;
+            $params->location_data = serialize(expCore::makeLocation($mod, $params->src));
+        }
+
+        
+        foreach ($table as $col=> $colDef) {
+            
+            
+            
+            
+            
+            
+            if (array_key_exists($col, $params)) {
+                $value = is_array($params) ? $params[$col] : $params->$col;
+                if ($colDef[0] == DB_DEF_INTEGER || $colDef[0] == DB_DEF_ID) {
+                    $this->$col = preg_replace("/[^0-9-]/", "", $value);
+                } elseif ($colDef[0] == DB_DEF_DECIMAL) {
+                    $this->$col = preg_replace("/[^0-9.-]/", "", $value);
+                } else {
+                    $this->$col = $value;
+                }
+            } elseif ($colDef[0] == DB_DEF_BOOLEAN) {
+                $this->$col = empty($this->$col) ? 0 : $this->$col;
+            } elseif ($colDef[0] == DB_DEF_TIMESTAMP) {
+                
+                $datename = $col . 'date';
+                if (is_array($params) && isset($params[$datename])) {
+                    $this->$col = yuidatetimecontrol::parseData($col, $params);
+                } elseif (is_object($params) && isset($params->$datename)) {
+                    $this->$col = yuidatetimecontrol::parseData($col, object2Array($params));
+                } else {
+                    $this->$col = !empty($this->$col) ? $this->$col : 0;
+                }
+            } else {
+                $this->$col = !empty($this->$col) ? $this->$col : null;
+            }
+
+            
+            if ($col != 'data' && is_string($this->$col)) {
+                $this->$col = stripslashes($this->$col);
+            }
+            
+            if (ENABLE_WORKFLOW && $this->supports_revisions && $col == 'revision_id' && $this->$col == null)
+                $this->$col = 1;  
+        }
+    }
+
+    
+    public function rerank($direction, $where = '') {
+        global $db;
+
+        if (!empty($this->rank)) {
+            $next_prev = $direction == 'up' ? $this->rank - 1 : $this->rank + 1;
+            $where .= empty($this->location_data) ? null : (!empty($where) ? " AND " : '') . "location_data='" . $this->location_data . "'" . $this->grouping_sql;
+            $db->switchValues($this->tablename, 'rank', $this->rank, $next_prev, $where);
+        }
+    }
+
+    
+    public function attachItem($item, $subtype = '', $replace = true) { 
+        global $db;
+
+        
+        if (empty($item->id) && empty($this->id)) return false;
+        
+
+
+        $refname = strtolower($item->tablename) . '_id';
+        if ($replace) $db->delete($item->attachable_table, 'content_type="' . $this->classname . '" AND content_id=' . $this->id . ' AND ' . $refname . '=' . $item->id);
+        $obj               = new stdClass();
+        $obj->$refname     = $item->id;
+        $obj->content_id   = $this->id;
+        $obj->content_type = $this->classname;
+        $obj->subtype      = $subtype;
+        $obj->rank         = 1 + $db->max($item->attachable_table, 'rank', null, 'content_type="' . $this->classname . '" AND subtype="' . $subtype . '" AND content_id' . $this->id);
+        $db->insertObject($obj, $item->attachable_table);
+    }
+
+    
+    public function save($validate = false, $force_no_revisions = false) {
+        global $db;
+
+        
+        if ($validate) {
+            $this->beforeValidation();
+            $this->validate();
+            $this->afterValidation();
+        }
+
+        $this->beforeSave();
+
+        
+        
+        
+
+        
+        $saveObj = new stdClass();
+        $table   = $db->getDataDefinition($this->tablename);
+        foreach ($table as $col=> $colDef) {
+            $saveObj->$col = empty($this->$col) ? null : $this->$col;
+        }
+
+        if (ENABLE_WORKFLOW && $this->supports_revisions && !$this->approved && expPermissions::check('approve', expUnserialize($this->location_data))) {
+            $this->approved = true;  
+            $saveObj->approved = true;  
+        }
+        $identifier = $this->identifier;
+        if (!empty($saveObj->$identifier)) {
+            $revise = $force_no_revisions ? false : $this->supports_revisions && ENABLE_WORKFLOW;
+            $db->updateObject($saveObj, $this->tablename, null, $identifier, $revise);
+            $this->afterUpdate();
+        } else {
+            $this->$identifier = $db->insertObject($saveObj, $this->tablename);
+            $this->afterCreate();
+        }
+
+        
+        $this->afterSave();
+    }
+
+    
+    public function beforeValidation() {
+        $this->runCallback('beforeValidation');
+        if (empty($this->id)) {
+            $this->beforeValidationOnCreate();
+        } else {
+            $this->beforeValidationOnUpdate();
+        }
+    }
+
+    
+    public function beforeValidationOnCreate() {
+        $this->runCallback('beforeValidationOnCreate');
+    }
+
+    
+    public function beforeValidationOnUpdate() {
+        $this->runCallback('beforeValidationOnUpdate');
+    }
+
+    
+    public function validate() {
+        global $db;
+        
+        
+
+        if (property_exists($this, 'sef_url') && !(in_array('sef_url', $this->do_not_validate))) {
+            if (empty($this->sef_url)) $this->makeSefUrl();
+            if (!isset($this->validates['is_valid_sef_name']['sef_url'])) $this->validates['is_valid_sef_name']['sef_url'] = array();
+            if (!isset($this->validates['uniqueness_of']['sef_url'])) $this->validates['uniqueness_of']['sef_url']         = array();
+        }
+
+        
+        
+        if (isset($this->id) && empty($this->location_data)) {
+            $loc = $db->selectValue($this->tablename, 'location_data', 'id=' . $this->id);
+            if (!empty($loc)) $this->location_data = $loc;
+        }
+
+        
+        if (!isset($this->validates)) return true;
+        $messages = array();
+        $post     = empty($_POST) ? array() : expString::sanitize($_POST);
+        foreach ($this->validates as $validation=> $field) {
+            foreach ($field as $key=> $value) {
+                $fieldname = is_numeric($key) ? $value : $key;
+                $opts      = is_numeric($key) ? array() : $value;
+                $ret       = expValidator::$validation($fieldname, $this, $opts);
+                if (!is_bool($ret)) {
+                    $messages[] = $ret;
+                    expValidator::setErrorField($fieldname);
+                    unset($post[$fieldname]);
+                }
+            }
+        }
+
+        if (count($messages) >= 1) expValidator::failAndReturnToForm($messages, $post);
+    }
+
+    
+    public function afterValidation() {
+        $this->runCallback('afterValidation');
+        if (empty($this->id)) {
+            $this->afterValidationOnCreate();
+        } else {
+            $this->afterValidationOnUpdate();
+        }
+    }
+
+    
+    public function afterValidationOnCreate() {
+        $this->runCallback('afterValidationOnCreate');
+    }
+
+    
+    public function afterValidationOnUpdate() {
+        $this->runCallback('afterValidationOnUpdate');
+    }
+
+    
+    public function beforeSave() {
+        global $user, $db;
+
+        $this->runCallback('beforeSave');
+        
+        if (empty($this->id)) {
+            
+            if (property_exists($this, 'created_at')) $this->created_at = time();
+            if (property_exists($this, 'edited_at')) $this->edited_at = time();
+            
+            if (property_exists($this, 'poster')) $this->poster = empty($this->poster) ? $user->id : $this->poster;
+            
+            if (property_exists($this, 'rank')) {
+
+                if (empty($this->rank)) {  
+                    $where = "1 ";
+                    $where .= empty($this->location_data) ? null : "AND location_data='" . $this->location_data . "' ";
+                    
+                    $groupby = empty($this->location_data) ? null : 'location_data';
+                    $groupby .= empty($this->rank_by_field) ? null : (empty($groupby) ? null : ',' . $this->rank_by_field);
+                    $this->rank = $db->max($this->tablename, 'rank', $groupby, $where . $this->grouping_sql) + 1;
+                } else {
+                    
+                    $obj = $db->selectObject($this->tablename, 'rank=' . $this->rank . $this->grouping_sql);
+                    if (!empty($obj)) {
+                        $db->increment($this->tablename, 'rank', 1, 'rank>=' . $this->rank . $this->grouping_sql);
+                    }
+                }
+            }
+
+            $this->beforeCreate();
+        } else {
+            
+            if (property_exists($this, 'created_at') && $this->created_at == 0) {
+                $this->created_at = $db->selectValue($this->tablename, 'created_at', 'id=' . $this->id);
+            }
+
+            
+            if (property_exists($this, 'poster') && $this->poster == 0) {
+                $this->poster = $db->selectValue($this->tablename, 'poster', 'id=' . $this->id);
+            }
+
+            
+            if (property_exists($this, 'rank') && $this->rank == 0) {
+                $this->rank = $db->selectValue($this->tablename, 'rank', 'id=' . $this->id);
+            }
+
+            if (property_exists($this, 'edited_at')) $this->edited_at = time();
+            if (property_exists($this, 'editor')) $this->editor = $user->id;
+
+            $this->beforeUpdate();
+        }
+    }
+
+    
+    public function beforeCreate() {
+        $this->runCallback('beforeCreate');
+    }
+
+    
+    public function beforeUpdate() {
+        
+        if (!empty($this->migrated_at)) {
+            $this->edited_at = $this->migrated_at;
+            unset($this->migrated_at);
+        }
+        $this->runCallback('beforeUpdate');
+    }
+
+    
+    public function afterUpdate() {
+        $this->runCallback('afterUpdate');
+    }
+
+    
+    public function afterCreate() {
+        $this->runCallback('afterCreate');
+    }
+
+    
+    public function afterSave() {
+        global $db;
+
+        $this->runCallback('afterSave');
+
+        
+        if (!empty($this->attachable_items_to_save)) {
+            foreach ($this->attachable_item_types as $type) {
+                if (!empty($this->attachable_items_to_save[$type])) {
+                    $itemtype = new $type();
+                    
+                    $db->delete($itemtype->attachable_table, 'content_type="' . $this->classname . '" AND content_id=' . $this->id);
+
+                    $refname = strtolower($itemtype->tablename) . '_id'; 
+                    foreach ($this->attachable_items_to_save[$type] as $subtype=> $item) {
+                        $obj = new stdClass();
+                        if (is_object($item)) {
+                            if (!empty($item->id)) {
+                                $obj->$refname     = $item->id;
+                                $obj->subtype      = $subtype;
+                                $obj->content_id   = $this->id;
+                                $obj->content_type = $this->classname;
+                                if ($type == 'expFile' || $type == 'expCats') $obj->rank = $item->rank + 1;
+                                $db->insertObject($obj, $itemtype->attachable_table);
+                            }
+                        } elseif (is_array($item)) {
+                            foreach ($item as $rank=>$value) {
+                                if (is_numeric($value)) {
+                                    $obj->$refname     = $value;
+                                    $obj->subtype      = $subtype;
+                                    $obj->content_id   = $this->id;
+                                    $obj->content_type = $this->classname;
+                                    if ($type == 'expFile' || $type == 'expCats') $obj->rank = $rank + 1;
+                                    $db->insertObject($obj, $itemtype->attachable_table);
+                                }
+                            }
+                        } elseif (is_numeric($item)) {
+                            $obj->$refname     = $item;
+                            $obj->content_id   = $this->id;
+                            $obj->content_type = $this->classname;
+                            if ($type == 'expFile' || $type == 'expCats') $obj->rank = $subtype + 1;
+                            $db->insertObject($obj, $itemtype->attachable_table);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    
+    public function beforeDelete() {
+        $this->runCallback('beforeDelete');
+    }
+
+    
+    public function delete($where = '') {
+        global $db;
+
+        $id = $this->identifier;
+        if (empty($this->$id)) return false;
+        $this->beforeDelete();
+        $db->delete($this->tablename, $id . '=' . $this->$id);
+        if (!empty($where)) $where .= ' AND ';  
+        if (property_exists($this, 'rank')) $db->decrement($this->tablename, 'rank', 1, $where . 'rank>=' . $this->rank . $this->grouping_sql);
+
+        
+        foreach ($this->attachable_item_types as $content_table=> $type) {
+            $db->delete($content_table, 'content_type="' . $this->classname . '" AND content_id=' . $this->$id);
+        }
+        
+        $this->afterDelete();
+    }
+
+    
+    public function afterDelete() {
+        $this->runCallback('afterDelete');
+    }
+
+    
+    private function runCallback($type) {
+        if (empty($type)) return false;
+
+        
+        if ($this->classinfo->hasProperty($type)) {
+            $callbacks = $this->classinfo->getProperty($type);
+            foreach ($callbacks->getValue(new $this->classname(null, false, false)) as $func) {
+                $this->$func();
+            }
+        }
+    }
+
+    
+    public function makeSefUrl() {
+        global $db, $router;
+
+        if (!empty($this->title)) {
+			$this->sef_url = $router->encode($this->title);
+		} else {
+			$this->sef_url = $router->encode('Untitled');
+		}
+        $dupe = $db->selectValue($this->tablename, 'sef_url', 'sef_url="'.$this->sef_url.'"' . $this->grouping_sql);
+		if (!empty($dupe)) {
+			list($u, $s) = explode(' ',microtime());
+			$this->sef_url .= '-'.$s.'-'.$u;
+		}
+        $this->runCallback('makeSefUrl');
+    }
+
+    
+    public function getAssociatedObjects($obj = null) { 
+        global $db;
+
+        $records = array();
+
+        foreach ($this->has_one as $assoc_object) {
+            $ret = $db->selectObjects($this->tablename, $assoc_object . '_id=' . $obj->id);
+            if (!empty($ret)) $obj->$assoc_object = $ret;
+        }
+
+        foreach ($this->has_many as $assoc_object) {
+            $ret = $db->selectObjects($assoc_object, $this->tablename . '_id=' . $obj->id);
+            if (!empty($ret)) $obj->$assoc_object = $ret;
+        }
+
+        foreach ($this->has_and_belongs_to_many as $assoc_object) {
+            if (strcmp($this->tablename, $assoc_object) > 0) {
+                $tablename = $assoc_object . '_' . $this->tablename;
+            } else {
+                $tablename = $this->tablename . '_' . $assoc_object;
+            }
+
+            
+            $instances = $db->selectObjects($tablename, $this->tablename . '_id=' . $obj->id);
+            $ret       = array();
+            foreach ($instances as $instance) {
+                $fieldname = $assoc_object . '_id';
+                $ret[]     = $db->selectObject($assoc_object, 'id=' . $instance->$fieldname);
+            }
+            if (!empty($ret)) $obj->$assoc_object = $ret;
+        }
+
+        return $obj;
+    }
+
+    
+    public function findWhereAttachedTo($content_type) {
+        global $db;
+
+        $objarray = array();
+        if (!empty($this->id) && !empty($this->attachable_table)) {
+
+            $assocs = $db->selectObjects($this->attachable_table, strtolower($this->tablename) . '_id=' . $this->id . ' AND content_type="' . $content_type . '"');
+            foreach ($assocs as $assoc) {
+                if (class_exists($assoc->content_type)) $objarray[] = new $assoc->content_type($assoc->content_id);
+            }
+        }
+
+        return $objarray;
+    }
+
+    
+    protected function checkForAttachableItems($params) {
+        if (empty($params)) return false;
+        foreach ($this->attachable_item_types as $type) {
+            if (array_key_exists($type, $params)) {
+                $this->attachable_items_to_save[$type] = is_array($params) ? $params[$type] : $params->$type;
+            }
+        }
+    }
+
+    
+    function getAttachableItemTables() {
+        return $this->attachable_item_types; 
+    }
+
+    
+    protected function getAttachableItems() {
+        global $db;
+
+        foreach ($this->attachable_item_types as $content_table=> $type) {
+            if ($this->classname == $type) break;
+
+            $tablename = str_ireplace('content_', '', $content_table);
+            if (!isset($this->id)) {
+                $this->$type = array();
+            } else {
+                $sql = 'SELECT ef.*, cef.subtype AS subtype FROM ';
+                $sql .= $db->prefix . $tablename . ' ef JOIN ' . $db->prefix . $content_table . ' cef ';
+                $sql .= "ON ef.id = cef." . $tablename . "_id";
+                $sql .= " WHERE content_id=" . $this->id;
+                $sql .= " AND content_type='" . $this->classname . "'";
+                if ($type == 'expComment') {
+                    $sql .= " AND approved='1'";
+                }
+
+                $order = ($type == 'expFile' || $type == 'expCats' || $type == 'expDefinableField') ? ' ORDER BY rank ASC' : null;
+                $sql .= $order;
+
+                $items = $db->selectArraysBySql($sql);
+
+                $attacheditems = array();
+                foreach ($items as $item) {
+                    
+                    $idname = strtolower($type) . '_id';
+                    if (empty($item['subtype'])) {
+                        $attacheditems[] = new $type($item, false, false);
+                    } else {
+                        if (!isset($attacheditems[$item['subtype']])) $attacheditems[$item['subtype']] = array();
+                        $attacheditems[$item['subtype']][] = new $type($item, false, false);
+                    }
+                }
+
+                $this->$type = $attacheditems;
+            }
+        }
+    }
+
+    
+    private function getAssociatedObjectsForThisModel($except = array(), $cascade_except = false) {
+        global $db;
+
+        foreach ($this->has_extended_fields as $assoc_object) {
+            
+            $obj                 = new $assoc_object(null, false, false);
+            $this->$assoc_object = $obj->find('first', $this->tablename . '_id = ' . $this->id);
+        }
+
+        
+        foreach ($this->has_one as $assoc_object) {
+            
+            if (!in_array($assoc_object, $except)) {
+                $obj     = new $assoc_object(null, false, false);
+                $id_name = $obj->tablename . '_id';
+
+                
+                $id = empty($this->$id_name) ? array() : $this->$id_name;
+
+                $this->$assoc_object = new $assoc_object($id, in_array($assoc_object, $this->get_assoc_for), in_array($assoc_object, $this->get_attachable_for));
+            } else {
+                $this->$assoc_object = array();
+            }
+        }
+
+        
+        foreach ($this->has_many as $assoc_object) {
+            if (!in_array($assoc_object, $except)) {
+                $assoc_obj = new $assoc_object();
+
+                $ret       = $db->selectArrays($assoc_obj->tablename, $this->tablename . '_id=' . $this->id, $assoc_obj->default_sort_field != '' ? $assoc_obj->default_sort_field . " " . $assoc_obj->default_sort_direction : null);
+                $records   = array();
+                if ($cascade_except) {
+                    $record['except']         = $except;
+                    $record['cascade_except'] = $cascade_except;
+                }
+                foreach ($ret as $record) {
+                    $records[] = new $assoc_object($record, in_array($assoc_object, $this->get_assoc_for), in_array($assoc_object, $this->get_attachable_for));
+                }
+                $this->$assoc_object = $records;
+            } else {
+                
+                $this->$assoc_object = array();
+            }
+        }
+
+        foreach ($this->has_many_self as $assoc_object) {
+            if (!in_array($assoc_object, $except)) {
+                $assoc_obj = new $assoc_object();
+
+                $ret       = $db->selectArrays($assoc_obj->tablename, $assoc_obj->has_many_self_id . '=' . $this->id, $assoc_obj->default_sort_field != '' ? $assoc_obj->default_sort_field . " " . $assoc_obj->default_sort_direction : null);
+                $records   = array();
+                foreach ($ret as $record) {
+                    $records[] = new $assoc_object($record, in_array($assoc_object, $this->get_assoc_for), in_array($assoc_object, $this->get_attachable_for));
+                }
+                $this->$assoc_object = $records;
+            } else {
+                $this->$assoc_object = array();
+            }
+        }
+
+        foreach ($this->has_and_belongs_to_many as $assoc_object) {
+            if (!in_array($assoc_object, $except)) {
+                $assocObj  = new $assoc_object(null, false, false);
+                $tablename = $this->makeManyToManyTablename($assocObj->tablename);
+
+                $ret     = $db->selectObjects($assocObj->tablename, 'id IN (SELECT ' . $assocObj->tablename . '_id from ' . $db->prefix . $tablename . ' WHERE ' . $this->tablename . '_id=' . $this->id . ')', $assocObj->default_sort_field != '' ? $assocObj->default_sort_field . " " . $assocObj->default_sort_direction : null);
+                $records = array();
+                foreach ($ret as $record) {
+                    $record_array = object2Array($record);
+                    
+                    
+                    $record_array['except'] = array($this->classinfo->name);
+                    if ($cascade_except) {
+                        $record_array['except']         = array_merge($record_array['except'], $except);
+                        $record_array['cascade_except'] = $cascade_except;
+                    }
+                    $records[] = new $assoc_object($record_array, in_array($assoc_object, $this->get_assoc_for), in_array($assoc_object, $this->get_attachable_for));
+                }
+                $this->$assoc_object = $records;
+            } else {
+                $this->$assoc_object = array();
+            }
+        }
+
+        foreach ($this->has_and_belongs_to_self as $assoc_object) {
+            if (!in_array($assoc_object, $except)) {
+                $assocObj  = new $assoc_object(null, false, false);
+                $tablename = $this->makeManyToManyTablename($assocObj->classname);
+
+                $ret     = $db->selectObjects($assocObj->tablename, 'id IN (SELECT ' . $assocObj->classname . '_id from ' . $db->prefix . $tablename . ' WHERE ' . $this->tablename . '_id=' . $this->id . ')');
+                $records = array();
+                foreach ($ret as $record) {
+                    $record_array = object2Array($record);
+                    
+                    
+                    $record_array['except'] = array($this->classinfo->name);
+                    $records[]              = new $assoc_object($record_array, in_array($assoc_object, $this->get_assoc_for), in_array($assoc_object, $this->get_attachable_for));
+                }
+                $this->$assoc_object = $records;
+            } else {
+                $this->$assoc_object = array();
+            }
+        }
+    }
+
+    
+    public function associateWith($datatype, $id) { 
+        global $db;
+
+        $assocObj = new $datatype();
+
+        if (in_array($datatype, $this->has_and_belongs_to_many)) {
+            $tablename     = $this->makeManyToManyTablename($assocObj->tablename);
+            $thisid        = $this->tablename . '_id';
+            $otherid       = $assocObj->tablename . '_id';
+            $obj           = new stdClass();
+            $obj->$thisid  = $this->id;
+            $obj->$otherid = $id;
+            $db->insertObject($obj, $tablename);
+        }
+    }
+
+    
+    public function saveAssociatedObjects() {
+
+
+        foreach ($this->has_one as $assoc_object) {
+            $obj = $this->$assoc_object;
+            $obj->save();
+
+            $assoc_id_name        = $assoc_object . '_id';
+            $this->$assoc_id_name = $obj->id;
+        }
+    }
+
+    
+    
+    private function makeManyToManyTablename($assoc_table) {
+        if (strcmp($this->tablename, $assoc_table) > 0) {
+            $tablename = $assoc_table . '_' . $this->tablename;
+        } else {
+            $tablename = $this->tablename . '_' . $assoc_table;
+        }
+        return $tablename;
+    }
+
+    
+    public function getPoster($display = null) {
+        if (isset($this->poster)) {
+            $user = new user($this->poster);
+            return user::getUserAttribution($user->id, $display);
+        } else {
+            return null;
+        }
+    }
+
+    
+    public function getTimestamp($type = 0) {
+        if ($type == 0) $getType = 'created_at';
+        elseif ($type == 'publish') $getType = 'publish';
+        else $getType = 'edited_at';
+        if (isset($this->$getType)) return expDateTime::format_date($this->$getType, DISPLAY_DATETIME_FORMAT);
+        else return null;
+    }
+
+}
+
+;
+
+?>

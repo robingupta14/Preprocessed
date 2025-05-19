@@ -1,0 +1,1977 @@
+<?php
+	
+
+	class Misc {
+		
+		var $href;
+		
+		var $form;
+
+		
+		function Misc() {
+		}
+
+		
+		function isDumpEnabled($all = false) {
+			$info = $this->getServerInfo();
+			return !empty($info[$all ? 'pg_dumpall_path' : 'pg_dump_path']);
+		}
+
+		
+		function setHREF() {
+			$this->href = $this->getHREF();
+		}
+
+		
+		function getHREF($exclude_from = null) {
+			$href = '';
+			if (isset($_REQUEST['server']) && $exclude_from != 'server') {
+				$href .= 'server=' . urlencode($_REQUEST['server']);
+				if (isset($_REQUEST['database']) && $exclude_from != 'database') {
+					$href .= '&amp;database=' . urlencode($_REQUEST['database']);
+					if (isset($_REQUEST['schema']) && $exclude_from != 'schema') {
+						$href .= '&amp;schema=' . urlencode($_REQUEST['schema']);
+					}
+				}
+			}
+			return $href;
+		}
+
+		
+		function setForm() {
+			$this->form = '';
+			if (isset($_REQUEST['server'])) {
+				$this->form .= "<input type=\"hidden\" name=\"server\" value=\"" . htmlspecialchars($_REQUEST['server']) . "\" />\n";
+				if (isset($_REQUEST['database'])) {
+					$this->form .= "<input type=\"hidden\" name=\"database\" value=\"" . htmlspecialchars($_REQUEST['database']) . "\" />\n";
+					if (isset($_REQUEST['schema'])) {
+						$this->form .= "<input type=\"hidden\" name=\"schema\" value=\"" . htmlspecialchars($_REQUEST['schema']) . "\" />\n";
+					}
+				}
+			}
+		}
+
+		
+		function printVal($str, $type = null, $params = array()) {
+			global $lang, $conf, $data;
+
+			
+			if (is_null($str))
+				return isset($params['null'])
+						? ($params['null'] === true ? '<i>NULL</i>' : $params['null'])
+						: '';
+
+			if (isset($params['map']) && isset($params['map'][$str])) $str = $params['map'][$str];
+
+			
+			if (isset($params['clip']) && $params['clip'] === true) {
+				$maxlen = isset($params['cliplen']) && is_integer($params['cliplen']) ? $params['cliplen'] : $conf['max_chars'];
+				$ellipsis = isset($params['ellipsis']) ? $params['ellipsis'] : $lang['strellipsis'];
+				if (strlen($str) > $maxlen) {
+					$str = substr($str, 0, $maxlen-1) . $ellipsis;
+				}
+			}
+
+			$out = '';
+
+			switch ($type) {
+				case 'int2':
+				case 'int4':
+				case 'int8':
+				case 'float4':
+				case 'float8':
+				case 'money':
+				case 'numeric':
+				case 'oid':
+				case 'xid':
+				case 'cid':
+				case 'tid':
+					$align = 'right';
+					$out = nl2br(htmlspecialchars($str));
+					break;
+				case 'yesno':
+					if (!isset($params['true'])) $params['true'] = $lang['stryes'];
+					if (!isset($params['false'])) $params['false'] = $lang['strno'];
+					
+				case 'bool':
+				case 'boolean':
+					if (is_bool($str)) $str = $str ? 't' : 'f';
+					switch ($str) {
+						case 't':
+							$out = (isset($params['true']) ? $params['true'] : $lang['strtrue']);
+							$align = 'center';
+							break;
+						case 'f':
+							$out = (isset($params['false']) ? $params['false'] : $lang['strfalse']);
+							$align = 'center';
+							break;
+						default:
+							$out = htmlspecialchars($str);
+					}
+					break;
+				case 'bytea':
+					$tag = 'div';
+					$class = 'pre';
+					$out = $data->escapeBytea($str);
+					break;
+				case 'errormsg':
+					$tag = 'pre';
+					$class = 'error';
+					$out = htmlspecialchars($str);
+					break;
+				case 'pre':
+					$tag = 'pre';
+					$out = htmlspecialchars($str);
+					break;
+				case 'prenoescape':
+					$tag = 'pre';
+					$out = $str;
+					break;
+				case 'nbsp':
+					$out = nl2br(str_replace(' ', '&nbsp;', htmlspecialchars($str)));
+					break;
+				case 'verbatim':
+					$out = $str;
+					break;
+				case 'callback':
+					$out = $params['function']($str, $params);
+					break;
+				case 'prettysize':
+					if ($str == -1) 
+						$out = $lang['strnoaccess'];
+					else
+					{
+						$limit = 10240;
+						$mult = 1;
+						if ($str < $limit * $mult)
+							$out = $str.' '.$lang['strbytes'];
+						else
+						{
+							$mult *= 1024;
+							if ($str < $limit * $mult)
+								$out = floor(($str + $mult / 2) / $mult).' '.$lang['strkb'];
+							else
+							{
+								$mult *= 1024;
+								if ($str < $limit * $mult)
+									$out = floor(($str + $mult / 2) / $mult).' '.$lang['strmb'];
+								else
+								{
+									$mult *= 1024;
+									if ($str < $limit * $mult)
+										$out = floor(($str + $mult / 2) / $mult).' '.$lang['strgb'];
+									else
+									{
+										$mult *= 1024;
+										if ($str < $limit * $mult)
+											$out = floor(($str + $mult / 2) / $mult).' '.$lang['strtb'];
+									}
+								}
+							}
+						}
+					}
+					break;
+				case 'slonystatus':
+					switch ($str) {
+					case 'insync':
+						$out = $lang['strhealthy'];
+						break;
+					case 'outofsync':
+						$out = $lang['stroutofsync'];
+						break;
+					default:
+						$out = $lang['strunknown'];
+					}
+					break;
+				default:
+					
+					
+					
+					if (preg_match('/(^ |  |\t|\n )/m', $str)) {
+						$tag = 'pre';
+						$class = 'data';
+						$out = htmlspecialchars($str);
+					} else {
+						$out = nl2br(htmlspecialchars($str));
+					}
+			}
+
+			if (isset($params['class'])) $class = $params['class'];
+			if (isset($params['align'])) $align = $params['align'];
+
+			if (!isset($tag) && (isset($class) || isset($align))) $tag = 'div';
+
+			if (isset($tag)) {
+				$alignattr = isset($align) ? " style=\"text-align: {$align}\"" : '';
+				$classattr = isset($class) ? " class=\"{$class}\"" : '';
+				$out = "<{$tag}{$alignattr}{$classattr}>{$out}</{$tag}>";
+			}
+
+			
+			if (isset($params['lineno']) && $params['lineno'] === true) {
+				$lines = explode("\n", $str);
+				$num = count($lines);
+				if ($num > 0) {
+					$temp = "<table>\n<tr><td class=\"{$class}\" style=\"vertical-align: top; padding-right: 10px;\"><pre class=\"{$class}\">";
+					for ($i = 1; $i <= $num; $i++) {
+						$temp .= $i . "\n";
+					}
+					$temp .= "</pre></td><td class=\"{$class}\" style=\"vertical-align: top;\">{$out}</td></tr></table>\n";
+					$out = $temp;
+				}
+				unset($lines);
+			}
+
+			return $out;
+		}
+
+		
+		function stripVar(&$var) {
+			if (is_array($var)) {
+				foreach($var as $k => $v) {
+					$this->stripVar($var[$k]);
+
+					
+					if (is_string($k)) {
+						$ek = stripslashes($k);
+						if ($ek !== $k) {
+							$var[$ek] = $var[$k];
+							unset($var[$k]);
+						}
+					}
+				}
+			}
+			else
+				$var = stripslashes($var);
+		}
+
+		
+		function printTitle($title, $help = null) {
+			global $data, $lang;
+
+			
+			$this->printHelp($title, $help);
+			
+		}
+
+		
+		function printMsg($msg) {
+			if ($msg != '') 
+		}
+
+		
+		function getDatabaseAccessor($database, $server_id = null) {
+			global $lang, $conf, $misc, $_connection;
+
+			$server_info = $this->getServerInfo($server_id);
+
+			
+			if ($conf['extra_login_security']) {
+				
+				
+				$bad_usernames = array('pgsql', 'postgres', 'root', 'administrator');
+
+				$username = strtolower($server_info['username']);
+
+				if ($server_info['password'] == '' || in_array($username, $bad_usernames)) {
+					unset($_SESSION['webdbLogin'][$_REQUEST['server']]);
+					$msg = $lang['strlogindisallowed'];
+					exit;
+				}
+			}
+
+			
+			$_connection = new Connection(
+				$server_info['host'],
+				$server_info['port'],
+				$server_info['sslmode'],
+				$server_info['username'],
+				$server_info['password'],
+				$database
+			);
+
+			
+			
+			$_type = $_connection->getDriver($platform);
+			if ($_type === null) {
+				printf($lang['strpostgresqlversionnotsupported'], $postgresqlMinVer);
+				exit;
+			}
+			$this->setServerInfo('platform', $platform, $server_id);
+			$this->setServerInfo('pgVersion', $_connection->conn->pgVersion, $server_id);
+
+			
+			
+			$data = new $_type($_connection->conn);
+			$data->platform = $_connection->platform;
+
+			return $data;
+		}
+
+
+		
+		function printHeader($title = '', $script = null, $frameset = false) {
+			global $appName, $lang, $_no_output, $conf;
+
+			if (!isset($_no_output)) {
+				header("Content-Type: text/html; charset=" . $lang['appcharset']);
+				
+				
+				if ($frameset == true) {
+					
+				
+
+				
+				 charset={$lang['appcharset']}\" />\n";
+				
+				
+				
+				
+				
+				if ($title != '') 
+				
+
+				if ($script) 
+				
+			}
+		}
+
+		
+		function printFooter($doBody = true) {
+			global $_reload_browser, $_reload_drop_database;
+			global $lang, $_no_bottom_link;
+
+			if ($doBody) {
+				if (isset($_reload_browser)) $this->printReload(false);
+				elseif (isset($_reload_drop_database)) $this->printReload(true);
+				if (!isset($_no_bottom_link)) 
+					
+			}
+			
+		}
+
+		
+		function printBody($bodyClass = '', $doBody = true ) {
+			global $_no_output;
+
+			if (!isset($_no_output)) {
+				if ($doBody) {
+					$bodyClass = htmlspecialchars($bodyClass);
+					
+					
+				}
+			}
+		}
+
+		
+		function printReload($database) {
+			
+			if ($database)
+				\n";
+			else
+				\n";
+			
+		}
+
+		
+		function printTabs($tabs, $activetab) {
+			global $misc, $conf, $data, $lang;
+
+			if (is_string($tabs)) {
+				$_SESSION['webdbLastTab'][$tabs] = $activetab;
+				$tabs = $this->getNavTabs($tabs);
+			}
+
+			
+			
+
+			
+			$width = (int)(100 / count($tabs)).'%';
+
+			foreach ($tabs as $tab_id => $tab) {
+				$active = ($tab_id == $activetab) ? ' active' : '';
+
+				if (!isset($tab['hide']) || $tab['hide'] !== true) {
+
+					$tablink = "<a" . $this->printActionUrl($tab, $_REQUEST, 'href') . ">";
+
+					if (isset($tab['icon']) && $icon = $this->icon($tab['icon']))
+						$tablink .= "<span class=\"icon\"><img src=\"{$icon}\" alt=\"{$tab['title']}\" /></span>";
+
+					$tablink .= "<span class=\"label\">{$tab['title']}</span></a>";
+
+					
+					
+
+					if (isset($tab['help']))
+						$this->printHelp($tablink, $tab['help']);
+					else
+						
+
+					
+					
+				}
+			}
+
+			
+			
+		}
+
+		
+		function getNavTabs($section) {
+			global $data, $lang, $conf, $slony;
+
+			$hide_advanced = ($conf['show_advanced'] === false);
+
+			switch ($section) {
+				case 'root':
+					return array (
+						'intro' => array (
+							'title' => $lang['strintroduction'],
+							'url'   => "intro.php",
+							'icon'  => 'Introduction',
+						),
+						'servers' => array (
+							'title' => $lang['strservers'],
+							'url'   => "servers.php",
+							'icon'  => 'Servers',
+						),
+					);
+
+				case 'server':
+				case 'report':
+					$hide_users = !$data->isSuperUser();
+					$tmp = array (
+						'databases' => array (
+							'title' => $lang['strdatabases'],
+							'url'   => 'all_db.php',
+							'urlvars' => array('subject' => 'server'),
+							'help'  => 'pg.database',
+							'icon'  => 'Databases',
+						)
+					);
+					if ($data->hasRoles()) {
+						$tmp = array_merge($tmp, array(
+							'roles' => array (
+								'title' => $lang['strroles'],
+								'url'   => 'roles.php',
+								'urlvars' => array('subject' => 'server'),
+								'hide'  => $hide_users,
+								'help'  => 'pg.role',
+								'icon'  => 'Roles',
+							)
+						));
+					}
+					else {
+						$tmp = array_merge($tmp, array(
+							'users' => array (
+								'title' => $lang['strusers'],
+								'url'   => 'users.php',
+								'urlvars' => array('subject' => 'server'),
+								'hide'  => $hide_users,
+								'help'  => 'pg.user',
+								'icon'  => 'Users',
+							),
+							'groups' => array (
+								'title' => $lang['strgroups'],
+								'url'   => 'groups.php',
+								'urlvars' => array('subject' => 'server'),
+								'hide'  => $hide_users,
+								'help'  => 'pg.group',
+								'icon'  => 'UserGroups',
+							)
+						));
+					}
+
+					$tmp = array_merge($tmp, array(
+						'account' => array (
+							'title' => $lang['straccount'],
+							'url'   => $data->hasRoles() ? 'roles.php' : 'users.php',
+							'urlvars' => array('subject' => 'server', 'action' => 'account'),
+							'hide'  => !$hide_users,
+							'help'  => 'pg.role',
+							'icon'  => 'User',
+						),
+						'tablespaces' => array (
+							'title' => $lang['strtablespaces'],
+							'url'   => 'tablespaces.php',
+							'urlvars' => array('subject' => 'server'),
+							'hide'  => (!$data->hasTablespaces()),
+							'help'  => 'pg.tablespace',
+							'icon'  => 'Tablespaces',
+						),
+						'export' => array (
+							'title' => $lang['strexport'],
+							'url'   => 'all_db.php',
+							'urlvars' => array('subject' => 'server', 'action' => 'export'),
+							'hide'  => (!$this->isDumpEnabled()),
+							'icon'  => 'Export',
+						),
+						'reports' => array (
+							'title' => $lang['strreports'],
+							'url'   => 'reports.php',
+							'urlvars' => array('subject' => 'server'),
+							'hide' => !$conf['show_reports'],
+							'icon' => 'Reports',
+						),
+					));
+					return $tmp;
+					break;
+				case 'database':
+					$tabs = array (
+						'schemas' => array (
+							'title' => $lang['strschemas'],
+							'url'   => 'schemas.php',
+							'urlvars' => array('subject' => 'database'),
+							'help'  => 'pg.schema',
+							'icon'  => 'Schemas',
+						),
+						'sql' => array (
+							'title' => $lang['strsql'],
+							'url'   => 'database.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'sql', 'new' => 1),
+							'help'  => 'pg.sql',
+							'tree'  => false,
+							'icon'  => 'SqlEditor'
+						),
+						'find' => array (
+							'title' => $lang['strfind'],
+							'url'   => 'database.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'find'),
+							'tree'  => false,
+							'icon'  => 'Search'
+						),
+						'variables' => array (
+							'title' => $lang['strvariables'],
+							'url'   => 'database.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'variables'),
+							'help'  => 'pg.variable',
+							'tree'  => false,
+							'icon'  => 'Variables',
+						),
+						'processes' => array (
+							'title' => $lang['strprocesses'],
+							'url'   => 'database.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'processes'),
+							'help'  => 'pg.process',
+							'tree'  => false,
+							'icon'  => 'Processes',
+						),
+						'locks' => array (
+							'title' => $lang['strlocks'],
+							'url'   => 'database.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'locks'),
+							'help'  => 'pg.locks',
+							'tree'  => false,
+							'icon'  => 'Key',
+						),
+						'admin' => array (
+							'title' => $lang['stradmin'],
+							'url'   => 'database.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'admin'),
+							'tree'  => false,
+							'icon'  => 'Admin',
+						),
+						'privileges' => array (
+							'title' => $lang['strprivileges'],
+							'url'   => 'privileges.php',
+							'urlvars' => array('subject' => 'database'),
+							'hide'  => (!isset($data->privlist['database'])),
+							'help'  => 'pg.privilege',
+							'tree'  => false,
+							'icon'  => 'Privileges',
+						),
+						'languages' => array (
+							'title' => $lang['strlanguages'],
+							'url'   => 'languages.php',
+							'urlvars' => array('subject' => 'database'),
+							'hide'  => $hide_advanced,
+							'help'  => 'pg.language',
+							'icon'  => 'Languages',
+						),
+						'casts' => array (
+							'title' => $lang['strcasts'],
+							'url'   => 'casts.php',
+							'urlvars' => array('subject' => 'database'),
+							'hide'  => ($hide_advanced),
+							'help'  => 'pg.cast',
+							'icon'  => 'Casts',
+						),
+						'slony' => array (
+							'title' => 'Slony',
+							'url'   => 'plugin_slony.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'clusters_properties'),
+							'hide'  => !isset($slony),
+							'help'  => '',
+							'icon'  => 'Replication',
+						),
+						'export' => array (
+							'title' => $lang['strexport'],
+							'url'   => 'database.php',
+							'urlvars' => array('subject' => 'database', 'action' => 'export'),
+							'hide'  => (!$this->isDumpEnabled()),
+							'tree'  => false,
+							'icon'  => 'Export',
+						),
+					);
+					return $tabs;
+
+				case 'schema':
+					$tabs = array (
+						'tables' => array (
+							'title' => $lang['strtables'],
+							'url'   => 'tables.php',
+							'urlvars' => array('subject' => 'schema'),
+							'help'  => 'pg.table',
+							'icon'  => 'Tables',
+						),
+						'views' => array (
+							'title' => $lang['strviews'],
+							'url'   => 'views.php',
+							'urlvars' => array('subject' => 'schema'),
+							'help'  => 'pg.view',
+							'icon'  => 'Views',
+						),
+						'sequences' => array (
+							'title' => $lang['strsequences'],
+							'url'   => 'sequences.php',
+							'urlvars' => array('subject' => 'schema'),
+							'help'  => 'pg.sequence',
+							'icon'  => 'Sequences',
+						),
+						'functions' => array (
+							'title' => $lang['strfunctions'],
+							'url'   => 'functions.php',
+							'urlvars' => array('subject' => 'schema'),
+							'help'  => 'pg.function',
+							'icon'  => 'Functions',
+						),
+						'fulltext' => array (
+							'title' => $lang['strfulltext'],
+							'url'   => 'fulltext.php',
+							'urlvars' => array('subject' => 'schema'),
+							'help'  => 'pg.fts',
+							'tree'  => true,
+							'icon'  => 'Fts',
+						),
+						'domains' => array (
+							'title' => $lang['strdomains'],
+							'url'   => 'domains.php',
+							'urlvars' => array('subject' => 'schema'),
+							'help'  => 'pg.domain',
+							'icon'  => 'Domains',
+						),
+						'aggregates' => array (
+							'title' => $lang['straggregates'],
+							'url'   => 'aggregates.php',
+							'urlvars' => array('subject' => 'schema'),
+							'hide'  => $hide_advanced,
+							'help'  => 'pg.aggregate',
+							'icon'  => 'Aggregates',
+						),
+						'types' => array (
+							'title' => $lang['strtypes'],
+							'url'   => 'types.php',
+							'urlvars' => array('subject' => 'schema'),
+							'hide'  => $hide_advanced,
+							'help'  => 'pg.type',
+							'icon'  => 'Types',
+						),
+						'operators' => array (
+							'title' => $lang['stroperators'],
+							'url'   => 'operators.php',
+							'urlvars' => array('subject' => 'schema'),
+							'hide'  => $hide_advanced,
+							'help'  => 'pg.operator',
+							'icon'  => 'Operators',
+						),
+						'opclasses' => array (
+							'title' => $lang['stropclasses'],
+							'url'   => 'opclasses.php',
+							'urlvars' => array('subject' => 'schema'),
+							'hide'  => $hide_advanced,
+							'help'  => 'pg.opclass',
+							'icon'  => 'OperatorClasses',
+						),
+						'conversions' => array (
+							'title' => $lang['strconversions'],
+							'url'   => 'conversions.php',
+							'urlvars' => array('subject' => 'schema'),
+							'hide'  => $hide_advanced,
+							'help'  => 'pg.conversion',
+							'icon'  => 'Conversions',
+						),
+						'privileges' => array (
+							'title' => $lang['strprivileges'],
+							'url'   => 'privileges.php',
+							'urlvars' => array('subject' => 'schema'),
+							'help'  => 'pg.privilege',
+							'tree'  => false,
+							'icon'  => 'Privileges',
+						),
+						'export' => array (
+							'title' => $lang['strexport'],
+							'url'   => 'schemas.php',
+							'urlvars' => array('subject' => 'schema', 'action' => 'export'),
+							'hide'  => (!$this->isDumpEnabled()),
+							'tree'  => false,
+							'icon'  => 'Export',
+						),
+					);
+					if (!$data->hasFTS()) unset($tabs['fulltext']);
+					return $tabs;
+
+				case 'table':
+					return array (
+						'columns' => array (
+							'title' => $lang['strcolumns'],
+							'url'   => 'tblproperties.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table')),
+							'icon'  => 'Columns',
+							'branch'=> true,
+						),
+						'indexes' => array (
+							'title' => $lang['strindexes'],
+							'url'   => 'indexes.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table')),
+							'help'  => 'pg.index',
+							'icon'  => 'Indexes',
+							'branch'=> true,
+						),
+						'constraints' => array (
+							'title' => $lang['strconstraints'],
+							'url'   => 'constraints.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table')),
+							'help'  => 'pg.constraint',
+							'icon'  => 'Constraints',
+							'branch'=> true,
+						),
+						'triggers' => array (
+							'title' => $lang['strtriggers'],
+							'url'   => 'triggers.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table')),
+							'help'  => 'pg.trigger',
+							'icon'  => 'Triggers',
+							'branch'=> true,
+						),
+						'rules' => array (
+							'title' => $lang['strrules'],
+							'url'   => 'rules.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table')),
+							'help'  => 'pg.rule',
+							'icon'  => 'Rules',
+							'branch'=> true,
+						),
+						'admin' => array (
+							'title' => $lang['stradmin'],
+							'url'   => 'tables.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table'), 'action' => 'admin'),
+							'icon'  => 'Admin',
+						),
+						'info' => array (
+							'title' => $lang['strinfo'],
+							'url'   => 'info.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table')),
+							'icon'  => 'Statistics',
+						),
+						'privileges' => array (
+							'title' => $lang['strprivileges'],
+							'url'   => 'privileges.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table')),
+							'help'  => 'pg.privilege',
+							'icon'  => 'Privileges',
+						),
+						'import' => array (
+							'title' => $lang['strimport'],
+							'url'   => 'tblproperties.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table'), 'action' => 'import'),
+							'icon'  => 'Import',
+							'hide'	=> false,
+						),
+						'export' => array (
+							'title' => $lang['strexport'],
+							'url'   => 'tblproperties.php',
+							'urlvars' => array('subject' => 'table', 'table' => field('table'), 'action' => 'export'),
+							'icon'  => 'Export',
+							'hide'	=> false,
+						),
+					);
+
+				case 'view':
+					return array (
+						'columns' => array (
+							'title' => $lang['strcolumns'],
+							'url'   => 'viewproperties.php',
+							'urlvars' => array('subject' => 'view', 'view' => field('view')),
+							'icon'  => 'Columns',
+							'branch'=> true,
+						),
+						'definition' => array (
+							'title' => $lang['strdefinition'],
+							'url'   => 'viewproperties.php',
+							'urlvars' => array('subject' => 'view', 'view' => field('view'), 'action' => 'definition'),
+							'icon'  => 'Definition'
+						),
+						'rules' => array (
+							'title' => $lang['strrules'],
+							'url'   => 'rules.php',
+							'urlvars' => array('subject' => 'view', 'view' => field('view')),
+							'help'  => 'pg.rule',
+							'icon'  => 'Rules',
+							'branch'=> true,
+						),
+						'privileges' => array (
+							'title' => $lang['strprivileges'],
+							'url'   => 'privileges.php',
+							'urlvars' => array('subject' => 'view', 'view' => field('view')),
+							'help'  => 'pg.privilege',
+							'icon'  => 'Privileges',
+						),
+						'export' => array (
+							'title' => $lang['strexport'],
+							'url'   => 'viewproperties.php',
+							'urlvars' => array('subject' => 'view', 'view' => field('view'), 'action' => 'export'),
+							'icon'  => 'Export',
+							'hide'	=> false,
+						),
+					);
+
+				case 'function':
+					return array (
+						'definition' => array (
+							'title' => $lang['strdefinition'],
+							'url'   => 'functions.php',
+							'urlvars' => array(
+									'subject' => 'function',
+									'function' => field('function'),
+									'function_oid' => field('function_oid'),
+									'action' => 'properties',
+								),
+							'icon'  => 'Definition',
+						),
+						'privileges' => array (
+							'title' => $lang['strprivileges'],
+							'url'   => 'privileges.php',
+							'urlvars' => array(
+									'subject' => 'function',
+									'function' => field('function'),
+									'function_oid' => field('function_oid'),
+								),
+							'icon'  => 'Privileges',
+						),
+					);
+
+				case 'aggregate':
+					return array (
+						'definition' => array (
+							'title' => $lang['strdefinition'],
+							'url'   => 'aggregates.php',
+							'urlvars' => array(
+									'subject' => 'aggregate',
+									'aggrname' => field('aggrname'),
+									'aggrtype' => field('aggrtype'),
+									'action' => 'properties',
+								),
+							'icon'  => 'Definition',
+						),
+					);
+
+				case 'role':
+					return array (
+						'definition' => array (
+							'title' => $lang['strdefinition'],
+							'url'   => 'roles.php',
+							'urlvars' => array(
+									'subject' => 'role',
+									'rolename' => field('rolename'),
+									'action' => 'properties',
+								),
+							'icon'  => 'Definition',
+						),
+					);
+
+				case 'popup':
+					return array (
+						'sql' => array (
+							'title' => $lang['strsql'],
+							'url'   => 'sqledit.php',
+							'urlvars' => array('subject' => 'schema', 'action' => 'sql'),
+							'help'  => 'pg.sql',
+							'icon'  => 'SqlEditor',
+						),
+						'find' => array (
+							'title' => $lang['strfind'],
+							'url'   => 'sqledit.php',
+							'urlvars' => array('subject' => 'schema', 'action' => 'find'),
+							'icon'  => 'Search',
+						),
+					);
+
+				case 'slony_cluster':
+					return array (
+						'properties' => array (
+							'title' => $lang['strproperties'],
+							'url'   => 'plugin_slony.php',
+							'urlvars' => array(
+									'subject' => 'slony_cluster',
+									'action' => 'cluster_properties',
+									'slony_cluster' => field('slony_cluster')
+								),
+							'help'  => '',
+							'tree'  => false,
+							'icon'  => 'Cluster',
+						),
+						'nodes' => array (
+							'title' => $lang['strnodes'],
+							'url'   => 'plugin_slony.php',
+							'urlvars' => array(
+									'subject' => 'slony_cluster',
+									'action' => 'nodes_properties',
+									'slony_cluster' => field('slony_cluster')
+								),
+							'branch' => 'nodes',
+							'help'  => '',
+							'icon'  => 'Nodes',
+						),
+						'sets' => array (
+							'title' => $lang['strrepsets'],
+							'url'   => 'plugin_slony.php',
+							'urlvars' => array(
+								'subject' => 'slony_cluster',
+								'action' => 'sets_properties',
+								'slony_cluster' => field('slony_cluster')
+							),
+							'branch' => 'sets',
+							'help'  => '',
+							'icon'  => 'ReplicationSets',
+						),
+					);
+
+				case 'column':
+					return array(
+						'properties' => array (
+							'title'		=> $lang['strcolprop'],
+							'url'		=> 'colproperties.php',
+							'urlvars'	=> array(
+								'subject' => 'column',
+								'table' => field('table'),
+								'column' => field('column')
+							),
+							'icon'		=> 'Column'
+						),
+						'privileges' => array (
+							'title' => $lang['strprivileges'],
+							'url'   => 'privileges.php',
+							'urlvars' => array(
+								'subject' => 'column',
+								'table' => field('table'),
+								'column' => field('column')
+							),
+							'help'  => 'pg.privilege',
+							'icon'  => 'Privileges',
+						)
+					);
+
+                case 'fulltext':
+                    return array (
+                        'ftsconfigs' => array (
+                            'title' => $lang['strftstabconfigs'],
+                            'url'   => 'fulltext.php',
+                            'urlvars' => array('subject' => 'schema'),
+                            'hide'  => !$data->hasFTS(),
+                            'help'  => 'pg.ftscfg',
+                            'tree'  => true,
+                            'icon'  => 'FtsCfg',
+                        ),
+                        'ftsdicts' => array (
+                            'title' => $lang['strftstabdicts'],
+                            'url'   => 'fulltext.php',
+                            'urlvars' => array('subject' => 'schema', 'action' => 'viewdicts'),
+                            'hide'  => !$data->hasFTS(),
+                            'help'  => 'pg.ftsdict',
+                            'tree'  => true,
+                            'icon'  => 'FtsDict',
+                        ),
+                        'ftsparsers' => array (
+                            'title' => $lang['strftstabparsers'],
+                            'url'   => 'fulltext.php',
+                            'urlvars' => array('subject' => 'schema', 'action' => 'viewparsers'),
+                            'hide'  => !$data->hasFTS(),
+                            'help'  => 'pg.ftsparser',
+                            'tree'  => true,
+                            'icon'  => 'FtsParser',
+                        ),
+                    );
+
+				default:
+					return array();
+			}
+		}
+
+		
+		function getLastTabURL($section) {
+			global $data;
+
+			$tabs = $this->getNavTabs($section);
+
+			if (isset($_SESSION['webdbLastTab'][$section]) && isset($tabs[$_SESSION['webdbLastTab'][$section]]))
+				$tab = $tabs[$_SESSION['webdbLastTab'][$section]];
+			else
+				$tab = reset($tabs);
+
+			return isset($tab['url']) ? $tab : null;
+		}
+
+		function printTopbar() {
+			global $lang, $conf, $appName, $appVersion, $appLangFiles;
+
+			$server_info = $this->getServerInfo();
+
+			
+
+			if ($server_info && isset($server_info['platform']) && isset($server_info['username'])) {
+				
+			} else {
+				
+			}
+
+			
+
+			if (isset($_REQUEST['server'])) {
+				$sql_url = "sqledit.php?{$this->href}&amp;action=";
+				$sql_window_id = htmlspecialchars('sqledit:'.$_REQUEST['server']);
+				$history_url = "history.php?{$this->href}&amp;action=pophistory";
+				$history_window_id = htmlspecialchars('history:'.$_REQUEST['server']);
+				$logout_shared = isset($_SESSION['sharedUsername']) ?
+					' onclick="return confirm(\''. $lang['strconfdropcred']. '\')"':
+					'';
+
+				
+				 return false;\">{$lang['strsql']}</a></li>\n";
+				 return false;\">{$lang['strhistory']}</a></li>\n";
+				 return false;\">{$lang['strfind']}</a></li>\n";
+ 				logoutServer=".htmlspecialchars($server_info['host']).":".htmlspecialchars($server_info['port']).":".htmlspecialchars($server_info['sslmode'])."\"{$logout_shared}>{$lang['strlogout']}</a></li>\n";
+ 				
+				
+			}
+
+			
+		}
+
+		
+		function printTrail($trail = array()) {
+			global $lang;
+
+			$this->printTopbar();
+
+			if (is_string($trail)) {
+				$trail = $this->getTrail($trail);
+			}
+
+			
+
+			foreach ($trail as $crumb) {
+				
+				$crumblink = "<a";
+
+				if (isset($crumb['url']))
+					$crumblink .= ' href="' . $this->printVal($crumb['url'], 'nbsp') . '"';
+
+				if (isset($crumb['title']))
+					$crumblink .= " title=\"{$crumb['title']}\"";
+
+				$crumblink .= ">";
+
+				if (isset($crumb['title']))
+					$iconalt = $crumb['title'];
+				else
+					$iconalt = 'Database Root';
+
+				if (isset($crumb['icon']) && $icon = $this->icon($crumb['icon']))
+					$crumblink .= "<span class=\"icon\"><img src=\"{$icon}\" alt=\"{$iconalt}\" /></span>";
+
+				$crumblink .= "<span class=\"label\">" . htmlspecialchars($crumb['text']) . "</span></a>";
+
+				if (isset($crumb['help']))
+					$this->printHelp($crumblink, $crumb['help']);
+				else
+					
+
+				
+				
+			}
+
+			
+		}
+
+		
+		function getTrail($subject = null) {
+			global $lang, $conf, $data, $appName;
+
+			$trail = array();
+			$vars = '';
+			$done = false;
+
+			$trail['root'] = array(
+				'text'  => $appName,
+				'url'   => 'redirect.php?subject=root',
+				'icon'  => 'Introduction'
+			);
+
+			if ($subject == 'root') $done = true;
+
+			if (!$done) {
+				$vars = 'server='.urlencode($_REQUEST['server']).'&';
+				$server_info = $this->getServerInfo();
+				$trail['server'] = array(
+					'title' => $lang['strserver'],
+					'text'  => $server_info['desc'],
+					'url'   => "redirect.php?subject=server&{$vars}",
+					'help'  => 'pg.server',
+					'icon'  => 'Server'
+				);
+			}
+			if ($subject == 'server') $done = true;
+
+			if (isset($_REQUEST['report']) && !$done) {
+				$vars .= 'report='.urlencode($_REQUEST['report']).'&';
+				$trail['report'] = array(
+					'title' => $lang['strreport'],
+					'text'  => $_REQUEST['report'],
+					'url'   => "reports.php?subject=report&{$vars}",
+					'icon'  => 'Report'
+				);
+			}
+
+			if (isset($_REQUEST['database']) && !$done) {
+				$vars .= 'database='.urlencode($_REQUEST['database']).'&';
+				$trail['database'] = array(
+					'title' => $lang['strdatabase'],
+					'text'  => $_REQUEST['database'],
+					'url'   => "redirect.php?subject=database&{$vars}",
+					'help'  => 'pg.database',
+					'icon'  => 'Database'
+				);
+			} elseif (isset($_REQUEST['rolename']) && !$done) {
+				$vars .= "subject=role&action=properties&rolename=".urlencode($_REQUEST['rolename']);
+				$trail['role'] = array(
+					'title' => $lang['strrole'],
+					'text'  => $_REQUEST['rolename'],
+					'url'   => "redirect.php?{$vars}",
+					'help'  => 'pg.role',
+					'icon'  => 'Roles'
+				);
+			}
+			if ($subject == 'database' || $subject == 'role' || $subject == 'report') $done = true;
+
+			if (isset($_REQUEST['schema']) && !$done) {
+				$vars .= 'schema='.urlencode($_REQUEST['schema']).'&';
+				$trail['schema'] = array(
+					'title' => $lang['strschema'],
+					'text'  => $_REQUEST['schema'],
+					'url'   => "redirect.php?subject=schema&{$vars}",
+					'help'  => 'pg.schema',
+					'icon'  => 'Schema'
+				);
+			}
+			if ($subject == 'schema') $done = true;
+
+			if (isset($_REQUEST['slony_cluster']) && !$done) {
+				$vars .= 'slony_cluster='.urlencode($_REQUEST['slony_cluster']).'&';
+				$trail['slony_cluster'] = array(
+					'title' => 'Slony Cluster',
+					'text'  => $_REQUEST['slony_cluster'],
+					'url'   => "redirect.php?subject=slony_cluster&{$vars}",
+					'help'  => 'sl.cluster',
+					'icon'  => 'Cluster'
+				);
+			}
+			if ($subject == 'slony_cluster') $done = true;
+
+			if (isset($_REQUEST['table']) && !$done) {
+				$vars .= "table=".urlencode($_REQUEST['table']);
+				$trail['table'] = array(
+					'title' => $lang['strtable'],
+					'text'  => $_REQUEST['table'],
+					'url'   => "redirect.php?subject=table&{$vars}",
+					'help'  => 'pg.table',
+					'icon'  => 'Table'
+				);
+			} elseif (isset($_REQUEST['view']) && !$done) {
+				$vars .= "view=".urlencode($_REQUEST['view']);
+				$trail['view'] = array(
+					'title' => $lang['strview'],
+					'text'  => $_REQUEST['view'],
+					'url'   => "redirect.php?subject=view&{$vars}",
+					'help'  => 'pg.view',
+					'icon'  => 'View'
+				);
+			} elseif (isset($_REQUEST['ftscfg']) && !$done) {
+				$vars .= "action=viewconfig&ftscfg=".urlencode($_REQUEST['ftscfg']);
+				$trail['ftscfg'] = array(
+					'title' => $lang['strftsconfig'],
+					'text'  => $_REQUEST['ftscfg'],
+					'url'   => "fulltext.php?{$vars}",
+					'help'  => 'pg.ftscfg.example',
+					'icon'  => 'Fts'
+				);
+			}
+			if ($subject == 'table' || $subject == 'view' || $subject == 'ftscfg') $done = true;
+
+			if (!$done && !is_null($subject)) {
+				switch ($subject) {
+					case 'function':
+						$vars .= "{$subject}_oid=".urlencode($_REQUEST[$subject.'_oid']).'&';
+						$vars .= "subject={$subject}&{$subject}=".urlencode($_REQUEST[$subject]);
+						$trail[$subject] = array(
+							'title' => $lang['str'.$subject],
+							'text'  => $_REQUEST[$subject],
+							'url'   => "redirect.php?{$vars}",
+							'help'  => 'pg.function',
+							'icon'  => 'Function'
+						);
+						break;
+					case 'aggregate':
+						$vars .= "subject=aggregate&action=properties&aggrname=".urlencode($_REQUEST['aggrname']);
+						$vars .= "&aggrtype=".urlencode($_REQUEST['aggrtype']);
+						$trail[$subject] = array(
+							'title' => $lang['straggregate'],
+							'text'  => $_REQUEST['aggrname'],
+							'url'   => "redirect.php?{$vars}",
+							'help'  => 'pg.aggregate',
+							'icon'  => 'Aggregate'
+						);
+						break;
+					case 'slony_node':
+						$vars .= 'no_id='.urlencode($_REQUEST['no_id']).'&no_name='.urlencode($_REQUEST['no_name']);
+						$trail[$subject] = array(
+							'title' => 'Slony Node',
+							'text'  => $_REQUEST['no_name'],
+							'url'   => "redirect.php?{$vars}",
+							'help'  => 'sl.'.$subject,
+							'icon'  => 'Node'
+						);
+						break;
+					case 'slony_set':
+						$vars .= "{$subject}_id=".urlencode($_REQUEST[$subject]).'&';
+						$vars .= "subject={$subject}&{$subject}=".urlencode($_REQUEST[$subject]);
+						$trail[$subject] = array(
+							'title' => $lang['str'.$subject],
+							'text'  => $_REQUEST[$subject],
+							'url'   => "redirect.php?{$vars}",
+							'help'  => 'sl.'.$subject,
+							'icon'  => 'AvailableReplicationSet'
+						);
+						break;
+					case 'column':
+						$vars .= "&column=". urlencode($_REQUEST['column']) ."&subject=column";
+						$trail['column'] = array (
+							'title' => $lang['strcolumn'],
+							'text'  => $_REQUEST['column'],
+							'icon'	=> 'Column',
+							'url'   => "redirect.php?{$vars}"
+						);
+						break;
+					default:
+						if (isset($_REQUEST[$subject])) {
+							switch ($subject) {
+								case 'domain': $icon = 'Domain'; break;
+								case 'sequence': $icon = 'Sequence'; break;
+								case 'type': $icon = 'Type'; break;
+								case 'operator': $icon = 'Operator'; break;
+								default: $icon = null; break;
+							}
+							$trail[$subject] = array(
+								'title' => $lang['str'.$subject],
+								'text'  => $_REQUEST[$subject],
+								'help'  => 'pg.'.$subject,
+								'icon'  => $icon,
+							);
+						}
+				}
+			}
+
+			return $trail;
+		}
+
+		
+		function printPages($page, $pages, $url, $max_width = 20) {
+			global $lang;
+
+			$window = 10;
+
+			if ($page < 0 || $page > $pages) return;
+			if ($pages < 0) return;
+			if ($max_width <= 0) return;
+
+			if ($pages > 1) {
+				
+				if ($page != 1) {
+					$temp = str_replace('%s', 1, $url);
+					
+					$temp = str_replace('%s', $page - 1, $url);
+					
+				}
+
+				if ($page <= $window) {
+					$min_page = 1;
+					$max_page = min(2 * $window, $pages);
+				}
+				elseif ($page > $window && $pages >= $page + $window) {
+					$min_page = ($page - $window) + 1;
+					$max_page = $page + $window;
+				}
+				else {
+					$min_page = ($page - (2 * $window - ($pages - $page))) + 1;
+					$max_page = $pages;
+				}
+
+				
+				
+				$min_page = max($min_page, 1);
+				$max_page = min($max_page, $pages);
+
+				for ($i = $min_page; $i <= $max_page; $i++) {
+					$temp = str_replace('%s', $i, $url);
+					if ($i != $page) 
+					else 
+				}
+				if ($page != $pages) {
+					$temp = str_replace('%s', $page + 1, $url);
+					
+					$temp = str_replace('%s', $pages, $url);
+					
+				}
+				
+			}
+		}
+
+		
+		function printHelp($str, $help) {
+			global $lang, $data;
+
+			
+			if ($help) {
+				
+				
+				
+			}
+		}
+
+		
+		function setFocus($object) {
+			
+			\n";
+			
+		}
+
+		
+		function setWindowName($name, $addServer = true) {
+			
+			\n";
+			
+		}
+
+		
+		function inisizeToBytes($strIniSize) {
+			
+			
+			
+			$a_IniParts = array();
+
+			if (!is_string($strIniSize))
+				return false;
+
+			if (!preg_match ('/^(\d+)([bkm]*)$/i', $strIniSize,$a_IniParts))
+				return false;
+
+			$nSize = (double) $a_IniParts[1];
+			$strUnit = strtolower($a_IniParts[2]);
+
+			switch($strUnit) {
+				case 'm':
+					return ($nSize * (double) 1048576);
+				case 'k':
+					return ($nSize * (double) 1024);
+				case 'b':
+				default:
+					return $nSize;
+			}
+		}
+
+		
+		function printActionUrl(&$action, &$fields, $attr = null) {
+			$url = value($action['url'], $fields);
+
+			if ($url === false) return '';
+
+			if (!empty($action['urlvars'])) {
+				$urlvars = value($action['urlvars'], $fields);
+			} else {
+				$urlvars = array();
+			}
+
+			if (isset($urlvars['subject'])) {
+				$subject = value($urlvars['subject'], $fields);
+				if (isset($_REQUEST['server']) && $subject != 'root') {
+					$urlvars['server'] = $_REQUEST['server'];
+					if (isset($_REQUEST['database']) && $subject != 'server') {
+						$urlvars['database'] = $_REQUEST['database'];
+						if (isset($_REQUEST['schema']) && $subject != 'database') {
+							$urlvars['schema'] = $_REQUEST['schema'];
+						}
+					}
+				}
+			}
+
+			$sep = '?';
+			foreach ($urlvars as $var => $varfield) {
+				$url .= $sep . value_url($var, $fields) . '=' . value_url($varfield, $fields);
+				$sep = '&';
+			}
+
+			$url = htmlentities($url);
+
+			if ($attr !== null && $url != '')
+				return ' '.$attr.'="'.$url.'"';
+			else
+				return $url;
+		}
+
+		function getRequestVars($subject = '') {
+			$v = array();
+			if (!empty($subject))
+				$v['subject'] = $subject;
+			if (isset($_REQUEST['server']) && $subject != 'root') {
+				$v['server'] = $_REQUEST['server'];
+				if (isset($_REQUEST['database']) && $subject != 'server') {
+					$v['database'] = $_REQUEST['database'];
+					if (isset($_REQUEST['schema']) && $subject != 'database') {
+						$v['schema'] = $_REQUEST['schema'];
+					}
+				}
+			}
+			return $v;
+		}
+
+		function printUrlVars(&$vars, &$fields) {
+			foreach ($vars as $var => $varfield) {
+				";
+			}
+		}
+
+		
+		function printTable(&$tabledata, &$columns, &$actions, $nodata = null, $pre_fn = null) {
+			global $data, $conf, $misc, $lang;
+
+			if ($has_ma = isset($actions['multiactions']))
+				$ma = $actions['multiactions'];
+			unset($actions['multiactions']);
+
+			if ($tabledata->recordCount() > 0) {
+
+				
+				if (!$conf['show_comments']) {
+					unset($columns['comment']);
+				}
+
+				if (isset($columns['comment'])) {
+					
+					
+					
+				}
+
+				if ($has_ma) {
+					
+					
+					if (isset($ma['vars']))
+						foreach ($ma['vars'] as $k => $v)
+							
+				}
+
+				
+				
+				
+				if ($has_ma) 
+				foreach ($columns as $column_id => $column) {
+					switch ($column_id) {
+						case 'actions':
+							if (sizeof($actions) > 0) 
+							break;
+						default:
+							
+							if (isset($column['help']))
+								$this->printHelp($column['title'], $column['help']);
+							else
+								
+							
+							break;
+					}
+				}
+				
+
+				
+				$i = 0;
+				while (!$tabledata->EOF) {
+					$id = ($i % 2) + 1;
+
+					unset($alt_actions);
+					if (!is_null($pre_fn)) $alt_actions = $pre_fn($tabledata, $actions);
+					if (!isset($alt_actions)) $alt_actions =& $actions;
+
+					
+					if ($has_ma) {
+						foreach ($ma['keycols'] as $k => $v)
+							$a[$k] = $tabledata->fields[$v];
+						
+						
+						
+					}
+
+					foreach ($columns as $column_id => $column) {
+
+						
+						if (isset($column['url']) && !isset($column['vars'])) $column['vars'] = array();
+
+						switch ($column_id) {
+							case 'actions':
+								foreach ($alt_actions as $action) {
+									if (isset($action['disable']) && $action['disable'] === true) {
+										
+									} else {
+										
+										
+										if ($action['url'] === '') 
+										$misc->printUrlVars($action['vars'], $tabledata->fields);
+										if (isset($action['target']))
+											
+										
+									}
+								}
+								break;
+							default:
+								
+								$val = value($column['field'], $tabledata->fields);
+								if (!is_null($val)) {
+									if (isset($column['url'])) {
+										
+										$misc->printUrlVars($column['vars'], $tabledata->fields);
+										
+									}
+									$type = isset($column['type']) ? $column['type'] : null;
+									$params = isset($column['params']) ? $column['params'] : array();
+									
+									if (isset($column['url'])) 
+								}
+
+								
+								break;
+						}
+					}
+					
+
+					$tabledata->moveNext();
+					$i++;
+				}
+				
+
+				
+				if ($has_ma) {
+					
+					if (!isset($ma['default']) || !isset($actions[$ma['default']]))
+						$ma['default'] = null;
+					
+					
+					
+					
+					
+					
+					
+					--->&nbsp;</td>\n";
+					
+					
+					if ($ma['default'] == null)
+						
+					foreach($actions as $k => $a)
+						if (isset($a['multiaction']))
+							
+					
+					
+					
+					
+					
+					
+					
+				};
+
+				return true;
+			} else {
+				if (!is_null($nodata)) {
+					
+				}
+				return false;
+			}
+		}
+
+		
+		function printTreeXML(&$treedata, &$attrs) {
+			global $conf, $lang;
+
+			if (!isset($attrs['nohead']) || $attrs['nohead'] === false) {
+				header("Content-Type: text/xml");
+				header("Cache-Control: no-cache");
+
+				
+
+				
+			}
+
+			if ($treedata->recordCount() > 0) {
+				while (!$treedata->EOF) {
+					$rec =& $treedata->fields;
+
+					
+					
+					
+					
+
+					$icon = $this->icon(value($attrs['icon'], $rec));
+					
+					
+
+					if (!empty($attrs['openicon'])) {
+						$icon = $this->icon(value($attrs['openIcon'], $rec));
+					}
+					
+
+					
+
+					
+
+					$treedata->moveNext();
+				}
+			} else {
+				$msg = isset($attrs['nodata']) ? $attrs['nodata'] : $lang['strnoobjects'];
+				
+			}
+
+			if (!isset($attrs['nofoot']) || $attrs['nofoot'] === false) {
+				
+			}
+		}
+
+		function adjustTabsForTree(&$tabs) {
+
+			foreach ($tabs as $i => $tab) {
+				if ((isset($tab['hide']) && $tab['hide'] === true) || (isset($tab['tree']) && $tab['tree'] === false)) {
+					unset($tabs[$i]);
+				}
+			}
+			return new ArrayRecordSet($tabs);
+		}
+
+		function icon($icon) {
+			global $conf;
+			$path = "images/themes/{$conf['theme']}/{$icon}";
+			if (file_exists($path.'.png')) return $path.'.png';
+			if (file_exists($path.'.gif')) return $path.'.gif';
+			$path = "images/themes/default/{$icon}";
+			if (file_exists($path.'.png')) return $path.'.png';
+			if (file_exists($path.'.gif')) return $path.'.gif';
+			return '';
+		}
+
+		
+		function escapeShellArg($str) {
+			global $data, $lang;
+
+			if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+				
+				
+				
+				if (preg_match('/^[_.[:alnum:]]+$/', $str))
+					return $str;
+				else {
+					
+					exit;
+				}
+			}
+			else
+				return escapeshellarg($str);
+		}
+
+		
+		function escapeShellCmd($str) {
+			global $data;
+
+			if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+				$data->fieldClean($str);
+				return '"' . $str . '"';
+			}
+			else
+				return escapeshellcmd($str);
+		}
+
+		
+		function getServersGroups() {
+			global $conf, $lang;
+			$grps = array();
+			
+			foreach ($conf['srv_groups'] as $i => $group) {
+				$grps[$i] = array(
+					'id' => $i,
+					'desc' => $group['desc'],
+				);				
+			}
+			
+			$grps['all'] = array(
+				'id' => 'all', 
+				'desc' => $lang['strallservers'],
+			);
+
+			return new ArrayRecordSet($grps);
+		}
+		
+
+		
+		function getServers($recordset = false, $group = false) {
+			global $conf;
+
+			$logins = isset($_SESSION['webdbLogin']) && is_array($_SESSION['webdbLogin']) ? $_SESSION['webdbLogin'] : array();
+			$srvs = array();
+
+			if (($group !== false) and ($group !== 'all'))
+				$group = array_fill_keys(explode(',', $conf['srv_groups'][$group]['servers']), 1);
+			
+			foreach($conf['servers'] as $idx => $info) {
+				$server_id = $info['host'].':'.$info['port'].':'.$info['sslmode'];
+				if (($group === false) 
+					or (isset($group[$idx]))
+					or ($group === 'all')
+				) {
+					$server_id = $info['host'].':'.$info['port'].':'.$info['sslmode'];
+					
+					if (isset($logins[$server_id])) $srvs[$server_id] = $logins[$server_id];
+					else $srvs[$server_id] = $info;
+
+					$srvs[$server_id]['id'] = $server_id;
+				}
+			}
+
+			function _cmp_desc($a, $b) {
+				return strcmp($a['desc'], $b['desc']);
+			}
+			uasort($srvs, '_cmp_desc');
+
+			if ($recordset) {
+				return new ArrayRecordSet($srvs);
+			}
+			return $srvs;
+		}
+
+		
+		function getServerInfo($server_id = null) {
+			global $conf, $_reload_browser, $lang;
+
+			if ($server_id === null && isset($_REQUEST['server']))
+				$server_id = $_REQUEST['server'];
+
+			
+			if (isset($_SESSION['webdbLogin'][$server_id]))
+				return $_SESSION['webdbLogin'][$server_id];
+
+			
+			foreach($conf['servers'] as $idx => $info) {
+				if ($server_id == $info['host'].':'.$info['port'].':'.$info['sslmode']) {
+					
+					if (!isset($info['username']) && isset($_SESSION['sharedUsername'])) {
+						$info['username'] = $_SESSION['sharedUsername'];
+						$info['password'] = $_SESSION['sharedPassword'];
+						$_reload_browser = true;
+						$this->setServerInfo(null, $info, $server_id);
+					}
+
+					return $info;
+				}
+			}
+
+			if ($server_id === null){
+				return null;
+			} else {
+				
+				
+				exit;
+			}
+		}
+
+		
+		function setServerInfo($key, $value, $server_id = null)
+		{
+			if ($server_id === null && isset($_REQUEST['server']))
+				$server_id = $_REQUEST['server'];
+
+			if ($key === null) {
+				if ($value === null)
+					unset($_SESSION['webdbLogin'][$server_id]);
+				else
+					$_SESSION['webdbLogin'][$server_id] = $value;
+			} else {
+				if ($value === null)
+					unset($_SESSION['webdbLogin'][$server_id][$key]);
+				else
+					$_SESSION['webdbLogin'][$server_id][$key] = $value;
+			}
+		}
+		
+		
+		function setCurrentSchema($schema) {
+			global $data;
+			
+			$status = $data->setSchema($schema);
+			if($status != 0)
+				return $status;
+
+			$_REQUEST['schema'] = $schema;
+			$this->setHREF();
+			return 0;
+		}
+
+		
+		function saveScriptHistory($script) {
+			list($usec, $sec) = explode(' ', microtime());
+			$time = ((float)$usec + (float)$sec);
+			$_SESSION['history'][$_REQUEST['server']][$_REQUEST['database']]["$time"] = array(
+				'query' => $script,
+				'paginate' => (!isset($_REQUEST['paginate'])? 'f':'t'),
+				'queryid' => $time,
+			);
+		}
+	
+			
+		function printConnection($onchange) {
+			global $data, $lang, $misc;
+
+			
+			
+			$misc->printHelp($lang['strserver'], 'pg.server');
+			
+			
+			
+			$servers = $misc->getServers();
+			foreach($servers as $info) {
+				if (empty($info['username'])) continue; 
+				
+			}
+			
+			
+			
+			$databases = $data->getDatabases();
+
+			if ($databases->recordCount() > 0) {
+
+				
+				$misc->printHelp($lang['strdatabase'], 'pg.database');
+				
+				
+				
+				if (!isset($_REQUEST['database']))
+					
+				
+				while (!$databases->EOF) {
+					$dbname = $databases->fields['datname'];
+					
+					$databases->moveNext();
+				}
+				
+			}
+			else {
+				$server_info = $misc->getServerInfo();
+				
+			}
+			
+			
+		}
+
+		
+		function getAutocompleteFKProperties($table) {
+			global $data;
+
+			$fksprops = array(
+				'byconstr' => array(),
+				'byfield' => array(),
+				'code' => ''
+			);
+
+			$constrs = $data->getConstraintsWithFields($table);
+
+			if (!$constrs->EOF) {
+				$conrelid = $constrs->fields['conrelid'];
+				while(!$constrs->EOF) {
+					if ($constrs->fields['contype'] == 'f') {
+						if (!isset($fksprops['byconstr'][$constrs->fields['conid']])) {
+							$fksprops['byconstr'][$constrs->fields['conid']] = array (
+								'confrelid' => $constrs->fields['confrelid'],
+								'f_table' => $constrs->fields['f_table'],
+								'f_schema' => $constrs->fields['f_schema'],
+								'pattnums' => array(),
+								'pattnames' => array(),
+								'fattnames' => array()
+							);
+						}
+
+						$fksprops['byconstr'][$constrs->fields['conid']]['pattnums'][] = $constrs->fields['p_attnum'];
+						$fksprops['byconstr'][$constrs->fields['conid']]['pattnames'][] = $constrs->fields['p_field'];
+						$fksprops['byconstr'][$constrs->fields['conid']]['fattnames'][] = $constrs->fields['f_field'];
+
+						if (!isset($fksprops['byfield'][$constrs->fields['p_attnum']]))
+							$fksprops['byfield'][$constrs->fields['p_attnum']] = array();
+						$fksprops['byfield'][$constrs->fields['p_attnum']][] = $constrs->fields['conid'];
+					}
+					$constrs->moveNext();
+				}
+
+				$fksprops['code'] = "<script type=\"text/javascript\">\n";
+				$fksprops['code'] .= "var constrs = {};\n";
+				foreach ($fksprops['byconstr'] as $conid => $props) {
+					$fksprops['code'] .= "constrs.constr_{$conid} = {\n";
+					$fksprops['code'] .= 'pattnums: ['. implode(',',$props['pattnums']) ."],\n";
+					$fksprops['code'] .= "f_table:'". addslashes(htmlentities($props['f_table'], ENT_QUOTES)) ."',\n";
+					$fksprops['code'] .= "f_schema:'". addslashes(htmlentities($props['f_schema'], ENT_QUOTES)) ."',\n";
+					$_ = '';
+					foreach ($props['pattnames'] as $n) {
+						$_ .= ",'". htmlentities($n, ENT_QUOTES) ."'";
+					}
+					$fksprops['code'] .= 'pattnames: ['. substr($_, 1) ."],\n";
+
+					$_ = '';
+					foreach ($props['fattnames'] as $n) {
+						$_ .= ",'". htmlentities($n, ENT_QUOTES) ."'";
+					}
+
+					$fksprops['code'] .= 'fattnames: ['. substr($_, 1) ."]\n";
+					$fksprops['code'] .= "};\n";
+				}
+
+				$fksprops['code'] .= "var attrs = {};\n";
+				foreach ($fksprops['byfield'] as $attnum => $cstrs ) {
+					$fksprops['code'] .= "attrs.attr_{$attnum} = [". implode(',', $fksprops['byfield'][$attnum]) ."];\n";
+				}
+
+				$fksprops['code'] .= "var table='". addslashes(htmlentities($table, ENT_QUOTES)) ."';";
+				$fksprops['code'] .= "var server='". htmlentities($_REQUEST['server']) ."';";
+				$fksprops['code'] .= "var database='". addslashes(htmlentities($_REQUEST['database'], ENT_QUOTES)) ."';";
+				$fksprops['code'] .= "</script>\n";
+
+				$fksprops['code'] .= '<div id="fkbg"></div>';
+				$fksprops['code'] .= '<div id="fklist"></div>';
+				$fksprops['code'] .= '<script src="libraries/js/jquery.js" type="text/javascript"></script>';
+				$fksprops['code'] .= '<script src="js/ac_insert_row.js" type="text/javascript"></script>';
+			}
+
+			else 
+				return false;
+
+			return $fksprops;
+		}
+	}
+?>

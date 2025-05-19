@@ -1,0 +1,136 @@
+<?php
+
+
+
+
+if (!isset($subnet_scan_execute_included)) { $Result->show("danger", _("Invalid request"), true); }
+
+
+if ($User->settings->enableSNMP!="1")           { $Result->show("danger", "SNMP module disbled", true); }
+
+$subnet = $Subnets->fetch_subnet ("id", $_POST['subnetId']);
+if ($subnet===false)                            { $Result->show("danger", "Invalid subnet Id", true);  }
+
+
+if($Subnets->check_permission ($User->user, $_POST['subnetId']) != 3) 	{ $Result->show("danger", _('You do not have permissions to modify hosts in this subnet')."!", true, true); }
+
+
+$Snmp = new phpipamSNMP ();
+
+
+error_reporting(E_ERROR);
+
+
+$all_subnet_hosts = (array) $Addresses->fetch_subnet_addresses ($_POST['subnetId']);
+
+
+if (sizeof($all_subnet_hosts)>0) {
+    
+    foreach ($all_subnet_hosts as $h) {
+        $result[$h->ip_addr] = (array) $h;
+        $result[$h->ip_addr]['code'] = 1;
+        $result[$h->ip_addr]['status'] = "Offline";
+    }
+
+    
+    $devices_used = $Tools->fetch_multiple_objects ("devices", "snmp_queries", "%get_arp_table%", "id", true, true);
+
+    
+    if ($devices_used !== false) {
+        foreach ($devices_used as $d) {
+            
+            $permitted_sections = explode(";", $d->sections);
+            
+            if (in_array($subnet->sectionId, $permitted_sections)) {
+                $permitted_devices[] = $d;
+            }
+        }
+    }
+
+    
+    if (!isset($permitted_devices))                 { $Result->show("danger", "No devices for SNMP ARP query available", true); }
+
+    
+    foreach ($permitted_devices as $d) {
+        
+        $Snmp->set_snmp_device ($d);
+        
+        try {
+           $res = $Snmp->get_query("get_arp_table");
+           
+           if (sizeof($res)>0) {
+               
+               $debug[$d->hostname]["get_arp_table"] = $res;
+               
+               foreach ($res as $kr=>$r) {
+                   if ($Subnets->is_subnet_inside_subnet ($r['ip']."/32", $Subnets->transform_address($subnet->subnet, "dotted")."/".$subnet->mask)===true) {
+                       
+                       if (array_key_exists($Subnets->transform_address($r['ip'], "decimal"), $result)) {
+                           
+                           $result[$Subnets->transform_address($r['ip'], "decimal")]['code'] = 0;
+                           $result[$Subnets->transform_address($r['ip'], "decimal")]['status'] = "Online";
+                           
+                           @$Scan->ping_update_lastseen($result[$Subnets->transform_address($r['ip'], "decimal")]['id']);
+                       }
+                   }
+               }
+           }
+           $found[$d->id] = $res;
+
+         } catch (Exception $e) {}
+    }
+}
+?>
+
+
+
+
+<h5><?php ?>:</h5>
+<hr>
+
+<?php
+
+if(sizeof($all_subnet_hosts)==0) 			{ $Result->show("info", _("Subnet is empty")."!", false); }
+
+else {
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+
+	
+	foreach($result as $r) {
+		
+		if($r['code']==0)		{ $class='success'; }
+		elseif($r['code']==100)	{ $class='warning'; }
+		else					{ $class='danger'; }
+
+		
+		
+		
+		
+		
+
+		
+	}
+	
+}
+
+'>";
+
+
+
+foreach ($debug as $k=>$d) {
+     ".$k."<br>";
+}
+
+
+
+
+if($_POST['debug']==1) 				{  print_r($debug);  }

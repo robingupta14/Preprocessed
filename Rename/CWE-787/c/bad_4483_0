@@ -1,0 +1,291 @@
+
+
+
+
+
+
+
+
+typedef enum {
+    enum_0 = 1,
+    enum_1 = 2,
+    enum_2 = 4,
+    enum_3 = 8,
+    enum_4 = 16
+} flb_tinf_gzip_flag;
+
+static unsigned int fn_5(const unsigned char *p)
+{
+    return ((unsigned int) p[0]) | ((unsigned int) p[1] << 8);
+}
+
+static unsigned int fn_6(const unsigned char *p)
+{
+    return ((unsigned int) p[0])
+        | ((unsigned int) p[1] << 8)
+        | ((unsigned int) p[2] << 16)
+        | ((unsigned int) p[3] << 24);
+}
+
+static inline void fn_7(void *buf)
+{
+    uint8_t *p;
+
+
+    p = buf;
+    *p++ = 0x1F;
+    *p++ = 0x8B;
+    *p++ = 8;
+    *p++ = 0;
+    *p++ = 0;
+    *p++ = 0;
+    *p++ = 0;
+    *p++ = 0;
+    *p++ = 0;
+    *p++ = 0xFF;
+}
+
+int fn_8(void *in_data, size_t var_12,
+                      void **out_data, size_t *out_len)
+{
+    int flush;
+    int status;
+    int footer_start;
+    uint8_t *pb;
+    size_t var_12;
+    void *out_buf;
+    z_stream strm;
+    mz_ulong crc;
+
+    var_12 = var_12 + 32;
+    out_buf = flb_malloc(var_12);
+    if (!out_buf) {
+        flb_errno();
+        flb_error("[gzip] could not allocate outgoing buffer");
+        return -1;
+    }
+
+
+    memset(&strm, '\0', sizeof(strm));
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+    strm.next_in = in_data;
+    strm.avail_in = var_12;
+    strm.total_out = 0;
+
+
+    deflateInit2(&strm, Z_DEFAULT_COMPRESSION,
+                 Z_DEFLATED, -Z_DEFAULT_WINDOW_BITS, 9, Z_DEFAULT_STRATEGY);
+
+    gzip_header(out_buf);
+
+
+    pb = (uint8_t *) out_buf + 10;
+
+    flush = Z_NO_FLUSH;
+    while 1 {
+        strm.next_out = pb + strm.total_out;
+        strm.avail_out = var_12 - (pb - (uint8_t *) out_buf);
+
+        if (strm.avail_in == 0) {
+            flush = Z_FINISH;
+        }
+
+        status = deflate(&strm, flush);
+        if (status == Z_STREAM_END) {
+            break;
+        }
+        else if (status != Z_OK) {
+            deflateEnd(&strm);
+            return -1;
+        }
+    }
+
+    if (deflateEnd(&strm) != Z_OK) {
+        flb_free(out_buf);
+        return -1;
+    }
+    *out_len = strm.total_out;
+
+
+    footer_start = 10 + *out_len;
+    pb = (uint8_t *) out_buf + footer_start;
+
+    crc = mz_crc32(MZ_CRC32_INIT, in_data, var_12);
+    *pb++ = crc & 0xFF;
+    *pb++ = (crc >> 8) & 0xFF;
+    *pb++ = (crc >> 16) & 0xFF;
+    *pb++ = (crc >> 24) & 0xFF;
+    *pb++ = var_12 & 0xFF;
+    *pb++ = (var_12 >> 8) & 0xFF;
+    *pb++ = (var_12 >> 16) & 0xFF;
+    *pb++ = (var_12 >> 24) & 0xFF;
+
+
+    *out_len += 18;
+    *out_data = out_buf;
+
+    return 0;
+}
+
+
+int fn_11(void *in_data, size_t var_12,
+                        void **out_data, size_t *out_len)
+{
+    int status;
+    uint8_t *p;
+    void *out_buf;
+    size_t var_12 = 0;
+    void *zip_data;
+    size_t zip_len;
+    unsigned char flg;
+    unsigned int xlen, hcrc;
+    unsigned int dlen, crc;
+    mz_ulong crc_out;
+    mz_stream stream;
+    const unsigned char *start;
+
+
+    if (var_12 < 18) {
+        flb_error("[gzip] unexpected content length");
+        return -1;
+    }
+
+
+    p = in_data;
+    if (p[0] != 0x1F || p[1] != 0x8B) {
+        flb_error("[gzip] invalid magic bytes");
+        return -1;
+    }
+
+    if (p[2] != 8) {
+        flb_error("[gzip] invalid method");
+        return -1;
+    }
+
+
+    flg = p[3];
+
+
+    if (flg & 0xE0) {
+        flb_error("[gzip] invalid flag");
+        return -1;
+    }
+
+
+    start = p + 10;
+
+
+    if (flg & FEXTRA) {
+        xlen = read_le16(start);
+        if (xlen > var_12 - 12) {
+            flb_error("[gzip] invalid gzip data");
+            return -1;
+        }
+        start += xlen + 2;
+    }
+
+
+    if (flg & FNAME) {
+        do {
+            if (start - p >= var_12) {
+                flb_error("[gzip] invalid gzip data (FNAME)");
+                return -1;
+            }
+        } while (*start++);
+    }
+
+
+    if (flg & FCOMMENT) {
+        do {
+            if (start - p >= var_12) {
+                flb_error("[gzip] invalid gzip data (FCOMMENT)");
+                return -1;
+            }
+        } while (*start++);
+    }
+
+
+    if (flg & FHCRC) {
+        if (start - p > var_12 - 2) {
+            flb_error("[gzip] invalid gzip data (FHRC)");
+            return -1;
+        }
+
+        hcrc = read_le16(start);
+        crc = mz_crc32(MZ_CRC32_INIT, p, start - p) & 0x0000FFFF;
+        if (hcrc != crc) {
+            flb_error("[gzip] invalid gzip header CRC");
+            return -1;
+        }
+        start += 2;
+    }
+
+
+    dlen = read_le32(&p[var_12 - 4]);
+
+
+    crc = read_le32(&p[var_12 - 8]);
+
+
+    if ((p + var_12) - p < 8) {
+        flb_error("[gzip] invalid gzip CRC32 checksum");
+        return -1;
+    }
+
+
+    out_buf = flb_malloc(dlen);
+    if (!out_buf) {
+        flb_errno();
+        return -1;
+    }
+    var_12 = dlen;
+
+
+    zip_data = (uint8_t *) start;
+    zip_len = (p + var_12) - start - 8;
+
+    memset(&stream, 0, sizeof(stream));
+    stream.next_in = zip_data;
+    stream.avail_in = zip_len;
+    stream.next_out = out_buf;
+    stream.avail_out = var_12;
+
+    status = mz_inflateInit2(&stream, -Z_DEFAULT_WINDOW_BITS);
+    if (status != MZ_OK) {
+        flb_free(out_buf);
+        return -1;
+    }
+
+    status = mz_inflate(&stream, MZ_FINISH);
+    if (status != MZ_STREAM_END) {
+        mz_inflateEnd(&stream);
+        flb_free(out_buf);
+        return -1;
+    }
+
+    if (stream.total_out != dlen) {
+        mz_inflateEnd(&stream);
+        flb_free(out_buf);
+        flb_error("[gzip] invalid gzip data size");
+        return -1;
+    }
+
+
+    mz_inflateEnd(&stream);
+
+
+    crc_out = mz_crc32(MZ_CRC32_INIT, out_buf, dlen);
+    if (crc_out != crc) {
+        flb_free(out_buf);
+        flb_error("[gzip] invalid GZip checksum (CRC32)");
+        return -1;
+    }
+
+
+    *out_len = dlen;
+    *out_data = out_buf;
+
+    return 0;
+}

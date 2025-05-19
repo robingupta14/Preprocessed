@@ -1,0 +1,713 @@
+<?php
+
+class File extends DataObject {
+
+	private static $default_sort = "\"Name\"";
+
+	private static $singular_name = "File";
+
+	private static $plural_name = "Files";
+
+	private static $db = array(
+		"Name" => "Varchar(255)",
+		"Title" => "Varchar(255)",
+		"Filename" => "Text",
+		"Content" => "Text",
+		
+		'ShowInSearch' => 'Boolean(1)',
+	);
+
+	private static $has_one = array(
+		"Parent" => "File",
+		"Owner" => "Member"
+	);
+
+	private static $has_many = array();
+
+	private static $many_many = array();
+
+	private static $defaults = array(
+		"ShowInSearch" => 1,
+	);
+
+	private static $extensions = array(
+		"Hierarchy",
+	);
+
+	private static $casting = array (
+		'TreeTitle' => 'HTMLText'
+	);
+
+	
+	private static $allowed_extensions = array(
+		'','ace','arc','arj','asf','au','avi','bmp','bz2','cab','cda','css','csv','dmg','doc','docx','dotx','dotm',
+		'flv','gif','gpx','gz','hqx','ico','jar','jpeg','jpg','js','kml', 'm4a','m4v',
+		'mid','midi','mkv','mov','mp3','mp4','mpa','mpeg','mpg','ogg','ogv','pages','pcx','pdf','pkg',
+		'png','pps','ppt','pptx','potx','potm','ra','ram','rm','rtf','sit','sitx', 'tar','tgz','tif','tiff',
+		'txt','wav','webm','wma','wmv','xls','xlsx','xltx','xltm','zip','zipx',
+	);
+
+	
+	private static $app_categories = array(
+		'audio' => array(
+			"aif" ,"au" ,"mid" ,"midi" ,"mp3" ,"ra" ,"ram" ,"rm","mp3" ,"wav" ,"m4a" ,"snd" ,"aifc" ,"aiff" ,"wma",
+			"apl", "avr" ,"cda" ,"ogg"
+		),
+		'mov' => array(
+			"mpeg" ,"mpg" ,"mp4" ,"m1v" ,"mp2" ,"mpa" ,"mpe" ,"ifo" ,"vob","avi" ,"wmv" ,"asf" ,"m2v" ,"qt", "ogv", "webm"
+		),
+		'zip' => array(
+			"arc" ,"rar" ,"tar" ,"gz" ,"tgz" ,"bz2" ,"dmg" ,"jar","ace" ,"arj" ,"bz" ,"cab"
+		),
+		'image' => array(
+			"bmp" ,"gif" ,"jpg" ,"jpeg" ,"pcx" ,"tif" ,"png" ,"alpha","als" ,"cel" ,"icon" ,"ico" ,"ps"
+		),
+		'flash' => array(
+			'swf', 'fla'
+		),
+		'doc' => array(
+			'doc','docx','txt','rtf','xls','xlsx','pages', 'ppt','pptx','pps','csv', 'html','htm','xhtml', 'xml','pdf'
+		)
+	);
+
+	
+	private static $apply_restrictions_to_admin = true;
+
+	
+	private static $update_filesystem = true;
+
+	
+	protected static $cache_file_fields = null;
+
+	
+	public static function link_shortcode_handler($arguments, $content = null, $parser = null) {
+		if(!isset($arguments['id']) || !is_numeric($arguments['id'])) return;
+
+		$record = DataObject::get_by_id('File', $arguments['id']);
+
+		if (!$record) {
+			if(class_exists('ErrorPage')) {
+				$record = ErrorPage::get()->filter("ErrorCode", 404)->first();
+			}
+
+			if (!$record) return; 
+		}
+
+		
+		if($content) {
+			
+			$attrs = ' ';
+			if($record instanceof File) {
+				foreach(array(
+					'class' => 'file',
+					'data-type' => $record->getExtension(),
+					'data-size' => $record->getSize()
+				) as $name => $value) {
+					$attrs .= sprintf('%s="%s" ', $name, $value);
+				}
+			}
+
+			return sprintf('<a href="%s"%s>%s</a>', $record->Link(), rtrim($attrs), $parser->parse($content));
+		} else {
+			return $record->Link();
+		}
+	}
+
+	
+	public function exists() {
+		return parent::exists() && file_exists($this->getFullPath());
+	}
+
+	
+	public static function find($filename) {
+		
+		$filename = Image::strip_resampled_prefix($filename);
+
+		
+		$parts = explode("/", $filename);
+		$parentID = 0;
+		$item = null;
+		foreach($parts as $part) {
+			if($part == ASSETS_DIR && !$parentID) continue;
+			$item = File::get()->filter(array(
+				'Name' => $part,
+				'ParentID' => $parentID
+			))->first();
+			if(!$item) break;
+			$parentID = $item->ID;
+		}
+
+		return $item;
+	}
+
+	
+	public function Link() {
+		return $this->getURL();
+	}
+
+	
+	public function RelativeLink() {
+		return $this->getFilename();
+	}
+
+	
+	public function AbsoluteLink() {
+		return $this->getAbsoluteURL();
+	}
+
+	
+	public function getTreeTitle() {
+		return Convert::raw2xml($this->Title);
+	}
+
+	
+	protected function onBeforeDelete() {
+		parent::onBeforeDelete();
+
+		
+		$this->updateFilesystem();
+
+		if($this->exists() && !is_dir($this->getFullPath())) {
+			unlink($this->getFullPath());
+		}
+	}
+
+	
+	public function canView($member = null) {
+		if(!$member) $member = Member::currentUser();
+
+		$results = $this->extend('canView', $member);
+		if($results && is_array($results)) if(!min($results)) return false;
+
+		return true;
+	}
+
+	
+	public function canEdit($member = null) {
+		if(!$member) $member = Member::currentUser();
+
+		$result = $this->extendedCan('canEdit', $member);
+		if($result !== null) return $result;
+
+		return Permission::checkMember($member, array('CMS_ACCESS_AssetAdmin', 'CMS_ACCESS_LeftAndMain'));
+	}
+
+	
+	public function canCreate($member = null) {
+		if(!$member) $member = Member::currentUser();
+
+		$result = $this->extendedCan('canCreate', $member);
+		if($result !== null) return $result;
+
+		return $this->canEdit($member);
+	}
+
+	
+	public function canDelete($member = null) {
+		if(!$member) $member = Member::currentUser();
+
+		$results = $this->extend('canDelete', $member);
+		if($results && is_array($results)) if(!min($results)) return false;
+
+		return $this->canEdit($member);
+	}
+
+	
+	public function getCMSFields() {
+		
+		if($this instanceof Image) {
+			$formattedImage = $this->getFormattedImage(
+				'ScaleWidth',
+				Config::inst()->get('Image', 'asset_preview_width')
+			);
+			$thumbnail = $formattedImage ? $formattedImage->URL : '';
+			$previewField = new LiteralField("ImageFull",
+				"<img id='thumbnailImage' class='thumbnail-preview' src='{$thumbnail}?r="
+					. rand(1,100000)  . "' alt='{$this->Name}' />\n"
+			);
+		} else {
+			$previewField = new LiteralField("ImageFull", $this->CMSThumbnail());
+		}
+
+		
+		$uploadField = UploadField::create('UploadField','Upload Field')
+			->setPreviewMaxWidth(40)
+			->setPreviewMaxHeight(30)
+			->setAllowedMaxFileNumber(1);
+		
+		if ($this->ParentID) {
+			$parent = $this->Parent();
+			if ($parent) {  
+				$uploadField->setFolderName($parent->getFilename());
+				$uploadField->setRecord($parent);
+			}
+		}
+
+		
+		$filePreview = CompositeField::create(
+			CompositeField::create(
+				$previewField
+			)->setName("FilePreviewImage")->addExtraClass('cms-file-info-preview'),
+			CompositeField::create(
+				CompositeField::create(
+					new ReadonlyField("FileType", _t('AssetTableField.TYPE','File type') . ':'),
+					new ReadonlyField("Size", _t('AssetTableField.SIZE','File size') . ':', $this->getSize()),
+					$urlField = new ReadonlyField('ClickableURL', _t('AssetTableField.URL','URL'),
+						sprintf('<a href="%s" target="_blank">%s</a>', $this->Link(), $this->RelativeLink())
+					),
+					new DateField_Disabled("Created", _t('AssetTableField.CREATED','First uploaded') . ':'),
+					new DateField_Disabled("LastEdited", _t('AssetTableField.LASTEDIT','Last changed') . ':')
+				)
+			)->setName("FilePreviewData")->addExtraClass('cms-file-info-data')
+		)->setName("FilePreview")->addExtraClass('cms-file-info');
+		$urlField->dontEscape = true;
+
+		
+		$folderTree = new TreeDropdownField("ParentID", _t('AssetTableField.FOLDER','Folder'), 'Folder');
+
+		$fields = new FieldList(
+			new TabSet('Root',
+				new Tab('Main',
+					$filePreview,
+					
+					
+					new TextField("Title", _t('AssetTableField.TITLE','Title')),
+					new TextField("Name", _t('AssetTableField.FILENAME','Filename')),
+					$ownerField
+						= new DropdownField("OwnerID", _t('AssetTableField.OWNER','Owner'), Member::mapInCMSGroups()),
+					$folderTree
+				)
+			)
+		);
+		$ownerField->setHasEmptyDefault(true);
+
+		
+		if(!($this instanceof Folder)) $this->extend('updateCMSFields', $fields);
+
+		return $fields;
+	}
+
+	
+	public static function get_app_category($ext) {
+		$ext = strtolower($ext);
+		foreach(Config::inst()->get('File', 'app_categories') as $category => $exts) {
+			if(in_array($ext, $exts)) return $category;
+		}
+		return false;
+	}
+
+	
+	public function appCategory() {
+		return self::get_app_category($this->getExtension());
+	}
+
+	
+	public function StripThumbnail() {
+		return DBField::create_field('HTMLVarchar', '<img src="'.$this->Icon().'"/>');
+	}
+
+	public function CMSThumbnail() {
+		return '<img src="' . $this->Icon() . '" />';
+	}
+
+	
+	public function Icon() {
+		$ext = strtolower($this->getExtension());
+		if(!Director::fileExists(FRAMEWORK_DIR . "/images/app_icons/{$ext}_32.png")) {
+			$ext = $this->appCategory();
+		}
+
+		if(!Director::fileExists(FRAMEWORK_DIR . "/images/app_icons/{$ext}_32.png")) {
+			$ext = "generic";
+		}
+
+		return FRAMEWORK_DIR . "/images/app_icons/{$ext}_32.png";
+	}
+
+	
+	public function onAfterUpload() {
+		$this->extend('onAfterUpload');
+	}
+
+	
+	public function deleteDatabaseOnly() {
+		if(is_numeric($this->ID)) {
+			DB::prepared_query('DELETE FROM "File" WHERE "ID" = ?', array($this->ID));
+		}
+	}
+
+	
+	protected function onBeforeWrite() {
+		parent::onBeforeWrite();
+
+		
+		if(!$this->ID && !$this->OwnerID) {
+			$this->OwnerID = (Member::currentUser() ? Member::currentUser()->ID : 0);
+		}
+
+		
+		if(!$this->getField('Name')) $this->Name = "new-" . strtolower($this->class);
+	}
+
+	
+	protected function onAfterWrite() {
+		parent::onAfterWrite();
+
+		$this->updateFilesystem();
+	}
+
+	
+	public function updateFilesystem() {
+		if(!$this->config()->update_filesystem) return false;
+
+		
+		$this->setField('Filename', $this->getRelativePath());
+
+		
+		if(!$this->isChanged('Filename')) return false;
+
+		$changedFields = $this->getChangedFields();
+		$pathBefore = $changedFields['Filename']['before'];
+		$pathAfter = $changedFields['Filename']['after'];
+
+		
+		if(!$pathBefore) return;
+
+		$pathBeforeAbs = Director::getAbsFile($pathBefore);
+		$pathAfterAbs = Director::getAbsFile($pathAfter);
+
+		
+		
+		
+		
+		
+		
+
+		
+		
+		
+		if(!file_exists($pathAfterAbs)) {
+			if(!is_a($this, 'Folder')) {
+				
+				if(!file_exists($pathBeforeAbs)) {
+					throw new Exception();
+				}
+
+				
+				
+				if(!file_exists(dirname($pathAfterAbs))) {
+					throw new Exception("Cannot move $pathBeforeAbs to $pathAfterAbs - Directory " . dirname($pathAfter)
+						. " doesn't exist");
+				}
+			}
+
+			
+			$success = rename($pathBeforeAbs, $pathAfterAbs);
+			if(!$success) throw new Exception();
+		}
+
+
+		
+		$this->updateLinks($pathBefore, $pathAfter);
+	}
+
+	
+	public function collateDescendants($condition, &$collator) {
+		if($children = $this->Children()) {
+			foreach($children as $item) {
+				if(!$condition || eval("return $condition;")) $collator[] = $item;
+				$item->collateDescendants($condition, $collator);
+			}
+			return true;
+		}
+	}
+
+	
+	public function setName($name) {
+		$oldName = $this->Name;
+
+		
+		if(!$name) $name = $this->Title;
+
+		
+		$filter = FileNameFilter::create();
+		$name = $filter->filter($name);
+
+		
+		if(!$name) $name = 'new-folder';
+
+		
+		if($oldName && $oldName != $name) {
+			$base = pathinfo($name, PATHINFO_FILENAME);
+			$ext = self::get_file_extension($name);
+			$suffix = 1;
+
+			while(File::get()->filter(array(
+					'Name' => $name,
+					'ParentID' => (int) $this->ParentID
+				))->exclude(array(
+					'ID' => $this->ID
+				))->first()
+			) {
+				$suffix++;
+				$name = "$base-$suffix.$ext";
+			}
+		}
+
+		
+		$this->setField('Name', $name);
+
+		
+		
+		$this->setField('Filename', $this->getRelativePath());
+
+		
+		if(!$this->Title) {
+			$this->Title = str_replace(array('-','_'),' ', preg_replace('/\.[^.]+$/', '', $name));
+		}
+
+		return $name;
+	}
+
+	
+	protected function updateLinks($old, $new) {
+		$this->extend('updateLinks', $old, $new);
+	}
+
+	
+	public function setParentID($parentID) {
+		$this->setField('ParentID', (int)$parentID);
+
+		
+		$this->setField('Filename', $this->getRelativePath());
+
+		return $this->getField('ParentID');
+	}
+
+	
+	public function getAbsoluteURL() {
+		return Director::absoluteURL($this->getURL());
+	}
+
+	
+	public function getURL() {
+		return Controller::join_links(Director::baseURL(), $this->getFilename());
+	}
+
+	
+	public function getFullPath() {
+		$baseFolder = Director::baseFolder();
+
+		if(strpos($this->getFilename(), $baseFolder) === 0) {
+			
+			return $this->getFilename();
+		} else {
+			
+			return Director::baseFolder() . '/' . $this->getFilename();
+		}
+	}
+
+	
+	public function getRelativePath() {
+		if($this->ParentID) {
+			
+			$p = DataObject::get_by_id('Folder', $this->ParentID, false);
+			if($p && $p->isInDB()) {
+				return $p->getRelativePath() . $this->getField("Name");
+			}
+			else return ASSETS_DIR . "/" . $this->getField("Name");
+		} else if($this->getField("Name")) {
+			return ASSETS_DIR . "/" . $this->getField("Name");
+		} else {
+			return ASSETS_DIR;
+		}
+	}
+
+	
+	public function DeleteLink() {
+		return Director::absoluteBaseURL()."admin/assets/removefile/".$this->ID;
+	}
+
+	public function getFilename() {
+		
+		if($this->getField('Filename')) {
+			return $this->getField('Filename');
+		} else {
+			return ASSETS_DIR . '/';
+		}
+	}
+
+	
+	public function setFilename($val) {
+		$this->setField('Filename', $val);
+
+		
+		
+		$this->setField('Name', basename($val));
+	}
+
+	
+	public function getExtension() {
+		return self::get_file_extension($this->getField('Filename'));
+	}
+
+	
+	public static function get_file_extension($filename) {
+		return pathinfo($filename, PATHINFO_EXTENSION);
+	}
+
+	
+	public function getFileType() {
+		$types = array(
+			'gif' => _t('File.GifType', 'GIF image - good for diagrams'),
+			'jpg' => _t('File.JpgType', 'JPEG image - good for photos'),
+			'jpeg' => _t('File.JpgType', 'JPEG image - good for photos'),
+			'png' => _t('File.PngType', 'PNG image - good general-purpose format'),
+			'ico' => _t('File.IcoType', 'Icon image'),
+			'tiff' => _t('File.TiffType', 'Tagged image format'),
+			'doc' => _t('File.DocType', 'Word document'),
+			'xls' => _t('File.XlsType', 'Excel spreadsheet'),
+			'zip' => _t('File.ZipType', 'ZIP compressed file'),
+			'gz' => _t('File.GzType', 'GZIP compressed file'),
+			'dmg' => _t('File.DmgType', 'Apple disk image'),
+			'pdf' => _t('File.PdfType', 'Adobe Acrobat PDF file'),
+			'mp3' => _t('File.Mp3Type', 'MP3 audio file'),
+			'wav' => _t('File.WavType', 'WAV audo file'),
+			'avi' => _t('File.AviType', 'AVI video file'),
+			'mpg' => _t('File.MpgType', 'MPEG video file'),
+			'mpeg' => _t('File.MpgType', 'MPEG video file'),
+			'js' => _t('File.JsType', 'Javascript file'),
+			'css' => _t('File.CssType', 'CSS file'),
+			'html' => _t('File.HtmlType', 'HTML file'),
+			'htm' => _t('File.HtmlType', 'HTML file')
+		);
+
+		$ext = strtolower($this->getExtension());
+
+		return isset($types[$ext]) ? $types[$ext] : 'unknown';
+	}
+
+	
+	public function getSize() {
+		$size = $this->getAbsoluteSize();
+
+		return ($size) ? self::format_size($size) : false;
+	}
+
+	
+	public static function format_size($size) {
+		if($size < 1024) return $size . ' bytes';
+		if($size < 10240) return (round($size/1024*10)/10). ' KB';
+		if($size < 1048576) return round($size/1024) . ' KB';
+		if($size < 10485760) return (round(($size/1024)/1024*10)/10) . ' MB';
+		if($size < 1073741824) return round(($size/1024)/1024) . ' MB';
+		return round($size/1073741824*10)/10 . ' GB';
+	}
+
+	
+	public static function ini2bytes($iniValue) {
+		$iniValues = str_split(trim($iniValue));
+		$unit = strtolower(array_pop($iniValues));
+		$quantity = (int) implode($iniValues);
+		switch ($unit) {
+			case 'g':
+				$quantity *= 1024;
+				
+			case 'm':
+				$quantity *= 1024;
+				
+			case 'k':
+				$quantity *= 1024;
+				
+			default:
+				
+				break;
+		}
+		return $quantity;
+	}
+
+	
+	public function getAbsoluteSize(){
+		if(file_exists($this->getFullPath())) {
+			$size = filesize($this->getFullPath());
+			return $size;
+		} else {
+			return 0;
+		}
+	}
+
+	public function flushCache($persistant = true) {
+		parent::flushCache($persistant);
+
+		self::$cache_file_fields = null;
+	}
+
+	
+	public function fieldLabels($includerelations = true) {
+		$labels = parent::fieldLabels($includerelations);
+		$labels['Name'] = _t('File.Name', 'Name');
+		$labels['Title'] = _t('File.Title', 'Title');
+		$labels['Filename'] = _t('File.Filename', 'Filename');
+		$labels['Filename'] = _t('File.Filename', 'Filename');
+		$labels['Content'] = _t('File.Content', 'Content');
+
+		return $labels;
+	}
+
+	protected function validate() {
+		if($this->config()->apply_restrictions_to_admin || !Permission::check('ADMIN')) {
+			
+			
+			$extension = $this->getExtension();
+			$allowed = array_map('strtolower', $this->config()->allowed_extensions);
+			if(!in_array(strtolower($extension), $allowed)) {
+				$exts =  $allowed;
+				sort($exts);
+				$message =  _t(
+					'File.INVALIDEXTENSION',
+					'Extension is not allowed (valid: {extensions})',
+					'Argument 1: Comma-separated list of valid extensions',
+					array('extensions' => wordwrap(implode(', ',$exts)))
+				);
+				return new ValidationResult(false, $message);
+			}
+		}
+
+		
+		
+
+		$result = new ValidationResult(true);
+		$this->extend('validate', $result);
+		return $result;
+	}
+
+	
+	private static $class_for_file_extension = array(
+		'*' => 'File',
+		'jpg' => 'Image',
+		'jpeg' => 'Image',
+		'png' => 'Image',
+		'gif' => 'Image',
+	);
+
+	
+	public static function get_class_for_file_extension($ext) {
+		$map = array_change_key_case(self::config()->class_for_file_extension, CASE_LOWER);
+		return (array_key_exists(strtolower($ext), $map)) ? $map[strtolower($ext)] : $map['*'];
+	}
+
+	
+	public static function set_class_for_file_extension($exts, $class) {
+		if(!is_array($exts)) $exts = array($exts);
+
+		foreach($exts as $ext) {
+			if(!is_subclass_of($class, 'File')) {
+				throw new InvalidArgumentException(
+					sprintf('Class "%s" (for extension "%s") is not a valid subclass of File', $class, $ext)
+				);
+			}
+			self::config()->class_for_file_extension = array($ext => $class);
+		}
+	}
+
+}

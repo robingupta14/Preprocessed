@@ -1,0 +1,490 @@
+
+
+
+
+
+
+
+
+static struct struct_23 *fn_21(
+    struct struct_23 *base, const char *filename);
+static void fn_22(
+    struct struct_23 *base, struct struct_23 *hdr);
+static int fn_22(
+    struct struct_25 *sys, struct struct_23 *fh,
+    struct struct_23 *hdr);
+static int fn_22(
+    struct struct_23 *base, struct struct_23 *hdr,
+    const char *filename);
+static int fn_23(
+    struct struct_23 *base, const char *input, const char *output);
+static int fn_23(
+    struct struct_23 *base);
+
+static struct struct_25 *fn_23(
+    struct struct_25 *sys, struct struct_23 *in, struct struct_23 *out);
+static int fn_23(
+    struct struct_25 *kwaj);
+static void fn_13(
+    struct struct_25 *kwaj);
+static int fn_14(
+    struct struct_25 *kwaj,
+    unsigned int var_25, unsigned int var_25,
+    unsigned char *lens);
+static int fn_25(
+    struct struct_25 *kwaj);
+
+
+
+
+
+
+
+struct struct_23 *
+    fn_18(struct struct_25 *sys)
+{
+  struct struct_23 *self = NULL;
+
+  if (!sys) sys = mspack_default_system;
+  if (!mspack_valid_system(sys)) return NULL;
+
+  if ((self = (struct struct_23 *) sys->alloc(sys, sizeof(struct struct_23)))) {
+    self->base.open = &kwajd_open;
+    self->base.close = &kwajd_close;
+    self->base.extract = &kwajd_extract;
+    self->base.decompress = &kwajd_decompress;
+    self->base.last_error = &kwajd_error;
+    self->system = sys;
+    self->error = MSPACK_ERR_OK;
+  }
+  return (struct struct_23 *) self;
+}
+
+
+
+
+
+
+void fn_20(struct struct_23 *base)
+{
+    struct struct_23 *self = (struct struct_23 *) base;
+    if (self) {
+ struct struct_25 *sys = self->system;
+ sys->free(self);
+    }
+}
+
+
+
+
+
+
+static struct struct_23 *fn_21(struct struct_23 *base,
+      const char *filename)
+{
+    struct struct_23 *self = (struct struct_23 *) base;
+    struct struct_23 *hdr;
+    struct struct_25 *sys;
+    struct struct_23 *fh;
+
+    if (!self) return NULL;
+    sys = self->system;
+
+    fh = sys->open(sys, filename, MSPACK_SYS_OPEN_READ);
+    hdr = (struct struct_23 *) sys->alloc(sys, sizeof(struct struct_22));
+    if (fh && hdr) {
+ ((struct struct_22 *) hdr)->fh = fh;
+ self->error = kwajd_read_headers(sys, fh, hdr);
+    }
+    else {
+ if (!fh) self->error = MSPACK_ERR_OPEN;
+ if (!hdr) self->error = MSPACK_ERR_NOMEMORY;
+    }
+
+    if (self->error) {
+ if (fh) sys->close(fh);
+ if (hdr) sys->free(hdr);
+ hdr = NULL;
+    }
+
+    return hdr;
+}
+
+
+
+
+
+
+static void fn_22(struct struct_23 *base,
+   struct struct_23 *hdr)
+{
+    struct struct_23 *self = (struct struct_23 *) base;
+    struct struct_22 *hdr_p = (struct struct_22 *) hdr;
+
+    if (!self || !self->system) return;
+
+
+    self->system->close(hdr_p->fh);
+
+
+    self->system->free(hdr);
+
+    self->error = MSPACK_ERR_OK;
+}
+
+
+
+
+
+
+static int fn_22(struct struct_25 *sys,
+         struct struct_23 *fh,
+         struct struct_23 *hdr)
+{
+    unsigned char buf[16];
+    int i;
+
+
+    if (sys->read(fh, &buf[0], kwajh_SIZEOF) != kwajh_SIZEOF) {
+ return MSPACK_ERR_READ;
+    }
+
+
+    if (((unsigned int) EndGetI32(&buf[kwajh_Signature1]) != 0x4A41574B) ||
+ ((unsigned int) EndGetI32(&buf[kwajh_Signature2]) != 0xD127F088))
+    {
+ return MSPACK_ERR_SIGNATURE;
+    }
+
+
+    hdr->comp_type = EndGetI16(&buf[kwajh_CompMethod]);
+    hdr->data_offset = EndGetI16(&buf[kwajh_DataOffset]);
+    hdr->headers = EndGetI16(&buf[kwajh_Flags]);
+    hdr->length = 0;
+    hdr->filename = NULL;
+    hdr->extra = NULL;
+    hdr->extra_length = 0;
+
+
+
+
+    if (hdr->headers & MSKWAJ_HDR_HASLENGTH) {
+ if (sys->read(fh, &buf[0], 4) != 4) return MSPACK_ERR_READ;
+ hdr->length = EndGetI32(&buf[0]);
+    }
+
+
+    if (hdr->headers & MSKWAJ_HDR_HASUNKNOWN1) {
+ if (sys->read(fh, &buf[0], 2) != 2) return MSPACK_ERR_READ;
+    }
+
+
+    if (hdr->headers & MSKWAJ_HDR_HASUNKNOWN2) {
+ if (sys->read(fh, &buf[0], 2) != 2) return MSPACK_ERR_READ;
+ i = EndGetI16(&buf[0]);
+ if (sys->seek(fh, (off_t)i, MSPACK_SYS_SEEK_CUR)) return MSPACK_ERR_SEEK;
+    }
+
+
+    if (hdr->headers & (MSKWAJ_HDR_HASFILENAME | MSKWAJ_HDR_HASFILEEXT)) {
+ int len;
+
+ char *fn = (char *) sys->alloc(sys, (size_t) 13);
+ if (!(hdr->filename = fn)) return MSPACK_ERR_NOMEMORY;
+
+
+ if (hdr->headers & MSKWAJ_HDR_HASFILENAME) {
+
+     if ((len = sys->read(fh, &buf[0], 9)) < 2) return MSPACK_ERR_READ;
+     for (i = 0; i < len; i++) if (!(*fn++ = buf[i])) break;
+
+     if (i == 9 && buf[8] != '\0') return MSPACK_ERR_DATAFORMAT;
+
+     if (sys->seek(fh, (off_t)(i + 1 - len), MSPACK_SYS_SEEK_CUR))
+  return MSPACK_ERR_SEEK;
+     fn--;
+ }
+
+
+ if (hdr->headers & MSKWAJ_HDR_HASFILEEXT) {
+     *fn++ = '.';
+
+     if ((len = sys->read(fh, &buf[0], 4)) < 2) return MSPACK_ERR_READ;
+     for (i = 0; i < len; i++) if (!(*fn++ = buf[i])) break;
+
+     if (i == 4 && buf[3] != '\0') return MSPACK_ERR_DATAFORMAT;
+
+     if (sys->seek(fh, (off_t)(i + 1 - len), MSPACK_SYS_SEEK_CUR))
+  return MSPACK_ERR_SEEK;
+     fn--;
+ }
+ *fn = '\0';
+    }
+
+
+    if (hdr->headers & MSKWAJ_HDR_HASEXTRATEXT) {
+ if (sys->read(fh, &buf[0], 2) != 2) return MSPACK_ERR_READ;
+ i = EndGetI16(&buf[0]);
+ hdr->extra = (char *) sys->alloc(sys, (size_t)i+1);
+ if (! hdr->extra) return MSPACK_ERR_NOMEMORY;
+ if (sys->read(fh, hdr->extra, i) != i) return MSPACK_ERR_READ;
+ hdr->extra[i] = '\0';
+ hdr->extra_length = i;
+    }
+    return MSPACK_ERR_OK;
+}
+
+
+
+
+
+
+static int fn_22(struct struct_23 *base,
+    struct struct_23 *hdr, const char *filename)
+{
+    struct struct_23 *self = (struct struct_23 *) base;
+    struct struct_25 *sys;
+    struct struct_23 *fh, *outfh;
+
+    if (!self) return MSPACK_ERR_ARGS;
+    if (!hdr) return self->error = MSPACK_ERR_ARGS;
+
+    sys = self->system;
+    fh = ((struct struct_22 *) hdr)->fh;
+
+
+    if (sys->seek(fh, hdr->data_offset, MSPACK_SYS_SEEK_START)) {
+ return self->error = MSPACK_ERR_SEEK;
+    }
+
+
+    if (!(outfh = sys->open(sys, filename, MSPACK_SYS_OPEN_WRITE))) {
+ return self->error = MSPACK_ERR_OPEN;
+    }
+
+    self->error = MSPACK_ERR_OK;
+
+
+    if (hdr->comp_type == MSKWAJ_COMP_NONE ||
+ hdr->comp_type == MSKWAJ_COMP_XOR)
+    {
+
+ unsigned char *buf = (unsigned char *) sys->alloc(sys, (size_t) KWAJ_INPUT_SIZE);
+ if (buf) {
+     int read, i;
+     while ((read = sys->read(fh, buf, KWAJ_INPUT_SIZE)) > 0) {
+  if (hdr->comp_type == MSKWAJ_COMP_XOR) {
+      for (i = 0; i < read; i++) buf[i] ^= 0xFF;
+  }
+  if (sys->write(outfh, buf, read) != read) {
+      self->error = MSPACK_ERR_WRITE;
+      break;
+  }
+     }
+     if (read < 0) self->error = MSPACK_ERR_READ;
+     sys->free(buf);
+ }
+ else {
+     self->error = MSPACK_ERR_NOMEMORY;
+ }
+    }
+    else if (hdr->comp_type == MSKWAJ_COMP_SZDD) {
+ self->error = lzss_decompress(sys, fh, outfh, KWAJ_INPUT_SIZE,
+          LZSS_MODE_EXPAND);
+    }
+    else if (hdr->comp_type == MSKWAJ_COMP_LZH) {
+ struct struct_25 *lzh = lzh_init(sys, fh, outfh);
+ self->error = (lzh) ? lzh_decompress(lzh) : MSPACK_ERR_NOMEMORY;
+ lzh_free(lzh);
+    }
+    else if (hdr->comp_type == MSKWAJ_COMP_MSZIP) {
+        struct struct_22 *zip = mszipd_init(sys,fh,outfh,KWAJ_INPUT_SIZE,0);
+        self->error = (zip) ? mszipd_decompress_kwaj(zip) : MSPACK_ERR_NOMEMORY;
+        mszipd_free(zip);
+    }
+    else {
+ self->error = MSPACK_ERR_DATAFORMAT;
+    }
+
+
+    sys->close(outfh);
+
+    return self->error;
+}
+
+
+
+
+
+
+static int fn_23(struct struct_23 *base,
+       const char *input, const char *output)
+{
+    struct struct_23 *self = (struct struct_23 *) base;
+    struct struct_23 *hdr;
+    int error;
+
+    if (!self) return MSPACK_ERR_ARGS;
+
+    if (!(hdr = kwajd_open(base, input))) return self->error;
+    error = kwajd_extract(base, hdr, output);
+    kwajd_close(base, hdr);
+    return self->error = error;
+}
+
+
+
+
+
+
+static int fn_23(struct struct_23 *base)
+{
+    struct struct_23 *self = (struct struct_23 *) base;
+    return (self) ? self->error : MSPACK_ERR_ARGS;
+}
+
+static struct struct_25 *fn_23(struct struct_25 *sys,
+    struct struct_23 *in, struct struct_23 *out)
+{
+    struct struct_25 *lzh;
+
+    if (!sys || !in || !out) return NULL;
+    if (!(lzh = (struct struct_25 *) sys->alloc(sys, sizeof(struct struct_25)))) return NULL;
+
+    lzh->sys = sys;
+    lzh->input = in;
+    lzh->output = out;
+    return lzh;
+}
+
+static int fn_23(struct struct_25 *lzh)
+{
+    register unsigned int bit_buffer;
+    register int bits_left, i;
+    register unsigned short sym;
+    unsigned char *i_ptr, *i_end, var_25 = 0;
+    int j, var_25 = 0, len, offset, err;
+    unsigned int types[6];
+
+
+    INIT_BITS;
+    RESTORE_BITS;
+    memset(&lzh->window[0], LZSS_WINDOW_FILL, (size_t) LZSS_WINDOW_SIZE);
+
+
+    for (i = 0; i < 6; i++) do { READ_BITS(types[i], 4); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0;
+
+
+    STORE_BITS; err = lzh_read_lens(lzh, types[0], KWAJ_MATCHLEN1_SYMS, &lzh->MATCHLEN1_len[0]); if (err) return err; RESTORE_BITS; if (make_decode_table(KWAJ_MATCHLEN1_SYMS, KWAJ_TABLEBITS, &lzh->MATCHLEN1_len[0], &lzh->MATCHLEN1_table[0])) return MSPACK_ERR_DATAFORMAT;;
+    STORE_BITS; err = lzh_read_lens(lzh, types[1], KWAJ_MATCHLEN2_SYMS, &lzh->MATCHLEN2_len[0]); if (err) return err; RESTORE_BITS; if (make_decode_table(KWAJ_MATCHLEN2_SYMS, KWAJ_TABLEBITS, &lzh->MATCHLEN2_len[0], &lzh->MATCHLEN2_table[0])) return MSPACK_ERR_DATAFORMAT;;
+    STORE_BITS; err = lzh_read_lens(lzh, types[2], KWAJ_LITLEN_SYMS, &lzh->LITLEN_len[0]); if (err) return err; RESTORE_BITS; if (make_decode_table(KWAJ_LITLEN_SYMS, KWAJ_TABLEBITS, &lzh->LITLEN_len[0], &lzh->LITLEN_table[0])) return MSPACK_ERR_DATAFORMAT;;
+    STORE_BITS; err = lzh_read_lens(lzh, types[3], KWAJ_OFFSET_SYMS, &lzh->OFFSET_len[0]); if (err) return err; RESTORE_BITS; if (make_decode_table(KWAJ_OFFSET_SYMS, KWAJ_TABLEBITS, &lzh->OFFSET_len[0], &lzh->OFFSET_table[0])) return MSPACK_ERR_DATAFORMAT;;
+    STORE_BITS; err = lzh_read_lens(lzh, types[4], KWAJ_LITERAL_SYMS, &lzh->LITERAL_len[0]); if (err) return err; RESTORE_BITS; if (make_decode_table(KWAJ_LITERAL_SYMS, KWAJ_TABLEBITS, &lzh->LITERAL_len[0], &lzh->LITERAL_table[0])) return MSPACK_ERR_DATAFORMAT;;
+
+    while (!lzh->input_end) {
+ if (var_25) do { READ_HUFFSYM(MATCHLEN2, len); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0;
+ else do { READ_HUFFSYM(MATCHLEN1, len); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0;
+
+ if (len > 0) {
+     len += 2;
+     var_25 = 0;
+     do { READ_HUFFSYM(OFFSET, j); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; offset = j << 6;
+     do { READ_BITS(j, 6); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; offset |= j;
+
+
+     while (len-- > 0) {
+  lzh->window[var_25] = lzh->window[(var_25+4096-offset) & 4095];
+  do { if (lzh->sys->write(lzh->output, &lzh->window[var_25], 1) != 1) return MSPACK_ERR_WRITE; } while 0;
+  var_25++; var_25 &= 4095;
+     }
+ }
+ else {
+     do { READ_HUFFSYM(LITLEN, len); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; len++;
+     var_25 = (len == 32) ? 0 : 1;
+     while (len-- > 0) {
+  do { READ_HUFFSYM(LITERAL, j); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0;
+
+  lzh->window[var_25] = j;
+  do { if (lzh->sys->write(lzh->output, &lzh->window[var_25], 1) != 1) return MSPACK_ERR_WRITE; } while 0;
+  var_25++; var_25 &= 4095;
+     }
+ }
+    }
+    return MSPACK_ERR_OK;
+}
+
+static void lzh_free(struct kwajd_stream *lzh)
+{
+    struct struct_25 *sys;
+    if (!lzh || !lzh->sys) return;
+    sys = lzh->sys;
+    sys->free(lzh);
+}
+
+static int lzh_read_lens(struct kwajd_stream *lzh,
+    unsigned int var_25, unsigned int var_25,
+    unsigned char *lens)
+{
+    register unsigned int bit_buffer;
+    register int bits_left;
+    unsigned char *i_ptr, *i_end;
+    unsigned int i, c, sel;
+    int err;
+
+    RESTORE_BITS;
+    switch (var_25) {
+    case 0:
+ i = var_25; c = (i==16)?4: (i==32)?5: (i==64)?6: (i==256)?8 :0;
+ for (i = 0; i < var_25; i++) lens[i] = c;
+ break;
+
+    case 1:
+ do { READ_BITS(c, 4); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; lens[0] = c;
+ for (i = 1; i < var_25; i++) {
+                do { READ_BITS(sel, 1); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; if (sel == 0) lens[i] = c;
+     else { do { READ_BITS(sel, 1); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; if (sel == 0) lens[i] = ++c;
+     else { do { READ_BITS(c, 4); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; lens[i] = c; }}
+ }
+ break;
+
+    case 2:
+ do { READ_BITS(c, 4); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; lens[0] = c;
+ for (i = 1; i < var_25; i++) {
+     do { READ_BITS(sel, 2); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0;
+     if (sel == 3) do { READ_BITS(c, 4); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; else c += (char) sel-1;
+     lens[i] = c;
+ }
+ break;
+
+    case 3:
+ for (i = 0; i < var_25; i++) {
+     do { READ_BITS(c, 4); if (lzh->input_end && bits_left < lzh->input_end) return MSPACK_ERR_OK; } while 0; lens[i] = c;
+ }
+ break;
+    }
+    STORE_BITS;
+    return MSPACK_ERR_OK;
+}
+
+static int fn_25(struct struct_25 *lzh) {
+    int read;
+    if (lzh->input_end) {
+ lzh->input_end += 8;
+ lzh->inbuf[0] = 0;
+ read = 1;
+    }
+    else {
+ read = lzh->sys->read(lzh->input, &lzh->inbuf[0], KWAJ_INPUT_SIZE);
+ if (read < 0) return MSPACK_ERR_READ;
+ if (read == 0) {
+     lzh->input_end = 8;
+     lzh->inbuf[0] = 0;
+     read = 1;
+ }
+    }
+
+
+    lzh->i_ptr = &lzh->inbuf[0];
+    lzh->i_end = &lzh->inbuf[read];
+    return MSPACK_ERR_OK;
+}

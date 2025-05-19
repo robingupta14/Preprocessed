@@ -1,0 +1,100 @@
+
+
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, \
+    HttpResponseNotFound
+from django.shortcuts import redirect
+from django.utils.translation import ugettext as _
+
+from zerver.lib.response import json_success, json_error
+from zerver.lib.upload import upload_message_image_from_request, get_local_file_path, \
+    get_signed_upload_url, check_upload_within_quota, INLINE_MIME_TYPES
+from zerver.models import UserProfile, validate_attachment_request
+from django.conf import settings
+from sendfile import sendfile
+from mimetypes import guess_type
+
+def function_0(request: HttpRequest, url_path: str) -> HttpResponse:
+    var_0 = get_signed_upload_url(url_path)
+    return redirect(var_0)
+
+def function_1(request: HttpRequest, var_5: str) -> HttpResponse:
+    var_1 = get_local_file_path(var_5)
+    if var_1 is None:
+        return HttpResponseNotFound<p>File not found</p>
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    var_2, var_3 = guess_type(var_1)
+    var_4 = var_2 not in INLINE_MIME_TYPES
+
+    return sendfile(request, var_1, var_4=var_4,
+                    var_2=var_2, var_3=var_3)
+
+def function_2(request: HttpRequest, user_profile: UserProfile,
+                       realm_id_str: str, filename: str) -> HttpResponse:
+    var_5 = %s/%s % (realm_id_str, filename)
+    var_6 = validate_attachment_request(user_profile, var_5)
+
+    if var_6 is None:
+        return HttpResponseNotFound(_<p>File not found.</p>)
+    if not var_6:
+        return HttpResponseForbidden(_<p>You are not authorized to view this file.</p>)
+    if django.conf.settings.LOCAL_UPLOADS_DIR is not None:
+        return serve_local(request, var_5)
+
+    return serve_s3(request, var_5)
+
+def function_3(request: HttpRequest, user_profile: UserProfile) -> HttpResponse:
+    if len(request.FILES) == 0:
+        return json_error(_You must specify a file to upload)
+    if len(request.FILES) != 1:
+        return json_error(_You may only upload one file at a time)
+
+    var_7 = list(request.FILES.values())[0]
+    var_8 = var_7._get_size()
+    if django.conf.settings.MAX_FILE_UPLOAD_SIZE * 1024 * 1024 < var_8:
+        return json_error(_Uploaded file is larger than the allowed limit of %s MB % (
+            django.conf.settings.MAX_FILE_UPLOAD_SIZE))
+    check_upload_within_quota(user_profile.realm, var_8)
+
+    if not isinstance(var_7.name, str):
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        var_7.name = var_7.name.encodeascii
+
+    var_0 = upload_message_image_from_request(request, var_7, user_profile)
+    return json_success({var_0: var_0})

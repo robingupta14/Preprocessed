@@ -1,0 +1,439 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function helper_alternate_colors( $p_index, $p_odd_color, $p_even_color ) {
+	static $t_index = 1;
+
+	if( null !== $p_index ) {
+		$t_index = $p_index;
+	}
+
+	if( 1 == $t_index++ % 2 ) {
+		return $p_odd_color;
+	} else {
+		return $p_even_color;
+	}
+}
+
+
+function helper_alternate_class( $p_index = null, $p_odd_class = 'row-1', $p_even_class = 'row-2' ) {
+	static $t_index = 1;
+
+	if( null !== $p_index ) {
+		$t_index = $p_index;
+	}
+
+	if( 1 == $t_index++ % 2 ) {
+		return "class=\"$p_odd_class\"";
+	} else {
+		return "class=\"$p_even_class\"";
+	}
+}
+
+function helper_array_transpose( $p_array ) {
+	if( !is_array( $p_array ) ) {
+		return $p_array;
+	}
+	$t_out = array();
+	foreach( $p_array as $key => $sub ) {
+		if( !is_array( $sub ) ) {
+			return $p_array;
+		}
+
+		foreach( $sub as $subkey => $value ) {
+			$t_out[$subkey][$key] = $value;
+		}
+	}
+	return $t_out;
+}
+
+
+function get_status_color( $p_status, $p_user = null, $p_project = null ) {
+	$t_status_label = MantisEnum::getLabel( config_get( 'status_enum_string', null, $p_user, $p_project ), $p_status );
+	$t_status_colors = config_get( 'status_colors', null, $p_user, $p_project );
+	$t_color = '
+
+	if ( isset( $t_status_colors[$t_status_label] ) ) {
+		$t_color = $t_status_colors[$t_status_label];
+	}
+
+	return $t_color;
+}
+
+
+function get_enum_element( $p_enum_name, $p_val, $p_user = null, $p_project = null ) {
+	$config_var = config_get( $p_enum_name . '_enum_string', null, $p_user, $p_project );
+	$string_var = lang_get( $p_enum_name . '_enum_string' );
+
+	return MantisEnum::getLocalizedLabel( $config_var, $string_var, $p_val );
+}
+
+
+function check_selected( $p_var, $p_val = true ) {
+	if( is_array( $p_var ) ) {
+		foreach( $p_var as $t_this_var ) {
+
+			
+			if( is_string( $t_this_var ) && is_string( $p_val ) ) {
+				if( $t_this_var === $p_val ) {
+					
+					return;
+				}
+			}
+			else if( $t_this_var == $p_val ) {
+				
+				return;
+			}
+		}
+	} else {
+		if( is_string( $p_var ) && is_string( $p_val ) ) {
+			if( $p_var === $p_val ) {
+				
+				return;
+			}
+		}
+		else if( $p_var == $p_val ) {
+			
+			return;
+		}
+	}
+}
+
+
+function check_checked( $p_var, $p_val = true ) {
+	if( $p_var == $p_val ) {
+		
+	}
+}
+
+
+function helper_begin_long_process( $p_ignore_abort = false ) {
+	$t_timeout = config_get( 'long_process_timeout' );
+
+	
+	@set_time_limit( $t_timeout );
+
+	ignore_user_abort( $p_ignore_abort );
+	return $t_timeout;
+}
+
+
+
+
+$g_project_override = null;
+$g_cache_current_project = null;
+
+
+function helper_get_current_project() {
+	global $g_project_override, $g_cache_current_project;
+
+	if( $g_project_override !== null ) {
+		return $g_project_override;
+	}
+
+	if( $g_cache_current_project === null ) {
+		$t_cookie_name = config_get( 'project_cookie' );
+
+		$t_project_id = gpc_get_cookie( $t_cookie_name, null );
+
+		if( null === $t_project_id ) {
+			$t_pref = user_pref_get( auth_get_current_user_id(), ALL_PROJECTS, false );
+			$t_project_id = $t_pref->default_project;
+		} else {
+			$t_project_id = explode( ';', $t_project_id );
+			$t_project_id = (int)$t_project_id[count( $t_project_id ) - 1];
+		}
+
+		if( !project_exists( $t_project_id ) || ( 0 == project_get_field( $t_project_id, 'enabled' ) ) || !access_has_project_level( VIEWER, $t_project_id ) ) {
+			$t_project_id = ALL_PROJECTS;
+		}
+		$g_cache_current_project = $t_project_id;
+	}
+	return $g_cache_current_project;
+}
+
+
+function helper_get_current_project_trace() {
+	$t_cookie_name = config_get( 'project_cookie' );
+
+	$t_project_id = gpc_get_cookie( $t_cookie_name, null );
+
+	if( null === $t_project_id ) {
+		$t_bottom = current_user_get_pref( 'default_project' );
+		$t_parent = $t_bottom;
+		$t_project_id = Array(
+			$t_bottom,
+		);
+
+		while( true ) {
+			$t_parent = project_hierarchy_get_parent( $t_parent );
+			if( 0 == $t_parent ) {
+				break;
+			}
+			array_unshift($t_project_id, $t_parent);
+		}
+
+	} else {
+		$t_project_id = explode( ';', $t_project_id );
+		foreach( $t_project_id as $t_key => $t_id ) {
+			$t_project_id[$t_key] = (int)$t_id;
+		}
+		$t_bottom = $t_project_id[count( $t_project_id ) - 1];
+	}
+
+	if( !project_exists( $t_bottom ) || ( 0 == project_get_field( $t_bottom, 'enabled' ) ) || !access_has_project_level( VIEWER, $t_bottom ) ) {
+		$t_project_id = Array(
+			ALL_PROJECTS,
+		);
+	}
+
+	return $t_project_id;
+}
+
+
+function helper_set_current_project( $p_project_id ) {
+	global $g_cache_current_project;
+
+	$t_project_cookie_name = config_get( 'project_cookie' );
+
+	$g_cache_current_project = $p_project_id;
+	gpc_set_cookie( $t_project_cookie_name, $p_project_id, true );
+
+	return true;
+}
+
+
+function helper_clear_pref_cookies() {
+	gpc_clear_cookie( config_get( 'project_cookie' ) );
+	gpc_clear_cookie( config_get( 'manage_users_cookie' ) );
+	gpc_clear_cookie( config_get( 'manage_config_cookie' ) );
+}
+
+
+function helper_ensure_confirmed( $p_message, $p_button_label ) {
+	if( true == gpc_get_bool( '_confirmed' ) ) {
+		return true;
+	}
+
+	html_page_top();
+
+	
+	print_hr();
+	
+
+	
+	
+	
+	print_hidden_inputs( gpc_strip_slashes( $_POST ) );
+	print_hidden_inputs( gpc_strip_slashes( $_GET ) );
+
+	
+	
+	
+
+	print_hr();
+	
+	html_page_bottom();
+	exit;
+}
+
+
+function helper_call_custom_function( $p_function, $p_args_array ) {
+	$t_function = 'custom_function_override_' . $p_function;
+
+	if( !function_exists( $t_function ) ) {
+		$t_function = 'custom_function_default_' . $p_function;
+	}
+
+	return call_user_func_array( $t_function, $p_args_array );
+}
+
+
+function helper_project_specific_where( $p_project_id, $p_user_id = null ) {
+	if( null === $p_user_id ) {
+		$p_user_id = auth_get_current_user_id();
+	}
+
+	$t_project_ids = user_get_all_accessible_projects( $p_user_id, $p_project_id );
+
+	if( 0 == count( $t_project_ids ) ) {
+		$t_project_filter = ' 1<>1';
+	} else if( 1 == count( $t_project_ids ) ) {
+		$t_project_filter = ' project_id=' . reset( $t_project_ids );
+	} else {
+		$t_project_filter = ' project_id IN (' . join( ',', $t_project_ids ) . ')';
+	}
+
+	return $t_project_filter;
+}
+
+
+function helper_get_columns_to_view( $p_columns_target = COLUMNS_TARGET_VIEW_PAGE, $p_viewable_only = true, $p_user_id = null ) {
+	$t_columns = helper_call_custom_function( 'get_columns_to_view', array( $p_columns_target, $p_user_id ) );
+
+	
+	
+	$t_columns_map = array(
+		'category' => 'category_id',
+	);
+
+	foreach( $t_columns as $t_key => $t_value ) {
+		if( isset( $t_columns_map[$t_value] ) ) {
+			$t_columns[$t_key] = $t_columns_map[$t_value];
+		}
+	}
+
+	if( !$p_viewable_only ) {
+		return $t_columns;
+	}
+
+	$t_keys_to_remove = array();
+
+	if( $p_columns_target == COLUMNS_TARGET_CSV_PAGE || $p_columns_target == COLUMNS_TARGET_EXCEL_PAGE ) {
+		$t_keys_to_remove[] = 'selection';
+		$t_keys_to_remove[] = 'edit';
+		$t_keys_to_remove[] = 'bugnotes_count';
+		$t_keys_to_remove[] = 'attachment_count';
+		$t_keys_to_remove[] = 'overdue';
+	}
+
+	$t_enable_sponsorship = config_get( 'enable_sponsorship' );
+	if( OFF == $t_enable_sponsorship ) {
+		$t_keys_to_remove[] = 'sponsorship_total';
+	}
+
+	if( $p_columns_target == COLUMNS_TARGET_CSV_PAGE || $p_columns_target == COLUMNS_TARGET_EXCEL_PAGE ) {
+		$t_keys_to_remove[] = 'attachment_count';
+	}
+
+	$t_keys_to_remove[] = 'duplicate_id';
+
+	$t_current_project_id = helper_get_current_project();
+
+	if( $t_current_project_id != ALL_PROJECTS && !access_has_project_level( config_get( 'view_handler_threshold' ), $t_current_project_id ) ) {
+		$t_keys_to_remove[] = 'handler_id';
+	}
+
+	if( $t_current_project_id != ALL_PROJECTS && !access_has_project_level( config_get( 'roadmap_view_threshold' ), $t_current_project_id ) ) {
+		$t_keys_to_remove[] = 'target_version';
+	}
+
+	foreach( $t_keys_to_remove as $t_key_to_remove ) {
+		$t_keys = array_keys( $t_columns, $t_key_to_remove );
+
+		foreach( $t_keys as $t_key ) {
+			unset( $t_columns[$t_key] );
+		}
+	}
+
+	
+	
+	return array_values( $t_columns );
+}
+
+
+function helper_get_default_export_filename( $p_extension_with_dot, $p_prefix = '', $p_suffix = '' ) {
+	$t_filename = $p_prefix;
+
+	$t_current_project_id = helper_get_current_project();
+
+	if( ALL_PROJECTS == $t_current_project_id ) {
+		$t_filename .= user_get_name( auth_get_current_user_id() );
+	} else {
+		$t_filename .= project_get_field( $t_current_project_id, 'name' );
+	}
+
+	return $t_filename . $p_suffix . $p_extension_with_dot;
+}
+
+
+function helper_get_tab_index_value() {
+	static $tab_index = 0;
+	return ++$tab_index;
+}
+
+
+function helper_get_tab_index() {
+	return 'tabindex="' . helper_get_tab_index_value() . '"';
+}
+
+
+function helper_show_queries() {
+	
+	
+	return ON == config_get( 'show_queries_count' ) && auth_is_user_authenticated() && access_has_global_level( config_get( 'show_queries_threshold' ) );
+}
+
+
+function helper_mantis_url( $p_url ) {
+	if( is_blank( $p_url ) ) {
+		return $p_url;
+	}
+	return config_get_global( 'short_path' ) . $p_url;
+}
+
+
+function helper_duration_to_minutes( $p_hhmm ) {
+	if( is_blank( $p_hhmm ) ) {
+		return 0;
+	}
+
+	$t_a = explode( ':', $p_hhmm );
+	$t_min = 0;
+
+	
+	if( count( $t_a ) > 3 ) {
+		error_parameters( 'p_hhmm', $p_hhmm );
+		trigger_error( ERROR_CONFIG_OPT_INVALID, ERROR );
+	}
+
+	$t_count = count( $t_a );
+	for( $i = 0;$i < $t_count;$i++ ) {
+		
+		if( !is_numeric( $t_a[$i] ) || ( (integer) $t_a[$i] < 0 ) ) {
+			error_parameters( 'p_hhmm', $p_hhmm );
+			trigger_error( ERROR_CONFIG_OPT_INVALID, ERROR );
+		}
+
+		
+		if(( $i > 0 ) && ( $t_a[$i] > 59 ) ) {
+			error_parameters( 'p_hhmm', $p_hhmm );
+			trigger_error( ERROR_CONFIG_OPT_INVALID, ERROR );
+		}
+	}
+
+	switch( $t_count ) {
+		case 1:
+			$t_min = (integer) $t_a[0];
+			break;
+		case 2:
+			$t_min = (integer) $t_a[0] * 60 + (integer) $t_a[1];
+			break;
+		case 3:
+			
+			$t_min = (integer) $t_a[0] * 60 + (integer) $t_a[1];
+
+			if( (integer) $t_a[2] >= 30 ) {
+				$t_min++;
+			}
+			break;
+	}
+
+	return (int) $t_min;
+}

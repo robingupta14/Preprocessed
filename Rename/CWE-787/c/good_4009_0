@@ -1,0 +1,445 @@
+
+
+
+
+
+
+
+
+static DEFINE_IDA(umem_ida);
+
+void fn_0(struct struct_36 *umem, struct struct_5 *xs)
+{
+ unsigned long var_13;
+
+ if (!xs->tx)
+  return;
+
+ spin_lock_irqsave(&umem->xsk_list_lock, var_13);
+ list_add_rcu(&xs->list, &umem->xsk_list);
+ spin_unlock_irqrestore(&umem->xsk_list_lock, var_13);
+}
+
+void fn_4(struct struct_36 *umem, struct struct_5 *xs)
+{
+ unsigned long var_13;
+
+ if (!xs->tx)
+  return;
+
+ spin_lock_irqsave(&umem->xsk_list_lock, var_13);
+ list_del_rcu(&xs->list);
+ spin_unlock_irqrestore(&umem->xsk_list_lock, var_13);
+}
+
+
+
+
+
+static int fn_5(struct struct_11 *dev, struct struct_36 *umem,
+          u16 var_13)
+{
+ if (var_13 >= max_t(unsigned int,
+         dev->real_num_rx_queues,
+         dev->real_num_tx_queues))
+  return -EINVAL;
+
+ if (var_13 < dev->real_num_rx_queues)
+  dev->_rx[var_13].umem = umem;
+ if (var_13 < dev->real_num_tx_queues)
+  dev->_tx[var_13].umem = umem;
+
+ return 0;
+}
+
+struct struct_36 *fn_8(struct struct_11 *dev,
+           u16 var_13)
+{
+ if (var_13 < dev->real_num_rx_queues)
+  return dev->_rx[var_13].umem;
+ if (var_13 < dev->real_num_tx_queues)
+  return dev->_tx[var_13].umem;
+
+ return NULL;
+}
+EXPORT_SYMBOL(xdp_get_umem_from_qid);
+
+static void fn_9(struct struct_11 *dev, u16 var_13)
+{
+ if (var_13 < dev->real_num_rx_queues)
+  dev->_rx[var_13].umem = NULL;
+ if (var_13 < dev->real_num_tx_queues)
+  dev->_tx[var_13].umem = NULL;
+}
+
+int fn_10(struct struct_36 *umem, struct struct_11 *dev,
+   u16 var_13, u16 var_13)
+{
+ bool force_zc, force_copy;
+ struct struct_14 bpf;
+ int var_35 = 0;
+
+ ASSERT_RTNL();
+
+ force_zc = var_13 & XDP_ZEROCOPY;
+ force_copy = var_13 & XDP_COPY;
+
+ if (force_zc && force_copy)
+  return -EINVAL;
+
+ if (xdp_get_umem_from_qid(dev, var_13))
+  return -EBUSY;
+
+ var_35 = xdp_reg_umem_at_qid(dev, umem, var_13);
+ if (var_35)
+  return var_35;
+
+ umem->dev = dev;
+ umem->queue_id = var_13;
+
+ if (var_13 & XDP_USE_NEED_WAKEUP) {
+  umem->flags |= XDP_UMEM_USES_NEED_WAKEUP;
+
+
+
+
+  xsk_set_tx_need_wakeup(umem);
+ }
+
+ dev_hold(dev);
+
+ if (force_copy)
+
+  return 0;
+
+ if (!dev->netdev_ops->ndo_bpf || !dev->netdev_ops->ndo_xsk_wakeup) {
+  var_35 = -EOPNOTSUPP;
+  goto err_unreg_umem;
+ }
+
+ bpf.command = XDP_SETUP_XSK_UMEM;
+ bpf.xsk.umem = umem;
+ bpf.xsk.queue_id = var_13;
+
+ var_35 = dev->netdev_ops->ndo_bpf(dev, &bpf);
+ if (var_35)
+  goto err_unreg_umem;
+
+ umem->zc = true;
+ return 0;
+
+err_unreg_umem:
+ if (!force_zc)
+  var_35 = 0;
+ if (var_35)
+  xdp_clear_umem_at_qid(dev, var_13);
+ return var_35;
+}
+
+void fn_13(struct struct_36 *umem)
+{
+ struct struct_14 bpf;
+ int var_35;
+
+ ASSERT_RTNL();
+
+ if (!umem->dev)
+  return;
+
+ if (umem->zc) {
+  bpf.command = XDP_SETUP_XSK_UMEM;
+  bpf.xsk.umem = NULL;
+  bpf.xsk.queue_id = umem->queue_id;
+
+  var_35 = umem->dev->netdev_ops->ndo_bpf(umem->dev, &bpf);
+
+  if (var_35)
+   WARN(1, "failed to disable umem!\n");
+ }
+
+ xdp_clear_umem_at_qid(umem->dev, umem->queue_id);
+
+ dev_put(umem->dev);
+ umem->dev = NULL;
+ umem->zc = false;
+}
+
+static void fn_14(struct struct_36 *umem)
+{
+ unsigned int i;
+
+ for (i = 0; i < umem->npgs; i++)
+  if (PageHighMem(umem->pgs[i]))
+   vunmap(umem->pages[i].addr);
+}
+
+static int fn_15(struct struct_36 *umem)
+{
+ unsigned int i;
+ void *var_34;
+
+ for (i = 0; i < umem->npgs; i++) {
+  if (PageHighMem(umem->pgs[i]))
+   var_34 = vmap(&umem->pgs[i], 1, VM_MAP, PAGE_KERNEL);
+  else
+   var_34 = page_address(umem->pgs[i]);
+
+  if (!var_34) {
+   xdp_umem_unmap_pages(umem);
+   return -ENOMEM;
+  }
+
+  umem->pages[i].addr = var_34;
+ }
+
+ return 0;
+}
+
+static void fn_17(struct struct_36 *umem)
+{
+ unpin_user_pages_dirty_lock(umem->pgs, umem->npgs, true);
+
+ kfree(umem->pgs);
+ umem->pgs = NULL;
+}
+
+static void fn_18(struct struct_36 *umem)
+{
+ if (umem->user) {
+  atomic_long_sub(umem->npgs, &umem->user->locked_vm);
+  free_uid(umem->user);
+ }
+}
+
+static void fn_19(struct struct_36 *umem)
+{
+ rtnl_lock();
+ xdp_umem_clear_dev(umem);
+ rtnl_unlock();
+
+ ida_simple_remove(&umem_ida, umem->id);
+
+ if (umem->fq) {
+  xskq_destroy(umem->fq);
+  umem->fq = NULL;
+ }
+
+ if (umem->cq) {
+  xskq_destroy(umem->cq);
+  umem->cq = NULL;
+ }
+
+ xsk_reuseq_destroy(umem);
+
+ xdp_umem_unmap_pages(umem);
+ xdp_umem_unpin_pages(umem);
+
+ kvfree(umem->pages);
+ umem->pages = NULL;
+
+ xdp_umem_unaccount_pages(umem);
+ kfree(umem);
+}
+
+static void fn_20(struct struct_21 *work)
+{
+ struct struct_36 *umem = container_of(work, struct xdp_umem, work);
+
+ xdp_umem_release(umem);
+}
+
+void fn_22(struct struct_36 *umem)
+{
+ refcount_inc(&umem->users);
+}
+
+void fn_23(struct struct_36 *umem)
+{
+ if (!umem)
+  return;
+
+ if (refcount_dec_and_test(&umem->users)) {
+  INIT_WORK(&umem->work, xdp_umem_release_deferred);
+  schedule_work(&umem->work);
+ }
+}
+
+static int fn_24(struct struct_36 *umem)
+{
+ unsigned int var_27 = var_26;
+ long npgs;
+ int var_35;
+
+ umem->pgs = kcalloc(umem->npgs, sizeof(*umem->pgs),
+       GFP_KERNEL | __GFP_NOWARN);
+ if (!umem->pgs)
+  return -ENOMEM;
+
+ down_read(&current->mm->mmap_sem);
+ npgs = pin_user_pages(umem->address, umem->npgs,
+         var_27 | FOLL_LONGTERM, &umem->pgs[0], NULL);
+ up_read(&current->mm->mmap_sem);
+
+ if (npgs != umem->npgs) {
+  if (npgs >= 0) {
+   umem->npgs = npgs;
+   var_35 = -ENOMEM;
+   goto out_pin;
+  }
+  var_35 = npgs;
+  goto out_pgs;
+ }
+ return 0;
+
+out_pin:
+ xdp_umem_unpin_pages(umem);
+out_pgs:
+ kfree(umem->pgs);
+ umem->pgs = NULL;
+ return var_35;
+}
+
+static int fn_27(struct struct_36 *umem)
+{
+ unsigned long lock_limit, new_npgs, old_npgs;
+
+ if (capable(CAP_IPC_LOCK))
+  return 0;
+
+ lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+ umem->user = get_uid(current_user());
+
+ do {
+  old_npgs = atomic_long_read(&umem->user->locked_vm);
+  new_npgs = old_npgs + umem->npgs;
+  if (new_npgs > lock_limit) {
+   free_uid(umem->user);
+   umem->user = NULL;
+   return -ENOBUFS;
+  }
+ } while (atomic_long_cmpxchg(&umem->user->locked_vm, old_npgs,
+         new_npgs) != old_npgs);
+ return 0;
+}
+
+static int fn_28(struct struct_36 *umem, struct struct_35 *mr)
+{
+ bool var_34 = mr->flags & XDP_UMEM_UNALIGNED_CHUNK_FLAG;
+ u32 var_34 = mr->chunk_size, var_34 = mr->headroom;
+ unsigned int chunks, chunks_per_page;
+ u64 var_34 = mr->addr, var_34 = mr->len;
+ int var_35;
+
+ if (var_34 < 2048 || var_34 > PAGE_SIZE) {
+
+
+
+
+
+
+  return -EINVAL;
+ }
+
+ if (mr->flags & ~(XDP_UMEM_UNALIGNED_CHUNK_FLAG |
+   XDP_UMEM_USES_NEED_WAKEUP))
+  return -EINVAL;
+
+ if (!var_34 && !is_power_of_2(var_34))
+  return -EINVAL;
+
+ if (!PAGE_ALIGNED(var_34)) {
+
+
+
+  return -EINVAL;
+ }
+
+ if ((var_34 + var_34) < var_34)
+  return -EINVAL;
+
+ chunks = (unsigned int)div_u64(var_34, var_34);
+ if (chunks == 0)
+  return -EINVAL;
+
+ if (!var_34) {
+  chunks_per_page = PAGE_SIZE / var_34;
+  if (chunks < chunks_per_page || chunks % chunks_per_page)
+   return -EINVAL;
+ }
+
+ if (var_34 >= var_34 - XDP_PACKET_HEADROOM)
+  return -EINVAL;
+
+ umem->address = (unsigned long)var_34;
+ umem->chunk_mask = var_34 ? XSK_UNALIGNED_BUF_ADDR_MASK
+         : ~((u64)var_34 - 1);
+ umem->size = var_34;
+ umem->headroom = var_34;
+ umem->chunk_size_nohr = var_34 - var_34;
+ umem->npgs = var_34 / PAGE_SIZE;
+ umem->pgs = NULL;
+ umem->user = NULL;
+ umem->flags = mr->flags;
+ INIT_LIST_HEAD(&umem->xsk_list);
+ spin_lock_init(&umem->xsk_list_lock);
+
+ refcount_set(&umem->users, 1);
+
+ var_35 = xdp_umem_account_pages(umem);
+ if (var_35)
+  return var_35;
+
+ var_35 = xdp_umem_pin_pages(umem);
+ if (var_35)
+  goto out_account;
+
+ umem->pages = kvcalloc(umem->npgs, sizeof(*umem->pages),
+          GFP_KERNEL_ACCOUNT);
+ if (!umem->pages) {
+  var_35 = -ENOMEM;
+  goto out_pin;
+ }
+
+ var_35 = xdp_umem_map_pages(umem);
+ if (!var_35)
+  return 0;
+
+ kvfree(umem->pages);
+
+out_pin:
+ xdp_umem_unpin_pages(umem);
+out_account:
+ xdp_umem_unaccount_pages(umem);
+ return var_35;
+}
+
+struct struct_36 *fn_34(struct struct_35 *mr)
+{
+ struct struct_36 *umem;
+ int var_35;
+
+ umem = kzalloc(sizeof(*umem), GFP_KERNEL);
+ if (!umem)
+  return ERR_PTR(-ENOMEM);
+
+ var_35 = ida_simple_get(&umem_ida, 0, 0, GFP_KERNEL);
+ if (var_35 < 0) {
+  kfree(umem);
+  return ERR_PTR(var_35);
+ }
+ umem->id = var_35;
+
+ var_35 = xdp_umem_reg(umem, mr);
+ if (var_35) {
+  ida_simple_remove(&umem_ida, umem->id);
+  kfree(umem);
+  return ERR_PTR(var_35);
+ }
+
+ return umem;
+}
+
+bool fn_35(struct struct_36 *umem)
+{
+ return umem->fq && umem->cq;
+}

@@ -1,0 +1,322 @@
+<?php
+
+
+
+define('__PRAGYAN_CMS',')$!%^!%
+
+
+$cmsFolder="cms";
+
+
+$moduleFolder = "modules"; 
+
+
+$templateFolder = "templates"; 
+
+
+$uploadFolder = "uploads"; 
+
+
+$widgetFolder = "widgets";
+
+
+$debugSet = "off";
+
+
+$sourceFolder = substr($_SERVER['SCRIPT_FILENAME'], 0, strrpos($_SERVER['SCRIPT_FILENAME'], '/'))."/".$cmsFolder;
+
+
+$PAGELASTUPDATED="";
+
+
+$ERRORSTRING = ""; 
+
+
+$INFOSTRING = ""; 
+
+
+$WARNINGSTRING = ""; 
+
+
+$STARTSCRIPTS = "";
+
+
+$scriptname = isset($_SERVER['ORIG_SCRIPT_NAME'])?$_SERVER['ORIG_SCRIPT_NAME']:$_SERVER['SCRIPT_NAME'];
+
+
+$urlRequestRoot = substr($scriptname, 0, strrpos($scriptname, '/')); 
+
+
+$TEMPLATEBROWSERPATH = ""; 
+
+
+$TEMPLATECODEPATH = "";
+
+
+$SITEDESCRIPTION = ""; 
+
+
+$SITEKEYWORDS = ""; 
+
+
+$LOGINFORM = ""; 
+
+
+$DEBUGINFO = ""; 
+
+
+$cookieSupported = false; 
+
+
+$ICONS = ""; 
+
+
+$ICONS_SRC = ""; 
+
+
+$WIDGETS = array();
+
+
+$publicPageRequest = false;
+
+
+$onlineSiteUrl = "http:
+
+
+@include_once($sourceFolder."/config.inc.php"); 
+
+
+if(!defined("ADMIN_USERID") )
+{
+	
+}
+
+
+
+
+disable_magic_quotes();
+unregister_globals();
+
+
+
+$dbase; 
+
+
+connect(); 
+
+
+$cookieSupported = checkCookieSupport();
+if($cookieSupported==true)	session_start();
+$userId=firstTimeGetUserId();
+
+if(isset($_GET['page']))
+	$pageFullPath = strtolower($_GET['page']);
+
+else if(isset($_GET['user'])) {
+	$publicPageRequest = true;
+	$userProfileId = safe_html(escape($_GET['user']));
+	
+	$pageFullPath = "home";
+}
+else $pageFullPath = "home";
+
+
+if(isset($_GET['action']))
+	$action = strtolower(escape($_GET['action']));
+else	$action = "view";
+
+
+if ($action == 'keepalive') 
+	die("OK: " . rand());
+
+
+$globals=getGlobalSettings();
+foreach($globals as $var=>$val) 
+	$$var=$val;
+
+
+if($openid_enabled=='true'){                                                                                                                                                 
+  set_include_path('cms/openid/');
+}
+
+$rewriteEngineEnabled=$url_rewrite;
+
+
+
+
+define("CMS_TITLE", $cms_title);
+
+
+define("DEF_TEMPLATE",$default_template);
+
+
+define("UPLOAD_SIZE_LIMIT", $upload_limit);
+
+
+define("SEND_MAIL_ON_REGISTRATION",($default_mail_verify==0)?false:true);
+
+
+define("CMS_EMAIL",$cms_email);
+
+
+define("ACTIVATE_USER_ON_REG",$default_user_activate);
+
+$SITEDESCRIPTION=$cms_desc;
+$SITEKEYWORDS=$cms_keywords;
+$FOOTER=$cms_footer;
+
+
+
+
+
+
+
+
+if($publicPageRequest) {
+	define("TEMPLATE", getPageTemplate(0));
+	$TITLE = CMS_TITLE . " | User : " . ucfirst(getUserName($userProfileId));
+	$CONTENT = generatePublicProfile($userProfileId,$userId);
+	$ACTIONBARPAGE = getActionbarPage($userId, $pageId);
+	$BREADCRUMB = breadcrumbs(array(0=>0),"&nbsp;»&nbsp;");
+	$MENUBAR = getMenu($userId, $pageIdArray);
+	$SEARCHBAR = getSearchbar($userId, $pageId);
+	$PAGEKEYWORDS = getPagetags($pageId);
+	templateReplace($TITLE,$MENUBAR,$ACTIONBARMODULE,$ACTIONBARPAGE,$BREADCRUMB,$SEARCHBAR,$PAGEKEYWORDS,$INHERITEDINFO,$CONTENT,$FOOTER,$DEBUGINFO,$ERRORSTRING,$WARNINGSTRING,$INFOSTRING,$STARTSCRIPTS,$LOGINFORM);
+	exit(1);
+}
+
+
+if(URLSecurityCheck($_GET))
+{
+	define("TEMPLATE", getPageTemplate(0));
+	$pageId = parseUrlReal("home", $pageIdArray);
+	$TITLE = CMS_TITLE;
+	$MENUBAR = '';
+	$CONTENT = "The requested URL was found to have invalid syntax and cannot be processed for security reasons.<br/> If you believe its a". 				"correct URL, please contact the administrator immediately..<br />$_SERVER[SERVER_SIGNATURE]".
+			"<br /><br />Click <a href='".$urlRequestRoot."'>here </a> to return to the home page";
+	templateReplace($TITLE,$MENUBAR,$ACTIONBARMODULE,$ACTIONBARPAGE,$BREADCRUMB,$SEARCHBAR,$PAGEKEYWORDS,$INHERITEDINFO,$CONTENT,$FOOTER,$DEBUGINFO,$ERRORSTRING,$WARNINGSTRING,$INFOSTRING,$STARTSCRIPTS,$LOGINFORM);
+	exit();
+}
+
+
+$pageId = parseUrlReal($pageFullPath, $pageIdArray);
+
+
+if ($pageId === false) { 
+	define("TEMPLATE", getPageTemplate(0));
+	$pageId = parseUrlReal("home", $pageIdArray);
+	$TITLE = CMS_TITLE;
+	$MENUBAR = '';
+	$CONTENT = "The requested URL was not found on this server.<br />$_SERVER[SERVER_SIGNATURE]".
+		"<br /><br />Click <a href='".$urlRequestRoot."'>here </a> to return to the home page";
+	templateReplace($TITLE,$MENUBAR,$ACTIONBARMODULE,$ACTIONBARPAGE,$BREADCRUMB,$SEARCHBAR,$PAGEKEYWORDS,$INHERITEDINFO,$CONTENT,$FOOTER,$DEBUGINFO,$ERRORSTRING,$WARNINGSTRING,$INFOSTRING,$STARTSCRIPTS,$LOGINFORM);
+	exit();
+}
+
+
+logInfo (getUserEmail($userId),$userId, $pageId, $pageFullPath, getPageModule($pageId), $action, $_SERVER['REMOTE_ADDR']);
+
+
+if(isset($_GET['fileget'])) {
+	$action="";
+	if(isset($_GET['action']))
+	 $action=$_GET['action'];
+	download($pageId,$userId,$_GET['fileget'],$action);
+	exit();
+}
+
+
+$permission = getPermissions($userId, $pageId, $action);
+
+
+define("TEMPLATE", getPageTemplate($pageId));
+
+
+if (getTitle($pageId, $action, $TITLE))
+	$TITLE = CMS_TITLE . " - $TITLE";
+else
+	$TITLE = CMS_TITLE;
+
+
+$CONTENT = getContent($pageId, $action, $userId, $permission);
+
+
+$INHERITEDINFO = inheritedinfo($pageIdArray);
+
+
+$BREADCRUMB = breadcrumbs($pageIdArray,"&nbsp;»&nbsp;");
+
+
+$SEARCHBAR = getSearchbar($userId, $pageId);
+
+
+$PAGEKEYWORDS = getPagetags($pageId);
+
+
+$MENUBAR = getMenu($userId, $pageIdArray); 
+
+
+if($userId == 0)
+	$LOGINFORM = loginForm();
+else
+{
+	$userNameFromId = getUserName($userId);
+	$LOGINFORM = "Welcome {$userNameFromId}.";
+}
+
+
+$ACTIONBARPAGE = getActionbarPage($userId, $pageId);
+
+
+$ACTIONBARMODULE = getActionbarModule($userId, $pageId);
+
+
+populateWidgetVariables($pageId);
+
+
+if($rewriteEngineEnabled=='false') {
+	$TITLE = convertUri($TITLE);
+	$MENUBAR = convertUri($MENUBAR);
+	$CONTENT = convertUri($CONTENT);
+	$INHERITEDINFO = convertUri($INHERITEDINFO);
+	$BREADCRUMB = convertUri($BREADCRUMB);
+	$ACTIONBARPAGE = convertUri($ACTIONBARPAGE);
+	$ACTIONBARMODULE = convertUri($ACTIONBARMODULE);
+	$INFOSTRING = convertUri($INFOSTRING);
+	$ERRORSTRING = convertUri($ERRORSTRING);
+	$WARNINGSTRING = convertUri($WARNINGSTRING);
+	$LOGINFORM = convertUri($LOGINFORM);
+}
+
+
+if($debugSet == "on") {
+	$DEBUGINFO .= "Page Full text path : ".$pageFullPath."<br /><br />\n";
+	$DEBUGINFO .= "UID : ".getUserId()."<br /><br />\n";
+	$DEBUGINFO .= "GIDS : ".arraytostring(getGroupIds($userId))."<br /><br />\n";
+	$DEBUGINFO .= "Action : ".$action."<br /><br />\n";
+	$DEBUGINFO .= "Get Vars : ".arraytostring($_GET)."<br /><br />\n";
+	$DEBUGINFO .= "Page Id : ".$pageId."<br /><br />\n";
+	$DEBUGINFO .= "Page id path : ".arraytostring($pageIdArray)."\n<br /><br />";
+	$DEBUGINFO .= "Title : ".$TITLE."\n<br /><br />";
+	$DEBUGINFO .= "SERVER info : ".arraytostring($_SERVER)."\n<br /><br />";
+	$DEBUGINFO .= "POST info : ".arraytostring($_POST)."\n<br /><br />";
+	$DEBUGINFO .= "FILES info : ".arraytostring($_FILES)."\n<br /><br />";
+	$DEBUGINFO .= "SESSION info : ".arraytostring($_SESSION)."\n<br /><br />";
+	$DEBUGINFO .= "STARTSCRIPTS : ".$STARTSCRIPTS."\n<br/><br/>";
+	if($DEBUGINFO!="")	displayinfo($DEBUGINFO);
+}
+
+
+setcookie("cookie_support", "enabled", 0, "/"); 
+	
+
+templateReplace($TITLE,$MENUBAR,$ACTIONBARMODULE,$ACTIONBARPAGE,$BREADCRUMB,$SEARCHBAR,$PAGEKEYWORDS,$INHERITEDINFO,$CONTENT,$FOOTER,$DEBUGINFO,$ERRORSTRING,$WARNINGSTRING,$INFOSTRING,$STARTSCRIPTS,$LOGINFORM);
+
+disconnect();
+exit();
+
+
+
+
+
+

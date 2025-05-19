@@ -1,0 +1,65 @@
+<?php
+
+
+
+
+
+	if (permission_exists('xml_cdr_delete')) {
+		
+	}
+	else {
+		
+		exit;
+	}
+
+
+	$language = new text;
+	$text = $language->get();
+
+
+	if (sizeof($_REQUEST) > 0) {
+		$xml_cdr_uuids = $_REQUEST["id"];
+		if (sizeof($xml_cdr_uuids) > 0) {
+			foreach ($xml_cdr_uuids as $index => $xml_cdr_uuid) {
+				if (is_uuid($xml_cdr_uuid)) {
+					
+					$sql = "delete from v_xml_cdr ";
+					$sql .= "where xml_cdr_uuid = :xml_cdr_uuid ";
+					$parameters['xml_cdr_uuid'] = $xml_cdr_uuid;
+					$database = new database;
+					$database->execute($sql, $parameters);
+					unset($sql, $parameters);
+
+					
+					$sql = "select * from v_call_recordings ";
+					$sql .= "where call_recording_uuid = :xml_cdr_uuid ";
+					$parameters['xml_cdr_uuid'] = $xml_cdr_uuid;
+					$database = new database;
+					$row = $database->select($sql, $parameters, 'row');
+					unset($sql, $parameters);
+
+					
+					$call_recording_path = realpath($row['call_recording_path']);
+					$call_recording_name = $row['call_recording_name'];
+					if (file_exists($call_recording_path.'/'.$call_recording_name)) {
+						@unlink($call_recording_path.'/'.$call_recording_name);
+					}
+
+					
+					$sql = "delete from v_call_recordings ";
+					$sql .= "where call_recording_uuid = :xml_cdr_uuid ";
+					$parameters['xml_cdr_uuid'] = $xml_cdr_uuid;
+					$database = new database;
+					$database->execute($sql, $parameters);
+					unset($sql, $parameters);
+
+				}
+			}
+		}
+	}
+
+
+	$_SESSION["message"] = $text['message-delete'].": ".sizeof($xml_cdr_uuids);
+	header("Location: xml_cdr.php");
+
+?>

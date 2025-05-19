@@ -1,0 +1,652 @@
+<?php
+
+
+
+
+
+$langs->load("errors");
+$langs->load("admin");
+$langs->load("companies");
+$langs->load("website");
+
+$action=GETPOST('action','alpha')?GETPOST('action','alpha'):'view';
+$confirm=GETPOST('confirm','alpha');
+$backtopage = GETPOST('backtopage', 'alpha');
+
+$rowid=GETPOST('rowid','alpha');
+
+$id=1;
+
+if (!$user->admin) accessforbidden();
+
+$acts[0] = "activate";
+$acts[1] = "disable";
+$actl[0] = img_picto($langs->trans("Disabled"),'switch_off');
+$actl[1] = img_picto($langs->trans("Activated"),'switch_on');
+
+$status = 1;
+
+
+$limit = GETPOST('limit','int')?GETPOST('limit','int'):$conf->liste_limit;
+$sortfield = GETPOST('sortfield','alpha');
+$sortorder = GETPOST('sortorder','alpha');
+$page = GETPOST('page','int');
+if (empty($page) || $page == -1) { $page = 0; }     
+$offset = $limit * $page;
+$pageprev = $page - 1;
+$pagenext = $page + 1;
+
+
+$hookmanager->initHooks(array('admin'));
+
+
+$tabname=array();
+$tabname[1] = MAIN_DB_PREFIX."website";
+
+
+$tablib=array();
+$tablib[1] = "Websites";
+
+
+$tabsql=array();
+$tabsql[1] = "SELECT f.rowid as rowid, f.entity, f.ref, f.description, f.virtualhost, f.status FROM ".MAIN_DB_PREFIX.'website as f WHERE f.entity IN ('.getEntity('website').')';
+
+
+$tabsqlsort=array();
+$tabsqlsort[1] ="ref ASC";
+
+
+$tabfield=array();
+$tabfield[1] = "ref,description,virtualhost";
+
+
+$tabfieldvalue=array();
+$tabfieldvalue[1] = "ref,description,virtualhost";
+
+
+$tabfieldinsert=array();
+$tabfieldinsert[1] = "ref,description,virtualhost,entity";
+
+
+
+
+$tabrowid=array();
+$tabrowid[1] = "";
+
+
+$tabcond=array();
+$tabcond[1] = (! empty($conf->website->enabled));
+
+
+$tabhelp=array();
+$tabhelp[1]  = array('ref'=>$langs->trans("EnterAnyCode"), 'virtualhost'=>$langs->trans("SetHereVirtualHost", DOL_DATA_ROOT.'/website/<i>websiteref</i>'));
+
+
+$tabfieldcheck=array();
+$tabfieldcheck[1]  = array();
+
+
+
+$elementList = array();
+$sourceList=array();
+
+
+
+
+
+if (GETPOST('actionadd','alpha') || GETPOST('actionmodify','alpha'))
+{
+    $listfield=explode(',',$tabfield[$id]);
+    $listfieldinsert=explode(',',$tabfieldinsert[$id]);
+    $listfieldmodify=explode(',',$tabfieldinsert[$id]);
+    $listfieldvalue=explode(',',$tabfieldvalue[$id]);
+
+    
+    $ok=1;
+    foreach ($listfield as $f => $value)
+    {
+    	if ($value == 'ref' && (! isset($_POST[$value]) || $_POST[$value]==''))
+	    {
+    	    $ok=0;
+        	$fieldnamekey=$listfield[$f];
+	        setEventMessages($langs->transnoentities("ErrorFieldRequired", $langs->transnoentities($fieldnamekey)), null, 'errors');
+	        break;
+    	}
+		elseif ($value == 'ref' && ! preg_match('/^[a-z0-9_\-\.]+$/i', $_POST[$value]))
+	    {
+			$ok=0;
+    	    $fieldnamekey=$listfield[$f];
+			setEventMessages($langs->transnoentities("ErrorFieldCanNotContainSpecialCharacters", $langs->transnoentities($fieldnamekey)), null, 'errors');
+			break;
+	    }
+    }
+
+    
+    if (! empty($_POST['ref']))
+    {
+    	$websitekey=strtolower($_POST['ref']);
+    }
+
+    
+    if ($ok && GETPOST('actionadd','alpha'))
+    {
+        if ($tabrowid[$id])
+        {
+            
+            $newid=0;
+            $sql = "SELECT max(".$tabrowid[$id].") newid from ".$tabname[$id];
+            $result = $db->query($sql);
+            if ($result)
+            {
+                $obj = $db->fetch_object($result);
+                $newid=($obj->newid + 1);
+
+            } else {
+                dol_print_error($db);
+            }
+        }
+
+        
+
+        
+        $sql = "INSERT INTO ".$tabname[$id]." (";
+        
+        if ($tabrowid[$id] && ! in_array($tabrowid[$id],$listfieldinsert))
+        	$sql.= $tabrowid[$id].",";
+        $sql.= $tabfieldinsert[$id];
+        $sql.=",status)";
+        $sql.= " VALUES(";
+
+        
+        if ($tabrowid[$id] && ! in_array($tabrowid[$id],$listfieldinsert))
+        	$sql.= $newid.",";
+        $i=0;
+        foreach ($listfieldinsert as $f => $value)
+        {
+            if ($value == 'entity') {
+            	$_POST[$listfieldvalue[$i]] = $conf->entity;
+            }
+            if ($value == 'ref') {
+            	$_POST[$listfieldvalue[$i]] = strtolower($_POST[$listfieldvalue[$i]]);
+            }
+            if ($i) $sql.=",";
+            if ($_POST[$listfieldvalue[$i]] == '') $sql.="null";
+            else $sql.="'".$db->escape($_POST[$listfieldvalue[$i]])."'";
+            $i++;
+        }
+        $sql.=",1)";
+
+        dol_syslog("actionadd", LOG_DEBUG);
+        $result = $db->query($sql);
+        if ($result)	
+        {
+            setEventMessages($langs->transnoentities("RecordSaved"), null, 'mesgs');
+        	unset($_POST);	
+        }
+        else
+        {
+            if ($db->errno() == 'DB_ERROR_RECORD_ALREADY_EXISTS') {
+                setEventMessages($langs->transnoentities("ErrorRecordAlreadyExists"), null, 'errors');
+            }
+            else {
+                dol_print_error($db);
+            }
+        }
+    }
+
+    
+    if ($ok && GETPOST('actionmodify','alpha'))
+    {
+        if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+        else { $rowidcol="rowid"; }
+
+        $db->begin();
+
+        $website=new Website($db);
+        $rowid=GETPOST('rowid','int');
+        $website->fetch($rowid);
+
+        
+        $sql = "UPDATE ".$tabname[$id]." SET ";
+        
+        if ($tabrowid[$id] && ! in_array($tabrowid[$id],$listfieldmodify))
+        {
+            $sql.= $tabrowid[$id]."=";
+            $sql.= "'".$db->escape($rowid)."', ";
+        }
+        $i = 0;
+        foreach ($listfieldmodify as $field)
+        {
+            if ($field == 'entity') {
+            	$_POST[$listfieldvalue[$i]] = $conf->entity;
+            }
+            if ($i) $sql.=",";
+            $sql.= $field."=";
+            if ($_POST[$listfieldvalue[$i]] == '') $sql.="null";
+            else $sql.="'".$db->escape($_POST[$listfieldvalue[$i]])."'";
+            $i++;
+        }
+        $sql.= " WHERE ".$rowidcol." = '".$rowid."'";
+
+        dol_syslog("actionmodify", LOG_DEBUG);
+        
+        $resql = $db->query($sql);
+        if ($resql)
+        {
+            $newname = dol_sanitizeFileName(GETPOST('ref','aZ09'));
+            if ($newname != $website->ref)
+            {
+	            $srcfile=DOL_DATA_ROOT.'/website/'.$website->ref;
+	            $destfile=DOL_DATA_ROOT.'/website/'.$newname;
+
+            	if (dol_is_dir($destfile))
+            	{
+            		$error++;
+            		setEventMessages($langs->trans('ErrorDirAlreadyExists', $destfile), null, 'errors');
+            	}
+            	else
+            	{
+	                @rename($srcfile, $destfile);
+
+		            
+		            $arrayreplacement = array($website->ref.'/htmlheader.html' => $newname.'/htmlheader.html');
+		            $listofilestochange = dol_dir_list($destfile, 'files', 0, '\.php$');
+					foreach ($listofilestochange as $key => $value)
+		            {
+		            	dolReplaceInFile($value['fullname'], $arrayreplacement);
+		            }
+            	}
+            }
+        }
+        else
+        {
+        	$error++;
+            setEventMessages($db->lasterror(), null, 'errors');
+        }
+
+        if (! $error)
+        {
+        	$db->commit();
+        }
+        else
+        {
+        	$db->rollback();
+        }
+    }
+    
+}
+
+if (GETPOST('actioncancel','alpha'))
+{
+    
+}
+
+if ($action == 'confirm_delete' && $confirm == 'yes')       
+{
+    if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+    else { $rowidcol="rowid"; }
+
+    $website = new Website($db);
+    $website->fetch($rowid);
+
+    if ($website->id > 0)
+    {
+	    $sql = "DELETE from ".MAIN_DB_PREFIX."website_page WHERE fk_website ='".$rowid."'";
+	    $result = $db->query($sql);
+
+	    $sql = "DELETE from ".MAIN_DB_PREFIX."website WHERE rowid ='".$rowid."'";
+	    $result = $db->query($sql);
+	    if (! $result)
+	    {
+	        if ($db->errno() == 'DB_ERROR_CHILD_EXISTS')
+	        {
+	            setEventMessages($langs->transnoentities("ErrorRecordIsUsedByChild"), null, 'errors');
+	        }
+	        else
+	        {
+	            dol_print_error($db);
+	        }
+	    }
+
+	    if ($website->ref)
+	    {
+	    	dol_delete_dir_recursive($conf->website->dir_output.'/'.$website->ref);
+	    }
+    }
+    else
+    {
+    	dol_print_error($db, 'Failed to load website with id '.$rowid);
+    }
+}
+
+
+if ($action == $acts[0])
+{
+    if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+    else { $rowidcol="rowid"; }
+
+    if ($rowid) {
+        $sql = "UPDATE ".$tabname[$id]." SET status = 1 WHERE rowid ='".$rowid."'";
+    }
+
+    $result = $db->query($sql);
+    if (!$result)
+    {
+        dol_print_error($db);
+    }
+}
+
+
+if ($action == $acts[1])
+{
+    if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+    else { $rowidcol="rowid"; }
+
+    if ($rowid) {
+        $sql = "UPDATE ".$tabname[$id]." SET status = 0 WHERE rowid ='".$rowid."'";
+    }
+
+    $result = $db->query($sql);
+    if (!$result)
+    {
+        dol_print_error($db);
+    }
+}
+
+
+
+
+
+$form = new Form($db);
+$formadmin=new FormAdmin($db);
+
+llxHeader('', $langs->trans("WebsiteSetup"));
+
+$titre=$langs->trans("WebsiteSetup");
+$linkback='<a href="'.($backtopage?$backtopage:DOL_URL_ROOT.'/admin/modules.php').'">'.$langs->trans("BackToModuleList").'</a>';
+
+
+
+
+
+
+
+if ($action == 'delete')
+{
+    
+}
+
+
+
+if ($id)
+{
+    
+    $sql=$tabsql[$id];
+
+    if ($sortfield)
+    {
+        
+        $sql.= " ORDER BY ".$sortfield;
+        if ($sortorder)
+        {
+            $sql.=" ".strtoupper($sortorder);
+        }
+        $sql.=", ";
+        
+        $tabsqlsort[$id]=preg_replace('/([a-z]+\.)?'.$sortfield.' '.$sortorder.',/i','',$tabsqlsort[$id]);
+        $tabsqlsort[$id]=preg_replace('/([a-z]+\.)?'.$sortfield.',/i','',$tabsqlsort[$id]);
+    }
+    else {
+        $sql.=" ORDER BY ";
+    }
+    $sql.=$tabsqlsort[$id];
+    $sql.=$db->plimit($limit+1, $offset);
+    
+
+    $fieldlist=explode(',',$tabfield[$id]);
+
+    
+    
+    
+
+    
+    if ($tabname[$id])
+    {
+        $alabelisused=0;
+        $var=false;
+
+        $fieldlist=explode(',',$tabfield[$id]);
+
+        
+        
+        foreach ($fieldlist as $field => $value)
+        {
+            
+            
+            $valuetoshow=ucfirst($fieldlist[$field]);   
+            $valuetoshow=$langs->trans($valuetoshow);   
+            $align='';
+            if ($fieldlist[$field]=='lang')            { $valuetoshow=$langs->trans("Language"); }
+            if ($valuetoshow != '')
+            {
+                
+            	if (! empty($tabhelp[$id][$value]) && preg_match('/^http(s*):/i',$tabhelp[$id][$value])) 
+            	elseif (! empty($tabhelp[$id][$value]))
+           		{
+           			if ($value == 'virtualhost') 
+           			else 
+           		}
+            	else 
+                
+             }
+             if ($fieldlist[$field]=='libelle' || $fieldlist[$field]=='label') $alabelisused=1;
+        }
+
+        
+        
+        
+
+        
+        
+
+        $obj = new stdClass();
+        
+        if (GETPOST('actionadd','alpha'))
+        {
+            foreach ($fieldlist as $key=>$val)
+            {
+                if (GETPOST($val,'alpha'))
+                	$obj->$val=GETPOST($val);
+            }
+        }
+
+        $tmpaction = 'create';
+        $parameters=array('fieldlist'=>$fieldlist, 'tabname'=>$tabname[$id]);
+        $reshook=$hookmanager->executeHooks('createDictionaryFieldlist',$parameters, $obj, $tmpaction);    
+        $error=$hookmanager->error; $errors=$hookmanager->errors;
+
+        if (empty($reshook))
+        {
+       		fieldListWebsites($fieldlist,$obj,$tabname[$id],'add');
+        }
+
+        
+        if ($action != 'edit')
+        {
+        	
+        }
+        
+        
+
+        $colspan=count($fieldlist)+2;
+    }
+
+    
+    
+
+
+    
+    $resql=$db->query($sql);
+    if ($resql)
+    {
+        $num = $db->num_rows($resql);
+        $i = 0;
+        if ($num)
+        {
+            
+
+            
+            
+            
+            
+
+            
+
+            
+            
+            foreach ($fieldlist as $field => $value)
+            {
+                
+                
+                $showfield=1;							  	
+                $align="left";
+                $sortable=1;
+                $valuetoshow='';
+                
+                $valuetoshow=ucfirst($fieldlist[$field]);   
+                $valuetoshow=$langs->trans($valuetoshow);   
+                if ($fieldlist[$field]=='lang')            { $valuetoshow=$langs->trans("Language"); }
+                if ($fieldlist[$field]=='type')            { $valuetoshow=$langs->trans("Type"); }
+                if ($fieldlist[$field]=='code')            { $valuetoshow=$langs->trans("Code"); }
+
+                
+                if ($showfield)
+                {
+                    
+                }
+            }
+
+			
+            
+            
+            
+
+            
+            while ($i < $num)
+            {
+
+                $obj = $db->fetch_object($resql);
+                
+                
+                if ($action == 'edit' && ($rowid == (! empty($obj->rowid)?$obj->rowid:$obj->code)))
+                {
+                    $tmpaction='edit';
+                    $parameters=array('fieldlist'=>$fieldlist, 'tabname'=>$tabname[$id]);
+                    $reshook=$hookmanager->executeHooks('editDictionaryFieldlist',$parameters,$obj, $tmpaction);    
+                    $error=$hookmanager->error; $errors=$hookmanager->errors;
+
+                    if (empty($reshook)) fieldListWebsites($fieldlist,$obj,$tabname[$id],'edit');
+
+                    </a><input type="submit" class="button" name="actionmodify" value="'.$langs->trans("Modify").'">';
+                    <input type="submit" class="button" name="actioncancel" value="'.$langs->trans("Cancel").'"></td>';
+                }
+                else
+                {
+	              	$tmpaction = 'view';
+                    $parameters=array('var'=>$var, 'fieldlist'=>$fieldlist, 'tabname'=>$tabname[$id]);
+                    $reshook=$hookmanager->executeHooks('viewDictionaryFieldlist',$parameters,$obj, $tmpaction);    
+
+                    $error=$hookmanager->error; $errors=$hookmanager->errors;
+
+                    if (empty($reshook))
+                    {
+                        foreach ($fieldlist as $field => $value)
+                        {
+                            $showfield=1;
+                        	$align="left";
+                        	$fieldname=$fieldlist[$field];
+                            $valuetoshow=$obj->$fieldname;
+
+							
+							if ($showfield) 
+                        }
+                    }
+
+                    
+                    $iserasable=1; $isdisable=1;		
+                    if ($obj->status) $iserasable=0;	
+
+                    $url = $_SERVER["PHP_SELF"].'?'.($page?'page='.$page.'&':'').'sortfield='.$sortfield.'&sortorder='.$sortorder.'&rowid='.(! empty($obj->rowid)?$obj->rowid:(! empty($obj->code)?$obj->code:'')).'&amp;code='.(! empty($obj->code)?urlencode($obj->code):'').'&amp;';
+
+                    
+                    
+                    
+                    
+
+                    
+                    
+
+                    
+                    if ($iserasable) 
+                    else 
+
+                    
+                }
+                $i++;
+            }
+
+            
+
+            
+        }
+    }
+    else {
+        dol_print_error($db);
+    }
+}
+
+
+
+
+llxFooter();
+$db->close();
+
+
+
+function fieldListWebsites($fieldlist, $obj='', $tabname='', $context='')
+{
+	global $conf,$langs,$db;
+	global $form;
+	global $region_id;
+	global $elementList,$sourceList,$localtax_typeList;
+	global $bc;
+
+	$formadmin = new FormAdmin($db);
+
+	foreach ($fieldlist as $field => $value)
+	{
+	    $fieldname = $fieldlist[$field];
+		if ($fieldlist[$field] == 'lang')
+		{
+			
+			
+			
+		}
+		elseif ($fieldlist[$field] == 'code' && isset($obj->$fieldname)) {
+			
+		}
+		else
+		{
+			
+			$size='';
+			if ($fieldlist[$field]=='code') $size='size="8" ';
+			if ($fieldlist[$field]=='position') $size='size="4" ';
+			if ($fieldlist[$field]=='libelle') $size='size="32" ';
+			if ($fieldlist[$field]=='tracking') $size='size="92" ';
+			if ($fieldlist[$field]=='sortorder') $size='size="2" ';
+			
+			
+		}
+	}
+}
+

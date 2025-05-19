@@ -1,0 +1,202 @@
+<?php
+
+
+
+class CodeDefinition
+{
+    
+    protected $tagName;
+
+    
+    protected $useOption;
+
+    
+    protected $replacementText;
+
+    
+    protected $parseContent;
+
+    
+    protected $nestLimit;
+
+    
+    protected $elCounter;
+
+    
+    protected $optionValidator;
+
+    
+    protected $bodyValidator;
+
+    
+    public static function construct($tagName, $replacementText, $useOption = false,
+            $parseContent = true, $nestLimit = -1, $optionValidator = null,
+            $bodyValidator = null)
+    {
+        $def = new CodeDefinition();                            
+        $def->elCounter = 0;
+        $def->setTagName($tagName);
+        $def->setReplacementText($replacementText);
+        $def->useOption = $useOption;
+        $def->parseContent = $parseContent;
+        $def->nestLimit = $nestLimit;
+        $def->optionValidator = $optionValidator;
+        $def->bodyValidator = $bodyValidator;
+        return $def;
+     }
+
+    
+    public function __construct()
+    {
+        
+        $this->parseContent = true;
+        $this->useOption = false;
+        $this->nestLimit = -1;
+        $this->elCounter = 0;
+        $this->optionValidator = null;
+        $this->bodyValidator = null;
+    }
+
+    
+    public function hasValidInputs(ElementNode $el)
+    {
+        if ($this->usesOption() && $this->optionValidator &&
+            !$this->optionValidator->validate($el->getAttribute())) {
+                
+            return false;
+        }
+
+        if (!$this->parseContent() && $this->bodyValidator) {
+            
+            $content = "";
+            foreach ($el->getChildren() as $child) {
+                $content .= $child->getAsBBCode();
+            }
+            if (!$this->bodyValidator->validate($content)) {
+                
+                return false;
+            }
+        } 
+
+        return true;
+    }
+
+    
+    public function asHtml(ElementNode $el)
+    {
+        if (!$this->hasValidInputs($el)) {
+            return $el->getAsBBCode();
+        }
+
+        $html = $this->getReplacementText();
+
+        if ($this->usesOption()) {
+            $html = str_ireplace('{option}', $el->getAttribute(), $html);
+        }
+
+        if ($this->parseContent()) {
+            $content = "";
+            foreach ($el->getChildren() as $child)
+                $content .= $child->getAsHTML();
+        } else {
+            $content = "";
+            foreach ($el->getChildren() as $child)
+                $content .= $child->getAsBBCode();
+        }
+
+        $html = str_ireplace('{param}', $content, $html);
+
+        return $html;
+    }
+
+    
+    public function asText(ElementNode $el)
+    {
+        if (!$this->hasValidInputs($el)) {
+            return $el->getAsBBCode();
+        }
+
+        $s = "";
+        foreach ($el->getChildren() as $child)
+            $s .= $child->getAsText();
+        return $s;
+    }
+
+    
+    public function getTagName()
+    {
+        return $this->tagName;
+    }
+
+    
+    public function getReplacementText()
+    {
+        return $this->replacementText;
+    }
+
+    
+    public function usesOption()
+    {
+        return $this->useOption;
+    }
+
+    
+    public function parseContent()
+    {
+        return $this->parseContent;
+    }
+
+    
+    public function getNestLimit()
+    {
+        return $this->nestLimit;
+    }
+
+    
+    public function setTagName($tagName)
+    {
+        $this->tagName = strtolower($tagName);
+    }
+
+    
+    public function setReplacementText($txt)
+    {
+        $this->replacementText = $txt;
+    }
+
+    
+    public function setUseOption($bool)
+    {
+        $this->useOption = $bool;
+    }
+
+    
+    public function setParseContent($bool)
+    {
+        $this->parseContent = $bool;
+    }
+
+    
+    public function incrementCounter()
+    {
+        $this->elCounter++;
+    }
+
+    
+    public function decrementCounter()
+    {
+        $this->elCounter--;
+    }
+
+    
+    public function resetCounter()
+    {
+        $this->elCounter = 0;
+    }
+
+    
+    public function getCounter()
+    {
+        return $this->elCounter;
+    }
+}

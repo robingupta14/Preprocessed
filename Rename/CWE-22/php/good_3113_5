@@ -1,0 +1,234 @@
+<?php
+
+
+
+
+
+if( ! isset($GLOBALS['files_Module']) )
+{
+	debug_die( 'Files module is disabled or missing!' );
+}
+
+if( param( 'abspath', 'string', NULL ) !== NULL )
+{	
+	if( $var_0 = get_root_path_by_abspath( $var_1 ) )
+	{	
+		set_param( 'root', $var_0['root'] );
+		set_param( 'path', $var_0['path'] );
+	}
+}
+
+
+param( 'root', 'string', true ); 
+
+
+if( ! $var_2 )
+{
+	if( ! isset($var_3) )
+	{
+		debug_die( 'No permission to get file (not logged in)!', array('status'=>'403 Forbidden') );
+	}
+
+
+	
+	if( preg_match( '/^collection_(\d+)$/', $var_4, $var_5 ) )
+	{	
+		$var_5 = $var_5[1];
+	}
+	else
+	{	
+		$var_5 = NULL;
+	}
+	
+
+	
+	$var_3->check_perm( 'files', 'view', true, $var_5 );
+}
+
+
+param( 'path', 'filepath', true );
+param( 'size', 'string', NULL ); 
+param( 'size_x', 'integer', 1 ); 
+param( 'mtime', 'integer', 0 );  
+
+if( $var_7 != 1 && $var_7 != 2 )
+{ 
+	$var_7 = 1;
+}
+
+
+if ( false !== strpos( urldecode( $var_8 ), '..' ) )
+
+
+
+{
+	debug_die( 'Relative pathnames not allowed!' );
+}
+
+
+$var_9 = & get_FileRootCache();
+$var_10 = & $var_9->get_by_ID( $var_4 );
+
+
+$var_12 = new class_0( $var_10->var_13, $var_10->var_14, $var_8 );
+
+
+if( array_key_exists( 'HTTP_IF_MODIFIED_SINCE', $var_15 ) )
+{
+	$var_16 = strtotime( preg_replace('/;.*$/','',$var_15['HTTP_IF_MODIFIED_SINCE']) );
+	$var_17 = $var_12->get_lastmod_ts();
+	if( $var_17 <= $var_16 )
+	{ 
+		header_http_response( '304 Not Modified' );
+		exit(0);
+	}
+}
+
+if( ! empty( $var_19 ) && $var_12->is_image() )
+{	
+	
+
+	global $var_21;
+
+	load_funcs( '/files/model/_image.funcs.php' );
+
+	$var_22 = $var_19;
+	if( ! isset( $var_21[$var_19] ) )
+	{ 
+		
+		
+		
+		$var_22 = 'fit-80x80';
+	}
+
+	if( ! isset ( $var_21[$var_22][4] ) )
+	{	
+		$var_21[$var_22][4] = 0;
+	}
+	
+	list( $var_23, $var_24, $var_25, $var_26, $var_27 ) = $var_21[$var_22];
+
+	$var_28 = & $var_12->get_Filetype();
+	
+	
+	$var_30 = $var_28->var_30;
+	
+
+	
+	$var_31 = $var_12->output_cached_thumb( $var_22, $var_30, $var_33, $var_7 );
+	
+
+	if( $var_31 == '!Thumbnail not found in'.$var_34->get( 'evocache_foldername' ) )
+	{	
+		$var_31 = NULL;		
+
+		list( $var_36, $var_37 ) = imgsize( $var_12->get_full_path() );
+
+		if( ! $var_39 && check_thumbnail_sizes( $var_23, $var_24, $var_25, $var_36, $var_37 ) )
+		{ 
+			$var_31 = $var_12->get_af_thumb_path( $var_22, $var_30, true, $var_7 );
+
+			if( $var_31[0] != '!' && @copy( $var_12->get_full_path(), $var_31 ) )
+			{	
+				
+				$var_31 = $var_12->output_cached_thumb( $var_22, $var_30, $var_33, $var_7 );
+			}
+		}
+		else
+		{ 
+			list( $var_31, $var_41 ) = load_image( $var_12->get_full_path(), $var_30 );
+
+			if( empty( $var_31 ) )
+			{
+				list( $var_31, $var_42 ) = generate_thumb( $var_41, $var_23, $var_24, $var_25, $var_27, $var_7 );
+				if( empty( $var_31 ) )
+				{
+					$var_31 = $var_12->save_thumb_to_cache( $var_42, $var_22, $var_30, $var_26, $var_7 );
+					if( empty( $var_31 ) )
+					{	
+						
+						$var_31 = $var_12->output_cached_thumb( $var_22, $var_30, $var_33, $var_7 );
+					}
+					else
+					{	
+						
+						
+					}
+				}
+			}
+		}
+	}
+
+	
+	if( !empty( $var_31 ) )
+	{	
+		
+		$var_44 = 11;
+		$var_31 = substr( $var_31, 1 ); 
+		$var_45 = ceil( ($var_24-4)/6 );
+		
+
+		
+		$var_46 = preg_split( '~\n~', wordwrap( $var_31, $var_45, "\n", true ) );
+		$var_47 = imagecreatetruecolor( $var_24, $var_25 ); 
+		if( count($var_46)*$var_44 > $var_25 )
+		{ 
+		  
+			$var_48 = true;
+			if( preg_match('~Unable to open \'.*?\' for writing: Permission denied~', $var_31) )
+				$var_31 = 'Cannot write: permission denied';
+			else
+				$var_48 = false;
+			
+			if( $var_48 )
+			{
+				$var_46 = preg_split( '~\n~', wordwrap( $var_31, $var_45, "\n", true ) );
+			}
+		}
+
+		$var_49 = imagecolorallocate( $var_47, 255, 0, 0 );
+		$var_50 = 0;
+		foreach( $var_46 as $var_51 )
+		{
+			imagestring( $var_47, 2, 2, $var_50, $var_51, $var_49);
+			$var_50 += $var_44;
+		}
+
+		header('Content-type: image/png' );
+		header_nocache();	
+
+		imagepng( $var_47 );
+	}
+}
+else
+{	
+	
+	if( ! is_readable($var_12->get_full_path()) )
+	{
+		debug_die( sprintf('File "%s" is not readable!', rel_path_to_base($var_12->get_full_path())) );
+	}
+
+	$var_28 = & $var_12->get_Filetype();
+	if( ! empty($var_28) )
+	{
+		header('Content-type: '.$var_28->var_30 );
+		if( $var_28->var_52 == 'download' )
+		{
+			header('Content-disposition: attachment; filename="'
+				.addcslashes($var_12->get_name(), '\\"').'"' ); 
+		}
+	}
+	$var_54 = $var_12->get_full_path();
+	header('Content-Length: '.filesize( $var_54 ) );
+
+	
+	
+	
+	
+	header_noexpire();	
+
+	
+	readfile( $var_54 );
+}
+
+?>

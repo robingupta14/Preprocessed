@@ -1,0 +1,719 @@
+<?php
+
+
+
+
+
+	if (permission_exists('contact_view')) {
+		
+	}
+	else {
+		
+		exit;
+	}
+
+
+	$language = new text;
+	$text = $language->get();
+
+
+	if (is_uuid($_REQUEST["id"])) {
+		$action = "update";
+		$contact_uuid = $_REQUEST["id"];
+	}
+	else {
+		$action = "add";
+	}
+
+
+	if (count($_POST) > 0) {
+		$user_uuid = $_POST["user_uuid"];
+		$group_uuid = $_POST['group_uuid'];
+		$contact_type = $_POST["contact_type"];
+		$contact_organization = $_POST["contact_organization"];
+		$contact_name_prefix = $_POST["contact_name_prefix"];
+		$contact_name_given = $_POST["contact_name_given"];
+		$contact_name_middle = $_POST["contact_name_middle"];
+		$contact_name_family = $_POST["contact_name_family"];
+		$contact_name_suffix = $_POST["contact_name_suffix"];
+		$contact_nickname = $_POST["contact_nickname"];
+		$contact_title = $_POST["contact_title"];
+		$contact_category = $_POST["contact_category"];
+		$contact_role = $_POST["contact_role"];
+		$contact_time_zone = $_POST["contact_time_zone"];
+		$contact_note = $_POST["contact_note"];
+	}
+
+
+	if (count($_POST) > 0 && strlen($_POST["persistformvar"]) == 0) {
+
+		
+			if ($action == "update") {
+				$contact_uuid = $_POST["contact_uuid"];
+			}
+
+		
+			$msg = '';
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			if (strlen($msg) > 0 && strlen($_POST["persistformvar"]) == 0) {
+				
+				
+				
+				
+				persistformvar($_POST);
+				
+				return;
+			}
+
+		
+			if ($_POST["persistformvar"] != "true") {
+
+				
+					if ($action == "add" && permission_exists('contact_add')) {
+						$contact_uuid = uuid();
+						$array['contacts'][0]['contact_uuid'] = $contact_uuid;
+
+						message::add($text['message-add']);
+						$location = "contact_edit.php?id=".$contact_uuid;
+					}
+
+				
+					if ($action == "update" && permission_exists('contact_edit')) {
+						$array['contacts'][0]['contact_uuid'] = $contact_uuid;
+
+						message::add($text['message-update']);
+						$location = "contact_edit.php?id=".escape($contact_uuid);
+					}
+
+				
+					if (is_array($array) && @sizeof($array) != 0) {
+						$array['contacts'][0]['domain_uuid'] = $_SESSION['domain_uuid'];
+						$array['contacts'][0]['contact_type'] = $contact_type;
+						$array['contacts'][0]['contact_organization'] = $contact_organization;
+						$array['contacts'][0]['contact_name_prefix'] = $contact_name_prefix;
+						$array['contacts'][0]['contact_name_given'] = $contact_name_given;
+						$array['contacts'][0]['contact_name_middle'] = $contact_name_middle;
+						$array['contacts'][0]['contact_name_family'] = $contact_name_family;
+						$array['contacts'][0]['contact_name_suffix'] = $contact_name_suffix;
+						$array['contacts'][0]['contact_nickname'] = $contact_nickname;
+						$array['contacts'][0]['contact_title'] = $contact_title;
+						$array['contacts'][0]['contact_category'] = $contact_category;
+						$array['contacts'][0]['contact_role'] = $contact_role;
+						$array['contacts'][0]['contact_time_zone'] = $contact_time_zone;
+						$array['contacts'][0]['contact_note'] = $contact_note;
+						$array['contacts'][0]['last_mod_date'] = 'now()';
+						$array['contacts'][0]['last_mod_user'] = $_SESSION['username'];
+
+						$p = new permissions;
+					}
+
+				
+					if ($action == "add" && !permission_exists('contact_user_add')) {
+						$user_uuid = $_SESSION["user_uuid"];
+					}
+
+				
+					if (is_uuid($user_uuid) && (permission_exists('contact_user_add') || $action == "add")) {
+						$contact_user_uuid = uuid();
+						$array['contact_users'][0]['domain_uuid'] = $domain_uuid;
+						$array['contact_users'][0]['contact_user_uuid'] = $contact_user_uuid;
+						$array['contact_users'][0]['contact_uuid'] = $contact_uuid;
+						$array['contact_users'][0]['user_uuid'] = $user_uuid;
+
+						$p->add('contact_user_add', 'temp');
+					}
+
+				
+					if (is_uuid($group_uuid) && permission_exists('contact_group_add')) {
+						$contact_group_uuid = uuid();
+						$array['contact_group'][0]['contact_group_uuid'] = $contact_group_uuid;
+						$array['contact_group'][0]['domain_uuid'] = $domain_uuid;
+						$array['contact_group'][0]['contact_uuid'] = $contact_uuid;
+						$array['contact_group'][0]['group_uuid'] = $group_uuid;
+
+						$p->add('contact_group_add', 'temp');
+					}
+
+				
+					if (is_array($array) && @sizeof($array) != 0) {
+						$database = new database;
+						$database->app_name = 'contacts';
+						$database->app_uuid = '04481e0e-a478-c559-adad-52bd4174574c';
+						$database->save($array);
+						unset($array);
+
+						$p->delete('contact_user_add', 'temp');
+						$p->delete('contact_group_add', 'temp');
+					}
+
+				
+					if ($_POST['submit'] == $text['button-add']) {
+						$location = "contact_edit.php?id=".escape($contact_uuid);
+					}
+
+				
+					header("Location: ".$location);
+					exit;
+
+			}
+	}
+
+
+	if (count($_GET) > 0 && $_POST["persistformvar"] != "true") {
+		$contact_uuid = $_GET["id"];
+		$sql = "select * from v_contacts ";
+		$sql .= "where domain_uuid = :domain_uuid ";
+		$sql .= "and contact_uuid = :contact_uuid ";
+		$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+		$parameters['contact_uuid'] = $contact_uuid;
+		$database = new database;
+		$row = $database->select($sql, $parameters, 'row');
+		if (is_array($row) && @sizeof($row) != 0) {
+			$contact_type = $row["contact_type"];
+			$contact_organization = $row["contact_organization"];
+			$contact_name_prefix = $row["contact_name_prefix"];
+			$contact_name_given = $row["contact_name_given"];
+			$contact_name_middle = $row["contact_name_middle"];
+			$contact_name_family = $row["contact_name_family"];
+			$contact_name_suffix = $row["contact_name_suffix"];
+			$contact_nickname = $row["contact_nickname"];
+			$contact_title = $row["contact_title"];
+			$contact_category = $row["contact_category"];
+			$contact_role = $row["contact_role"];
+			$contact_time_zone = $row["contact_time_zone"];
+			$contact_note = $row["contact_note"];
+		}
+		unset($sql, $parameters, $row);
+	}
+
+
+	$sql = "select * from v_users ";
+	$sql .= "where domain_uuid = :domain_uuid ";
+	$sql .= "order by username asc ";
+	$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+	$database = new database;
+	$users = $database->select($sql, $parameters, 'all');
+	unset($sql, $parameters);
+
+
+	if (is_array($users) && sizeof($users) != 0) {
+		foreach($users as $user) {
+			if ($user['contact_uuid'] == $contact_uuid) {
+				$contact_user_uuid = $user['user_uuid'];
+				break;
+			}
+		}
+	}
+
+
+	$sql = "select u.username, u.user_uuid, a.contact_user_uuid from v_contacts as c, v_users as u, v_contact_users as a ";
+	$sql .= "where c.contact_uuid = :contact_uuid ";
+	$sql .= "and c.domain_uuid = :domain_uuid ";
+	$sql .= "and u.user_uuid = a.user_uuid ";
+	$sql .= "and c.contact_uuid = a.contact_uuid ";
+	$sql .= "order by u.username asc ";
+	$parameters['contact_uuid'] = $contact_uuid;
+	$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+	$database = new database;
+	$contact_users = $database->select($sql, $parameters, 'all');
+	unset($sql, $parameters);
+
+
+	if ($action == "update") {
+		$document['title'] = $text['title-contact-edit'];
+	}
+	else if ($action == "add") {
+		$document['title'] = $text['title-contact-add'];
+	}
+
+
+	if (isset($_SESSION['theme']['qr_image']['text'])) {
+		if (strlen($_SESSION['theme']['qr_image']['text']) == 0) {
+			$mode = '4';
+		}
+		else {
+			$mode = '0';
+		}
+	}
+	else {
+		$mode = '4';
+	}
+
+
+	$_GET['type'] = "text";
+	$qr_vcard = true;
+	
+	
+	 ";
+	 ";
+	 ";
+	 ";
+	 ";
+	 ";
+	 ";
+	";
+	
+	 ";
+	 ";
+	 ";
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	";
+	";
+	";
+	
+	if (isset($_SESSION['theme']['qr_image'])) {
+		'>";
+	}
+	else {
+		'>";
+	}
+
+
+	
+	
+	
+	
+	switch ($action) {
+		case "add":  break;
+		case "update":  break;
+	}
+	
+	
+	
+	if ($action == "update") {
+		if (permission_exists('contact_time_add')) {
+			
+			$sql = "select ";
+			$sql .= "time_start ";
+			$sql .= "from v_contact_times ";
+			$sql .= "where domain_uuid = :domain_uuid ";
+			$sql .= "and user_uuid = :user_uuid ";
+			$sql .= "and contact_uuid = :contact_uuid ";
+			$sql .= "and time_start is not null ";
+			$sql .= "and time_stop is null ";
+			$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+			$parameters['user_uuid'] = $_SESSION['user']['user_uuid'];
+			$parameters['contact_uuid'] = $contact_uuid;
+			$database = new database;
+			$time_start = $database->select($sql, $parameters, 'column');
+			$btn_mod = $time_start != '' ? "style='background-color: 
+			unset($sql, $parameters);
+			\" value='".$text['button-timer']."'>\n";
+		}
+		
+	}
+	if ($action == "update" && is_dir($_SERVER["DOCUMENT_ROOT"].PROJECT_PATH.'/app/invoices')) {
+		
+	}
+	if ($action == "update" && is_dir($_SERVER["DOCUMENT_ROOT"].PROJECT_PATH.'/app/certificates')) {
+		
+	}
+	if ($action == "update" && permission_exists('user_edit') && is_uuid($contact_user_uuid)) {
+		
+	}
+	
+	
+	
+	
+	
+	switch ($action) {
+		case "add" :		break;
+		case "update" :		break;
+	}
+	
+	
+	
+	
+
+	
+	
+	
+
+		
+		
+		
+		
+		
+		
+		if (is_array($_SESSION["contact"]["type"])) {
+			sort($_SESSION["contact"]["type"]);
+			
+			
+			foreach($_SESSION["contact"]["type"] as $row) {
+				
+			}
+			
+		}
+		else {
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+		}
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		if (is_array($_SESSION["contact"]["title"])) {
+			sort($_SESSION["contact"]["title"]);
+			
+			
+			foreach($_SESSION["contact"]["title"] as $row) {
+				
+			}
+			
+		}
+		else {
+			
+		}
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		if (is_array($_SESSION["contact"]["category"])) {
+			sort($_SESSION["contact"]["category"]);
+			
+			
+			foreach($_SESSION["contact"]["category"] as $row) {
+				
+			}
+			
+		}
+		else {
+			
+		}
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		if (is_array($_SESSION["contact"]["role"])) {
+			sort($_SESSION["contact"]["role"]);
+			
+			
+			foreach($_SESSION["contact"]["role"] as $row) {
+				
+			}
+			
+		}
+		else {
+			
+		}
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+
+		
+		
+
+		if (permission_exists('contact_user_edit')) {
+			
+			
+			
+			if ($action == "update") {
+				'>\n";
+				foreach($contact_users as $field) {
+					
+					
+					' align='right'>\n";
+					if (permission_exists('contact_user_delete')) {
+						
+					}
+					
+					
+				}
+				
+			}
+			
+			if (permission_exists('contact_user_add')) {
+				'>\n";
+				
+				foreach($users as $field) {
+					
+				}
+				
+				if ($action == "update") {
+					
+				}
+				unset($users);
+				
+				
+			}
+			
+			
+		}
+
+		if (permission_exists('contact_group_view')) {
+			
+			
+			
+			$sql = "select ";
+			$sql .= "g.*, ";
+			$sql .= "cg.contact_group_uuid ";
+			$sql .= "from ";
+			$sql .= "v_groups as g, ";
+			$sql .= "v_contact_groups as cg ";
+			$sql .= "where ";
+			$sql .= "cg.group_uuid = g.group_uuid ";
+			$sql .= "and cg.domain_uuid = :domain_uuid ";
+			$sql .= "and cg.contact_uuid = :contact_uuid ";
+			$sql .= "and cg.group_uuid <> :group_uuid ";
+			$sql .= "order by g.group_name asc ";
+			$parameters['domain_uuid'] = $domain_uuid;
+			$parameters['contact_uuid'] = $contact_uuid;
+			$parameters['group_uuid'] = $_SESSION["user_uuid"];
+			$database = new database;
+			$result = $database->select($sql, $parameters, 'all');
+			if (is_array($result) && @sizeof($result) != 0) {
+				
+				foreach($result as $field) {
+					if (strlen($field['group_name']) > 0) {
+						
+						
+						
+						if (permission_exists('contact_group_delete') || if_group("superadmin")) {
+							
+						}
+						
+						
+						$assigned_groups[] = $field['group_uuid'];
+					}
+				}
+				
+				
+			}
+			unset($sql, $parameters, $result, $field);
+
+			if (permission_exists('contact_group_add') || if_group("superadmin")) {
+				$sql = "select * from v_groups ";
+				$sql .= "where domain_uuid = :domain_uuid ";
+				$sql .= "or domain_uuid is null ";
+				if (is_array($assigned_groups) && @sizeof($assigned_groups) != 0) {
+					foreach ($assigned_groups as $index => $assigned_group) {
+						$sql_where_and[] = "group_uuid <> :group_uuid_".$index." ";
+						$parameters['group_uuid_'.$index] = $assigned_group;
+					}
+					if (is_array($sql_where_and) && @sizeof($sql_where_and) != 0) {
+						$sql .= "and ".implode(' and ', $sql_where_and)." ";
+					}
+				}
+				$sql .= "order by group_name asc ";
+				$parameters['domain_uuid'] = $domain_uuid;
+				$database = new database;
+				$result = $database->select($sql, $parameters, 'all');
+				unset($sql, $sql_where_and, $index, $parameters, $assigned_groups, $assigned_group);
+
+				if (is_array($result) && @sizeof($result) != 0) {
+					 margin-right: 3px;'>\n";
+					
+					foreach($result as $field) {
+						if ($field['group_name'] == "superadmin" && !if_group("superadmin")) { continue; }	
+						if ($field['group_name'] == "admin" && (!if_group("superadmin") && !if_group("admin"))) { continue; }	
+						
+					}
+					
+
+					if ($action == "update") {
+						
+					}
+					
+				}
+				unset($result, $field);
+			}
+
+			
+
+			
+			
+		}
+
+		
+		
+		
+		
+		
+		 height: 80px;' name='contact_note'>".escape($contact_note)."</textarea>\n";
+
+
+		
+		
+		
+		
+		if ($action == "update") {
+			
+		}
+		
+		
+		
+		
+
+		
+
+	
+
+	if ($action == "update") {
+		&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>";
+		
+		
+		if (permission_exists('contact_phone_view')) { require "contact_phones.php"; }
+		if (permission_exists('contact_address_view')) { require "contact_addresses.php"; }
+		if (permission_exists('contact_email_view')) { require "contact_emails.php"; }
+		if (permission_exists('contact_url_view')) { require "contact_urls.php"; }
+		if (permission_exists('contact_extension_view')) { require "contact_extensions.php"; }
+		if (permission_exists('contact_relation_view')) { require "contact_relations.php"; }
+		if (permission_exists('contact_note_view')) { require "contact_notes.php"; }
+		if (permission_exists('contact_time_view')) { require "contact_times.php"; }
+		if (permission_exists('contact_setting_view')) { require "contact_settings.php"; }
+		if (permission_exists('contact_attachment_view')) { require "contact_attachments.php"; }
+		
+	}
+
+	
+	
+	
+	
+
+
+
+?>

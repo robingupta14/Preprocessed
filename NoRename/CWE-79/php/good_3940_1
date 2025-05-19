@@ -1,0 +1,102 @@
+<?php namespace Backend\FormWidgets;
+
+
+
+class MarkdownEditor extends FormWidgetBase
+{
+    
+    
+    
+
+    
+    public $mode = 'tab';
+
+    
+    public $safe = false;
+
+    
+    public $readOnly = false;
+
+    
+    public $disabled = false;
+
+    
+    
+    
+
+    
+    protected $defaultAlias = 'markdown';
+
+    
+    public function init()
+    {
+        $this->fillFromConfig([
+            'mode',
+            'safe',
+            'readOnly',
+            'disabled',
+        ]);
+    }
+
+    
+    public function render()
+    {
+        $this->prepareVars();
+        return $this->makePartial('markdowneditor');
+    }
+
+    
+    public function prepareVars()
+    {
+        $this->vars['mode'] = $this->mode;
+        $this->vars['stretch'] = $this->formField->stretch;
+        $this->vars['size'] = $this->formField->size;
+        $this->vars['name'] = $this->getFieldName();
+        $this->vars['value'] = $this->getLoadValue();
+        $this->vars['readOnly'] = $this->readOnly;
+        $this->vars['disabled'] = $this->disabled;
+        $this->vars['useMediaManager'] = BackendAuth::getUser()->hasAccess('media.manage_media');
+    }
+
+    
+    protected function loadAssets()
+    {
+        $this->addCss('css/markdowneditor.css', 'core');
+        $this->addJs('js/markdowneditor.js', 'core');
+        $this->addJs('/modules/backend/formwidgets/codeeditor/assets/js/build-min.js', 'core');
+    }
+
+    
+    protected function shouldCleanHtml()
+    {
+        $user = BackendAuth::getUser();
+        return !$user || !$user->hasAccess('backend.allow_unsafe_markdown');
+    }
+
+    
+    public function getSaveValue($value)
+    {
+        if ($this->shouldCleanHtml()) {
+            $value = Html::clean($value);
+        }
+
+        return $value;
+    }
+
+    
+    public function onRefresh()
+    {
+        $value = post($this->getFieldName());
+        $previewHtml = $this->safe
+            ? Markdown::parseSafe($value)
+            : Markdown::parse($value);
+
+        if ($this->shouldCleanHtml()) {
+            $previewHtml = Html::clean($previewHtml);
+        }
+
+        return [
+            'preview' => $previewHtml
+        ];
+    }
+}

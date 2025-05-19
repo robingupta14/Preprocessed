@@ -1,0 +1,208 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+namespace ns_0
+{
+    internal class class_0 : IEndpointResult
+    {
+        public AuthorizeResponse Response { get; }
+
+        public AuthorizeResult(AuthorizeResponse var_0)
+        {
+            Response = var_0 ?? throw new ArgumentNullException(nameof(var_0));
+        }
+
+        internal AuthorizeResult(
+            AuthorizeResponse var_0,
+            IdentityServerOptions var_1,
+            IUserSession var_2,
+            IMessageStore<ErrorMessage> var_3,
+            ISystemClock var_4)
+            : this(var_0)
+        {
+            var_5 = var_1;
+            var_6 = var_2;
+            var_7 = var_3;
+            var_8 = var_4;
+        }
+
+        private IdentityServerOptions var_5;
+        private IUserSession var_6;
+        private IMessageStore<ErrorMessage> var_7;
+        private ISystemClock var_8;
+
+        private void fn_0(HttpContext var_9)
+        {
+            var_5 = var_5 ?? var_9.RequestServices.GetRequiredService<IdentityServerOptions>();
+            var_6 = var_6 ?? var_9.RequestServices.GetRequiredService<IUserSession>();
+            var_7 = var_7 ?? var_9.RequestServices.GetRequiredService<IMessageStore<ErrorMessage>>();
+            var_8 = var_8 ?? var_9.RequestServices.GetRequiredService<ISystemClock>();
+        }
+
+        public async Task fn_1(HttpContext var_9)
+        {
+            Init(var_9);
+
+            if (Response.IsError)
+            {
+                await ProcessErrorAsync(var_9);
+            }
+            else
+            {
+                await ProcessResponseAsync(var_9);
+            }
+        }
+
+        private async Task fn_2(HttpContext var_9)
+        {
+            
+            
+            var var_10 = Response.Error == OidcConstants.AuthorizeErrors.AccountSelectionRequired ||
+                Response.Error == OidcConstants.AuthorizeErrors.LoginRequired ||
+                Response.Error == OidcConstants.AuthorizeErrors.ConsentRequired ||
+                Response.Error == OidcConstants.AuthorizeErrors.InteractionRequired;
+
+            if (Response.Error == OidcConstants.AuthorizeErrors.AccessDenied ||
+                (var_10 && Response.Request?.PromptMode == OidcConstants.PromptModes.None)
+            )
+            {
+                
+                await ProcessResponseAsync(var_9);
+            }
+            else
+            {
+                
+                await RedirectToErrorPageAsync(var_9);
+            }
+        }
+
+        protected async Task fn_3(HttpContext var_9)
+        {
+            if (!Response.IsError)
+            {
+                
+                
+                await var_6.AddClientIdAsync(Response.Request.ClientId);
+            }
+
+            await RenderAuthorizeResponseAsync(var_9);
+        }
+
+        private async Task fn_4(HttpContext var_9)
+        {
+            if (Response.Request.ResponseMode == OidcConstants.ResponseModes.Query ||
+                Response.Request.ResponseMode == OidcConstants.ResponseModes.Fragment)
+            {
+                var_9.Response.SetNoCache();
+                var_9.Response.Redirect(BuildRedirectUri());
+            }
+            else if (Response.Request.ResponseMode == OidcConstants.ResponseModes.FormPost)
+            {
+                var_9.Response.SetNoCache();
+                AddSecurityHeaders(var_9);
+                await var_9.Response.WriteHtmlAsync(GetFormPostHtml());
+            }
+            else
+            {
+                
+                throw new InvalidOperationException();
+            }
+        }
+
+        private void fn_5(HttpContext var_9)
+        {
+            var var_11 = Response.Request.RedirectUri.GetOrigin();
+            var var_12 = $"default-src 'none'; script-src 'sha256-VuNUSJ59bpCpw62HM2JG/hCyGiqoPN3NqGvNXQPU+rY='; ";
+
+            if (!var_9.Response.Headers.ContainsKey("Content-Security-Policy"))
+            {
+                var_9.Response.Headers.Add("Content-Security-Policy", var_12);
+            }
+
+            if (!var_9.Response.Headers.ContainsKey("X-Content-Security-Policy"))
+            {
+                var_9.Response.Headers.Add("X-Content-Security-Policy", var_12);
+            }
+
+            var var_13 = "no-referrer";
+            if (!var_9.Response.Headers.ContainsKey("Referrer-Policy"))
+            {
+                var_9.Response.Headers.Add("Referrer-Policy", var_13);
+            }
+        }
+
+        private string fn_6()
+        {
+            var var_14 = Response.RedirectUri;
+            var var_15 = Response.ToNameValueCollection().ToQueryString();
+
+            if (Response.Request.ResponseMode == OidcConstants.ResponseModes.Query)
+            {
+                var_14 = var_14.AddQueryString(var_15);
+            }
+            else
+            {
+                var_14 = var_14.AddHashFragment(var_15);
+            }
+
+            if (Response.IsError && !var_14.Contains("#"))
+            {
+                
+                var_14 += "#_=_";
+            }
+
+            return var_14;
+        }
+
+        private const string var_16 = "<form method='post' action='{uri}'>{body}<noscript><button>Click to continue</button></noscript></form><script>(function(){document.forms[0].submit();})();</script>";
+
+        private string fn_7()
+        {
+            var var_17 = var_16;
+
+            var_17 = var_17.Replace("{uri}", Response.Request.RedirectUri);
+            var_17 = var_17.Replace("{body}", Response.ToNameValueCollection().ToFormPost());
+
+            return var_17;
+        }
+
+        private async Task fn_8(HttpContext var_9)
+        {
+            var var_18 = new ErrorMessage
+            {
+                RequestId = var_9.TraceIdentifier,
+                Error = Response.Error,
+                ErrorDescription = Response.ErrorDescription,
+                UiLocales = Response.Request?.UiLocales,
+                DisplayMode = Response.Request?.DisplayMode
+            };
+
+            if (Response.RedirectUri != null && Response.Request?.ResponseMode != null)
+            {
+                
+                var_18.RedirectUri = BuildRedirectUri();
+                var_18.ResponseMode = Response.Request.ResponseMode;
+            }
+
+            var var_19 = new Message<ErrorMessage>(var_18, var_8.UtcNow.UtcDateTime);
+            var var_20 = await var_7.WriteAsync(var_19);
+
+            var var_21 = var_5.UserInteraction.ErrorUrl;
+
+            var var_22 = var_21.AddQueryString(var_5.UserInteraction.ErrorIdParameter, var_20);
+            var_9.Response.RedirectToAbsoluteUrl(var_22);
+        }
+    }
+}

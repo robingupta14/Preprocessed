@@ -1,0 +1,118 @@
+<?php
+
+
+
+
+
+
+
+
+MAX_commonSetNoCacheHeaders();
+
+
+MAX_commonRegisterGlobalsArray(array('refresh', 'resize', 'rewrite', 'n'));
+
+
+if (!isset($rewrite))   $rewrite = 1;
+if (!isset($refresh))   $refresh = 0;
+if (!isset($resize))    $resize = 0;
+
+
+$banner = MAX_adSelect($what, $campaignid, $target, $source, $withtext, $charset, $context, true, $ct0, $loc, $referer);
+
+
+if (!empty($n)) {
+    if (!empty($banner['html'])) {
+        
+        $cookie = array();
+        $cookie[$conf['var']['adId']] = $banner['bannerid'];
+        
+        if ($zoneid != 0) {
+            $cookie[$conf['var']['zoneId']] = $zoneid;
+        }
+        
+        if (!empty($source)) {
+            $cookie[$conf['var']['channel']] = $source;
+        }
+        
+        MAX_cookieAdd($conf['var']['vars'] . "[$n]", json_encode($cookie, JSON_UNESCAPED_SLASHES));
+    } else {
+        MAX_cookieUnset($conf['var']['vars'] . "[$n]");
+    }
+}
+
+MAX_cookieFlush();
+
+MAX_commonSendContentTypeHeader('text/html', $charset);
+
+
+
+if (isset($rewrite) && $rewrite == 1) {
+	$banner['html'] = preg_replace('
+	$banner['html'] = preg_replace('
+}
+
+
+$outputHtml = "<!DOCTYPE html PUBLIC '-
+$outputHtml .= "<html xmlns='http:
+$outputHtml .= "<head>\n";
+$outputHtml .= "<title>".(!empty($banner['alt']) ? $banner['alt'] : 'Advertisement')."</title>\n";
+
+
+if (isset($refresh) && is_numeric($refresh) && $refresh > 0) {
+    $dest = MAX_commonGetDeliveryUrl($conf['file']['frame']).'?'.$_SERVER['QUERY_STRING'];
+    parse_str($_SERVER['QUERY_STRING'], $qs);
+    $dest .= (!array_key_exists('loc', $qs)) ? "&loc=" . urlencode($loc) : '';
+
+    $refresh = (int)$refresh;
+    
+    $jsDest = addcslashes(addcslashes($dest, "\0..\37/\"\\"), "'\\");
+    $htmlDest = htmlspecialchars($dest, ENT_QUOTES);
+
+    
+	$outputHtml .= "
+    <script type='text/javascript'><!--
+        setTimeout('window.location.replace(\"{$jsDest}\")', " . ($refresh * 1000) . ");
+    
+    ";
+}
+
+if (isset($resize) && $resize == 1) {
+	
+	$bannerWidth = empty($banner['width']) ? 0 : $banner['width'];
+	$bannerHeight = empty($banner['height']) ? 0 : $banner['height'];
+
+	$outputHtml .= "<script type='text/javascript'>\n";
+	$outputHtml .= "<!--
+	$outputHtml .= "\tfunction MAX_adjustframe(frame) {\n";
+	$outputHtml .= "\t\tif (document.all) {\n";
+	$outputHtml .= "\t\t\tparent.document.all[frame.name].width = ".$bannerWidth.";\n";
+	$outputHtml .= "\t\t\tparent.document.all[frame.name].height = ".$bannerHeight.";\n";
+	$outputHtml .= "\t\t}\n";
+	$outputHtml .= "\t\telse if (document.getElementById) {\n";
+	$outputHtml .= "\t\t\tparent.document.getElementById(frame.name).width = ".$bannerWidth.";\n";
+	$outputHtml .= "\t\t\tparent.document.getElementById(frame.name).height = ".$bannerHeight.";\n";
+	$outputHtml .= "\t\t}\n";
+	$outputHtml .= "\t}\n";
+	$outputHtml .= "
+	$outputHtml .= "</script>\n";
+}
+
+$outputHtml .= "<style type='text/css'>\n";
+$outputHtml .= "body {margin:0; height:100%; background-color:transparent; width:100%; text-align:center;}\n";
+$outputHtml .= "</style>\n";
+$outputHtml .= "</head>\n";
+
+if (isset($resize) && $resize == 1) {
+	$outputHtml .= "<body onload=\"MAX_adjustframe(window);\">\n";
+} else {
+	$outputHtml .= "<body>\n";
+}
+
+$outputHtml .= $banner['html'];
+$outputHtml .= "\n</body>\n";
+$outputHtml .= "</html>\n";
+
+
+
+?>

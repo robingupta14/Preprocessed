@@ -1,0 +1,1260 @@
+<?php
+
+
+defined('is_running') or die('Not an entry point...');
+
+class Ajax extends \gp\admin\Menu{
+
+	public function RunScript(){
+
+		if( $this->cmd === 'return' ){
+			return;
+		}
+
+		switch($this->cmd){
+
+			
+			case 'AddHidden':
+				$this->AddHidden();
+			return;
+
+			case 'CopyForm':
+				$this->CopyForm();
+			return;
+
+			case 'CopyPage':
+				$this->CopyPage();
+			break;
+
+
+			
+			case 'insert_before':
+			case 'insert_after':
+			case 'insert_child':
+				$this->InsertDialog();
+			return;
+
+			case 'NewFile':
+				$this->NewFile();
+			break;
+
+			case 'InsertFromHidden';
+				$this->InsertFromHidden();
+			break;
+
+			case 'RestoreFromTrash':
+				$this->RestoreFromTrash();
+			break;
+
+
+			
+			case 'NewExternal':
+				$this->NewExternal();
+			break;
+			case 'EditExternal':
+				$this->EditExternal();
+			return;
+			case 'SaveExternal':
+				$this->SaveExternal();
+			break;
+
+
+			
+			case 'InsertExtra':
+				$this->InsertExtra();
+			break;
+
+
+			
+			case 'ClassesForm':
+				$this->ClassesForm();
+			break;
+			case 'SaveClasses':
+				$this->SaveClasses();
+			break;
+
+
+			
+			case 'hide':
+				$this->Hide();
+			break;
+			case 'MoveToTrash':
+				$this->MoveToTrash();
+			break;
+
+
+			
+			case 'renameform':
+				$this->RenameForm(); 
+			return;
+			case 'RenameFile':
+				$this->RenameFile();
+			break;
+
+			
+			case 'ToggleVisibility':
+				$this->ToggleVisibility();
+			break;
+
+			
+			case 'HomepageSelect':
+				$this->HomepageSelect();
+			return;
+			case 'HomepageSave':
+				$this->HomepageSave();
+			return;
+			case 'HomepageAuto':
+				$this->HomepageAuto();
+			return;
+		}
+
+		parent::RunScript();
+	}
+
+
+	
+	public function AddHidden(){
+		global $langmessage, $gp_index;
+
+		$_REQUEST += array('title'=>'');
+		$_REQUEST['gpx_content'] = 'gpabox';
+
+		
+		ob_start();
+		
+		
+		
+		
+		
+		
+		$format_bottom = ob_get_clean();
+
+
+		
+
+		
+		
+
+
+		
+
+
+		
+		if( isset($_REQUEST['redir']) ){
+			
+		}
+
+
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+		$gp_index_no_special = array();
+		foreach( $gp_index as $title => $index ){
+			if( strpos(strtolower($index),'special_') !== 0 ){
+				$gp_index_no_special[$title] = $index;
+			}
+		}
+		\gp\admin\Menu\Tools::ScrollList($gp_index_no_special);
+		
+
+
+		
+		
+		',$langmessage['Content Type']);
+		
+		
+		\gp\Page\Edit::NewSections(true);
+		
+
+		
+		
+		
+	}
+
+
+	
+	public function HiddenSaved($new_index){
+		global $langmessage;
+
+		$this->search_page = 0; 
+
+		if( isset($_REQUEST['redir']) ){
+			$title	= \gp\tool::IndexToTitle($new_index);
+			$url	= \gp\tool::AbsoluteUrl($title,'',true,false,true);
+			msg(sprintf($langmessage['will_redirect'],\gp\tool::Link_Page($title)));
+			$this->page->ajaxReplace[] = array('location',$url,15000);
+		}else{
+			msg($langmessage['SAVED']);
+		}
+	}
+
+
+
+	
+	public function CopyForm(){
+		global $langmessage, $gp_index;
+
+
+		$index = $_REQUEST['index'];
+		$from_title = \gp\tool::IndexToTitle($index);
+
+		if( !$from_title ){
+			msg($langmessage['OOPS_TITLE']);
+			return false;
+		}
+
+		$from_label = \gp\tool::GetLabel($from_title);
+		$from_label = \gp\tool::LabelSpecialChars($from_label);
+
+		
+		
+		if( isset($_REQUEST['redir']) ){
+			
+		}
+		
+		
+
+		
+		
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+	}
+
+
+	
+	public function CopyPage(){
+		global $gp_index, $gp_titles, $langmessage, $users, $gpAdmin, $dataDir;
+
+		$this->CacheSettings();
+
+		if( !isset($_POST['from_title']) ){
+			msg($langmessage['OOPS'].' (Copy from not selected)');
+
+			if( isset($_POST['insert_how']) ){
+				$this->InsertDialog($_POST['insert_how']);
+			}else{
+				$this->AddHidden();
+			}
+
+			return false;
+		}
+
+		
+		$from_title = $_POST['from_title'];
+		if( !isset($gp_index[$from_title]) ){
+			msg($langmessage['OOPS_TITLE']);
+			return false;
+		}
+		$from_index		= $gp_index[$from_title];
+		$info			= $gp_titles[$from_index];
+
+
+		
+		$title			= $_POST['title'];
+		$title			= \gp\admin\Tools::CheckPostedNewPage($title,$message);
+		if( $title === false ){
+			msg($message);
+			return false;
+		}
+
+		
+		$from_file		= \gp\tool\Files::PageFile($from_title);
+		$contents		= file_get_contents($from_file);
+
+
+		
+		$index				= \gp\tool::NewFileIndex();
+		$gp_index[$title]	= $index;
+		$file				= \gp\tool\Files::PageFile($title);
+
+		if( !\gp\tool\Files::Save($file,$contents) ){
+			msg($langmessage['OOPS'].' (File not saved)');
+			return false;
+		}
+
+		
+		
+		$users = \gp\tool\Files::Get('_site/users');
+		$username = $gpAdmin['username'];
+		$user_file = $dataDir . '/data/_sessions/' . $users[$username]['file_name'];
+		$editing_values = $gpAdmin['editing'];
+		if( $editing_values != 'all' && strpos($editing_values, ','.$index.',') === false ){
+			$editing_values .= $index.',';
+			$gpAdmin['editing'] = $editing_values;
+			
+			\gp\tool\Files::SaveData($user_file, 'gpAdmin', $gpAdmin);
+			
+			$users[$username]['editing'] = $editing_values;
+			\gp\tool\Files::SaveData('_site/users', 'users', $users);
+		}
+
+		
+		$new_titles						= array();
+		$new_titles[$index]['label']	= \gp\admin\Tools::PostedLabel($_POST['title']);
+		$new_titles[$index]['type']		= $info['type'];
+		$gp_titles						+= $new_titles;
+
+
+		
+		$insert = array();
+		$insert[$index] = array();
+
+		if( !$this->SaveNew($insert) ){
+			$this->RestoreSettings();
+			return false;
+		}
+
+
+		$this->HiddenSaved($index);
+
+		return true;
+	}
+
+
+
+	
+	public function InsertDialog($cmd = null){
+		global $langmessage, $gp_index;
+
+		if( is_null($cmd) ){
+			$cmd = $this->cmd;
+		}
+
+		$_REQUEST['gpx_content'] = 'gpabox';
+
+
+		
+		ob_start();
+		
+		
+		
+		
+
+		
+		
+		
+
+		$format_top = ob_get_clean();
+
+		ob_start();
+		
+		
+		
+		
+		
+		
+		$format_bottom = ob_get_clean();
+
+
+
+		
+
+			
+			
+			
+
+
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			$copy_list = array();
+			foreach($gp_index as $k => $v){
+				if( strpos($v,'special_') === 0 ){
+					continue;
+				}
+				$copy_list[$k] = $v;
+			}
+			\gp\admin\Menu\Tools::ScrollList($copy_list);
+			
+			
+			
+
+
+			
+			
+			
+			
+			
+			
+			
+			
+
+			
+			
+			
+			
+			\gp\Page\Edit::NewSections(true);
+			
+			
+			
+			
+
+
+			
+			$avail = $this->GetAvail_Current();
+
+			if( !empty($avail) ){
+				
+				$avail = array_flip($avail);
+				\gp\admin\Menu\Tools::ScrollList($avail,'keys[]','checkbox',true);
+				
+			}
+
+
+
+			
+			$scroll_list = $this->TrashScrolllist();
+			if( !empty($scroll_list) ){
+				
+				
+				
+			}
+
+
+			
+			
+			$args					= array();
+			$args['insert_how']		= $cmd;
+			$args['insert_where']	= $_REQUEST['insert_where'];
+			$this->ExternalForm('NewExternal',$langmessage['insert_into_menu'],$args);
+			
+
+
+			
+			$areas = $this->GetExtraAreas();
+			
+			if( !empty($areas) ){
+				
+				 background:
+				 float:left; font-size:2em; line-height:1.33em; margin:0 0.5em 0 0.2em;"></i>';
+				
+				
+				
+				\gp\admin\Menu\Tools::ScrollListExtra($areas);
+				
+			}
+
+
+		
+
+	}
+
+
+	function GetExtraAreas(){
+		global $dataDir;
+		$areas			= array();
+		$folder 		= $dataDir . '/data/_extra';
+		$files			= scandir($folder);
+		foreach($files as $file){
+			$title	= \gp\admin\Content\Extra::AreaExists($file);
+			
+			if( $title == false ){
+				continue;
+			}
+			$areas[$title] = str_replace('_', ' ', $title);
+			
+		}
+		uksort($areas,'strnatcasecmp');
+		return $areas;
+	}
+
+
+
+
+	
+	function TrashScrolllist(){
+		global $langmessage;
+
+		$trashtitles = \gp\admin\Content\Trash::TrashFiles();
+		if( empty($trashtitles) ){
+			return '';
+		}
+
+		ob_start();
+		
+		
+		foreach($trashtitles as $title => $info){
+			if( empty($info['label']) ){
+				continue;
+			}
+			
+			
+			
+			
+			
+			if( isset($info['title']) ){
+				
+			}else{
+				
+			}
+			
+			
+			
+		}
+		
+
+		return ob_get_clean();
+	}
+
+
+	
+	public function NewFile(){
+		global $langmessage;
+		$this->CacheSettings();
+
+		$new_index = \gp\admin\Menu\Tools::CreateNew();
+		if( $new_index === false ){
+			return false;
+		}
+
+		$insert = array();
+		$insert[$new_index] = array();
+
+		if( !$this->SaveNew($insert) ){
+			$this->RestoreSettings();
+			return false;
+		}
+
+		$this->HiddenSaved($new_index);
+	}
+
+
+	
+	public function InsertFromHidden(){
+		global $langmessage, $gp_index;
+
+		if( is_null($this->curr_menu_array) ){
+			msg($langmessage['OOPS'].' (Menu not set)');
+			return false;
+		}
+
+		$this->CacheSettings();
+
+		
+		$titles = array();
+		if( isset($_POST['keys']) ){
+			foreach($_POST['keys'] as $index){
+				if( \gp\tool::IndexToTitle($index) !== false ){
+					$titles[$index]['level'] = 0;
+				}
+			}
+		}
+
+		if( count($titles) == 0 ){
+			msg($langmessage['OOPS'].' (Nothing selected)');
+			$this->RestoreSettings();
+			return false;
+		}
+
+		if( !$this->SaveNew($titles) ){
+			$this->RestoreSettings();
+			return false;
+		}
+
+	}
+
+
+	
+	public function RestoreFromTrash(){
+		global $langmessage, $gp_index;
+
+
+		if( is_null($this->curr_menu_array) ){
+			msg($langmessage['OOPS']);
+			return false;
+		}
+
+		if( !isset($_POST['titles']) ){
+			msg($langmessage['OOPS'].' (Nothing Selected)');
+			return false;
+		}
+
+		$this->CacheSettings();
+
+		$titles			= array();
+		$menu			= \gp\admin\Content\Trash::RestoreTitles($_POST['titles']);
+
+
+		if( empty($menu) ){
+			msg($langmessage['OOPS']);
+			$this->RestoreSettings();
+			return false;
+		}
+
+
+		if( !$this->SaveNew($menu) ){
+			$this->RestoreSettings();
+			return false;
+		}
+
+		\gp\admin\Content\Trash::ModTrashData(null,$titles);
+	}
+
+
+	
+	public function ExternalForm($cmd,$submit,$args){
+		global $langmessage;
+
+		
+		$args += array(
+					'url'=>'http:
+					'label'=>'',
+					'title_attr'=>'',
+					'insert_how'=>'',
+					'insert_where'=>'',
+					'key'=>''
+					);
+
+
+		
+		
+		
+		
+
+		
+
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+		
+		if( isset($args['new_win']) ){
+			
+		}else{
+			
+		}
+		
+		
+
+		
+		
+		
+		
+		
+
+		
+	}
+
+
+	
+	public function ClassesForm(){
+		global $langmessage; 
+
+		if( !isset($_REQUEST['index']) || !isset($this->curr_menu_array[$_REQUEST['index']]) ){
+			msg($langmessage['OOPS'] . ' (Invalid request or menu key)');
+			return;
+		}
+
+		$key = $_REQUEST['index'];
+
+		$classes_li = '';
+		if( isset($this->curr_menu_array[$key]['classes_li']) ){
+			$classes_li = $this->curr_menu_array[$key]['classes_li'];
+		}
+
+		if( !isset($_REQUEST['no_a_classes']) ){
+			$classes_a = '';
+			if( isset($this->curr_menu_array[$key]['classes_a']) ){
+				$classes_a = $this->curr_menu_array[$key]['classes_a'];
+			}
+		}
+
+		$classes_child_ul = '';
+		if( isset($this->curr_menu_array[$key]['classes_child_ul']) ){
+			$classes_child_ul = $this->curr_menu_array[$key]['classes_child_ul'];
+		}
+
+
+		
+		
+		
+
+		
+
+		
+		">Menu Element</th><th>' . $langmessage['Classes'] . '</th></tr>';
+
+		
+		
+		
+		" /></td>';
+		
+
+		if( !isset($_REQUEST['no_a_classes']) ){
+			
+			 <strong>a</strong></td>';
+			
+			" /></td>';
+			
+		}
+
+		
+		 <strong>ul</strong></td>';
+		
+		" /></td>';
+		
+
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+	}
+
+
+	
+	public function SaveClasses(){
+		global $langmessage;
+
+		if( !isset($_POST['key']) || !isset($_POST['classes_li']) || !isset($_POST['classes_a']) || !isset($_POST['classes_child_ul']) ){
+			msg($langmessage['OOPS'] . ' (Invalid request)');
+			return;
+		}
+
+		$key = $_POST['key'];
+
+		if( !isset($this->curr_menu_array[$key]) ){
+			msg($langmessage['OOPS'] . ' (Invalid menu key)');
+			return;
+		}
+
+		$this->CacheSettings();
+
+		$this->curr_menu_array[$key]['classes_li']			= $this->ValidClasses($_POST['classes_li']);
+		$this->curr_menu_array[$key]['classes_a']			= $this->ValidClasses($_POST['classes_a']);
+		$this->curr_menu_array[$key]['classes_child_ul']	= $this->ValidClasses($_POST['classes_child_ul']);
+
+		if( !$this->SaveMenu(false) ){
+			msg($langmessage['OOPS'].' (Menu Not Saved)');
+			$this->RestoreSettings();
+			return false;
+		}
+
+	}
+
+
+
+	
+	public function ValidClasses($classes){
+		global $langmessage;
+
+		$arg_type = gettype($classes);
+
+		if( $arg_type != 'string' && $arg_type != 'array' ){
+			msg($langmessage['OOPS'].' (Wrong type <em>' . $arg_type . '</em>, array or string expected)');
+			return false;
+		}
+		if( empty($classes) ){
+			return $classes;
+		}
+
+		if( $arg_type == 'string' ){
+			$classes = explode(' ', $classes);
+		}
+
+ 		$valid_classes = array();
+		foreach( $classes as $classname ){
+			if( $classname == ' ' || empty($classname) ){
+				
+				continue;
+			}
+			
+			if( !preg_match("/^([a-z_]|-[a-z_-])[a-z\d_-]*$/i", $classname) ){
+				msg('<em>' . htmlspecialchars($classname) . '</em> is not a valid CSS class name and was removed.');
+				continue;
+			}
+			$valid_classes[] = $classname;
+		}
+
+		if( $arg_type == 'string' ){
+			$valid_classes = implode(' ', $valid_classes);
+		}
+
+		return $valid_classes;
+	}
+
+
+
+	
+	public function InsertExtra(){
+		global $gp_menu, $langmessage;
+
+		$this->CacheSettings();
+		$area = $_POST['from_extra'];
+
+		if( !\gp\admin\Content\Extra::AreaExists($area) ){
+			msg($langmessage['OOPS'].' (Extra Area does not exist)');
+			return;
+		}
+
+		$key			= $this->NewExtraKey();
+		$insert			= array();
+		$insert[$key]	= array(
+			'area' 	=> $area,
+			'label'	=> str_replace('_', ' ', $area),
+		);
+
+		if( !$this->SaveNew($insert) ){ 
+			msg($langmessage['OOPS'].' (Adding Extra Content Area failed)');
+			$this->RestoreSettings();
+			return false;
+		}
+	}
+
+
+	public function NewExtraKey(){
+		$num_index = 0;
+		do{
+			$new_key = '_extra_' . base_convert($num_index, 10, 36);
+			$num_index++;
+		}while( isset($this->curr_menu_array[$new_key]) );
+
+		return $new_key;
+	}
+
+
+	
+	public function NewExternal(){
+		global $langmessage;
+
+		$this->CacheSettings();
+		$array = $this->ExternalPost();
+
+		if( !$array ){
+			msg($langmessage['OOPS'].' (Invalid Request)');
+			return;
+		}
+
+		$key			= $this->NewExternalKey();
+		$insert			= array();
+		$insert[$key]	= $array;
+
+		if( !$this->SaveNew($insert) ){ 
+			$this->RestoreSettings();
+			return false;
+		}
+	}
+
+
+	
+	public function EditExternal(){
+		global $langmessage;
+
+		$key =& $_REQUEST['key'];
+		if( !isset($this->curr_menu_array[$key]) ){
+			msg($langmessage['OOPS'].' (Current menu not set)');
+			return false;
+		}
+
+		$info = $this->curr_menu_array[$key];
+		$info['key'] = $key;
+
+		
+
+		
+
+		$this->ExternalForm('SaveExternal',$langmessage['save'],$info);
+
+		
+	}
+
+
+	
+	public function SaveExternal(){
+		global $langmessage;
+
+		$key =& $_POST['key'];
+		if( !isset($this->curr_menu_array[$key]) ){
+			msg($langmessage['OOPS'].' (Current menu not set)');
+			return false;
+		}
+		$level = $this->curr_menu_array[$key]['level'];
+
+		$array = $this->ExternalPost();
+		if( !$array ){
+			msg($langmessage['OOPS'].' (1)');
+			return;
+		}
+
+		$this->CacheSettings();
+
+		$array['level'] = $level;
+		$this->curr_menu_array[$key] = $array;
+
+		if( !$this->SaveMenu(false) ){
+			msg($langmessage['OOPS'].' (Menu Not Saved)');
+			$this->RestoreSettings();
+			return false;
+		}
+
+	}
+
+
+	
+	public function ExternalPost(){
+
+		$array = array();
+		if( empty($_POST['url']) || $_POST['url'] == 'http:
+			return false;
+		}
+		$array['url']	= htmlspecialchars($_POST['url']);
+		$array['label'] = \gp\admin\Tools::PostedLabel($_POST['label']);
+
+		if( empty($array['label']) ){
+			return false;
+		}
+
+		if( !empty($_POST['title_attr']) ){
+			$array['title_attr'] = htmlspecialchars($_POST['title_attr']);
+		}
+		if( isset($_POST['new_win']) && $_POST['new_win'] == 'new_win' ){
+			$array['new_win'] = true;
+		}
+		return $array;
+	}
+
+	public function NewExternalKey(){
+
+		$num_index = 0;
+		do{
+			$new_key = '_'.base_convert($num_index,10,36);
+			$num_index++;
+		}while( isset($this->curr_menu_array[$new_key]) );
+
+		return $new_key;
+	}
+
+
+	
+	protected function SaveNew($titles){
+		global $langmessage;
+
+		
+		if( isset($_POST['insert_where']) && isset($_POST['insert_how']) ){
+
+			if( !$this->MenuInsert($titles, $_POST['insert_where'], $_POST['insert_how']) ){
+				msg($langmessage['OOPS'].' (Insert Failed)');
+				return false;
+			}
+
+			if( !$this->SaveMenu(true) ){
+				msg($langmessage['OOPS'].' (Menu Not Saved)');
+				return false;
+			}
+
+			return true;
+		}
+
+
+		if( !\gp\admin\Tools::SavePagesPHP(true) ){
+			return false;
+		}
+
+		return true;
+	}
+
+
+	
+	public function MenuInsert($titles, $neighbor, $insert_how){
+		switch($insert_how){
+			case 'insert_before':
+			return $this->MenuInsert_Before($titles, $neighbor);
+
+			case 'insert_after':
+			return $this->MenuInsert_After($titles, $neighbor);
+
+			case 'insert_child':
+			return $this->MenuInsert_After($titles, $neighbor, 1);
+		}
+
+		return false;
+	}
+
+
+	
+	public function Hide(){
+		global $langmessage;
+
+		if( is_null($this->curr_menu_array) ){
+			msg($langmessage['OOPS'].'(1)');
+			return false;
+		}
+
+		$this->CacheSettings();
+
+		$_POST		+= array('index'=>'');
+		$indexes 	= explode(',',$_POST['index']);
+
+		foreach($indexes as $index ){
+
+			if( count($this->curr_menu_array) == 1 ){
+				break;
+			}
+
+			if( !isset($this->curr_menu_array[$index]) ){
+				msg($langmessage['OOPS'].'(3)');
+				return false;
+			}
+
+			if( !$this->RmFromMenu($index) ){
+				msg($langmessage['OOPS'].'(4)');
+				$this->RestoreSettings();
+				return false;
+			}
+		}
+
+		if( $this->SaveMenu(false) ){
+			return true;
+		}
+
+		msg($langmessage['OOPS'].'(5)');
+		$this->RestoreSettings();
+		return false;
+	}
+
+
+	
+	public function MoveToTrash(){
+		global $gp_titles, $gp_index, $langmessage, $gp_menu, $config, $dataDir;
+
+		$this->CacheSettings();
+
+		$_POST			+= array('index'=>'');
+		$indexes		= explode(',',$_POST['index']);
+		$trash_data		= array();
+
+
+		foreach($indexes as $index){
+
+			$title	= \gp\tool::IndexToTitle($index);
+
+			
+			if( $title ){
+				if( !\gp\admin\Content\Trash::MoveToTrash_File($title,$index,$trash_data) ){
+					msg($langmessage['OOPS'].' (Not Moved)');
+					$this->RestoreSettings();
+					return false;
+				}
+			}
+
+
+			
+			if( isset($gp_menu[$index]) ){
+
+				if( count($gp_menu) == 1 ){
+					continue;
+				}
+
+				if( !$this->RmFromMenu($index,false) ){
+					msg($langmessage['OOPS']);
+					$this->RestoreSettings();
+					return false;
+				}
+			}
+
+			unset($gp_titles[$index]);
+			unset($gp_index[$title]);
+		}
+
+
+		\gp\admin\Menu\Tools::ResetHomepage();
+
+
+		if( !\gp\admin\Tools::SaveAllConfig() ){
+			$this->RestoreSettings();
+			return false;
+		}
+
+		$link = \gp\tool::GetUrl('Admin/Trash');
+		msg(sprintf($langmessage['MOVED_TO_TRASH'],$link));
+
+
+		\gp\tool\Plugins::Action('MenuPageTrashed',array($indexes));
+
+		return true;
+	}
+
+
+	
+	public function RenameForm(){
+		\gp\Page\Rename::RenameForm();
+	}
+
+	public function RenameFile(){
+		global $langmessage, $gp_index;
+
+		
+		$title =& $_REQUEST['title'];
+		if( !isset($gp_index[$title]) ){
+			msg($langmessage['OOPS'].' (R0)');
+			return false;
+		}
+
+		\gp\Page\Rename::RenameFile($title);
+	}
+
+
+	
+	public function ToggleVisibility(){
+		$_REQUEST += array('index'=>'','visibility'=>'');
+		\gp\Page\Visibility::Toggle($_REQUEST['index'], $_REQUEST['visibility']);
+	}
+
+
+	
+	public function HomepageSelect(){
+		global $langmessage;
+
+		
+		
+
+		
+		
+		
+
+		
+		
+		
+
+
+		
+		
+		
+		
+
+		
+		
+
+	}
+
+
+	
+	public function HomepageAuto(){ 
+		global $config;
+
+		$config['homepath_auto'] = true;
+		if( !\gp\admin\Tools::SaveConfig(true) ){
+			return;
+		}
+
+		
+		ob_start();
+		$this->HomepageDisplay();
+		$content = ob_get_clean();
+
+		$this->page->ajaxReplace[] = array('inner', '.homepage_setting', $content);
+
+	}
+
+
+	
+	public function HomepageSave(){
+		global $langmessage, $config, $gp_index, $gp_titles;
+
+		$homepage = $_POST['homepage'];
+		$homepage_key = false;
+		if( isset($gp_index[$homepage]) ){
+			$homepage_key = $gp_index[$homepage];
+		}else{
+
+			foreach($gp_titles as $index => $title){
+				if( $title['label'] === $homepage ){
+					$homepage_key = $index;
+					break;
+				}
+			}
+
+			if( !$homepage_key ){
+				msg($langmessage['OOPS']);
+				return;
+			}
+		}
+
+		$config['homepath_key']		= $homepage_key;
+		$config['homepath']			= \gp\tool::IndexToTitle($config['homepath_key']);
+		
+		$config['homepath_auto']	= false;
+		if( !\gp\admin\Tools::SaveConfig(true) ){
+			return;
+		}
+
+		
+		ob_start();
+		$this->HomepageDisplay();
+		$content = ob_get_clean();
+
+		$this->page->ajaxReplace[] = array('inner','.homepage_setting',$content);
+	}
+
+
+
+
+}

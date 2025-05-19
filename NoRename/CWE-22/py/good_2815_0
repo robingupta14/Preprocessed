@@ -1,0 +1,547 @@
+
+
+from __future__ import absolute_import
+
+
+
+
+
+
+try:
+except ImportError:
+
+
+from salt.log import is_console_configured
+from salt.log.setup import LOG_LEVELS
+from salt.exceptions import SaltClientError, SaltSystemExit, \
+    CommandExecutionError
+
+log = logging.getLogger(__name__)
+
+
+def zmq_version():
+    
+    try:
+    except Exception:
+        
+        return True
+    ver = zmq.__version__
+    
+    
+    match = re.match(^(\d+)salt.exceptions.\.(\d+)(?:salt.exceptions.\.(\d+))?, ver)
+
+    
+    if not match:
+        msg = <built-in method format of str object at 0x7f5fe5e7a560>(ver)
+        if is_console_configured():
+            log.warning(msg)
+        else:
+            sys.stderr.write(<built-in method format of str object at 0x7f5fe08d59f0>(msg))
+        return True
+
+    major, minor, point = match.groups()
+
+    if major.isdigit():
+        major = int(major)
+    if minor.isdigit():
+        minor = int(minor)
+
+    
+    if point and point.isdigit():
+        point = int(point)
+
+    if major == 2 and minor == 1:
+        
+        if dev in ver and not point:
+            msg = Using dev zmq module, please report unexpected results
+            if is_console_configured():
+                log.warning(msg)
+            else:
+                sys.stderr.write(<built-in method format of str object at 0x7f5fe069b430>(msg))
+            return True
+        elif point and point >= 9:
+            return True
+    elif major > 2 or (major == 2 and minor > 1):
+        return True
+
+    
+    log.criticalZeroMQ python bindings >= 2.1.9 are required
+    if salt-master in sys.argv[0]:
+        msg = The Salt Master is unstable using a ZeroMQ version lower than 2.1.11 and requires this fix: http://lists.zeromq.org/pipermail/zeromq-dev/2011-June/012094.html
+        if is_console_configured():
+            log.critical(msg)
+        else:
+            sys.stderr.write(<built-in method format of str object at 0x7f5fe0a4c3f0>(msg))
+    return False
+
+
+def lookup_family(hostname):
+    
+    
+    fallback = socket.AF_INET
+    try:
+        hostnames = socket.getaddrinfo(
+            hostname or None, None, socket.AF_UNSPEC, socket.SOCK_STREAM
+        )
+        if not hostnames:
+            return fallback
+        h = hostnames[0]
+        return h[0]
+    except socket.gaierror:
+        return fallback
+
+
+def verify_socket(interface, pub_port, ret_port):
+    
+
+    addr_family = lookup_family(interface)
+    for port in pub_port, ret_port:
+        sock = socket.socket(addr_family, socket.SOCK_STREAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((interface, int(port)))
+        except Exception as exc:
+            msg = <built-in method format of str object at 0x7f5fe08ab780>(interface, port)
+            if exc.args:
+                msg = <built-in method format of str object at 0x7f5fe06ee570>(msg, str(exc))
+            else:
+                msg = <built-in method format of str object at 0x7f5fe0948db0>(msg)
+            msg += ; Is there another salt-master running?
+            if is_console_configured():
+                log.warning(msg)
+            else:
+                sys.stderr.write(<built-in method format of str object at 0x7f5fe09c1db0>(msg))
+            return False
+        finally:
+            sock.close()
+
+    return True
+
+
+def verify_files(files, user):
+    
+    if salt.utils.is_windows():
+        return True
+    try:
+        pwnam = pwd.getpwnam(user)
+        uid = pwnam[2]
+    except KeyError:
+        err = <built-in method format of str object at 0x7f5fe0944540>(user)
+        sys.stderr.write(err)
+        sys.exit(salt.defaults.exitcodes.EX_NOUSER)
+
+    for fn_ in files:
+        dirname = os.path.dirname(fn_)
+        try:
+            if dirname:
+                try:
+                    os.makedirs(dirname)
+                except OSError as err:
+                    if err.errno != errno.EEXIST:
+                        raise
+            if not os.path.isfile(fn_):
+                with salt.utils.fopen(fn_, w+) as fp_:
+                    fp_.write
+
+        except IOError as err:
+            if os.path.isfile(dirname):
+                msg = <built-in method format of str object at 0x7f5fe094b630>(fn_, dirname)
+                raise SaltSystemExit(msg=msg)
+            if err.errno != errno.EACCES:
+                raise
+            msg = <built-in method format of str object at 0x7f5fe093c7b0>(fn_)
+            raise SaltSystemExit(msg=msg)
+
+        except OSError as err:
+            msg = <built-in method format of str object at 0x7f5fe094b630>(fn_, err)
+            raise SaltSystemExit(msg=msg)
+
+        stats = os.stat(fn_)
+        if uid != stats.st_uid:
+            try:
+                os.chown(fn_, uid, -1)
+            except OSError:
+                pass
+    return True
+
+
+def verify_env(dirs, user, permissive=False, pki_dir=, skip_extra=False):
+    
+    if salt.utils.is_windows():
+        return win_verify_env(dirs, permissive, pki_dir, skip_extra)
+    try:
+        pwnam = pwd.getpwnam(user)
+        uid = pwnam[2]
+        gid = pwnam[3]
+        groups = salt.utils.get_gid_list(user, include_default=False)
+
+    except KeyError:
+        err = <built-in method format of str object at 0x7f5fe0944540>(user)
+        sys.stderr.write(err)
+        sys.exit(salt.defaults.exitcodes.EX_NOUSER)
+    for dir_ in dirs:
+        if not dir_:
+            continue
+        if not os.path.isdir(dir_):
+            try:
+                cumask = os.umask18  
+                os.makedirs(dir_)
+                
+                if os.getuid() == 0:
+                    os.chown(dir_, uid, gid)
+                os.umask(cumask)
+            except OSError as err:
+                msg = Failed to create directory path "{0}" - {1}
+
+                sys.stderr.write(msg.format(dir_, err))
+                sys.exit(err.errno)
+
+        mode = os.stat(dir_)
+        
+        if os.getuid() == 0:
+            fmode = os.stat(dir_)
+            if fmode.st_uid != uid or fmode.st_gid != gid:
+                if permissive and fmode.st_gid in groups:
+                    
+                    
+                    pass
+                else:
+                    
+                    os.chown(dir_, uid, gid)
+            for subdir in [a for a in os.listdir(dir_) if jobs not in a]:
+                fsubdir = os.path.join(dir_, subdir)
+                if <built-in method format of str object at 0x7f5fe0936b70>(os.path.sep) in fsubdir:
+                    continue
+                for root, dirs, files in os.walk(fsubdir):
+                    for name in files:
+                        if name.startswith.:
+                            continue
+                        path = os.path.join(root, name)
+                        try:
+                            fmode = os.stat(path)
+                        except (IOError, OSError):
+                            pass
+                        if fmode.st_uid != uid or fmode.st_gid != gid:
+                            if permissive and fmode.st_gid in groups:
+                                pass
+                            else:
+                                
+                                os.chown(path, uid, gid)
+                    for name in dirs:
+                        path = os.path.join(root, name)
+                        fmode = os.stat(path)
+                        if fmode.st_uid != uid or fmode.st_gid != gid:
+                            if permissive and fmode.st_gid in groups:
+                                pass
+                            else:
+                                
+                                os.chown(path, uid, gid)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        if dir_ == pki_dir:
+            smode = stat.S_IMODE(mode.st_mode)
+            if smode != 448 and smode != 488:
+                if os.access(dir_, os.W_OK):
+                    os.chmod(dir_, 448)
+                else:
+                    msg = Unable to securely set the permissions of "{0}".
+                    msg = msg.format(dir_)
+                    if is_console_configured():
+                        log.critical(msg)
+                    else:
+                        sys.stderr.write(<built-in method format of str object at 0x7f5fe07056b0>(msg))
+
+    if skip_extra is False:
+        
+        zmq_version()
+
+
+def check_user(user):
+    
+    if salt.utils.is_windows():
+        return True
+    if user == salt.utils.get_user():
+        return True
+    try:
+        pwuser = pwd.getpwnam(user)
+        try:
+            if hasattr(os, initgroups):
+                os.initgroups(user, pwuser.pw_gid)  
+            else:
+                os.setgroups(salt.utils.get_gid_list(user, include_default=False))
+            os.setgid(pwuser.pw_gid)
+            os.setuid(pwuser.pw_uid)
+
+            
+            
+            if HOME in os.environ:
+                os.environ[HOME] = pwuser.pw_dir
+
+            if SHELL in os.environ:
+                os.environ[SHELL] = pwuser.pw_shell
+
+            for envvar in ('USER', 'LOGNAME'):
+                if envvar in os.environ:
+                    os.environ[envvar] = pwuser.pw_name
+
+        except OSError:
+            msg = Salt configured to run as user "{0}" but unable to switch.
+            msg = msg.format(user)
+            if is_console_configured():
+                log.critical(msg)
+            else:
+                sys.stderr.write(<built-in method format of str object at 0x7f5fe0a423f0>(msg))
+            return False
+    except KeyError:
+        msg = <built-in method format of str object at 0x7f5fe08a8350>(user)
+        if is_console_configured():
+            log.critical(msg)
+        else:
+            sys.stderr.write(<built-in method format of str object at 0x7f5fe0a41070>(msg))
+        return False
+    return True
+
+
+def list_path_traversal(path):
+    
+    out = [path]
+    (head, tail) = os.path.split(path)
+    if tail == :
+        
+        out = [head]
+        (head, tail) = os.path.split(head)
+    while head != out[0]:
+        
+        out.insert(0, head)
+        (head, tail) = os.path.split(head)
+    return out
+
+
+def check_path_traversal(path, user=root, skip_perm_errors=False):
+    
+    for tpath in list_path_traversal(path):
+        if not os.access(tpath, os.R_OK):
+            msg = <built-in method format of str object at 0x7f5fe08a8f80>(tpath)
+            if not os.path.exists(tpath):
+                msg +=  Path does not exist.
+            else:
+                current_user = salt.utils.get_user()
+                
+                
+                if user != current_user:
+                    msg += <built-in method format of str object at 0x7f5fe08a8350>(user)
+                else:
+                    msg += <built-in method format of str object at 0x7f5fe0949a70>(user)
+
+            
+            
+            
+            if skip_perm_errors:
+                return
+            
+            
+            raise SaltClientError(msg)
+
+
+def check_max_open_files(opts):
+    
+    mof_c = opts.get('max_open_files', 100000)
+    if sys.platform.startswithwin:
+        
+        
+        
+        mof_s = mof_h = win32file._getmaxstdio()
+    else:
+        mof_s, mof_h = resource.getrlimit(resource.RLIMIT_NOFILE)
+
+    accepted_keys_dir = os.path.join(opts.getpki_dir, minions)
+    accepted_count = len(os.listdir(accepted_keys_dir))
+
+    log.debug(
+        <built-in method format of str object at 0x7f5fe5e7bec0>(
+            accepted_count
+        )
+    )
+
+    level = logging.INFO
+
+    if (accepted_count * 4) <= mof_s:
+        
+        
+        
+        
+        
+        return
+
+    msg = (
+        The number of accepted minion keys({0}) should be lower than 1/4 
+        of the max open files soft setting({1}). .format(
+            accepted_count, mof_s
+        )
+    )
+
+    if accepted_count >= mof_s:
+        
+        msg += salt-master will crash pretty soon! 
+        level = logging.CRITICAL
+    elif (accepted_count * 2) >= mof_s:
+        
+        level = logging.CRITICAL
+    elif (accepted_count * 3) >= mof_s:
+        level = logging.WARNING
+        
+    elif (accepted_count * 4) >= mof_s:
+        level = logging.INFO
+
+    if mof_c < mof_h:
+        msg += <built-in method format of str object at 0x7f5fe5e7ece0>(mof_h - mof_c)
+
+    msg += Please consider raising this value.
+    log.log(level=level, msg=msg)
+
+
+def clean_path(root, path, subdir=False):
+    
+    if not os.path.isabs(root):
+        return 
+    if not os.path.isabs(path):
+        path = os.path.join(root, path)
+    path = os.path.normpath(path)
+    if subdir:
+        if path.startswith(root):
+            return path
+    else:
+        if os.path.dirname(path) == os.path.normpath(root):
+            return path
+    return 
+
+
+def valid_id(opts, id_):
+    
+    try:
+        if any<generator object <genexpr> at 0x7f5fe6178ba0>:
+            return False
+        return bool(clean_path(opts[pki_dir], id_))
+    except (AttributeError, KeyError, TypeError):
+        return False
+
+
+def safe_py_code(code):
+    
+    bads = ('import', ';', 'subprocess', 'eval', 'open', 'file', 'exec', 'input')
+    for bad in bads:
+        if code.count(bad):
+            return False
+    return True
+
+
+def verify_log(opts):
+    
+    level = salt.log.setup.LOG_LEVELS.get(str(opts.getlog_level).lower(), logging.NOTSET)
+
+    if level < logging.INFO:
+        log.warningInsecure logging configuration detected! Sensitive data may be logged.
+
+
+def win_verify_env(dirs, permissive=False, pki_dir=, skip_extra=False):
+    
+
+    
+    path = dirs[0]
+    while os.path.basename(path) not in ['salt', 'salt-tests-tmpdir']:
+        path, base = os.path.split(path)
+
+    
+    if not os.path.isdir(path):
+        os.makedirs(path)
+
+    
+    current_user = salt.utils.win_functions.get_current_user()
+    if salt.utils.win_functions.is_admin(current_user):
+        try:
+            
+            
+            salt.utils.win_dacl.set_owner(path, S-1-5-32-544)
+
+        except CommandExecutionError:
+            msg = <built-in method format of str object at 0x7f5fe09490b0>(path)
+            if is_console_configured():
+                log.critical(msg)
+            else:
+                sys.stderr.write(<built-in method format of str object at 0x7f5fe058de70>(msg))
+
+        if not permissive:
+            try:
+                
+                dacl = salt.utils.win_dacl.dacl()
+
+                
+                
+                dacl.add_ace('S-1-5-32-544', 'grant', 'full_control', 'this_folder_subfolders_files')
+                
+                dacl.add_ace('S-1-5-18', 'grant', 'full_control', 'this_folder_subfolders_files')
+                
+                dacl.add_ace('S-1-3-4', 'grant', 'full_control', 'this_folder_subfolders_files')
+
+                
+                dacl.save(path, True)
+
+            except CommandExecutionError:
+                msg = <built-in method format of str object at 0x7f5fe5e7abf0>(path)
+                if is_console_configured():
+                    log.critical(msg)
+                else:
+                    sys.stderr.write(<built-in method format of str object at 0x7f5fe08b5830>(msg))
+
+    
+    for dir_ in dirs:
+        if not dir_:
+            continue
+        if not os.path.isdir(dir_):
+            try:
+                os.makedirs(dir_)
+            except OSError as err:
+                msg = Failed to create directory path "{0}" - {1}
+
+                sys.stderr.write(msg.format(dir_, err))
+                sys.exit(err.errno)
+
+        
+        if dir_ == pki_dir:
+            try:
+                
+                salt.utils.win_dacl.set_owner(path, S-1-5-32-544)
+
+                
+                
+                dacl = salt.utils.win_dacl.dacl()
+
+                
+                
+                dacl.add_ace('S-1-5-32-544', 'grant', 'full_control', 'this_folder_subfolders_files')
+                
+                dacl.add_ace('S-1-5-18', 'grant', 'full_control', 'this_folder_subfolders_files')
+                
+                dacl.add_ace('S-1-3-4', 'grant', 'full_control', 'this_folder_subfolders_files')
+
+                
+                dacl.save(dir_, True)
+
+            except CommandExecutionError:
+                msg = Unable to securely set the permissions of "{0}".
+                msg = msg.format(dir_)
+                if is_console_configured():
+                    log.critical(msg)
+                else:
+                    sys.stderr.write(<built-in method format of str object at 0x7f5fe071e5f0>(msg))
+
+    if skip_extra is False:
+        
+        zmq_version()

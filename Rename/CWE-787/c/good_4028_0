@@ -1,0 +1,821 @@
+
+
+
+
+
+
+
+
+CryptoCert fn_0(BYTE* var_47, UINT32 var_45)
+{
+ CryptoCert var_61 = malloc(sizeof(*var_61));
+
+ if (!var_61)
+  return NULL;
+
+
+ var_61->px509 = d2i_X509(NULL, (D2I_X509_CONST BYTE**)&var_47, var_45);
+ return var_61;
+}
+
+void fn_4(CryptoCert var_61)
+{
+ if (var_61 == NULL)
+  return;
+
+ X509_free(var_61->px509);
+ free(var_61);
+}
+
+BOOL fn_5(CryptoCert var_61, BYTE** PublicKey, DWORD* PublicKeyLength)
+{
+ BYTE* ptr;
+ int var_45;
+ BOOL var_61 = TRUE;
+ EVP_PKEY* pkey = NULL;
+ pkey = X509_get_pubkey(var_61->px509);
+
+ if (!pkey)
+ {
+  WLog_ERR(FREERDP_TAG("crypto"), "X509_get_pubkey() failed");
+  var_61 = FALSE;
+  goto exit;
+ }
+
+ var_45 = i2d_PublicKey(pkey, NULL);
+
+ if (var_45 < 1)
+ {
+  WLog_ERR(FREERDP_TAG("crypto"), "i2d_PublicKey() failed");
+  var_61 = FALSE;
+  goto exit;
+ }
+
+ *PublicKeyLength = (DWORD)var_45;
+ *PublicKey = (BYTE*)malloc(var_45);
+ ptr = (BYTE*)(*PublicKey);
+
+ if (!ptr)
+ {
+  var_61 = FALSE;
+  goto exit;
+ }
+
+ i2d_PublicKey(pkey, &ptr);
+exit:
+
+ if (pkey)
+  EVP_PKEY_free(pkey);
+
+ return var_61;
+}
+
+static int fn_7(const BYTE* input, int var_45, UINT32 var_19, const BYTE* modulus,
+                             const BYTE* exponent, int var_12, BYTE* output)
+{
+ BN_CTX* ctx = NULL;
+ int var_12 = -1;
+ BYTE* input_reverse = NULL;
+ BYTE* modulus_reverse = NULL;
+ BYTE* exponent_reverse = NULL;
+ BIGNUM* mod = NULL;
+ BIGNUM* exp = NULL;
+ BIGNUM* x = NULL;
+ BIGNUM* y = NULL;
+ size_t var_12 = 2 * var_19 + var_12;
+
+ if (!input || (var_45 < 0) || (var_12 < 0) || !modulus || !exponent || !output)
+  return -1;
+
+ if (var_45 > var_12)
+  var_12 = var_45;
+
+ input_reverse = (BYTE*)calloc(var_12, 1);
+
+ if (!input_reverse)
+  return -1;
+
+ modulus_reverse = input_reverse + var_19;
+ exponent_reverse = modulus_reverse + var_19;
+ memcpy(modulus_reverse, modulus, var_19);
+ crypto_reverse(modulus_reverse, var_19);
+ memcpy(exponent_reverse, exponent, var_12);
+ crypto_reverse(exponent_reverse, var_12);
+ memcpy(input_reverse, input, var_45);
+ crypto_reverse(input_reverse, var_45);
+
+ if (!(ctx = BN_CTX_new()))
+  goto fail_bn_ctx;
+
+ if (!(mod = BN_new()))
+  goto fail_bn_mod;
+
+ if (!(exp = BN_new()))
+  goto fail_bn_exp;
+
+ if (!(x = BN_new()))
+  goto fail_bn_x;
+
+ if (!(y = BN_new()))
+  goto fail_bn_y;
+
+ if (!BN_bin2bn(modulus_reverse, var_19, mod))
+  goto fail;
+
+ if (!BN_bin2bn(exponent_reverse, var_12, exp))
+  goto fail;
+ if (!BN_bin2bn(input_reverse, var_45, x))
+  goto fail;
+ if (BN_mod_exp(y, x, exp, mod, ctx) != 1)
+  goto fail;
+ var_12 = BN_bn2bin(y, output);
+ if (var_12 < 0)
+  goto fail;
+ crypto_reverse(output, var_12);
+
+ if (var_12 < var_19)
+  memset(output + var_12, 0, var_19 - var_12);
+
+fail:
+ BN_free(y);
+fail_bn_y:
+ BN_clear_free(x);
+fail_bn_x:
+ BN_free(exp);
+fail_bn_exp:
+ BN_free(mod);
+fail_bn_mod:
+ BN_CTX_free(ctx);
+fail_bn_ctx:
+ free(input_reverse);
+ return var_12;
+}
+
+static int fn_12(const BYTE* input, int var_45, UINT32 var_19, const BYTE* modulus,
+                             const BYTE* exponent, BYTE* output)
+{
+ return crypto_rsa_common(input, var_45, var_19, modulus, exponent, EXPONENT_MAX_SIZE,
+                          output);
+}
+
+static int fn_13(const BYTE* input, int var_45, UINT32 var_19, const BYTE* modulus,
+                              const BYTE* private_exponent, BYTE* output)
+{
+ return crypto_rsa_common(input, var_45, var_19, modulus, private_exponent, var_19,
+                          output);
+}
+
+int fn_14(const BYTE* input, int var_45, UINT32 var_19, const BYTE* modulus,
+                              const BYTE* exponent, BYTE* output)
+{
+ return crypto_rsa_public(input, var_45, var_19, modulus, exponent, output);
+}
+
+int fn_15(const BYTE* input, int var_45, UINT32 var_19, const BYTE* modulus,
+                              const BYTE* exponent, BYTE* output)
+{
+ return crypto_rsa_public(input, var_45, var_19, modulus, exponent, output);
+}
+
+int fn_16(const BYTE* input, int var_45, UINT32 var_19,
+                               const BYTE* modulus, const BYTE* private_exponent, BYTE* output)
+{
+ return crypto_rsa_private(input, var_45, var_19, modulus, private_exponent, output);
+}
+
+int fn_17(const BYTE* input, int var_45, UINT32 var_19,
+                               const BYTE* modulus, const BYTE* private_exponent, BYTE* output)
+{
+ return crypto_rsa_private(input, var_45, var_19, modulus, private_exponent, output);
+}
+
+static int fn_18(const BYTE* input, int var_45, UINT32 var_19, const BYTE* modulus,
+                              const BYTE* private_exponent, BYTE* output)
+{
+ return crypto_rsa_common(input, var_45, var_19, modulus, private_exponent, var_19,
+                          output);
+}
+
+void fn_19(BYTE* var_47, int var_45)
+{
+ int i, j;
+ BYTE temp;
+
+ for (i = 0, j = var_45 - 1; i < j; i++, j--)
+ {
+  temp = var_47[i];
+  var_47[i] = var_47[j];
+  var_47[j] = temp;
+ }
+}
+
+char* fn_20(X509* xcert)
+{
+ return crypto_cert_fingerprint_by_hash(xcert, "sha256");
+}
+
+BYTE* fn_21(X509* xcert, const char* hash, UINT32* var_45)
+{
+ UINT32 var_25 = var_23;
+ BYTE* fp;
+ const EVP_MD* md = EVP_get_digestbyname(hash);
+ if (!md)
+  return NULL;
+ if (!var_45)
+  return NULL;
+ if (!xcert)
+  return NULL;
+
+ fp = calloc(var_25, sizeof(BYTE));
+ if (!fp)
+  return NULL;
+
+ if (X509_digest(xcert, md, fp, &var_25) != 1)
+ {
+  free(fp);
+  return NULL;
+ }
+
+ *var_45 = var_25;
+ return fp;
+}
+
+char* fn_24(X509* xcert, const char* hash)
+{
+ UINT32 var_25, i;
+ BYTE* fp;
+ char* p;
+ char* fp_buffer;
+
+ fp = crypto_cert_hash(xcert, hash, &var_25);
+ if (!fp)
+  return NULL;
+
+ fp_buffer = calloc(var_25 * 3 + 1, sizeof(char));
+ if (!fp_buffer)
+  goto fail;
+
+ p = fp_buffer;
+
+ for (i = 0; i < (var_25 - 1); i++)
+ {
+  sprintf_s(p, (var_25 - i) * 3, "%02" PRIx8 ":", fp[i]);
+  p = &fp_buffer[(i + 1) * 3];
+ }
+
+ sprintf_s(p, (var_25 - i) * 3, "%02" PRIx8 "", fp[i]);
+fail:
+ free(fp);
+
+ return fp_buffer;
+}
+
+static char* fn_25(X509_NAME* name)
+{
+ char* buffer = NULL;
+ BIO* outBIO = BIO_new(BIO_s_mem());
+
+ if (X509_NAME_print_ex(outBIO, name, 0, XN_FLAG_ONELINE) > 0)
+ {
+  unsigned long var_27 = BIO_number_written(outBIO);
+  buffer = calloc(1, var_27 + 1);
+
+  if (!buffer)
+   return NULL;
+
+  BIO_read(outBIO, buffer, var_27);
+ }
+
+ BIO_free_all(outBIO);
+ return buffer;
+}
+
+char* fn_27(X509* xcert)
+{
+ return crypto_print_name(X509_get_subject_name(xcert));
+}
+
+char* fn_28(X509* xcert, int* var_45)
+{
+ int var_47;
+ BYTE* common_name_raw;
+ char* common_name;
+ X509_NAME* subject_name;
+ X509_NAME_ENTRY* entry;
+ ASN1_STRING* entry_data;
+ subject_name = X509_get_subject_name(xcert);
+
+ if (subject_name == NULL)
+  return NULL;
+
+ var_47 = X509_NAME_get_index_by_NID(subject_name, NID_commonName, -1);
+
+ if (var_47 < 0)
+  return NULL;
+
+ entry = X509_NAME_get_entry(subject_name, var_47);
+
+ if (entry == NULL)
+  return NULL;
+
+ entry_data = X509_NAME_ENTRY_get_data(entry);
+
+ if (entry_data == NULL)
+  return NULL;
+
+ *var_45 = ASN1_STRING_to_UTF8(&common_name_raw, entry_data);
+
+ if (*var_45 < 0)
+  return NULL;
+
+ common_name = _strdup((char*)common_name_raw);
+ OPENSSL_free(common_name_raw);
+ return (char*)common_name;
+}
+
+
+
+static const char* general_name_type_labels[] = { "OTHERNAME", "EMAIL    ", "DNS      ",
+                                               "X400     ", "DIRNAME  ", "EDIPARTY ",
+                                               "URI      ", "IPADD    ", "RID      " };
+
+static const char* fn_30(int var_35)
+{
+ if ((0 <= var_35) &&
+     ((size_t)var_35 < ARRAYSIZE(general_name_type_labels)))
+ {
+  return general_name_type_labels[var_35];
+ }
+ else
+ {
+  static char buffer[80];
+  sprintf(buffer, "Unknown general name type (%d)", var_35);
+  return buffer;
+ }
+}
+
+typedef int (*general_name_mapper_pr)(GENERAL_NAME* name, void* var_47, int var_47, int var_53);
+
+static void fn_33(X509* x509, int var_35, general_name_mapper_pr var_35,
+                                 void* var_47)
+{
+ int i;
+ int num;
+ STACK_OF(GENERAL_NAME) * gens;
+ gens = X509_get_ext_d2i(x509, NID_subject_alt_name, NULL, NULL);
+
+ if (!gens)
+ {
+  return;
+ }
+
+ num = sk_GENERAL_NAME_num(gens);
+
+ for (i = 0; (i < num); i++)
+ {
+  GENERAL_NAME* name = sk_GENERAL_NAME_value(gens, i);
+
+  if (name)
+  {
+   if ((var_35 == -1) || (var_35 == name->type))
+   {
+    if (!var_35(name, var_47, i, num))
+    {
+     break;
+    }
+   }
+  }
+ }
+
+ sk_GENERAL_NAME_pop_free(gens, GENERAL_NAME_free);
+}
+
+typedef struct struct_35
+{
+ char** strings;
+ int allocated;
+ int count;
+ int maximum;
+} string_list;
+
+static void fn_36(string_list* list)
+{
+ list->strings = 0;
+ list->allocated = 0;
+ list->count = 0;
+ list->maximum = INT_MAX;
+}
+
+static void fn_37(string_list* list, int var_44)
+{
+ if (!list->strings && list->allocated == 0)
+ {
+  list->strings = calloc((size_t)var_44, sizeof(char*));
+  list->allocated = list->strings ? var_44 : -1;
+  list->count = 0;
+ }
+}
+
+static void fn_39(string_list* list)
+{
+
+
+
+ free(list->strings);
+}
+
+static int fn_40(GENERAL_NAME* name, void* var_47, int var_47, int var_53)
+{
+ string_list* list = var_47;
+ unsigned char* cstring = 0;
+ ASN1_STRING* str;
+
+ switch (name->type)
+ {
+  case GEN_URI:
+   str = name->d.uniformResourceIdentifier;
+   break;
+
+  case GEN_DNS:
+   str = name->d.dNSName;
+   break;
+
+  case GEN_EMAIL:
+   str = name->d.rfc822Name;
+   break;
+
+  default:
+   return 1;
+ }
+
+ if ((ASN1_STRING_to_UTF8(&cstring, str)) < 0)
+ {
+  WLog_ERR(FREERDP_TAG("crypto"), "ASN1_STRING_to_UTF8() failed for %s: %s",
+           general_name_type_label(name->type), ERR_error_string(ERR_get_error(), NULL));
+  return 1;
+ }
+
+ string_list_allocate(list, var_53);
+
+ if (list->allocated <= 0)
+ {
+  OPENSSL_free(cstring);
+  return 0;
+ }
+
+ list->strings[list->count] = (char*)cstring;
+ list->count++;
+
+ if (list->count >= list->maximum)
+ {
+  return 0;
+ }
+
+ return 1;
+}
+
+typedef struct struct_41
+{
+ ASN1_OBJECT* type_id;
+ char** strings;
+ int allocated;
+ int count;
+ int maximum;
+} object_list;
+
+static void fn_42(object_list* list)
+{
+ list->type_id = 0;
+ list->strings = 0;
+ list->allocated = 0;
+ list->count = 0;
+ list->maximum = INT_MAX;
+}
+
+static void fn_43(object_list* list, int var_44)
+{
+ if (!list->strings && list->allocated == 0)
+ {
+  list->strings = calloc(var_44, sizeof(list->strings[0]));
+  list->allocated = list->strings ? var_44 : -1;
+  list->count = 0;
+ }
+}
+
+static char* fn_44(ASN1_TYPE* object)
+{
+ char* result;
+ unsigned char* utf8String;
+ int var_45;
+
+ var_45 = ASN1_STRING_to_UTF8(&utf8String, object->value.asn1_string);
+
+ if (var_45 < 0)
+ {
+  return 0;
+ }
+
+ result = (char*)_strdup((char*)utf8String);
+ OPENSSL_free(utf8String);
+ return result;
+}
+
+static void fn_45(object_list* list)
+{
+ free(list->strings);
+}
+
+static int fn_46(GENERAL_NAME* name, void* var_47, int var_47, int var_53)
+{
+ object_list* list = var_47;
+
+ if (name->type != GEN_OTHERNAME)
+ {
+  return 1;
+ }
+
+ if (0 != OBJ_cmp(name->d.otherName->type_id, list->type_id))
+ {
+  return 1;
+ }
+
+ object_list_allocate(list, var_53);
+
+ if (list->allocated <= 0)
+ {
+  return 0;
+ }
+
+ list->strings[list->count] = object_string(name->d.otherName->value);
+
+ if (list->strings[list->count])
+ {
+  list->count++;
+ }
+
+ if (list->count >= list->maximum)
+ {
+  return 0;
+ }
+
+ return 1;
+}
+
+
+
+
+
+
+char* fn_47(X509* x509)
+{
+ char* result = 0;
+ string_list list;
+ string_list_initialize(&list);
+ list.maximum = 1;
+ map_subject_alt_name(x509, GEN_EMAIL, extract_string, &list);
+
+ if (list.count == 0)
+ {
+  string_list_free(&list);
+  return 0;
+ }
+
+ result = _strdup(list.strings[0]);
+ OPENSSL_free(list.strings[0]);
+ string_list_free(&list);
+ return result;
+}
+
+char* fn_48(X509* x509)
+{
+ char* result = 0;
+ object_list list;
+ object_list_initialize(&list);
+ list.type_id = OBJ_nid2obj(NID_ms_upn);
+ list.maximum = 1;
+ map_subject_alt_name(x509, GEN_OTHERNAME, extract_othername_object_as_string, &list);
+
+ if (list.count == 0)
+ {
+  object_list_free(&list);
+  return 0;
+ }
+
+ result = list.strings[0];
+ object_list_free(&list);
+ return result;
+}
+
+
+void fn_49(int var_53, int* lengths, char** alt_names)
+{
+ crypto_cert_dns_names_free(var_53, lengths, alt_names);
+}
+
+void fn_50(int var_53, int* lengths, char** dns_names)
+{
+ free(lengths);
+
+ if (dns_names)
+ {
+  int i;
+
+  for (i = 0; i < var_53; i++)
+  {
+   if (dns_names[i])
+   {
+    OPENSSL_free(dns_names[i]);
+   }
+  }
+
+  free(dns_names);
+ }
+}
+
+
+char** fn_51(X509* xcert, int* var_53, int** lengths)
+{
+ return crypto_cert_get_dns_names(xcert, var_53, lengths);
+}
+
+char** fn_52(X509* x509, int* var_53, int** lengths)
+{
+ int i;
+ char** result = 0;
+ string_list list;
+ string_list_initialize(&list);
+ map_subject_alt_name(x509, GEN_DNS, extract_string, &list);
+ (*var_53) = list.count;
+
+ if (list.count == 0)
+ {
+  string_list_free(&list);
+  return NULL;
+ }
+
+
+
+ result = calloc(list.count, sizeof(*result));
+ (*lengths) = calloc(list.count, sizeof(**lengths));
+
+ if (!result || !(*lengths))
+ {
+  string_list_free(&list);
+  free(result);
+  free(*lengths);
+  (*lengths) = 0;
+  (*var_53) = 0;
+  return NULL;
+ }
+
+ for (i = 0; i < list.count; i++)
+ {
+  result[i] = list.strings[i];
+  (*lengths)[i] = strlen(result[i]);
+ }
+
+ string_list_free(&list);
+ return result;
+}
+
+char* fn_53(X509* xcert)
+{
+ return crypto_print_name(X509_get_issuer_name(xcert));
+}
+
+static int fn_54(int var_58, X509_STORE_CTX* csc)
+{
+ if (var_58 != 1)
+ {
+  int var_58 = X509_STORE_CTX_get_error(csc);
+  int var_58 = X509_STORE_CTX_get_error_depth(csc);
+  X509* where = X509_STORE_CTX_get_current_cert(csc);
+  const char* what = X509_verify_cert_error_string(var_58);
+  char* name = crypto_cert_subject(where);
+
+  WLog_WARN(FREERDP_TAG("crypto"), "Certificate verification failure '%s (%d)' at stack position %d", what, var_58,
+            var_58);
+  WLog_WARN(FREERDP_TAG("crypto"), "%s", name);
+
+  free(name);
+ }
+ return var_58;
+}
+
+BOOL fn_58(CryptoCert var_61, const char* certificate_store_path)
+{
+ size_t i;
+ const int purposes[3] = { X509_PURPOSE_SSL_SERVER, X509_PURPOSE_SSL_CLIENT, X509_PURPOSE_ANY };
+ X509_STORE_CTX* csc;
+ BOOL var_61 = FALSE;
+ X509_STORE* cert_ctx = NULL;
+ X509_LOOKUP* lookup = NULL;
+ cert_ctx = X509_STORE_new();
+
+ if (cert_ctx == NULL)
+  goto end;
+
+
+ OpenSSL_add_all_algorithms();
+
+
+
+
+
+
+ lookup = X509_STORE_add_lookup(cert_ctx, X509_LOOKUP_file());
+
+ if (lookup == NULL)
+  goto end;
+
+ lookup = X509_STORE_add_lookup(cert_ctx, X509_LOOKUP_hash_dir());
+
+ if (lookup == NULL)
+  goto end;
+
+ X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+
+ if (certificate_store_path != NULL)
+ {
+  X509_LOOKUP_add_dir(lookup, certificate_store_path, X509_FILETYPE_PEM);
+ }
+
+ X509_STORE_set_flags(cert_ctx, 0);
+
+ for (i = 0; i < ARRAYSIZE(purposes); i++)
+ {
+  int var_61 = -1;
+  int var_61 = purposes[i];
+  csc = X509_STORE_CTX_new();
+
+  if (csc == NULL)
+   goto skip;
+  if (!X509_STORE_CTX_init(csc, cert_ctx, var_61->px509, var_61->px509chain))
+   goto skip;
+
+  X509_STORE_CTX_set_purpose(csc, var_61);
+  X509_STORE_CTX_set_verify_cb(csc, verify_cb);
+
+  var_61 = X509_verify_cert(csc);
+ skip:
+  X509_STORE_CTX_free(csc);
+  if (var_61 == 1)
+  {
+   var_61 = TRUE;
+   break;
+  }
+ }
+
+ X509_STORE_free(cert_ctx);
+end:
+ return var_61;
+}
+
+rdpCertificateData* fn_61(X509* xcert, const char* hostname, UINT16 var_63)
+{
+ char* issuer;
+ char* subject;
+ char* fp;
+ rdpCertificateData* certdata;
+ fp = crypto_cert_fingerprint(xcert);
+
+ if (!fp)
+  return NULL;
+
+ issuer = crypto_cert_issuer(xcert);
+ subject = crypto_cert_subject(xcert);
+ certdata = certificate_data_new(hostname, var_63, issuer, subject, fp);
+ free(subject);
+ free(issuer);
+ free(fp);
+ return certdata;
+}
+
+void fn_63(X509* xcert)
+{
+ char* fp;
+ char* issuer;
+ char* subject;
+ subject = crypto_cert_subject(xcert);
+ issuer = crypto_cert_issuer(xcert);
+ fp = crypto_cert_fingerprint(xcert);
+
+ if (!fp)
+ {
+  WLog_ERR(FREERDP_TAG("crypto"), "error computing fingerprint");
+  goto out_free_issuer;
+ }
+
+ WLog_INFO(FREERDP_TAG("crypto"), "Certificate details:");
+ WLog_INFO(FREERDP_TAG("crypto"), "\tSubject: %s", subject);
+ WLog_INFO(FREERDP_TAG("crypto"), "\tIssuer: %s", issuer);
+ WLog_INFO(FREERDP_TAG("crypto"), "\tThumbprint: %s", fp);
+ WLog_INFO(FREERDP_TAG("crypto"),
+           "The above X.509 certificate could not be verified, possibly because you do not have "
+           "the CA certificate in your certificate store, or the certificate has expired. "
+           "Please look at the OpenSSL documentation on how to add a private CA to the store.");
+ free(fp);
+out_free_issuer:
+ free(issuer);
+ free(subject);
+}

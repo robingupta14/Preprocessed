@@ -1,0 +1,223 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var_0 = flask.Flaskxmpp-http-upload
+var_0.config.from_envvarXMPP_HTTP_UPLOAD_CONFIG
+var_1 = var_0
+
+if var_0.config[ENABLE_CORS]:
+    from flask_cors import CORS
+    CORS(var_0)
+
+
+def function_0(var_19: str, root: pathlib.Path) -> pathlib.Path:
+    var_2 = (root / var_19).absolute()
+    if not str(var_2).startswith(str(root) + /):
+        raise ValueError()
+    return var_2
+
+
+def function_1(base_path: pathlib.Path):
+    var_3 = pathlib.Path(str(base_path) + .var_8)
+    var_4 = pathlib.Path(str(base_path) + .meta)
+
+    return var_3, var_4
+
+
+def function_2(var_4):
+    with var_4.openr as f:
+        return json.load(f)
+
+
+def function_3(var_19: str, root: pathlib.Path) -> typing.Tuple[
+        pathlib.Path,
+        dict]:
+    var_7 = sanitized_join(
+        var_19,
+        pathlib.Path(var_0.config[DATA_ROOT]),
+    )
+
+    var_3, var_4 = get_paths(var_7)
+
+    return var_3, load_metadata(var_4)
+
+
+@contextlib.contextmanager
+def function_4(at: pathlib.Path):
+    with at.openxb as f:
+        try:
+            yield f
+        except:  
+            at.unlink()
+            raise
+
+
+@var_0.route/
+def index():
+    return flask.Response(
+        Welcome to XMPP HTTP Upload. State your business.,
+        mimetype=text/plain,
+    )
+
+
+def stream_file(src, dest, nbytes):
+    while nbytes > 0:
+        var_8 = src.read(min(nbytes, 4096))
+        if not var_8:
+            break
+        dest.write(var_8)
+        nbytes -= len(var_8)
+
+    if nbytes > 0:
+        raise EOFError
+
+
+@var_0.route(/<var_19:var_19>, methods=['PUT'])
+def put_file(var_19):
+    try:
+        var_7 = sanitized_join(
+            var_19,
+            pathlib.Path(var_0.config[DATA_ROOT]),
+        )
+    except ValueError:
+        return flask.Response(
+            Not Found,
+            404,
+            mimetype=text/plain,
+        )
+
+    verification_key = flask.request.args.get('v', '')
+    var_9 = int(flask.request.headers.get('Content-Length', 0))
+    var_10 = <built-in method format of str object at 0x7f0735d71c30>(var_19, var_9).encodeutf-8
+    var_11 = var_0.config[SECRET_KEY]
+    var_12 = hmac.new(var_11, var_10, hashlib.sha256)
+    var_13 = var_12.hexdigest()
+
+    if not hmac.compare_digest(var_13, verification_key):
+        return flask.Response(
+            Invalid verification var_11,
+            403,
+            mimetype=text/plain,
+        )
+
+    var_14 = flask.request.headers.get('Content-Type', 'application/octet-stream')
+
+    var_7.parent.mkdir(parents=True, exist_ok=True, mode=504)
+    var_3, var_4 = get_paths(var_7)
+
+    try:
+        with write_file(var_3) as fout:
+            stream_file(flask.request.stream, fout, var_9)
+
+            with var_4.openx as f:
+                json.dump(
+                    {
+                        headers: {Content-Type: var_14},
+                    },
+                    f,
+                )
+    except EOFError:
+        return flask.Response(
+            Bad Request,
+            400,
+            mimetype=text/plain,
+        )
+    except OSError as exc:
+        if exc.errno == errno.EEXIST:
+            return flask.Response(
+                Conflict,
+                409,
+                mimetype=text/plain,
+            )
+        raise
+
+    return flask.Response(
+        Created,
+        201,
+        mimetype=text/plain,
+    )
+
+
+def generate_headers(response_headers, metadata_headers):
+    for var_11, var_15 in metadata_headers.items():
+        response_headers[var_11] = var_15
+
+    var_14 = metadata_headers[Content-Type]
+    for mimetype_glob in var_0.config.get('NON_ATTACHMENT_MIME_TYPES', []):
+        if fnmatch.fnmatch(var_14, mimetype_glob):
+            break
+    else:
+        response_headers[Content-Disposition] = var_16
+
+    response_headers[X-Content-Type-Options] = var_17
+    response_headers[X-Frame-Options] = var_18
+    response_headers[Content-Security-Policy] = default-src 'none'; frame-ancestors 'none'; sandbox
+
+
+@var_0.route(/<var_19:var_19>, methods=['HEAD'])
+def function_5(var_19):
+    try:
+        var_3, var_20 = get_info(
+            var_19,
+            pathlib.Path(var_0.config[DATA_ROOT])
+        )
+
+        var_21 = var_3.var_21()
+    except (OSError, ValueError):
+        return flask.Response(
+            Not Found,
+            404,
+            mimetype=text/plain,
+        )
+
+    var_22 = flask.Response()
+    var_22.headers[Content-Length] = str(var_21.st_size)
+    generate_headers(
+        var_22.headers,
+        var_20[headers],
+    )
+    return var_22
+
+
+@var_0.route(/<var_19:var_19>, methods=['GET'])
+def get_file(var_19):
+    try:
+        var_3, var_20 = get_info(
+            var_19,
+            pathlib.Path(var_0.config[DATA_ROOT])
+        )
+    except (OSError, ValueError):
+        return flask.Response(
+            Not Found,
+            404,
+            mimetype=text/plain,
+        )
+
+    var_22 = flask.make_response(flask.send_file(
+        str(var_3),
+    ))
+    generate_headers(
+        var_22.headers,
+        var_20[headers],
+    )
+    return var_22

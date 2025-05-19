@@ -1,0 +1,181 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from types import ListType
+
+from spacewalk.common import rhnFlags
+from spacewalk.common.rhnLog import log_debug, log_error
+from spacewalk.common.rhnConfig import CFG
+from spacewalk.common.rhnException import rhnFault
+from spacewalk.common.rhnTranslate import _
+from spacewalk.server import rhnSQL
+from rhnLib import parseRPMFilename
+
+
+
+
+
+
+
+
+def get_package_path(server_id, pkg_spec, channel):
+    log_debug(3, server_id, pkg_spec, channel)
+    if isinstance(pkg_spec, ListType):
+        pkg = pkg_spec[:4]
+        
+        pkg.insert(1, None)
+    else:
+        pkg = parseRPMFilename(pkg_spec)
+        if pkg is None:
+            log_debug(4, Error, Requested weird package, pkg_spec)
+            raise rhnFault(17, _Invalid RPM package %s requested % pkg_spec)
+
+    statement = 
+    h = spacewalk.server.rhnSQL.prepare(statement)
+    pkg = map(str, pkg)
+    h.execute(name=pkg[0], ver=pkg[2], rel=pkg[3], arch=pkg[4],
+              channel=channel, server_id=server_id)
+    rs = h.fetchall_dict()
+    if not rs:
+        log_debug(4, Error, Non-existant package requested, server_id,
+                  pkg_spec, channel)
+        raise rhnFault(17, _Invalid RPM package %s requested % pkg_spec)
+    
+    
+    
+    
+    
+    max_row = rs[0]
+    for each in rs[1:]:
+        
+        if _none2emptyString(each[epoch]) > _none2emptyString(max_row[epoch]):
+            max_row = each
+
+    
+    spacewalk.common.rhnFlags.set(Download-Accelerator-Path, max_row[path])
+    return check_package_file(max_row[path], max_row[id], pkg_spec), max_row[id]
+
+
+def check_package_file(rel_path, logpkg, raisepkg):
+    if rel_path is None:
+        log_error(Package path null for package id, logpkg)
+        raise rhnFault(17, _Invalid RPM package %s requested % raisepkg)
+    filePath = %s/%s % (spacewalk.common.rhnConfig.CFG.MOUNT_POINT, rel_path)
+    if not os.access(filePath, os.R_OK):
+        
+        log_error(Package not found, filePath)
+        raise rhnFault(17, _Package not found)
+
+    return filePath
+
+
+def unlink_package_file(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        log_debug(1,  Error unlinking %s; % path)
+    dirname = os.path.dirname(path)
+    base_dirs = (spacewalk.common.rhnConfig.CFG.MOUNT_POINT + / + spacewalk.common.rhnConfig.CFG.PREPENDED_DIR, spacewalk.common.rhnConfig.CFG.MOUNT_POINT)
+    while dirname not in base_dirs:
+        try:
+            os.rmdir(dirname)
+        except OSError, e:
+            if e.errno == 39:  
+                break
+            else:
+                raise
+        dirname = os.path.dirname(dirname)
+
+
+def get_all_package_paths(server_id, pkg_spec, channel):
+    
+    log_debug(3, server_id, pkg_spec, channel)
+    remotepath = None
+    
+    localpath, pkg_id = get_package_path(server_id, pkg_spec, channel)
+
+    return remotepath, localpath
+
+
+
+
+
+def get_source_package_path(server_id, pkgFilename, channel):
+    log_debug(3, server_id, pkgFilename, channel)
+    rs = __query_source_package_path_by_name(server_id, pkgFilename, channel)
+    if rs is None:
+        log_debug(4, Error, Non-existant package requested, server_id,
+                  pkgFilename, channel)
+        raise rhnFault(17, _Invalid RPM package %s requested % pkgFilename)
+
+    
+    spacewalk.common.rhnFlags.set(Download-Accelerator-Path, rs[path])
+    return check_package_file(rs[path], pkgFilename, pkgFilename)
+
+
+
+def package_source_in_channel(server_id, pkgFilename, channel):
+    log_debug(3, server_id, pkgFilename, channel)
+    rs = __query_source_package_path_by_name(server_id, pkgFilename, channel)
+    if rs is None:
+        return 0
+    return 1
+
+
+
+def __query_source_package_path_by_name(server_id, pkgFilename, channel):
+    statement = 
+    h = spacewalk.server.rhnSQL.prepare(statement)
+    h.execute(name=pkgFilename, channel=channel, server_id=server_id)
+    return h.fetchone_dict()
+
+
+def get_info_for_package(pkg, channel_id, org_id):
+    log_debug(3, pkg)
+    pkg = map(str, pkg)
+    params = {name: pkg[0],
+              ver: pkg[1],
+              rel: pkg[2],
+              epoch: pkg[3],
+              arch: pkg[4],
+              channel_id: channel_id,
+              org_id: org_id}
+    
+    if pkg[3] == 0 or pkg[3] == :
+        epochStatement = (epoch is null or epoch = :epoch)
+    else:
+        epochStatement = epoch = :epoch
+    if params[org_id]:
+        orgStatement = org_id = :org_id
+    else:
+        orgStatement = org_id is null
+
+    statement =  % (epochStatement, orgStatement)
+
+    h = spacewalk.server.rhnSQL.prepare(statement)
+    h.execute(**params)
+
+    ret = h.fetchone_dict()
+    if not ret:
+        return {'path': None, 'channel_id': None, 'checksum_type': None, 'checksum': None}
+    return ret
+
+
+def _none2emptyString(foo):
+    if foo is None:
+        return 
+    return str(foo)
+

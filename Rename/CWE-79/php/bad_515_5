@@ -1,0 +1,867 @@
+<?php
+
+
+
+$var_0 = array(
+	1 => __('Delete'),
+	2 => __('Duplicate')
+);
+
+
+set_default_action();
+
+switch (get_request_var('action')) {
+	case 'save':
+		fn_1();
+
+		break;
+	case 'actions':
+		fn_4();
+
+		break;
+	case 'item_remove_confirm':
+		fn_5();
+
+		break;
+	case 'item_remove':
+		fn_6();
+
+		break;
+	case 'item_movedown':
+		get_filter_request_var('cdef_id');
+
+		fn_7();
+
+		header('Location: cdef.php?action=edit&id=' . get_request_var('cdef_id'));
+		break;
+	case 'item_moveup':
+		get_filter_request_var('cdef_id');
+
+		fn_8();
+
+		header('Location: cdef.php?action=edit&id=' . get_request_var('cdef_id'));
+		break;
+	case 'item_remove':
+		get_filter_request_var('cdef_id');
+
+		fn_9();
+
+		header('Location: cdef.php?action=edit&id=' . get_request_var('cdef_id'));
+		break;
+	case 'item_edit':
+		top_header();
+
+		fn_10();
+
+		bottom_footer();
+		break;
+	case 'edit':
+		top_header();
+
+		fn_12();
+
+		bottom_footer();
+		break;
+    case 'ajax_dnd':
+        fn_11();
+
+        break;
+	default:
+		top_header();
+
+		fn_3();
+
+		bottom_footer();
+		break;
+}
+
+
+
+function fn_0($var_1) {
+	?>
+	<tr class='even'>
+		<td style='padding:4px'>
+			<pre>cdef=<?php ?></pre>
+		</td>
+	</tr>
+	<?php
+}
+
+
+
+
+function fn_1() {
+
+	
+	if (isset_request_var('id') && ! is_numeric(get_filter_request_var('id'))) {
+		set_request_var('id', 0);
+	}
+
+	if (isset_request_var('cdef_id') && ! is_numeric(get_filter_request_var('cdef_id'))) {
+		set_request_var('cdef_id', 0);
+	}
+
+	if (isset_request_var('save_component_cdef')) {
+		$var_2['id']     = form_input_validate(get_nfilter_request_var('id'), 'id', '^[0-9]+$', false, 3);
+		$var_2['hash']   = get_hash_cdef(get_nfilter_request_var('id'));
+		$var_2['name']   = form_input_validate(get_nfilter_request_var('name'), 'name', '', false, 3);
+		$var_2['system'] = 0;
+
+		if (!is_error_message()) {
+			$var_1 = sql_save($var_2, 'cdef');
+
+			if ($var_1) {
+				raise_message(1);
+			} else {
+				raise_message(2);
+			}
+		}
+
+		header('Location: cdef.php?header=false&action=edit&id=' . (empty($var_1) ? get_nfilter_request_var('id') : $var_1));
+	} elseif (isset_request_var('save_component_item')) {
+		
+		get_filter_request_var('id');
+		get_filter_request_var('cdef_id');
+		get_filter_request_var('type');
+		
+
+		$var_3 = get_sequence(get_nfilter_request_var('id'), 'sequence', 'cdef_items', 'cdef_id=' . get_nfilter_request_var('cdef_id'));
+
+		$var_2['id']       = form_input_validate(get_nfilter_request_var('id'), 'id', '^[0-9]+$', false, 3);
+		$var_2['hash']     = get_hash_cdef(get_nfilter_request_var('id'), 'cdef_item');
+		$var_2['cdef_id']  = form_input_validate(get_nfilter_request_var('cdef_id'), 'cdef_id', '^[0-9]+$', false, 3);
+		$var_2['sequence'] = $var_3;
+		$var_2['type']     = form_input_validate(get_nfilter_request_var('type'), 'type', '^[0-9]+$', false, 3);
+		$var_2['value']    = form_input_validate(get_nfilter_request_var('value'), 'value', '', false, 3);
+
+		if (!is_error_message()) {
+			$var_4 = sql_save($var_2, 'cdef_items');
+
+			if ($var_4) {
+				raise_message(1);
+			} else {
+				raise_message(2);
+			}
+		}
+
+		if (is_error_message()) {
+			header('Location: cdef.php?header=false&action=item_edit&cdef_id=' . get_nfilter_request_var('cdef_id') . '&id=' . (empty($var_4) ? get_nfilter_request_var('id') : $var_4));
+		} else {
+			header('Location: cdef.php?header=false&action=edit&id=' . get_nfilter_request_var('cdef_id'));
+		}
+	}
+}
+
+function fn_2($var_5, $var_6) {
+	global $var_7;
+
+	$var_8       = db_fetch_row_prepared('SELECT * FROM cdef WHERE id = ?', array($var_5));
+	$var_9 = db_fetch_assoc_prepared('SELECT * FROM cdef_items WHERE cdef_id = ?', array($var_5));
+
+	
+	$var_8['name'] = str_replace('<cdef_title>', $var_8['name'], $var_6);
+
+	
+	$var_2['id']   = 0;
+	$var_2['hash'] = get_hash_cdef(0);
+
+	foreach ($var_7 as $var_10 => $var_11) {
+		if (!preg_match('/^hidden/', $var_11['method'])) {
+			$var_2[$var_10] = $var_8[$var_10];
+		}
+	}
+
+	$var_1 = sql_save($var_2, 'cdef');
+
+	
+	if (cacti_sizeof($var_9) > 0) {
+		foreach ($var_9 as $var_12) {
+			unset($var_2);
+
+			$var_2['id']       = 0;
+			$var_2['hash']     = get_hash_cdef(0, 'cdef_item');
+			$var_2['cdef_id']  = $var_1;
+			$var_2['sequence'] = $var_12['sequence'];
+			$var_2['type']     = $var_12['type'];
+			$var_2['value']    = $var_12['value'];
+
+			sql_save($var_2, 'cdef_items');
+		}
+	}
+}
+
+
+
+function fn_4() {
+	global $var_0;
+
+	
+	get_filter_request_var('drp_action', var_13, array('options' => array('regexp' => '/^([a-zA-Z0-9_]+)$/')));
+	
+
+	
+	if (isset_request_var('selected_items')) {
+		$var_14 = sanitize_unserialize_selected_items(get_nfilter_request_var('selected_items'));
+
+		if ($var_14 != false) {
+			if (get_nfilter_request_var('drp_action') == '1') { 
+				db_execute('DELETE FROM cdef WHERE ' . array_to_sql_or($var_14, 'id'));
+				db_execute('DELETE FROM cdef_items WHERE ' . array_to_sql_or($var_14, 'cdef_id'));
+			} elseif (get_nfilter_request_var('drp_action') == '2') { 
+				for ($var_15=0;($var_15<cacti_count($var_14));$var_15++) {
+					fn_2($var_14[$var_15], get_nfilter_request_var('title_format'));
+				}
+			}
+		}
+
+		header('Location: cdef.php?header=false');
+		var_16;
+	}
+
+	
+	$var_17 = ''; $var_15 = 0;
+
+	
+	foreach ($var_18 as $var_19 => $var_20) {
+		if (preg_match('/^chk_([0-9]+)$/', $var_19, $var_21)) {
+			
+			input_validate_input_number($var_21[1]);
+			
+
+			$var_17 .= '<li>' . html_escape(db_fetch_cell_prepared('SELECT name FROM cdef WHERE id = ?', array($var_21[1]))) . '</li>';
+			$var_22[$var_15] = $var_21[1];
+
+			$var_15++;
+		}
+	}
+
+	top_header();
+
+	form_start('cdef.php');
+
+	html_start_box($var_0[get_nfilter_request_var('drp_action')], '60%', '', '3', 'center', '');
+
+	if (isset($var_22) && cacti_sizeof($var_22)) {
+		if (get_nfilter_request_var('drp_action') == '1') { 
+			
+
+			$var_23 = "<input type='button' class='ui-button ui-corner-all ui-widget' value='" . __esc('Cancel') . "' onClick='cactiReturnTo()'>&nbsp;<input type='submit' class='ui-button ui-corner-all ui-widget' value='" . __esc('Continue') . "' title='" . __n('Delete CDEF', 'Delete CDEFs', cacti_sizeof($var_22)) . "'>";
+		} elseif (get_nfilter_request_var('drp_action') == '2') { 
+			
+					form_text_box('title_format', '<cdef_title> (1)', '', '255', '30', 'text'); 
+
+			$var_23 = "<input type='button' class='ui-button ui-corner-all ui-widget' value='" . __esc('Cancel') . "' onClick='cactiReturnTo()'>&nbsp;<input type='submit' class='ui-button ui-corner-all ui-widget' value='" . __esc('Continue') . "' title='" . __n('Duplicate CDEF', 'Duplicate CDEFs', cacti_sizeof($var_22)) . "'>";
+		}
+	} else {
+		raise_message(40);
+		header('Location: cdef.php?header=false');
+		var_16;
+	}
+
+	
+
+	html_end_box();
+
+	form_end();
+
+	bottom_footer();
+}
+
+
+
+function fn_5() {
+	global $var_24, $var_25, $var_26;
+
+	
+	get_filter_request_var('id');
+	get_filter_request_var('cdef_id');
+	
+
+	form_start('cdef.php');
+
+	html_start_box('', '100%', '', '3', 'center', '');
+
+	$var_8       = db_fetch_row_prepared('SELECT * FROM cdef WHERE id = ?', array(get_request_var('id')));
+	$var_12  = db_fetch_row_prepared('SELECT * FROM cdef_items WHERE id = ?', array(get_request_var('cdef_id')));
+
+	?>
+	<tr>
+		<td class='topBoxAlt'>
+			<p><?php ?></p>
+			<p><?php ?><br>
+			<em><?php $var_27 = $var_12['type']; ?></em>: <strong><?php ?></strong></p>
+		</td>
+	</tr>
+	<tr>
+		<td class='right'>
+			<input type='button' class='ui-button ui-corner-all ui-widget' id='cancel' value='<?php ?>' onClick='$("
+			<input type='button' class='ui-button ui-corner-all ui-widget' id='continue' value='<?php ?>' name='continue' title='<?php ?>'>
+		</td>
+	</tr>
+	<?php
+
+	html_end_box();
+
+	form_end();
+
+	?>
+	<script type='text/javascript'>
+	$(function() {
+		$('
+			$.post('cdef.php?action=item_remove', {
+				__csrf_magic: csrfMagicToken,
+				cdef_id: <?php ?>,
+				id: <?php ?>
+			}, function(data) {
+				$('
+				$('.deleteMarker').blur();
+				loadPageNoHeader('cdef.php?action=edit&header=false&id=<?php ?>');
+			});
+		});
+	});
+	</script>
+	<?php
+}
+
+function fn_6() {
+	
+	get_filter_request_var('cdef_id');
+	
+
+	db_execute_prepared('DELETE FROM cdef_items WHERE id = ?', array(get_request_var('cdef_id')));
+}
+
+function fn_7() {
+	
+	get_filter_request_var('id');
+	get_filter_request_var('cdef_id');
+	
+
+	move_item_down('cdef_items', get_request_var('id'), 'cdef_id=' . get_request_var('cdef_id'));
+}
+
+function fn_8() {
+	
+	get_filter_request_var('id');
+	get_filter_request_var('cdef_id');
+	
+
+	move_item_up('cdef_items', get_request_var('id'), 'cdef_id=' . get_request_var('cdef_id'));
+}
+
+function fn_9() {
+	
+	get_filter_request_var('id');
+	get_filter_request_var('cdef_id');
+	
+
+	db_execute_prepared('DELETE FROM cdef_items WHERE id = ?', array(get_request_var('id')));
+}
+
+function fn_10() {
+	global $var_25, $var_24, $var_28, $var_29;
+
+	
+	get_filter_request_var('id');
+	get_filter_request_var('cdef_id');
+	
+
+	if (!isempty_request_var('id')) {
+		$var_8 = db_fetch_row_prepared('SELECT *
+			FROM cdef_items
+			WHERE id = ?',
+			array(get_request_var('id')));
+
+		if (cacti_sizeof($var_8)) {
+			$var_30 = $var_8['type'];
+			$values[$var_30] = $var_8['value'];
+		}
+	} else {
+		$var_8 = array();
+	}
+
+	html_start_box(__('CDEF Preview'), '100%', '', '3', 'center', '');
+	fn_0(get_request_var('cdef_id'));
+	html_end_box();
+
+	form_start('cdef.php', 'form_cdef');
+
+	$var_31 = db_fetch_cell_prepared('SELECT name
+		FROM cdef
+		WHERE id = ?',
+		array(get_request_var('cdef_id')));
+
+	html_start_box(__('CDEF Items [edit: %s]', html_escape($var_31)), '100%', '', '3', 'center', '');
+
+	if (isset_request_var('type_select')) {
+		$var_30 = get_request_var('type_select');
+	} elseif (isset($var_8['type'])) {
+		$var_30 = $var_8['type'];
+	} else {
+		$var_30 = '1';
+	}
+
+	$var_32 = array(
+		'type_select' => array(
+			'method'        => 'drop_array',
+			'friendly_name' => __('CDEF Item Type'),
+			'description'   => __('Choose what type of CDEF item this is.'),
+			'value'         => $var_30,
+			'array'         => $var_25
+		),
+		'value' => array(
+			'method'        => 'drop_array',
+			'friendly_name' => __('CDEF Item Value'),
+			'description'   => __('Enter a value for this CDEF item.'),
+			'value'         => (isset($var_8['value']) ? $var_8['value']:'')
+		),
+		'id' => array(
+			'method'        => 'hidden',
+			'value'         => isset_request_var('id') ?  get_request_var('id') : '0',
+		),
+		'type' => array(
+			'method'        => 'hidden',
+			'value'         => $var_30
+		),
+		'cdef_id' => array(
+			'method'        => 'hidden',
+			'value'         => get_request_var('cdef_id')
+		),
+		'save_component_item' => array(
+			'method'        => 'hidden',
+			'value'         => '1'
+		)
+	);
+
+	switch ($var_30) {
+	case '1':
+		$var_32['value']['array'] = $var_24;
+
+		break;
+	case '2':
+		$var_32['value']['array'] = $var_28;
+
+		break;
+	case '4':
+		$var_32['value']['array'] = $var_29;
+
+		break;
+	case '5':
+		$var_32['value']['method'] = 'drop_sql';
+		$var_32['value']['sql']    = 'SELECT name, id FROM cdef WHERE `system`=0 ORDER BY name';
+
+		break;
+	case '6':
+		$var_32['value']['method']     = 'textbox';
+		$var_32['value']['max_length'] = '255';
+		$var_32['value']['size']       = '30';
+
+		break;
+	}
+
+	draw_edit_form(
+		array(
+			'config' => array('no_form_tag' => true),
+			'fields' => inject_form_variables($var_32, $var_8)
+		)
+	);
+
+	?>
+	<script type='text/javascript'>
+	$(function() {
+		$('
+			strURL  = 'cdef.php?action=item_edit';
+			strURL += '&id=' + $('
+			strURL += '&cdef_id=' + $('
+			strURL += '&type_select=' + $('
+			strURL += '&header=false';
+			loadPageNoHeader(strURL);
+		});
+	});
+	</script>
+	<?php
+
+	html_end_box();
+
+	form_save_button('cdef.php?action=edit&id=' . get_request_var('cdef_id'));
+}
+
+
+
+function fn_11() {
+	
+	get_filter_request_var('id');
+	
+
+	$var_33 = true;
+
+	if (isset_request_var('cdef_item') && is_array(get_nfilter_request_var('cdef_item'))) {
+		$var_34 = get_nfilter_request_var('cdef_item');
+
+		if (cacti_sizeof($var_34)) {
+			$var_3 = 1;
+			foreach($var_34 as $var_1) {
+				$var_1 = str_replace('line', '', $var_1);
+				input_validate_input_number($var_1);
+
+				db_execute_prepared('UPDATE cdef_items
+					SET sequence = ?
+					WHERE id = ?',
+					array($var_3, $var_1));
+
+				$var_3++;
+			}
+		}
+	}
+
+	header('Location: cdef.php?action=edit&header=false&id=' . get_request_var('id'));
+}
+
+function fn_12() {
+	global $var_25, $var_7;
+
+	
+	get_filter_request_var('id');
+	
+
+	if (!isempty_request_var('id')) {
+		$var_8 = db_fetch_row_prepared('SELECT * FROM cdef WHERE id = ?', array(get_request_var('id')));
+		$var_35 = __('CDEF [edit: %s]', html_escape($var_8['name']));
+	} else {
+		$var_35 = __('CDEF [new]');
+	}
+
+	form_start('cdef.php', 'cdef');
+
+	html_start_box($var_35, '100%', true, '3', 'center', '');
+
+	draw_edit_form(
+		array(
+			'config' => array('no_form_tag' => true),
+			'fields' => inject_form_variables($var_7, (isset($var_8) ? $var_8 : array()))
+		)
+	);
+
+	html_end_box(true, true);
+
+	if (!isempty_request_var('id')) {
+		html_start_box('', '100%', '', '3', 'center', '');
+		fn_0(get_request_var('id'));
+		html_end_box();
+
+		html_start_box(__('CDEF Items'), '100%', '', '3', 'center', 'cdef.php?action=item_edit&cdef_id=' . $var_8['id']);
+
+		$var_36 = array(
+			array('display' => __('Item'), 'align' => 'left'),
+			array('display' => __('Item Value'), 'align' => 'left')
+		);
+
+		html_header($var_36, 2);
+
+		$var_9 = db_fetch_assoc_prepared('SELECT *
+			FROM cdef_items
+			WHERE cdef_id = ?
+			ORDER BY sequence',
+			array(get_request_var('id')));
+
+		$var_15 = 1;
+		$var_37 = cacti_sizeof($var_9);
+		if (cacti_sizeof($var_9)) {
+			foreach ($var_9 as $var_12) {
+				form_alternate_row('line' . $var_12['id'], true, true);?>
+					<td>
+						<a class='linkEditMain' href='<?php ?>'><?php  ?></em>: <?php ?>
+					</td>
+					<td class='right'>
+						<?php
+						if (read_config_option('drag_and_drop') == '') {
+							if ($var_15 < $var_37 && $var_37 > 0) {
+								
+							} else {
+								
+							}
+
+							if ($var_15 > 1 && $var_15 <= $var_37) {
+								
+							} else {
+								
+							}
+						}
+						?>
+						<a id='<?php ?>' class='delete deleteMarker fa fa-times' title='<?php ?>' href='
+					</td>
+				</tr>
+				<?php
+
+				$var_15++;
+			}
+		}
+
+		html_end_box();
+	}
+
+	form_save_button('cdef.php', 'return');
+
+	?>
+	<script type='text/javascript'>
+
+	$(function() {
+		$('
+		$('.cdialog').remove();
+		$('body').append("<div class='cdialog' id='cdialog'></div>");
+
+		<?php if (read_config_option('drag_and_drop') == 'on') { ?>
+		$('
+			onDrop: function(table, row) {
+				loadPageNoHeader('cdef.php?action=ajax_dnd&id=<?php isset_request_var('id') ? ?>&'+$.tableDnD.serialize());
+			}
+		});
+		<?php } ?>
+
+		$('.delete').click(function(event) {
+			event.preventDefault();
+
+			id = $(this).attr('id').split('_');
+			request = 'cdef.php?action=item_remove_confirm&id='+id[0]+'&cdef_id='+id[1];
+			$.get(request)
+				.done(function(data) {
+					$('
+					applySkin();
+					$('
+				})
+				.fail(function(data) {
+					getPresentHTTPError(data);
+				});
+		});
+	});
+	</script>
+	<?php
+}
+
+function fn_3() {
+	global $var_0, $var_38;
+
+	
+	$var_39 = array(
+		'rows' => array(
+			'filter' => var_40,
+			'pageset' => true,
+			'default' => '-1'
+			),
+		'page' => array(
+			'filter' => var_40,
+			'default' => '1'
+			),
+		'filter' => array(
+			'filter' => var_41,
+			'pageset' => true,
+			'default' => '',
+			'options' => array('options' => 'sanitize_search_string')
+			),
+		'sort_column' => array(
+			'filter' => var_41,
+			'default' => 'name',
+			'options' => array('options' => 'sanitize_search_string')
+			),
+		'sort_direction' => array(
+			'filter' => var_41,
+			'default' => 'ASC',
+			'options' => array('options' => 'sanitize_search_string')
+			),
+		'has_graphs' => array(
+			'filter' => var_13,
+			'options' => array('options' => array('regexp' => '(true|false)')),
+			'pageset' => true,
+			'default' => read_config_option('default_has') == 'on' ? 'true':'false'
+			)
+	);
+
+	validate_store_request_vars($var_39, 'sess_cdef');
+	
+
+	if (get_request_var('rows') == '-1') {
+		$var_42 = read_config_option('num_rows_table');
+	} else {
+		$var_42 = get_request_var('rows');
+	}
+
+	html_start_box(__('CDEFs'), '100%', '', '3', 'center', 'cdef.php?action=edit');
+
+	?>
+	<tr class='even'>
+		<td>
+			<form id='form_cdef' action='cdef.php'>
+			<table class='filterTable'>
+				<tr>
+					<td>
+						<?php ?>
+					</td>
+					<td>
+						<input type='text' class='ui-state-default ui-corner-all' id='filter' name='filter' size='25' value='<?php ?>'>
+					</td>
+					<td>
+						<?php ?>
+					</td>
+					<td>
+						<select id='rows' name='rows' onChange='applyFilter()'>
+							<option value='-1'<?php ?></option>
+							<?php
+							if (cacti_sizeof($var_38) > 0) {
+								foreach ($var_38 as $var_43 => $var_44) {
+									 if (get_request_var('rows') == $var_43) {  } 
+								}
+							}
+							?>
+						</select>
+					</td>
+					<td>
+						<span>
+							<input type='checkbox' id='has_graphs' <?php ?>>
+							<label for='has_graphs'><?php ?></label>
+						</span>
+					</td>
+					<td>
+						<span>
+							<input type='button' class='ui-button ui-corner-all ui-widget' id='refresh' value='<?php ?>' title='<?php ?>'>
+							<input type='button' class='ui-button ui-corner-all ui-widget' id='clear' value='<?php ?>' title='<?php ?>'>
+						</span>
+					</td>
+				</tr>
+			</table>
+			</form>
+			<script type='text/javascript'>
+
+			function applyFilter() {
+				strURL  = 'cdef.php?header=false';
+				strURL += '&filter='+$('
+				strURL += '&rows='+$('
+				strURL += '&has_graphs='+$('
+				loadPageNoHeader(strURL);
+			}
+
+			function clearFilter() {
+				strURL = 'cdef.php?clear=1&header=false';
+				loadPageNoHeader(strURL);
+			}
+
+			$(function() {
+				$('
+					applyFilter();
+				});
+
+				$('
+					applyFilter();
+				});
+
+				$('
+					clearFilter();
+				});
+
+				$('
+					event.preventDefault();
+					applyFilter();
+				});
+			});
+
+			</script>
+		</td>
+	</tr>
+	<?php
+
+	html_end_box();
+
+	
+	if (get_request_var('filter') != '') {
+		$var_45 = "WHERE (name LIKE '%" . get_request_var('filter') . "%' AND `system`=0)";
+	} else {
+		$var_45 = 'WHERE `system`=0';
+	}
+
+	if (get_request_var('has_graphs') == 'true') {
+		$var_46 = 'HAVING graphs>0';
+	} else {
+		$var_46 = '';
+	}
+
+	$var_47 = db_fetch_cell("SELECT
+		COUNT(`rows`)
+		FROM (
+			SELECT cd.id AS `rows`,
+			SUM(CASE WHEN local_graph_id>0 THEN 1 ELSE 0 END) AS graphs
+			FROM cdef AS cd
+			LEFT JOIN graph_templates_item AS gti
+			ON gti.cdef_id=cd.id
+			$var_45
+			GROUP BY cd.id
+			$var_46
+		) AS rs");
+
+	$var_48 = get_order_string();
+	$var_49 = ' LIMIT ' . ($var_42*(get_request_var('page')-1)) . ',' . $var_42;
+
+	$var_17 = db_fetch_assoc("SELECT rs.*,
+		SUM(CASE WHEN local_graph_id=0 THEN 1 ELSE 0 END) AS templates,
+		SUM(CASE WHEN local_graph_id>0 THEN 1 ELSE 0 END) AS graphs
+		FROM (
+			SELECT cd.*, gti.local_graph_id
+			FROM cdef AS cd
+			LEFT JOIN graph_templates_item AS gti
+			ON gti.cdef_id=cd.id
+			WHERE `system`=0
+			GROUP BY cd.id, gti.graph_template_id, gti.local_graph_id
+		) AS rs
+		$var_45
+		GROUP BY rs.id
+		$var_46
+		$var_48
+		$var_49");
+
+	$var_50 = html_nav_bar('cdef.php?filter=' . get_request_var('filter'), var_51, get_request_var('page'), $var_42, $var_47, 5, __('CDEFs'), 'page', 'main');
+
+	form_start('cdef.php', 'chk');
+
+	
+
+	html_start_box('', '100%', '', '3', 'center', '');
+
+	$var_36 = array(
+		'name'      => array('display' => __('CDEF Name'),       'align' => 'left',  'sort' => 'ASC', 'tip' => __('The name of this CDEF.')),
+		'nosort'    => array('display' => __('Deletable'),       'align' => 'right', 'tip'  => __('CDEFs that are in use cannot be Deleted.  In use is defined as being referenced by a Graph or a Graph Template.')),
+		'graphs'    => array('display' => __('Graphs Using'),    'align' => 'right', 'sort' => 'DESC', 'tip' => __('The number of Graphs using this CDEF.')),
+		'templates' => array('display' => __('Templates Using'), 'align' => 'right', 'sort' => 'DESC', 'tip' => __('The number of Graphs Templates using this CDEF.')));
+
+	html_header_sort_checkbox($var_36, get_request_var('sort_column'), get_request_var('sort_direction'), false);
+
+	$var_15 = 0;
+	if (cacti_sizeof($var_17)) {
+		foreach ($var_17 as $var_8) {
+			if ($var_8['graphs'] == 0 && $var_8['templates'] == 0) {
+				$var_52 = false;
+			} else {
+				$var_52 = true;
+			}
+
+			form_alternate_row('line' . $var_8['id'], false, $var_52);
+			form_selectable_cell(filter_value($var_8['name'], get_request_var('filter'), 'cdef.php?action=edit&id=' . $var_8['id']), $var_8['id']);
+			form_selectable_cell($var_52 ? __('No') : __('Yes'), $var_8['id'], '', 'text-align:right');
+			form_selectable_cell(number_format_i18n($var_8['graphs'], '-1'), $var_8['id'], '', 'text-align:right');
+			form_selectable_cell(number_format_i18n($var_8['templates'], '-1'), $var_8['id'], '', 'text-align:right');
+			form_checkbox_cell($var_8['name'], $var_8['id'], $var_52);
+			form_end_row();
+		}
+	} else {
+		
+	}
+
+	html_end_box(false);
+
+	if (cacti_sizeof($var_17)) {
+		
+	}
+
+	
+	draw_actions_dropdown($var_0);
+
+	form_end();
+}
+

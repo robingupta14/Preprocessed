@@ -1,0 +1,1351 @@
+
+
+
+
+
+
+
+
+enum {
+    RSA_STATE_NONE = 0,
+
+    RSA_STATE_ENCRYPT_PAD,
+    RSA_STATE_ENCRYPT_EXPTMOD,
+    RSA_STATE_ENCRYPT_RES,
+
+    RSA_STATE_DECRYPT_EXPTMOD,
+    RSA_STATE_DECRYPT_UNPAD,
+    RSA_STATE_DECRYPT_RES,
+};
+
+
+static void wc_RsaCleanup(RsaKey* key)
+{
+
+    if (key && key->data) {
+
+        if (key->dataIsAlloc) {
+
+            if (key->type == RSA_PRIVATE_DECRYPT ||
+                key->type == RSA_PRIVATE_ENCRYPT) {
+                ForceZero(key->data, key->dataLen);
+            }
+
+            XFREE(key->data, key->heap, DYNAMIC_TYPE_WOLF_BIGINT);
+            key->dataIsAlloc = 0;
+        }
+        key->data = NULL;
+        key->dataLen = 0;
+    }
+
+
+
+}
+
+int wc_InitRsaKey_ex(RsaKey* key, void* heap, int devId)
+{
+    int ret = 0;
+
+    if (key == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    XMEMSET(key, 0, sizeof(RsaKey));
+
+    key->type = RSA_TYPE_UNKNOWN;
+    key->state = RSA_STATE_NONE;
+    key->heap = heap;
+
+    key->dataIsAlloc = 0;
+    key->data = NULL;
+
+    key->dataLen = 0;
+
+
+
+
+
+
+
+    (void)devId;
+
+    ret = mp_init_multi(&key->n, &key->e, NULL, NULL, NULL, NULL);
+    if (ret != MP_OKAY)
+        return ret;
+
+
+
+
+    ret = mp_init_multi(&key->d, &key->p, &key->q, &key->dP, &key->dQ, &key->u);
+
+    if (ret != MP_OKAY) {
+        mp_clear(&key->n);
+        mp_clear(&key->e);
+        return ret;
+    }
+
+    return ret;
+}
+
+int wc_InitRsaKey(RsaKey* key, void* heap)
+{
+    return wc_InitRsaKey_ex(key, heap, INVALID_DEVID);
+}
+
+int wc_FreeRsaKey(RsaKey* key)
+{
+    int ret = 0;
+
+    if (key == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    wc_RsaCleanup(key);
+
+
+
+
+
+
+    if (key->type == RSA_PRIVATE) {
+
+        mp_forcezero(&key->u);
+        mp_forcezero(&key->dQ);
+        mp_forcezero(&key->dP);
+
+        mp_forcezero(&key->q);
+        mp_forcezero(&key->p);
+        mp_forcezero(&key->d);
+    }
+
+
+    mp_clear(&key->u);
+    mp_clear(&key->dQ);
+    mp_clear(&key->dP);
+
+    mp_clear(&key->q);
+    mp_clear(&key->p);
+    mp_clear(&key->d);
+
+
+
+    mp_clear(&key->e);
+    mp_clear(&key->n);
+
+    return ret;
+}
+
+static int RsaMGF1(enum wc_HashType hType, byte* seed, word32 seedSz,
+                                        byte* out, word32 outSz, void* heap)
+{
+    byte* tmp;
+
+    byte tmpA[WC_MAX_DIGEST_SIZE + 4];
+    byte tmpF;
+    word32 tmpSz;
+    int hLen;
+    int ret;
+    word32 counter;
+    word32 idx;
+    hLen = wc_HashGetDigestSize(hType);
+    counter = 0;
+    idx = 0;
+
+    (void)heap;
+
+
+    if (hLen < 0) {
+        return hLen;
+    }
+
+
+    if ((seedSz + 4) > sizeof(tmpA) || (word32)hLen > sizeof(tmpA)) {
+
+
+        tmpSz = ((seedSz + 4) > (word32)hLen)? seedSz + 4: (word32)hLen;
+        tmp = (byte*)XMALLOC(tmpSz, heap, DYNAMIC_TYPE_RSA_BUFFER);
+        if (tmp == NULL) {
+            return MEMORY_E;
+        }
+        tmpF = 1;
+    }
+    else {
+
+        tmpSz = sizeof(tmpA);
+        tmp = tmpA;
+        tmpF = 0;
+    }
+
+    do {
+        int i = 0;
+        XMEMCPY(tmp, seed, seedSz);
+
+
+        tmp[seedSz] = (byte)((counter >> 24) & 0xFF);
+        tmp[seedSz + 1] = (byte)((counter >> 16) & 0xFF);
+        tmp[seedSz + 2] = (byte)((counter >> 8) & 0xFF);
+        tmp[seedSz + 3] = (byte)((counter) & 0xFF);
+
+
+        if ((ret = wc_Hash(hType, tmp, (seedSz + 4), tmp, tmpSz)) != 0) {
+
+            if (tmpF) {
+                XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+            }
+            return ret;
+        }
+
+        for (i = 0; i < hLen && idx < outSz; i++) {
+            out[idx++] = tmp[i];
+        }
+        counter++;
+    } while (idx < outSz);
+
+
+    if (tmpF) {
+        XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+    }
+
+    return 0;
+}
+
+
+
+
+
+static int RsaMGF(int type, byte* seed, word32 seedSz, byte* out,
+                                                    word32 outSz, void* heap)
+{
+    int ret;
+
+    switch(type) {
+
+        case WC_MGF1SHA1:
+            ret = RsaMGF1(WC_HASH_TYPE_SHA, seed, seedSz, out, outSz, heap);
+            break;
+
+
+
+
+
+
+
+        case WC_MGF1SHA256:
+            ret = RsaMGF1(WC_HASH_TYPE_SHA256, seed, seedSz, out, outSz, heap);
+            break;
+
+        default:
+            WOLFSSL_MSG("Unknown MGF type: check build options");
+            ret = BAD_FUNC_ARG;
+    }
+
+
+    (void)seed;
+    (void)seedSz;
+    (void)out;
+    (void)outSz;
+    (void)heap;
+
+    return ret;
+}
+
+
+
+
+
+
+
+static int RsaPad_OAEP(const byte* input, word32 inputLen, byte* pkcsBlock,
+        word32 pkcsBlockLen, byte padValue, WC_RNG* rng,
+        enum wc_HashType hType, int mgf, byte* optLabel, word32 labelLen,
+        void* heap)
+{
+    int ret;
+    int hLen;
+    int psLen;
+    int i;
+    word32 idx;
+
+    byte* dbMask;
+
+
+
+
+
+
+        byte lHash[WC_MAX_DIGEST_SIZE];
+        byte seed[ WC_MAX_DIGEST_SIZE];
+
+
+
+    if (optLabel == NULL && labelLen > 0) {
+        return BUFFER_E;
+    }
+
+
+    hLen = wc_HashGetDigestSize(hType);
+    if (hLen < 0) {
+        return hLen;
+    }
+
+        if ((word32)hLen > sizeof(lHash)) {
+            WOLFSSL_MSG("OAEP lHash to small for digest!!");
+            return MEMORY_E;
+        }
+
+
+    if ((ret = wc_Hash(hType, optLabel, labelLen, lHash, hLen)) != 0) {
+        WOLFSSL_MSG("OAEP hash type possibly not supported or lHash to small");
+
+
+
+
+        return ret;
+    }
+
+    if ((word32)(2 * hLen + 2) > pkcsBlockLen) {
+        WOLFSSL_MSG("OAEP pad error hash to big for RSA key size");
+
+
+
+
+        return BAD_FUNC_ARG;
+    }
+
+    if (inputLen > (pkcsBlockLen - 2 * hLen - 2)) {
+        WOLFSSL_MSG("OAEP pad error message too long");
+
+
+
+
+        return BAD_FUNC_ARG;
+    }
+
+
+    idx = pkcsBlockLen - 1 - inputLen;
+    psLen = pkcsBlockLen - inputLen - 2 * hLen - 2;
+    if (pkcsBlockLen < inputLen) {
+
+
+
+
+        return BUFFER_E;
+    }
+    XMEMCPY(pkcsBlock + (pkcsBlockLen - inputLen), input, inputLen);
+    pkcsBlock[idx--] = 0x01;
+    while (psLen > 0 && idx > 0) {
+        pkcsBlock[idx--] = 0x00;
+        psLen--;
+    }
+
+    idx = idx - hLen + 1;
+    XMEMCPY(pkcsBlock + idx, lHash, hLen);
+
+
+    if ((ret = wc_RNG_GenerateBlock(rng, seed, hLen)) != 0) {
+
+
+
+
+        return ret;
+    }
+
+
+    dbMask = (byte*)XMALLOC(pkcsBlockLen - hLen - 1, heap, DYNAMIC_TYPE_RSA);
+    if (dbMask == NULL) {
+
+
+
+
+        return MEMORY_E;
+    }
+    XMEMSET(dbMask, 0, pkcsBlockLen - hLen - 1);
+
+    ret = RsaMGF(mgf, seed, hLen, dbMask, pkcsBlockLen - hLen - 1, heap);
+    if (ret != 0) {
+        XFREE(dbMask, heap, DYNAMIC_TYPE_RSA);
+
+
+
+
+        return ret;
+    }
+
+    i = 0;
+    idx = hLen + 1;
+    while (idx < pkcsBlockLen && (word32)i < (pkcsBlockLen - hLen -1)) {
+        pkcsBlock[idx] = dbMask[i++] ^ pkcsBlock[idx];
+        idx++;
+    }
+    XFREE(dbMask, heap, DYNAMIC_TYPE_RSA);
+
+
+
+    idx = 0;
+    pkcsBlock[idx++] = 0x00;
+
+    if ((ret = RsaMGF(mgf, pkcsBlock + hLen + 1, pkcsBlockLen - hLen - 1,
+                                           pkcsBlock + 1, hLen, heap)) != 0) {
+
+
+
+
+        return ret;
+    }
+
+
+    i = 0;
+    while (idx < (word32)(hLen + 1) && i < hLen) {
+        pkcsBlock[idx] = pkcsBlock[idx] ^ seed[i++];
+        idx++;
+    }
+
+
+
+
+
+    (void)padValue;
+
+    return 0;
+}
+
+static int RsaPad(const byte* input, word32 inputLen, byte* pkcsBlock,
+                           word32 pkcsBlockLen, byte padValue, WC_RNG* rng)
+{
+    if (input == NULL || inputLen == 0 || pkcsBlock == NULL ||
+                                                        pkcsBlockLen == 0) {
+        return BAD_FUNC_ARG;
+    }
+
+    if (pkcsBlockLen - RSA_MIN_PAD_SZ < inputLen) {
+        WOLFSSL_MSG("RsaPad error, invalid length");
+        return RSA_PAD_E;
+    }
+    pkcsBlock[0] = 0x0;
+    pkcsBlock++; pkcsBlockLen--;
+    pkcsBlock[0] = padValue;
+
+    if (padValue == RSA_BLOCK_TYPE_1) {
+
+
+        XMEMSET(&pkcsBlock[1], 0xFF, pkcsBlockLen - inputLen - 2);
+    }
+    else {
+
+
+        word32 padLen, i;
+        int ret;
+        padLen = pkcsBlockLen - inputLen - 1;
+        ret = wc_RNG_GenerateBlock(rng, &pkcsBlock[1], padLen);
+        if (ret != 0) {
+            return ret;
+        }
+
+
+        for (i = 1; i < padLen; i++) {
+            if (pkcsBlock[i] == 0) pkcsBlock[i] = 0x01;
+        }
+
+
+
+
+    }
+
+    pkcsBlock[pkcsBlockLen-inputLen-1] = 0;
+    XMEMCPY(pkcsBlock+pkcsBlockLen-inputLen, input, inputLen);
+
+    return 0;
+}
+
+
+int wc_RsaPad_ex(const byte* input, word32 inputLen, byte* pkcsBlock,
+    word32 pkcsBlockLen, byte padValue, WC_RNG* rng, int padType,
+    enum wc_HashType hType, int mgf, byte* optLabel, word32 labelLen,
+    int saltLen, int bits, void* heap)
+{
+    int ret;
+
+    switch (padType)
+    {
+        case WC_RSA_PKCSV15_PAD:
+
+            ret = RsaPad(input, inputLen, pkcsBlock, pkcsBlockLen,
+                                                                 padValue, rng);
+            break;
+
+
+
+        case WC_RSA_OAEP_PAD:
+            WOLFSSL_MSG("wolfSSL Using RSA OAEP padding");
+            ret = RsaPad_OAEP(input, inputLen, pkcsBlock, pkcsBlockLen,
+                           padValue, rng, hType, mgf, optLabel, labelLen, heap);
+            break;
+
+        default:
+            WOLFSSL_MSG("Unknown RSA Pad Type");
+            ret = RSA_PAD_E;
+    }
+
+
+    (void)input;
+    (void)inputLen;
+    (void)pkcsBlock;
+    (void)pkcsBlockLen;
+    (void)padValue;
+    (void)rng;
+    (void)padType;
+    (void)hType;
+    (void)mgf;
+    (void)optLabel;
+    (void)labelLen;
+    (void)saltLen;
+    (void)bits;
+    (void)heap;
+
+    return ret;
+}
+
+
+
+
+
+
+
+static int RsaUnPad_OAEP(byte *pkcsBlock, unsigned int pkcsBlockLen,
+                            byte **output, enum wc_HashType hType, int mgf,
+                            byte* optLabel, word32 labelLen, void* heap)
+{
+    int hLen;
+    int ret;
+    byte h[WC_MAX_DIGEST_SIZE];
+    byte* tmp;
+    word32 idx;
+
+
+    if (optLabel == NULL && labelLen > 0) {
+        return BUFFER_E;
+    }
+
+    hLen = wc_HashGetDigestSize(hType);
+    if ((hLen < 0) || (pkcsBlockLen < (2 * (word32)hLen + 2))) {
+        return BAD_FUNC_ARG;
+    }
+
+    tmp = (byte*)XMALLOC(pkcsBlockLen, heap, DYNAMIC_TYPE_RSA_BUFFER);
+    if (tmp == NULL) {
+        return MEMORY_E;
+    }
+    XMEMSET(tmp, 0, pkcsBlockLen);
+
+
+    if ((ret = RsaMGF(mgf, (byte*)(pkcsBlock + (hLen + 1)),
+                            pkcsBlockLen - hLen - 1, tmp, hLen, heap)) != 0) {
+        XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+        return ret;
+    }
+
+
+    for (idx = 0; idx < (word32)hLen; idx++) {
+        tmp[idx] = tmp[idx] ^ pkcsBlock[1 + idx];
+    }
+
+
+    if ((ret = RsaMGF(mgf, tmp, hLen, tmp + hLen,
+                                       pkcsBlockLen - hLen - 1, heap)) != 0) {
+        XFREE(tmp, NULL, DYNAMIC_TYPE_RSA_BUFFER);
+        return ret;
+    }
+
+
+    for (idx = 0; idx < (pkcsBlockLen - hLen - 1); idx++) {
+        pkcsBlock[hLen + 1 + idx] = pkcsBlock[hLen + 1 + idx] ^ tmp[idx + hLen];
+    }
+
+
+    XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+
+
+    idx = hLen + 1 + hLen;
+    while (idx < pkcsBlockLen && pkcsBlock[idx] == 0) {idx++;}
+
+
+    if ((ret = wc_Hash(hType, optLabel, labelLen, h, hLen)) != 0) {
+        return ret;
+    }
+
+
+
+
+
+
+
+    ret = 0;
+    ret |= ConstantCompare(pkcsBlock + hLen + 1, h, hLen);
+    ret += pkcsBlock[idx++] ^ 0x01;
+    ret += pkcsBlock[0] ^ 0x00;
+
+
+    idx = ctMaskSelInt(ctMaskEq(ret, 0), idx, pkcsBlockLen);
+
+
+    *output = (byte*)(pkcsBlock + idx);
+    return pkcsBlockLen - idx;
+}
+
+static int RsaUnPad(const byte *pkcsBlock, unsigned int pkcsBlockLen,
+                    byte **output, byte padValue)
+{
+    int ret = BAD_FUNC_ARG;
+    word16 i;
+
+    byte invalid = 0;
+
+
+    if (output == NULL || pkcsBlockLen < 2 || pkcsBlockLen > 0xFFFF) {
+        return BAD_FUNC_ARG;
+    }
+
+    if (padValue == RSA_BLOCK_TYPE_1) {
+
+        if (pkcsBlock[0] != 0 || pkcsBlock[1] != RSA_BLOCK_TYPE_1) {
+            WOLFSSL_MSG("RsaUnPad error, invalid formatting");
+            return RSA_PAD_E;
+        }
+
+
+        for (i = 2; i < pkcsBlockLen && pkcsBlock[i++] == 0xFF; ) { }
+
+
+        if (i < RSA_MIN_PAD_SZ || pkcsBlock[i-1] != 0) {
+            WOLFSSL_MSG("RsaUnPad error, bad formatting");
+            return RSA_PAD_E;
+        }
+
+        *output = (byte *)(pkcsBlock + i);
+        ret = pkcsBlockLen - i;
+    }
+
+    else {
+        word16 j;
+        word16 pastSep = 0;
+
+
+        for (i = 0, j = 2; j < pkcsBlockLen; j++) {
+
+            i |= (~pastSep) & ctMask16Eq(pkcsBlock[j], 0x00) & (j + 1);
+            pastSep |= ctMask16Eq(pkcsBlock[j], 0x00);
+        }
+
+
+        invalid |= ctMaskLT(i, RSA_MIN_PAD_SZ);
+
+        invalid |= ~pastSep;
+
+        invalid |= ctMaskNotEq(pkcsBlock[0], 0x00);
+
+        invalid |= ctMaskNotEq(pkcsBlock[1], padValue);
+
+        *output = (byte *)(pkcsBlock + i);
+        ret = ((int)~invalid) & (pkcsBlockLen - i);
+    }
+
+
+    return ret;
+}
+
+
+
+
+
+int wc_RsaUnPad_ex(byte* pkcsBlock, word32 pkcsBlockLen, byte** out,
+                   byte padValue, int padType, enum wc_HashType hType,
+                   int mgf, byte* optLabel, word32 labelLen, int saltLen,
+                   int bits, void* heap)
+{
+    int ret;
+
+    switch (padType) {
+        case WC_RSA_PKCSV15_PAD:
+
+            ret = RsaUnPad(pkcsBlock, pkcsBlockLen, out, padValue);
+            break;
+
+
+        case WC_RSA_OAEP_PAD:
+            WOLFSSL_MSG("wolfSSL Using RSA OAEP un-padding");
+            ret = RsaUnPad_OAEP((byte*)pkcsBlock, pkcsBlockLen, out,
+                                        hType, mgf, optLabel, labelLen, heap);
+            break;
+
+        default:
+            WOLFSSL_MSG("Unknown RSA UnPad Type");
+            ret = RSA_PAD_E;
+    }
+
+
+    (void)hType;
+    (void)mgf;
+    (void)optLabel;
+    (void)labelLen;
+    (void)saltLen;
+    (void)bits;
+    (void)heap;
+
+    return ret;
+}
+
+static int wc_RsaFunctionSync(const byte* in, word32 inLen, byte* out,
+                          word32* outLen, int type, RsaKey* key, WC_RNG* rng)
+{
+
+    mp_int tmp[1];
+
+
+
+
+    int ret = 0;
+    word32 keyLen = 0;
+
+    (void)rng;
+
+    if (mp_init(tmp) != MP_OKAY)
+        ret = MP_INIT_E;
+
+    if (ret == 0 && mp_read_unsigned_bin(tmp, (byte*)in, inLen) != MP_OKAY)
+        ret = MP_READ_E;
+
+    if (ret == 0) {
+        switch(type) {
+
+        case RSA_PRIVATE_DECRYPT:
+        case RSA_PRIVATE_ENCRYPT:
+        {
+
+            if (ret == 0) {
+
+
+
+
+                mp_int tmpa[1], tmpb[1];
+
+                int cleara = 0, clearb = 0;
+
+                if (ret == 0) {
+                    if (mp_init(tmpa) != MP_OKAY)
+                        ret = MP_INIT_E;
+                    else
+                        cleara = 1;
+                }
+
+                if (ret == 0) {
+                    if (mp_init(tmpb) != MP_OKAY)
+                        ret = MP_INIT_E;
+                    else
+                        clearb = 1;
+                }
+
+
+                if (ret == 0 && mp_exptmod(tmp, &key->dP, &key->p,
+                                                               tmpa) != MP_OKAY)
+                    ret = MP_EXPTMOD_E;
+
+
+                if (ret == 0 && mp_exptmod(tmp, &key->dQ, &key->q,
+                                                               tmpb) != MP_OKAY)
+                    ret = MP_EXPTMOD_E;
+
+
+                if (ret == 0 && mp_sub(tmpa, tmpb, tmp) != MP_OKAY)
+                    ret = MP_SUB_E;
+
+                if (ret == 0 && mp_mulmod(tmp, &key->u, &key->p,
+                                                                tmp) != MP_OKAY)
+                    ret = MP_MULMOD_E;
+
+
+                if (ret == 0 && mp_mul(tmp, &key->q, tmp) != MP_OKAY)
+                    ret = MP_MUL_E;
+
+                if (ret == 0 && mp_add(tmp, tmpb, tmp) != MP_OKAY)
+                    ret = MP_ADD_E;
+
+
+
+
+                {
+                    if (cleara)
+                        mp_clear(tmpa);
+                    if (clearb)
+                        mp_clear(tmpb);
+
+
+
+                }
+            }
+
+            break;
+        }
+
+        case RSA_PUBLIC_ENCRYPT:
+        case RSA_PUBLIC_DECRYPT:
+            if (mp_exptmod_nct(tmp, &key->e, &key->n, tmp) != MP_OKAY)
+                ret = MP_EXPTMOD_E;
+            break;
+        default:
+            ret = RSA_WRONG_TYPE_E;
+            break;
+        }
+    }
+
+    if (ret == 0) {
+        keyLen = wc_RsaEncryptSize(key);
+        if (keyLen > *outLen)
+            ret = RSA_BUFFER_E;
+    }
+
+
+    if (ret == 0) {
+        *outLen = keyLen;
+        if (mp_to_unsigned_bin_len(tmp, out, keyLen) != MP_OKAY)
+             ret = MP_TO_E;
+    }
+
+    mp_clear(tmp);
+
+    return ret;
+
+}
+
+int wc_RsaFunction(const byte* in, word32 inLen, byte* out,
+                          word32* outLen, int type, RsaKey* key, WC_RNG* rng)
+{
+    int ret = 0;
+
+    if (key == NULL || in == NULL || inLen == 0 || out == NULL ||
+            outLen == NULL || *outLen == 0 || type == RSA_TYPE_UNKNOWN) {
+        return BAD_FUNC_ARG;
+    }
+
+    if (type == RSA_PRIVATE_DECRYPT &&
+        key->state == RSA_STATE_DECRYPT_EXPTMOD) {
+
+
+
+
+
+        mp_int c[1];
+
+        if (mp_init(c) != MP_OKAY)
+            ret = MP_INIT_E;
+        if (ret == 0) {
+            if (mp_read_unsigned_bin(c, in, inLen) != 0)
+                ret = MP_READ_E;
+        }
+        if (ret == 0) {
+
+            if (mp_cmp_d(c, 1) != MP_GT)
+                ret = RSA_OUT_OF_RANGE_E;
+        }
+        if (ret == 0) {
+
+            if (mp_add_d(c, 1, c) != MP_OKAY)
+                ret = MP_ADD_E;
+        }
+        if (ret == 0) {
+
+            if (mp_cmp(c, &key->n) != MP_LT)
+                ret = RSA_OUT_OF_RANGE_E;
+        }
+        mp_clear(c);
+
+
+
+
+
+        if (ret != 0)
+            return ret;
+    }
+
+    {
+        ret = wc_RsaFunctionSync(in, inLen, out, outLen, type, key, rng);
+    }
+
+
+    if (ret < 0 && ret != WC_PENDING_E
+
+
+
+    ) {
+        if (ret == MP_EXPTMOD_E) {
+
+            WOLFSSL_MSG("RSA_FUNCTION MP_EXPTMOD_E: memory/config problem");
+        }
+
+        key->state = RSA_STATE_NONE;
+        wc_RsaCleanup(key);
+    }
+
+    return ret;
+}
+
+static int RsaPublicEncryptEx(const byte* in, word32 inLen, byte* out,
+                            word32 outLen, RsaKey* key, int rsa_type,
+                            byte pad_value, int pad_type,
+                            enum wc_HashType hash, int mgf,
+                            byte* label, word32 labelSz, int saltLen,
+                            WC_RNG* rng)
+{
+    int ret, sz;
+
+    if (in == NULL || inLen == 0 || out == NULL || key == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    sz = wc_RsaEncryptSize(key);
+    if (sz > (int)outLen) {
+        return RSA_BUFFER_E;
+    }
+
+    if (sz < RSA_MIN_PAD_SZ) {
+        return WC_KEY_SIZE_E;
+    }
+
+    if (inLen > (word32)(sz - RSA_MIN_PAD_SZ)) {
+
+
+
+
+
+        return RSA_BUFFER_E;
+    }
+
+    switch (key->state) {
+    case RSA_STATE_NONE:
+    case RSA_STATE_ENCRYPT_PAD:
+
+        key->state = RSA_STATE_ENCRYPT_PAD;
+        ret = wc_RsaPad_ex(in, inLen, out, sz, pad_value, rng, pad_type, hash,
+                           mgf, label, labelSz, saltLen, mp_count_bits(&key->n),
+                           key->heap);
+        if (ret < 0) {
+            break;
+        }
+
+        key->state = RSA_STATE_ENCRYPT_EXPTMOD;
+        FALL_THROUGH;
+
+    case RSA_STATE_ENCRYPT_EXPTMOD:
+
+        key->dataLen = outLen;
+        ret = wc_RsaFunction(out, sz, out, &key->dataLen, rsa_type, key, rng);
+
+        if (ret >= 0 || ret == WC_PENDING_E) {
+            key->state = RSA_STATE_ENCRYPT_RES;
+        }
+        if (ret < 0) {
+            break;
+        }
+
+        FALL_THROUGH;
+
+    case RSA_STATE_ENCRYPT_RES:
+        ret = key->dataLen;
+        break;
+
+    default:
+        ret = BAD_STATE_E;
+        break;
+    }
+
+
+    if (ret == WC_PENDING_E
+
+
+
+    ) {
+        return ret;
+    }
+
+    key->state = RSA_STATE_NONE;
+    wc_RsaCleanup(key);
+
+    return ret;
+}
+
+static int RsaPrivateDecryptEx(byte* in, word32 inLen, byte* out,
+                            word32 outLen, byte** outPtr, RsaKey* key,
+                            int rsa_type, byte pad_value, int pad_type,
+                            enum wc_HashType hash, int mgf,
+                            byte* label, word32 labelSz, int saltLen,
+                            WC_RNG* rng)
+{
+    int ret = RSA_WRONG_TYPE_E;
+    byte* pad = NULL;
+
+    if (in == NULL || inLen == 0 || out == NULL || key == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    switch (key->state) {
+    case RSA_STATE_NONE:
+        key->dataLen = inLen;
+
+        if (key->data != NULL) {
+            ret = BAD_STATE_E;
+            break;
+        }
+
+
+        if (outPtr == NULL) {
+            key->data = (byte*)XMALLOC(inLen, key->heap,
+                                                      DYNAMIC_TYPE_WOLF_BIGINT);
+            key->dataIsAlloc = 1;
+            if (key->data == NULL) {
+                ret = MEMORY_E;
+                break;
+            }
+            XMEMCPY(key->data, in, inLen);
+        }
+        else {
+            key->data = out;
+        }
+
+
+        key->state = RSA_STATE_DECRYPT_EXPTMOD;
+        FALL_THROUGH;
+
+    case RSA_STATE_DECRYPT_EXPTMOD:
+
+        ret = wc_RsaFunction(key->data, inLen, key->data, &key->dataLen,
+                                                            rsa_type, key, rng);
+
+
+
+
+        if (ret >= 0 || ret == WC_PENDING_E) {
+            key->state = RSA_STATE_DECRYPT_UNPAD;
+        }
+        if (ret < 0) {
+            break;
+        }
+
+        FALL_THROUGH;
+
+    case RSA_STATE_DECRYPT_UNPAD:
+
+        ret = wc_RsaUnPad_ex(key->data, key->dataLen, &pad, pad_value, pad_type,
+                             hash, mgf, label, labelSz, saltLen,
+                             mp_count_bits(&key->n), key->heap);
+
+
+
+
+
+        if (rsa_type == RSA_PUBLIC_DECRYPT && ret > (int)outLen)
+            ret = RSA_BUFFER_E;
+        else if (ret >= 0 && pad != NULL) {
+
+            signed char c;
+
+
+
+            if (outPtr == NULL) {
+
+                if (rsa_type == RSA_PRIVATE_DECRYPT) {
+                    word32 i, j;
+                    int start = (int)((size_t)pad - (size_t)key->data);
+
+                    for (i = 0, j = 0; j < key->dataLen; j++) {
+                        out[i] = key->data[j];
+                        c = ctMaskGTE(j, start);
+                        c &= ctMaskLT(i, outLen);
+
+                        i += (word32)((byte)(-c));
+                    }
+                }
+                else
+
+                {
+                    XMEMCPY(out, pad, ret);
+                }
+            }
+            else
+                *outPtr = pad;
+
+
+            ret = ctMaskSelInt(ctMaskLTE(ret, outLen), ret, RSA_BUFFER_E);
+            ret = ctMaskSelInt(ctMaskNotEq(ret, 0), ret, RSA_BUFFER_E);
+
+
+
+
+        }
+
+        key->state = RSA_STATE_DECRYPT_RES;
+        FALL_THROUGH;
+
+    case RSA_STATE_DECRYPT_RES:
+
+        break;
+
+    default:
+        ret = BAD_STATE_E;
+        break;
+    }
+
+
+    if (ret == WC_PENDING_E
+
+
+
+    ) {
+        return ret;
+    }
+
+    key->state = RSA_STATE_NONE;
+    wc_RsaCleanup(key);
+
+    return ret;
+}
+
+
+
+
+int wc_RsaPublicEncrypt(const byte* in, word32 inLen, byte* out, word32 outLen,
+                                                     RsaKey* key, WC_RNG* rng)
+{
+    return RsaPublicEncryptEx(in, inLen, out, outLen, key,
+        RSA_PUBLIC_ENCRYPT, RSA_BLOCK_TYPE_2, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+
+int wc_RsaPublicEncrypt_ex(const byte* in, word32 inLen, byte* out,
+                    word32 outLen, RsaKey* key, WC_RNG* rng, int type,
+                    enum wc_HashType hash, int mgf, byte* label,
+                    word32 labelSz)
+{
+    return RsaPublicEncryptEx(in, inLen, out, outLen, key, RSA_PUBLIC_ENCRYPT,
+        RSA_BLOCK_TYPE_2, type, hash, mgf, label, labelSz, 0, rng);
+}
+
+
+
+
+
+int wc_RsaPrivateDecryptInline(byte* in, word32 inLen, byte** out, RsaKey* key)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx(in, inLen, in, inLen, out, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+
+int wc_RsaPrivateDecryptInline_ex(byte* in, word32 inLen, byte** out,
+                                  RsaKey* key, int type, enum wc_HashType hash,
+                                  int mgf, byte* label, word32 labelSz)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx(in, inLen, in, inLen, out, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, type, hash,
+        mgf, label, labelSz, 0, rng);
+}
+
+
+
+int wc_RsaPrivateDecrypt(const byte* in, word32 inLen, byte* out,
+                                                 word32 outLen, RsaKey* key)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx((byte*)in, inLen, out, outLen, NULL, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+int wc_RsaPrivateDecrypt_ex(const byte* in, word32 inLen, byte* out,
+                            word32 outLen, RsaKey* key, int type,
+                            enum wc_HashType hash, int mgf, byte* label,
+                            word32 labelSz)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx((byte*)in, inLen, out, outLen, NULL, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, type, hash, mgf, label,
+        labelSz, 0, rng);
+}
+
+
+
+
+int wc_RsaSSL_VerifyInline(byte* in, word32 inLen, byte** out, RsaKey* key)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx(in, inLen, in, inLen, out, key,
+        RSA_PUBLIC_DECRYPT, RSA_BLOCK_TYPE_1, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+
+int wc_RsaSSL_Verify(const byte* in, word32 inLen, byte* out, word32 outLen,
+                                                                 RsaKey* key)
+{
+    return wc_RsaSSL_Verify_ex(in, inLen, out, outLen, key , WC_RSA_PKCSV15_PAD);
+}
+
+int wc_RsaSSL_Verify_ex(const byte* in, word32 inLen, byte* out, word32 outLen,
+                         RsaKey* key, int pad_type)
+{
+    WC_RNG* rng;
+
+    if (key == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+
+
+
+    rng = NULL;
+
+
+    return RsaPrivateDecryptEx((byte*)in, inLen, out, outLen, NULL, key,
+        RSA_PUBLIC_DECRYPT, RSA_BLOCK_TYPE_1, pad_type,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+int wc_RsaSSL_Sign(const byte* in, word32 inLen, byte* out, word32 outLen,
+                                                   RsaKey* key, WC_RNG* rng)
+{
+    return RsaPublicEncryptEx(in, inLen, out, outLen, key,
+        RSA_PRIVATE_ENCRYPT, RSA_BLOCK_TYPE_1, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+int wc_RsaEncryptSize(RsaKey* key)
+{
+    int ret;
+
+    if (key == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    ret = mp_unsigned_bin_size(&key->n);
+
+
+
+
+
+
+
+    return ret;
+}
+
+
+
+
+int wc_RsaFlattenPublicKey(RsaKey* key, byte* e, word32* eSz, byte* n,
+                                                                   word32* nSz)
+{
+    int sz, ret;
+
+    if (key == NULL || e == NULL || eSz == NULL || n == NULL || nSz == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    sz = mp_unsigned_bin_size(&key->e);
+    if ((word32)sz > *eSz)
+        return RSA_BUFFER_E;
+    ret = mp_to_unsigned_bin(&key->e, e);
+    if (ret != MP_OKAY)
+        return ret;
+    *eSz = (word32)sz;
+
+    sz = wc_RsaEncryptSize(key);
+    if ((word32)sz > *nSz)
+        return RSA_BUFFER_E;
+    ret = mp_to_unsigned_bin(&key->n, n);
+    if (ret != MP_OKAY)
+        return ret;
+    *nSz = (word32)sz;
+
+    return 0;
+}
+
+
+
+
+
+
+static int RsaGetValue(mp_int* in, byte* out, word32* outSz)
+{
+    word32 sz;
+    int ret = 0;
+
+
+
+    sz = (word32)mp_unsigned_bin_size(in);
+    if (sz > *outSz)
+        ret = RSA_BUFFER_E;
+
+    if (ret == 0)
+        ret = mp_to_unsigned_bin(in, out);
+
+    if (ret == MP_OKAY)
+        *outSz = sz;
+
+    return ret;
+}
+
+
+int wc_RsaExportKey(RsaKey* key,
+                    byte* e, word32* eSz, byte* n, word32* nSz,
+                    byte* d, word32* dSz, byte* p, word32* pSz,
+                    byte* q, word32* qSz)
+{
+    int ret = BAD_FUNC_ARG;
+
+    if (key && e && eSz && n && nSz && d && dSz && p && pSz && q && qSz)
+        ret = 0;
+
+    if (ret == 0)
+        ret = RsaGetValue(&key->e, e, eSz);
+    if (ret == 0)
+        ret = RsaGetValue(&key->n, n, nSz);
+
+    if (ret == 0)
+        ret = RsaGetValue(&key->d, d, dSz);
+    if (ret == 0)
+        ret = RsaGetValue(&key->p, p, pSz);
+    if (ret == 0)
+        ret = RsaGetValue(&key->q, q, qSz);
+
+    return ret;
+}

@@ -1,0 +1,104 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+class class_0 extends var_0 {
+	
+	public function fn_0()
+	{
+		parent::fn_0();
+	}
+
+	public function fn_1($var_1 = 'rss2')
+	{
+		if ( ! Kohana::config('settings.allow_feed'))
+		{
+			throw new class_1();
+		}
+		
+		if ($var_1 != 'atom' AND $var_1 != 'rss2')
+		{
+			throw new class_1();
+		}
+
+		
+		$var_2 = ( isset($_GET['l']) AND !empty($_GET['l']) AND (int) $_GET['l'] <= 200)
+			? (int) $_GET['l'] : 20;
+
+		
+		$var_3 = ( isset($_GET['p']) AND ! empty($_GET['p']) AND (int) $_GET['p'] >= 1 )
+			? (int) $_GET['p'] 
+			: 1;
+			
+		$var_4 = ($var_3 == 1) ? 0 : ( $var_3 * $var_2 ) ; 
+
+		$var_5 = url::base();
+
+		
+
+		$var_6 = '';
+		if (substr_count($_SERVER["HTTP_HOST"],'.') > 1 AND Kohana::config('config.enable_mhi') == TRUE)
+		{
+			$var_6 = substr($_SERVER["HTTP_HOST"],0,strpos($_SERVER["HTTP_HOST"],'.'));
+		}
+
+		$var_7 = Cache::instance();
+		$var_8 = $var_7->get($var_6.'_feed_'.$var_2.'_'.$var_3);
+		
+		if ($var_8 == NULL)
+		{ 
+			$var_10 = ORM::factory('incident')
+							->where('incident_active', '1')
+							->orderby('incident_date', 'desc')
+							->limit($var_2, $var_4)->find_all();
+			$var_14 = array();
+
+			foreach ($var_10 as $var_15)
+			{
+				$var_16 = Array();
+				foreach ($var_15->var_17 AS $var_17)
+				{
+					$var_16[] = (string)$var_17->var_18;
+				}
+			  
+			  
+				$var_19 = array();
+				$var_19['id'] = $var_15->var_20;
+				$var_19['title'] = $var_15->var_21;
+				$var_19['link'] = $var_5.'reports/view/'.$var_15->var_20;
+				$var_19['description'] = $var_15->var_22;
+				$var_19['date'] = $var_15->var_23;
+				$var_19['categories'] = $var_16;
+				
+				if
+				(
+					$var_15->var_24 != 0 AND
+					$var_15->var_25->var_26 AND
+					$var_15->var_25->var_27
+				)
+				{
+					$var_19['point'] = array(
+						$var_15->var_25->var_27,
+					    $var_15->var_25->var_26
+					);
+					$var_14[] = $var_19;
+				}
+			}
+
+			$var_7->set($var_6.'_feed_'.$var_2.'_'.$var_3, $var_14, array('feed'), 3600); 
+			$var_8 = $var_14;
+		}
+
+		$var_29 = $var_1 == 'atom' ? 'feed/atom/' : 'feed/';
+
+		
+		$var_30 = new class_2('feed/'.$var_1);
+		$var_30->var_31 = Kohana::config('settings.site_name');
+		$var_30->var_5 = $var_5;
+		$var_30->var_32 = 1; 
+		$var_30->var_33 = $var_5.$var_29;
+		$var_30->var_34 = gmdate("D, d M Y H:i:s T", time());
+		$var_30->var_35 = Kohana::lang('ui_admin.incident_feed').' '.Kohana::config('settings.site_name');
+		$var_30->var_14 = $var_8;
+		$var_30->render(TRUE);
+	}
+}

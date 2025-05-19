@@ -1,0 +1,192 @@
+<?php
+
+class VideoEmbed 
+{
+	
+	private $url = FALSE;
+	
+	
+	private $service_name = FALSE;
+	
+	
+	private $service = array();
+	
+	
+	private function services()
+	{
+		$services = array(
+			"youtube" => array(
+				'baseurl' => "http:
+				'searchstring' => 'youtube.com',
+				'oembed' => 'http:
+				'keep-params' => 'v'
+			),
+			
+			"google" => array(
+				'baseurl' => "http:
+				'searchstring' => 'google.com',
+				'keep-params' => 'docid'
+			),
+			"metacafe" => array(
+				'baseurl' => "http:
+				'searchstring' => 'metacafe.com',
+			),
+			"dotsub" => array(
+				'baseurl' => "http:
+				'searchstring' => 'dotsub.com',
+				'oembed' => 'http:
+			),
+			"vimeo" => array(
+				'baseurl' => "http:
+				'searchstring' => 'vimeo.com',
+				'oembed' => 'http:
+			),
+		);
+		
+		Event::run('ushahidi_filter.video_embed_services', $services);
+		
+		return $services;
+	}
+	
+	
+	public function set_url($url)
+	{
+		$this->service_name = $this->detect_service($url);
+		$services = $this->services();
+		$this->service = $services[$this->service_name];
+		
+		$this->url = $this->clean_url($url);
+	}
+	
+	
+	private function clean_url($raw)
+	{
+		if (isset($this->service['keep-params']))
+		{
+			$components = parse_url($raw);
+			parse_str($components['query'], $query);
+			if (! isset($query[$this->service['keep-params']]) ) break;
+			$raw = $this->service['baseurl']. $query[$this->service['keep-params']];
+		}
+
+		return $raw;
+	}
+	
+	
+	private function detect_service($raw)
+	{
+		
+		$service_name = "";
+		
+		
+		$raw = trim($raw);
+		
+		
+		$services = $this->services();
+		
+		
+		$service_name = FALSE;
+		foreach ($services as $key => $value)
+		{
+			
+			if (strpos($raw, $value['searchstring']))
+			{
+				$service_name = $key;
+				break;
+			}
+		}
+		
+		$data = array($services, $service_name);
+		Event::run('ushahidi_filter.video_embed_detect_services', $data);
+		list($services, $service_name) = $data;
+		
+		return $service_name;
+	}
+	
+	
+	public function embed($raw, $auto = FALSE, $
+		$output = FALSE;
+		
+		
+		$code = str_replace($this->service['baseurl'], "", $this->url);
+		
+		switch($this->service_name)
+		{
+			case "youtube":
+				
+				$you_auto = ($auto) ? "&autoplay=1" : "";
+				
+				$output = '<iframe id="ytplayer" type="text/html" width="320" height="265" '
+					. 'src="http:
+					. 'frameborder="0"></iframe>';
+			break;
+			
+			case "google":
+				
+				$google_auto = ($auto) ? "&autoPlay=true" : "";
+				
+				$output = "<embed style='width:320px; height:265px;' id='VideoPlayback' type='application/x-shockwave-flash'"
+					. "	src='http:
+					. "</embed>";
+			break;
+			
+			case "metacafe":
+				
+				$code = strrev(trim(strrev($code), "/"));
+				
+				$output = "<embed src='http:
+					. "	width='320' height='265' wmode='transparent' pluginspage='http:
+					. "	type='application/x-shockwave-flash'> "
+					. "</embed>";
+			break;
+			
+			case "dotsub":
+				$output = "<iframe src='http:
+			
+			break;
+			
+			case "vimeo":
+				$vimeo_auto = ($auto) ? "?autoplay=1" : "";
+				
+				$output = '<iframe src="http:
+					. '</iframe>';
+			break;
+		}
+
+		$data = array($this->service_name, $output);
+		Event::run('ushahidi_filter.video_embed_embed', $data);
+		list($this->service_name, $output) = $data;
+		
+		if (!$output)
+		{
+			$output = '<a href="'.$this->url.'" target="_blank">'.Kohana::lang('ui_main.view_view').'</a>';
+		}
+
+		if ($echo) 
+
+		return $output;
+	}
+	
+	
+	public function thumbnail($raw)
+	{
+		$this->set_url($raw);
+		$output = FALSE;
+		
+		if (isset($this->service['oembed']))
+		{
+			$oembed = @json_decode(file_get_contents($this->service['oembed']."?url=".urlencode($this->url)));
+			if (!empty($oembed) AND ! empty($oembed->thumbnail_url))
+			{
+				$output = $oembed->thumbnail_url;
+			}
+		}
+
+		$data = array($this->service_name, $output);
+		Event::run('ushahidi_filter.video_embed_thumbnail', $data);
+		list($this->service_name, $output) = $data;
+
+		return $output;
+	}
+}
+?>

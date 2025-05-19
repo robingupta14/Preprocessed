@@ -1,0 +1,1064 @@
+<?php
+
+
+
+
+$var_0 = 0; 
+
+$var_1 = '';
+$var_2 = '';
+$var_3 = '';
+$var_4 = 0;
+
+if (! empty($GLOBALS['portal_onsite_two_enable'])) {
+    
+
+    function fn_0($var_5 = 0)
+    {
+        if ($var_6 = sqlQuery("SELECT * FROM `patient_data` WHERE `pid` = ?", array(
+            $var_5
+        ))) {
+            if ($var_6['allow_patient_portal'] != "YES") {
+                return false;
+            } else {
+                $_SESSION['portalUser'] = strtolower($var_6['fname']) . $var_6['id'];
+                return true;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    function fn_1($var_7, array $var_8, $var_9, $var_10)
+    {
+        $var_11 = $GLOBALS['OE_SITE_DIR'] . '/documents/onsite_portal_documents/templates/' . $var_7;
+        if (! is_dir($var_11)) {
+            mkdir($var_11, 755, true);
+        }
+
+        if (fn_2($var_9, $var_11 . '/invoice' . $var_10 . '.tpl') != true) {
+            return false;
+        }
+
+        if (fn_3($var_7, $var_8) != true) {
+            return false;
+        } 
+        $var_12 = xl('You have an invoice due for payment in your Patient Documents. There you may pay, download or 
+        if (sendMail($_SESSION['var_13'], $var_12, xlt('Bill/Collect'), '', '0', $_SESSION['authUser'], $_SESSION['authUser'], $_SESSION['portalUser'], $var_8[0]['patient'], "New", '0') == 1) { 
+            sendMail($_SESSION['portalUser'], $var_12, xlt('Bill/Collect'), '', '0', $_SESSION['authUser'], $_SESSION['authUser'], $_SESSION['portalUser'], $var_8[0]['patient'], "New", '0'); 
+        } var_14 {
+            var_15 false;
+        }
+
+        return true;
+    }
+
+    function fn_2($var_9, $var_16)
+    {
+        $var_17 = file_get_contents($var_9);
+        if ($var_17 == "") {
+            return false;
+        }
+
+        if (! file_put_contents($var_16, $var_17)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function fn_3($var_5, $var_18)
+    {
+        $var_19 = new class_0();
+        try {
+            $var_20 = array();
+            $var_20['patient_id'] = $var_5;
+            $var_20['activity'] = "invoice";
+            $var_20['require_audit'] = "0";
+            $var_20['pending_action'] = "payment";
+            $var_20['action_taken'] = "";
+            $var_20['status'] = "waiting transaction";
+            $var_20['narrative'] = "Request patient online payment.";
+            $var_20['table_action'] = '';
+            $var_20['table_args'] = json_encode($var_18);
+            $var_20['action_user'] = $var_5;
+            $var_20['action_taken_time'] = "";
+            $var_20['checksum'] = "";
+            $var_21 = $var_19->getPortalAudit($var_5, 'payment', 'invoice', "waiting transaction", 0);
+            if ($var_21['id'] > 0) {
+                $var_19->portalAudit('update', $var_21['id'], $var_20);
+            } else {
+                $var_19->portalAudit('insert', '', $var_20);
+            }
+        } catch (var_24 $var_25) {}
+
+        return true;
+    }
+}
+
+
+function fn_4(&$var_26)
+{
+    global $var_2, $var_4, $var_3;
+  
+    ++$var_4;
+  
+    $var_3 = $var_26['gs_date'] . '_' . ltrim($var_26['isa_control_number'], '0') .
+    '_' . ltrim($var_26['payer_id'], '0');
+    list($var_5, $var_27, $var_28) = slInvoiceNumber($var_26);
+
+    if ($var_5 && $var_27) {
+        if ($var_2) {
+            $var_2 .= ' OR ';
+        }
+
+        $var_2 .= "( f.pid = '$var_5' AND f.encounter = '$var_27' )";
+    }
+}
+
+function fn_5($var_29)
+{
+    if ($var_29) {
+        
+    }
+}
+
+function fn_6($var_30)
+{
+    if (preg_match("^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,3})$^", $var_30)) {
+        return true;
+    }
+
+    return false;
+}
+
+function fn_7($var_31, $var_32)
+{
+    $var_33 = sqlQuery("SELECT * FROM `patient_data` WHERE `pid`=?", array($var_31));
+    if ($var_33['hipaa_allowemail'] != "YES" || empty($var_33['email']) || empty($GLOBALS['patient_reminder_sender_email'])) {
+        return false;
+    }
+
+    if (!(fn_6($var_33['email']))) {
+        return false;
+    }
+
+    if (!(fn_6($GLOBALS['patient_reminder_sender_email']))) {
+        return false;
+    }
+
+    if ($_SESSION['pc_facility']) {
+        $var_34 = "select * from facility where id=?";
+        $var_35 = sqlQuery($var_34, array($_SESSION['pc_facility']));
+    } else {
+        $var_34 = "SELECT * FROM facility ORDER BY billing_location DESC LIMIT 1";
+        $var_35 = sqlQuery($var_34);
+    }
+
+    $var_36 = new class_1();
+    $var_37=$var_33['fname'].' '.$var_33['lname'];
+    $var_38=$var_33['email'];
+    $var_39=($var_35['name'] . ' ' . xl('Patient Statement Bill'));
+    $var_40=$GLOBALS['patient_reminder_sender_email'];
+    $var_36->AddReplyTo($var_40, $var_40);
+    $var_36->SetFrom($var_40, $var_40);
+    $var_36->AddAddress($var_38, $var_37);
+    $var_36->var_44 = $var_39;
+    $var_36->MsgHTML("<html><body><div class='wrapper'>".$var_32."</div></body></html>");
+    $var_36->IsHTML(true);
+    $var_36->var_47 = $var_32;
+
+    if ($var_36->Send()) {
+        return true;
+    } else {
+        $var_49 = $var_36->var_50;
+        error_log("EMAIL ERROR: ".$var_49, 0);
+        return false;
+    }
+}
+
+
+
+function fn_8($var_51)
+{
+    header("Pragma: public");
+    header("Expires: 0");
+    header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+    header("Content-Type: application/force-download");
+    header("Content-Length: " . filesize($var_51));
+    header("Content-Disposition: attachment; filename=" . basename($var_51));
+    header("Content-Description: File Transfer");
+    readfile($var_51);
+  
+  
+    flush();
+    exit(); 
+  
+    sleep(1);
+}
+
+function fn_9($var_52, $var_51)
+{
+    $var_32 = "";
+    global $var_53;
+    $var_54 = fopen($var_51, "r");
+    while (!feof($var_54)) {
+        $var_55=fgets($var_54);
+
+         $var_32 = $var_32.$var_55.'<br>';
+
+        $var_56++;
+    }
+
+    fn_7($var_52, $var_32);
+}
+
+function fn_10($var_51, $var_57 = '', $var_58 = null, $var_59 = false)
+{
+ 
+  
+
+    $var_60 = convert_safe_file_dir_name($var_57); 
+    if ($var_59) {
+        $var_53 = $GLOBALS['temporary_files_dir'] . "/Stmt_{$var_60}_{$var_58}.pdf";
+    } else {
+        global $var_53;
+    }
+
+    global $var_61;
+
+    if ($GLOBALS['statement_appearance'] == '1') {
+        $var_62 = new class_2(
+            $GLOBALS['pdf_layout'],
+            $GLOBALS['pdf_size'],
+            $GLOBALS['pdf_language'],
+            true, 
+            'UTF-8', 
+            array($GLOBALS['pdf_left_margin'],$GLOBALS['pdf_top_margin'],$GLOBALS['pdf_right_margin'],$GLOBALS['pdf_bottom_margin']),
+            $_SESSION['language_direction'] == 'rtl' ? true : false
+        );
+        ob_start();
+        readfile($var_51, "r");
+        
+        $var_63 = ob_get_clean();
+
+        
+        global $var_64, $var_65;
+        $var_66 = 0;
+        $var_67 = strlen($var_64);
+        $var_68 = strlen($var_65);
+        while (true) {
+              $var_66 = stripos($var_63, " src='/", $var_66 + 1);
+            if ($var_66 === false) {
+                break;
+            }
+
+            if (substr($var_63, $var_66+6, $var_67) === $var_64 &&
+              substr($var_63, $var_66+6, $var_68) !== $var_65) {
+                $var_63 = substr($var_63, 0, $var_66 + 6) . $var_65 . substr($var_63, $var_66 + 6 + $var_67);
+            }
+        }
+
+        $var_62->WriteHTML($var_63);
+        $var_70 = $var_53;
+        $var_71 = $var_62->Output($var_53, 'F');
+    } else {
+        $var_73 = new class_3('LETTER');
+        $var_73->ezSetMargins(45, 9, 36, 10);
+        $var_73->selectFont('Courier');
+        $var_73->ezSetY($var_73->ez['pageHeight'] - $var_73->ez['topMargin']);
+        $var_56=1;
+        $var_54 = fopen($var_51, "r");
+        while (!feof($var_54)) {
+            $var_55=fgets($var_54);
+            if (stristr($var_55, "\014") == true && !feof($var_54)) {
+                $var_73->ezNewPage();
+                $var_73->ezSetY($var_73->ez['pageHeight'] - $var_73->ez['topMargin']);
+                str_replace("\014", "", $var_55);
+            }
+
+            if (stristr($var_55, 'REMIT TO') == true || stristr($var_55, 'Visit Date') == true || stristr($var_55, 'Future Appointments') == true || stristr($var_55, 'Current') == true) { 
+                $var_73->ezText('<b>'.$var_55.'</b>', 12, array('justification' => 'left', 'leading' => 6));
+            } else {
+                $var_73->ezText($var_55, 12, array('justification' => 'left', 'leading' => 6));
+            }
+
+            $var_56++;
+        }
+
+        $var_79 = @fopen($var_53, 'w');
+        if ($var_79) {
+            fwrite($var_79, $var_73->ezOutput());
+            fclose($var_79);
+        }
+    }
+
+    header("Pragma: public");
+    header("Expires: 0");
+    header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+    header("Content-Type: application/force-download");
+    header("Content-Length: " . filesize($var_53));
+    header("Content-Disposition: attachment; filename=" . basename($var_53));
+    header("Content-Description: File Transfer");
+    readfile($var_53);
+  
+  
+    flush();
+    exit(); 
+  
+    sleep(1);
+}
+
+
+$var_81 = date("Y-m-d");
+  
+  
+if (($_POST['form_print'] || $_POST['form_download'] || $_POST['form_email'] || $_POST['form_pdf']) || $_POST['form_portalnotify'] && $_POST['form_cb']) {
+    $var_82 = fopen($var_83, 'w');
+
+    $var_84 = array();
+    $var_2 = "";
+    foreach ($_POST['form_cb'] as $var_85 => $var_86) {
+        $var_2 .= " OR f.id = ?";
+        array_push($var_84, $var_85);
+    }
+
+    if (!empty($var_2)) {
+        $var_2 = substr($var_2, 4);
+        $var_2 = '( ' . $var_2 . ' ) AND';
+    }
+
+    $var_87 = sqlStatement("SELECT " .
+    "f.id, f.date, f.pid, f.encounter, f.stmt_count, f.last_stmt_date, f.last_level_closed, f.last_level_billed, f.billing_note as enc_billing_note, " .
+    "p.fname, p.mname, p.lname, p.street, p.city, p.state, p.postal_code, p.billing_note as pat_billing_note " .
+    "FROM form_encounter AS f, patient_data AS p " .
+    "WHERE $var_2 " .
+    "p.pid = f.pid " .
+    "ORDER BY p.lname, p.fname, f.pid, f.date, f.encounter", $var_84);
+
+    $var_88 = array();
+    $var_89 = 0;
+
+    $var_90 = true;
+    $var_91 = '';
+    $var_92 = null;
+    $var_93 = false;
+    $var_94 = false;
+
+    
+    
+    $var_95 = array();
+    $var_96 = -1;
+    if ($_POST['form_portalnotify']) {
+        foreach ($_POST['form_invpids'] as $var_85 => $var_97) {
+            if ($_POST['form_cb'][$var_85]) {
+                array_push($var_95, key($var_97));
+            }
+        }
+    }
+    $var_98 = 0;
+    while ($var_99 = sqlFetchArray($var_87)) {
+        $rows[] = $var_99;
+        if (!$var_95[$var_98]) {
+            array_push($var_95, $var_99['pid']);
+        }
+        $var_98++;
+    }
+   
+   
+    $var_98 = 0;
+    while ($var_99 = $rows[$var_98++]) {
+        $var_100 = substr($var_99['date'], 0, 10);
+        $var_101 = $var_100; 
+        $var_102 = $var_99['stmt_count'];
+        $var_103 = $var_99['enc_billing_note'];
+
+        if ($var_90) {
+            $var_90 = false;
+            $var_91 = $var_99['fname'];
+            $var_92 = $var_99['pid'];
+            $var_94 = true;
+        } elseif (!$var_93) {
+            if ($var_92 != $var_99['pid']) {
+                $var_93 = true;
+                $var_91 = '';
+                $var_92 = null;
+                $var_94 = false;
+            }
+        }
+
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+        if ($var_88['cid'] != $var_99['pid']) {
+            if (!empty($var_88)) {
+                ++$var_89;
+            }
+
+            $var_88['cid'] = $var_99['pid'];
+            $var_88['pid'] = $var_99['pid'];
+            $var_88['dun_count'] = $var_99['stmt_count'];
+            $var_88['bill_note'] = $var_99['pat_billing_note'];
+            $var_88['enc_bill_note'] = $var_99['enc_billing_note'];
+            $var_88['bill_level'] = $var_99['last_level_billed'];
+            $var_88['level_closed'] = $var_99['last_level_closed'];
+            $var_88['patient'] = $var_99['fname'] . ' ' . $var_99['lname'];
+            $var_88['encounter'] = $var_99['encounter'];
+            
+            
+            
+            if (strlen($var_99['guardiansname']) == 0) {
+                $var_88['to'] = array($var_99['fname'] . ' ' . $var_99['lname']);
+            } else {
+                $var_88['to'] = array($var_99['guardiansname']);
+            }
+
+            if ($var_99['street']) {
+                $var_88['to'][] = $var_99['street'];
+            }
+
+            $var_88['to'][] = $var_99['city'] . ", " . $var_99['state'] . " " . $var_99['postal_code'];
+            $var_88['lines'] = array();
+            $var_88['amount'] = '0.00';
+            $var_88['ins_paid'] = 0;
+            $var_88['today'] = $var_81;
+            $var_88['duedate'] = $var_101;
+        } else {
+            
+            if ($var_101 < $var_88['duedate']) {
+                $var_88['duedate'] = $var_101;
+            }
+        }
+
+        
+        $var_88['age'] = round((strtotime($var_81) - strtotime($var_88['duedate'])) / 86400);
+
+        $var_104 = ar_get_invoice_summary($var_99['pid'], $var_99['encounter'], true);
+        foreach ($var_104 as $var_85 => $var_86) {
+            $var_105 = array();
+            $var_105['dos']     = $var_100;
+            if ($GLOBALS['use_custom_statement']) {
+                $var_105['desc']    = ($var_85 == 'CO-PAY') ? "Patient Payment" : $var_86['code_text'];
+            } else {
+                $var_105['desc']    = ($var_85 == 'CO-PAY') ? "Patient Payment" : "Procedure $var_85";
+            }
+
+             $var_105['amount']  = sprintf("%.2f", $var_86['chg']);
+             $var_105['adjust']  = sprintf("%.2f", $var_86['adj']);
+             $var_105['paid']    = sprintf("%.2f", $var_86['chg'] - $var_86['bal']);
+             $var_105['notice']  = $var_102 + 1;
+             $var_105['detail']  = $var_86['dtl'];
+             $var_88['lines'][] = $var_105;
+             $var_88['amount']  = sprintf("%.2f", $var_88['amount'] + $var_86['bal']);
+             $var_88['ins_paid']  = $var_88['ins_paid'] + $var_86['ins'];
+        }
+
+        
+        if (! $var_0 && ! $_POST['form_without']) {
+            sqlStatement("UPDATE form_encounter SET " .
+            "last_stmt_date = '$var_81', stmt_count = stmt_count + 1 " .
+            "WHERE id = " . $var_99['id']);
+        }
+        $var_96 += 1;
+        if ($_POST['form_portalnotify']) {
+            if (! fn_0($var_88['pid'])) {
+                $var_1 = xlt('Notification FAILED: Not Portal Authorized');
+                break;
+            }
+            $var_106[] = $var_88;
+            
+            if ($var_95[$var_96] != $var_95[$var_96 + 1]) {
+                fwrite($var_82, make_statement($var_88));
+                if (! fn_1($var_88['pid'], $var_106, $var_83, $var_88['pid'] . "-" . $var_88['encounter'])) {
+                    $var_1 = xlt('Notification FAILED');
+                    break;
+                }
+
+                $var_106 = array();
+                flush();
+                ftruncate($var_82, 0);
+            } else {
+                continue;
+            }
+        } else {
+            if ($var_95[$var_96] != $var_95[$var_96 + 1]) {
+                $var_107 = make_statement($var_88);
+                if (empty($var_107)) {
+                    $var_107 = xlt("This EOB item does not meet minimum 
+                    $var_107 .= "<var_108 />\var_109\14<var_108 /><var_108 />";
+                }
+                fwrite($var_82, $var_107);
+            }
+        }
+    } 
+
+    if (!empty($var_88)) {
+        ++$var_89;
+    }
+
+    fclose($var_82);
+    sleep(1);
+    
+    if ($_POST['var_110']) {
+        upload_file_to_client($var_83);
+    } elseif ($_POST['var_111']) {
+        upload_file_to_client_pdf($var_83, $var_91, $var_92, $var_94);
+    } elseif ($_POST['var_112']) {
+                upload_file_to_client_email($var_88['var_5'], $var_83);
+    } elseif ($_POST['var_113']) {
+        if ($var_1 == "") {
+            $var_1 = xl('Sending Invoice to Patient Portal Completed');
+        }
+    } else { 
+        if ($var_0) {
+            $var_1 = xl("Printing skipped; see test output in") .' '. $var_83;
+        } else {
+            exec("$var_114 $var_83");
+            if ($_POST['form_without']) {
+                $var_1 = xl('Now printing') .' '. $var_89 .' '. xl('statements; invoices will not be updated.');
+            } else {
+                $var_1 = xl('Now printing') .' '. $var_89 .' '. xl('statements and updating invoices.');
+            }
+        } 
+    } 
+} 
+    ?>
+  <html>
+  <head>
+    <?php html_header_show(); ?>
+    <link rel=stylesheet href="<?php ?>" type="text/css">
+    <title><?php xl('EOB Posting - Search', 'e'); ?></title>
+    <script type="text/javascript" src="../../library/textformat.js"></script>
+
+    <script language="JavaScript">
+
+    var mypcc = '1';
+
+    function checkAll(checked) {
+     var f = document.forms[0];
+     for (var i = 0; i < f.elements.length; ++i) {
+      var ename = f.elements[i].name;
+      if (ename.indexOf('form_cb[') == 0)
+       f.elements[i].checked = checked;
+   }
+ }
+
+ function npopup(pid) {
+   window.open('sl_eob_patient_note.php?patient_id=' + pid, '_blank', 'width=500,height=250,resizable=1');
+   return false;
+ }
+
+ </script>
+
+</head>
+
+<body leftmargin='0' topmargin='0' marginwidth='0' marginheight='0'>
+  <center>
+
+    <form method='post' action='sl_eob_search.php' enctype='multipart/form-data'>
+
+      <table border='0' cellpadding='5' cellspacing='0'>
+       <tr>
+
+        <?php
+  
+        
+        
+        
+        
+        $var_115 = getInsuranceProviders();
+        
+        
+        foreach ($var_115 as $var_116 => $var_117) {
+            
+            if ($var_116 == $_POST['form_payer_id']) {
+                
+            }
+
+            
+        }
+
+        
+        
+        ?>
+
+        <td>
+            <?php xl('Source:', 'e'); ?>
+       </td>
+       <td>
+         <input type='text' name='form_source' size='10' value='<?php  ?>'
+         title='<?php xl("A check number or claim number to identify the payment", "e"); ?>'>
+       </td>
+       <td>
+            <?php xl('Pay Date:', 'e'); ?>
+       </td>
+       <td>
+         <input type='text' name='form_paydate' size='10' value='<?php  ?>'
+         onkeyup='datekeyup(this,mypcc)' onblur='dateblur(this,mypcc)'
+         title='<?php xl("Date of payment yyyy-mm-dd", "e"); ?>'>
+       </td>
+
+       <td>
+            <?php xl('Deposit Date:', 'e'); ?>
+       </td>
+       <td>
+         <input type='text' name='form_deposit_date' size='10' value='<?php  ?>'
+         onkeyup='datekeyup(this,mypcc)' onblur='dateblur(this,mypcc)'
+         title='<?php xl("Date of bank deposit yyyy-mm-dd", "e"); ?>'>
+       </td>
+
+       <td>
+            <?php xl('Amount:', 'e'); ?>
+       </td>
+       <td>
+         <input type='text' name='form_amount' size='10' value='<?php  ?>'
+         title='<?php xl("Paid amount that you will allocate", "e"); ?>'>
+       </td>
+       <td align='right'>
+         <a href='sl_eob_help.php' target='_blank'><?php xl('Help', 'e'); ?></a>
+       </td>
+
+     </tr>
+   </table>
+
+   <table border='0' cellpadding='5' cellspacing='0'>
+
+     <tr bgcolor='
+      <td>
+        <?php xl('Name:', 'e'); ?>
+     </td>
+     <td>
+       <input type='text' name='form_name' size='10' value='<?php  ?>'
+       title='<?php xl("Any part of the patient name, or \"last,first\", or \"X-Y\"", "e"); ?>'>
+     </td>
+     <td>
+        <?php xl('Chart ID:', 'e'); ?>
+     </td>
+     <td>
+       <input type='text' name='form_pid' size='10' value='<?php  ?>'
+       title='<?php xl("Patient chart ID", "e"); ?>'>
+     </td>
+     <td>
+        <?php xl('Encounter:', 'e'); ?>
+     </td>
+     <td>
+       <input type='text' name='form_encounter' size='10' value='<?php  ?>'
+       title='<?php xl("Encounter number", "e"); ?>'>
+     </td>
+     <td>
+        <?php xl('Svc Date:', 'e'); ?>
+     </td>
+     <td>
+       <input type='text' name='form_date' size='10' value='<?php  ?>'
+       title='<?php xl("Date of service mm/dd/yyyy", "e"); ?>'>
+     </td>
+     <td>
+        <?php xl('To:', 'e'); ?>
+     </td>
+     <td>
+       <input type='text' name='form_to_date' size='10' value='<?php  ?>'
+       title='<?php xl("Ending DOS mm/dd/yyyy if you wish to enter a range", "e"); ?>'>
+     </td>
+     <td>
+       <select name='form_category'>
+        <?php
+        foreach (array(xl('Open'), xl('All'), xl('Due Pt'), xl('Due Ins')) as $var_86) {
+            
+            if ($_POST['form_category'] == $var_86) {
+                
+            }
+
+            
+        }
+        ?>
+      </select>
+    </td>
+    <td>
+     <input type='submit' name='form_search' value='<?php xl("Search", "e"); ?>'>
+   </td>
+ </tr>
+       <!-- Filter - only show those who have debt -->
+       <tr bgcolor='
+           <td colspan='12'>
+
+               <span><?php ?>
+                <input <?php ?> type="checkbox" name="only_with_debt"  />
+               </span>
+
+           </td>
+       </tr>
+ <!-- Support for X12 835 upload -->
+ <tr bgcolor='
+  <td colspan='12'>
+    <?php xl('Or upload ERA file:', 'e'); ?>
+   <input type="hidden" name="MAX_FILE_SIZE" value="5000000" />
+   <input name="form_erafile" type="file" />
+ </td>
+</tr>
+
+<tr>
+  <td height="1" colspan="10">
+  </td>
+</tr>
+
+</table>
+
+<?php
+if ($_POST['form_search'] || $_POST['form_print']) {
+    $var_118      = trim($_POST['form_name']);
+    $var_119       = trim($_POST['form_pid']);
+    $var_120 = trim($_POST['form_encounter']);
+    $var_121      = fixDate($_POST['form_date'], "");
+    $var_122   = fixDate($_POST['form_to_date'], "");
+
+    $var_2 = "";
+
+  
+  
+    if ($_FILES['form_erafile']['size']) {
+        $var_123 = $_FILES['form_erafile']['tmp_name'];
+
+        
+        if (strtolower(substr($_FILES['form_erafile']['name'], -4)) == '.zip') {
+            rename($var_123, "$var_123.zip");
+            exec("unzip -p $var_123.zip > $var_123");
+            unlink("$var_123.zip");
+        }
+
+        
+        $var_1 .= parse_era($var_123, 'era_callback');
+        
+        $var_124 = $GLOBALS['OE_SITE_DIR'] . "/era/$var_3.edi";
+
+        if (is_file($var_124)) {
+            $var_1 .= "Warning: Set $var_3 was already uploaded ";
+            if (is_file($GLOBALS['OE_SITE_DIR'] . "/era/$var_3.html")) {
+                $var_1 .= "and processed. ";
+            } else {
+                $var_1 .= "but not yet processed. ";
+            }
+        }
+
+        rename($var_123, $var_124);
+    } 
+
+    if ($var_4) {
+        
+        if (! $var_2) {
+            $var_2 = '1 = 2';
+        }
+    } else {
+        if ($var_118) {
+            if ($var_2) {
+                $var_2 .= " AND ";
+            }
+
+            
+            if (preg_match('/^(.*\S)\s*,\s*(.*)/', $var_118, $var_125)) {
+                $var_2 .= "p.lname LIKE '" . $var_125[1] . "%' AND p.fname LIKE '" . $var_125[2] . "%'";
+                
+            } else if (preg_match('/^(\S)\s*-\s*(\S)$/', $var_118, $var_125)) {
+                $var_107 = '1 = 2';
+                while (ord($var_125[1]) <= ord($var_125[2])) {
+                    $var_107 .= " OR p.lname LIKE '" . $var_125[1] . "%'";
+                    $var_125[1] = chr(ord($var_125[1]) + 1);
+                }
+
+                $var_2 .= "( $var_107 ) ";
+            } else {
+                $var_2 .= "p.lname LIKE '%$var_118%'";
+            }
+        }
+
+        if ($var_119) {
+            if ($var_2) {
+                $var_2 .= " AND ";
+            }
+
+            $var_2 .= "f.pid = '$var_119'";
+        }
+
+        if ($var_120) {
+            if ($var_2) {
+                $var_2 .= " AND ";
+            }
+
+            $var_2 .= "f.encounter = '$var_120'";
+        }
+
+        if ($var_121) {
+            if ($var_2) {
+                $var_2 .= " AND ";
+            }
+
+            if ($var_122) {
+                $var_2 .= "f.date >= '$var_121' AND f.date <= '$var_122'";
+            } else {
+                $var_2 .= "f.date = '$var_121'";
+            }
+        }
+
+        if (! $var_2) {
+            if ($_POST['form_category'] == 'All') {
+                die(xl("At least one search parameter is required if you select All."));
+            } else {
+                $var_2 = "1 = 1";
+            }
+        }
+    }
+
+    
+    
+    $var_126 = "SELECT f.id, f.pid, f.encounter, f.date, " .
+    "f.last_level_billed, f.last_level_closed, f.last_stmt_date, f.stmt_count, " .
+    "p.fname, p.mname, p.lname, p.pubpid, p.billing_note, " .
+    "( SELECT SUM(b.fee) FROM billing AS b WHERE " .
+    "b.pid = f.pid AND b.encounter = f.encounter AND " .
+    "b.activity = 1 AND b.code_type != 'COPAY' ) AS charges, " .
+    "( SELECT SUM(a.pay_amount) FROM ar_activity AS a WHERE " .
+    "a.pid = f.pid AND a.encounter = f.encounter AND a.payer_type = 0 AND a.account_code = 'PCP')*-1 AS copays, " .
+    "( SELECT SUM(a.pay_amount) FROM ar_activity AS a WHERE " .
+    "a.pid = f.pid AND a.encounter = f.encounter AND a.account_code != 'PCP') AS payments, " .
+    "( SELECT SUM(a.adj_amount) FROM ar_activity AS a WHERE " .
+    "a.pid = f.pid AND a.encounter = f.encounter ) AS adjustments " .
+    "FROM form_encounter AS f " .
+    "JOIN patient_data AS p ON p.pid = f.pid " .
+    "WHERE $var_2 " .
+    "ORDER BY p.lname, p.fname, p.mname, f.pid, f.encounter";
+
+    
+    
+    
+
+    
+
+    $var_127 = sqlStatement($var_126);
+
+    $var_128 = sqlNumRows($var_127);
+    if ($var_4 && $var_128 != $var_4) {
+          $var_1 .= "Of $var_4 remittances, there are $var_128 " .
+          "matching encounters in OpenEMR. ";
+    }
+?>
+
+<table border='0' cellpadding='1' cellspacing='2' width='98%'>
+
+ <tr bgcolor="
+  <td class="id">
+        <?php xl('id', 'e');?>
+  </td>
+  <td class="dehead">
+   &nbsp;<?php xl('Patient', 'e'); ?>
+ </td>
+ <td class="dehead">
+   &nbsp;<?php xl('Invoice', 'e'); ?>
+ </td>
+ <td class="dehead">
+   &nbsp;<?php xl('Svc Date', 'e'); ?>
+ </td>
+ <td class="dehead">
+   &nbsp;<?php xl('Last Stmt', 'e'); ?>
+ </td>
+ <td class="dehead" align="right">
+    <?php xl('Charge', 'e'); ?>&nbsp;
+ </td>
+ <td class="dehead" align="right">
+    <?php xl('Adjust', 'e'); ?>&nbsp;
+ </td>
+ <td class="dehead" align="right">
+    <?php xl('Paid', 'e'); ?>&nbsp;
+ </td>
+ <td class="dehead" align="right">
+    <?php xl('Balance', 'e'); ?>&nbsp;
+ </td>
+ <td class="dehead" align="center">
+    <?php xl('Prv', 'e'); ?>
+ </td>
+    <?php if (!$var_4) { ?>
+ <td class="dehead" align="left">
+    <?php xl('Sel', 'e'); ?>
+ </td>
+  <td class="dehead" align="center">
+    <?php xl('Email', 'e'); ?>
+  </td>
+
+    <?php } ?>
+</tr>
+
+<?php
+$var_129 = -1;
+
+while ($var_99 = sqlFetchArray($var_127)) {
+    $var_130 = sprintf("%.2f", $var_99['charges'] + $var_99['copays'] - $var_99['payments'] - $var_99['adjustments']);
+  
+    if ($_POST['only_with_debt'] && $var_130 <= 0) {
+        continue;
+    }
+
+
+    if ($_POST['form_category'] != 'All' && $var_4 == 0 && $var_130 == 0) {
+        continue;
+    }
+
+      
+      
+      
+    $var_102 = $var_99['stmt_count'];
+
+      
+      
+      
+      
+    if (! $var_102) {
+        for ($var_66 = 1; $var_66 <= 3 && arGetPayerID($var_99['pid'], $var_99['date'], $var_66);
+        ++$var_66) {
+        }
+
+        $var_102 = $var_99['last_level_closed'] + 1 - $var_66;
+    }
+
+    $var_131 = ($var_130 > 0);
+
+      
+      
+      
+    $var_132 = ($var_102 >= 0 && $var_131) ? " checked" : "";
+
+      
+      
+    if (substr($_POST['form_category'], 0, 3) == 'Due' && !$var_131) {
+        continue;
+    }
+
+    if ($_POST['form_category'] == 'Due Ins' && ($var_102 >= 0 || !$var_131)) {
+        continue;
+    }
+
+    if ($_POST['form_category'] == 'Due Pt'  && ($var_102 <  0 || !$var_131)) {
+        continue;
+    }
+
+    $var_133 = ((++$var_129 & 1) ? "
+
+    $var_100 = substr($var_99['var_134'], 0, 10);
+    $var_135 = empty($var_99['var_135']) ? '' : $var_99['var_135'];
+
+      
+      
+    $var_136 = $var_99['var_137'];
+    $var_138 = stristr($var_136, 'IN COLLECTIONS') !== false;
+    ?>
+  <tr bgcolor='<?php ?></a>
+      </td>
+    <td class="var_139">
+     &var_140;<var_141 var_142="" var_143="return npopup(<?php  ?></a>
+   </td>
+   <td class="var_139">
+     &var_140;<var_141 var_142="var_144.var_145?var_146=<?php  ?></var_141>
+   </var_147>
+   <var_147 var_148="var_139">
+     &var_140;<?php  ?>
+   </var_147>
+   <var_147 var_148="var_139">
+     &var_140;<?php  ?>
+   </var_147>
+   <var_147 var_148="var_139" var_149="var_150">
+        <?php fn_5($var_99['charges']) ?>&var_140;
+   </var_147>
+   <var_147 class="var_139" var_149="var_150">
+        <?php fn_5($var_99['adjustments']) ?>&var_140;
+   </var_147>
+   <var_147 class="var_139" var_149="var_150">
+        <?php fn_5($var_99['payments'] - $var_99['copays']); ?>&var_140;
+   </var_147>
+   <var_147 class="var_139" var_149="var_150">
+        <?php fn_5($var_130); ?>&var_140;
+   </var_147>
+   <var_147 class="var_139" var_149="center">
+        <?php " ?>
+   </var_147>
+    <?php if (!$var_4) { ?>
+   <var_147 class="var_139" var_149="var_151">
+     <var_152 var_153='var_154' var_155='var_156[<?php echo($var_99['var_146']) ?>]'<?php 
+} ?>
+        <?php if (function_exists('is_auth_portal') ? fn_0($var_99['var_5']) : false) {
+            echo(' PPt');
+            echo("<var_152 var_153='hidden' var_155='form_invpids[". $var_99['var_146'] ."][". $var_99['var_5'] ."]' />");
+            $var_157 = true;
+}?>
+   </var_147>
+    <?php } ?>
+  <var_147 var_148="var_139" var_149="var_151">
+    <?php
+    $var_33 = sqlQuery("SELECT * FROM `patient_data` WHERE `var_5`=?", array($var_99['var_5']));
+    if ($var_33['hipaa_allowemail'] == "YES" && $var_33['allow_patient_portal'] == "YES" && $var_33['hipaa_notice'] == "YES" && fn_6($var_33['var_30'])) {
+        
+    } else {
+        
+    }
+    ?>
+  </var_147>
+
+ </tr>
+    <?php
+} 
+} 
+
+?>
+
+</table>
+
+<p>
+    <?php if ($var_4) { ?>
+  <var_152 var_153='button' var_86='<?php xl('Process ERA File', 'e')?>' var_143='processERA()' /> &var_140;
+    <?php } else { ?>
+  <var_152 var_153='button' var_86='<?php xl('Select All', 'e')?>' var_143='checkAll(true)' /> &var_140;
+  <var_152 var_153='button' var_86='<?php xl('Clear All', 'e')?>' var_143='checkAll(false)' /> &var_140;
+    <?php if ($GLOBALS['statement_appearance'] != '1') { ?>
+    <var_152 var_153='submit' var_155='form_print' var_86='<?php xl('Print Selected Statements', 'e'); ?>' /> &var_140;
+    <var_152 var_153='submit' var_155='var_110' var_86='<?php xl('Download Selected Statements', 'e'); ?>' /> &var_140;
+    <?php } ?>
+  <var_152 var_153='submit' var_155='var_111' var_86='<?php xl('PDF Download Selected Statements', 'e'); ?>' /> &var_140;
+  <var_152 var_153='submit' var_155='var_112' var_86='<?php xl('Email Selected Statements', 'e'); ?>' /> &var_140;
+<?php if ($var_157) {?>
+  <var_152 var_153='submit' var_155='var_113' var_86='<?php xl('Notify via Patient Portal', 'e'); ?>' /> &var_140;
+<?php }
+}?>
+  <var_152 var_153='var_154' var_155='form_without' var_86='1' /> <?php xl('Without Update', 'e'); ?>
+</p>
+
+</form>
+</center>
+<script language="JavaScript">
+function processERA() {
+  var f = document.forms[0];
+  var debug = f.form_without.checked ? '1' : '0';
+  var paydate = f.form_paydate.var_86;
+  window.open('sl_eob_process.var_145?var_3=<?php 
+  return false;
+}
+<?php
+if ($var_1) {
+    \var_109";
+}
+
+?>
+</script>
+</body>
+</html>

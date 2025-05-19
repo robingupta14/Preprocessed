@@ -1,0 +1,1554 @@
+<?php
+
+
+
+
+
+$langs->load("companies");
+$langs->load("bills");
+$langs->load("members");
+$langs->load("users");
+$langs->load('other');
+
+$action=GETPOST('action','alpha');
+$backtopage=GETPOST('backtopage','alpha');
+$confirm=GETPOST('confirm','alpha');
+$rowid=GETPOST('rowid','int');
+$typeid=GETPOST('typeid','int');
+$userid=GETPOST('userid','int');
+$socid=GETPOST('socid','int');
+
+if (! empty($conf->mailmanspip->enabled))
+{
+
+	$langs->load('mailmanspip');
+
+	$mailmanspip = new MailmanSpip($db);
+}
+
+$object = new Adherent($db);
+$extrafields = new ExtraFields($db);
+
+
+$object->getCanvas($socid);
+$canvas = $object->canvas?$object->canvas:GETPOST("canvas");
+$objcanvas='';
+if (! empty($canvas))
+{
+	$objcanvas = new Canvas($db, $action);
+	$objcanvas->getCanvas('adherent', 'membercard', $canvas);
+}
+
+
+$result=restrictedArea($user,'adherent',$rowid,'','','fk_soc', 'rowid', $objcanvas);
+
+$errmsg=''; $errmsgs=array();
+
+if ($rowid > 0)
+{
+	
+	$result = $object->fetch($rowid);
+
+	
+	$canadduser=($user->admin || $user->rights->user->user->creer);
+	
+	if ($object->user_id)
+	{
+		
+		$caneditfielduser=((($user->id == $object->user_id) && $user->rights->user->self->creer)
+				|| (($user->id != $object->user_id) && $user->rights->user->user->creer));
+		$caneditpassworduser=((($user->id == $object->user_id) && $user->rights->user->self->password)
+				|| (($user->id != $object->user_id) && $user->rights->user->user->password));
+	}
+}
+
+
+$canaddmember=$user->rights->adherent->creer;
+
+if ($rowid)
+{
+	$caneditfieldmember=$user->rights->adherent->creer;
+}
+
+
+$hookmanager=new HookManager($db);
+$hookmanager->initHooks(array('membercard'));
+
+
+
+
+$parameters=array('socid'=>$socid, 'objcanvas'=>$objcanvas);
+$reshook=$hookmanager->executeHooks('doActions',$parameters,$object,$action);    
+
+if ($action == 'setuserid' && ($user->rights->user->self->creer || $user->rights->user->user->creer))
+{
+	$error=0;
+	if (empty($user->rights->user->user->creer))	
+	{
+		if ($userid != $user->id && $userid != $object->user_id)
+		{
+			$error++;
+			$mesg='<div class="error">'.$langs->trans("ErrorUserPermissionAllowsToLinksToItselfOnly").'</div>';
+		}
+	}
+
+	if (! $error)
+	{
+		if ($userid != $object->user_id)	
+		{
+			$result=$object->setUserId($userid);
+			if ($result < 0) dol_print_error($object->db,$object->error);
+			$action='';
+		}
+	}
+}
+
+if ($action == 'setsocid')
+{
+	$error=0;
+	if (! $error)
+	{
+		if ($socid != $object->fk_soc)	
+		{
+			$sql ="SELECT rowid FROM ".MAIN_DB_PREFIX."adherent";
+			$sql.=" WHERE fk_soc = '".$socid."'";
+			$sql.=" AND entity = ".$conf->entity;
+			$resql = $db->query($sql);
+			if ($resql)
+			{
+				$obj = $db->fetch_object($resql);
+				if ($obj && $obj->rowid > 0)
+				{
+					$othermember=new Adherent($db);
+					$othermember->fetch($obj->rowid);
+					$thirdparty=new Societe($db);
+					$thirdparty->fetch($socid);
+					$error++;
+					$errmsg='<div class="error">'.$langs->trans("ErrorMemberIsAlreadyLinkedToThisThirdParty",$othermember->getFullName($langs),$othermember->login,$thirdparty->name).'</div>';
+				}
+			}
+
+			if (! $error)
+			{
+				$result=$object->setThirdPartyId($socid);
+				if ($result < 0) dol_print_error($object->db,$object->error);
+				$action='';
+			}
+		}
+	}
+}
+
+
+if ($action == 'confirm_create_user' && $confirm == 'yes' && $user->rights->user->user->creer)
+{
+	if ($result > 0)
+	{
+		
+		$nuser = new User($db);
+		$result=$nuser->create_from_member($object,GETPOST('login'));
+
+		if ($result < 0)
+		{
+			$langs->load("errors");
+			$errmsg=$langs->trans($nuser->error);
+		}
+	}
+	else
+	{
+		$errmsg=$object->error;
+	}
+}
+
+
+if ($action == 'confirm_create_thirdparty' && $confirm == 'yes' && $user->rights->societe->creer)
+{
+	if ($result > 0)
+	{
+		
+		$company = new Societe($db);
+		$result=$company->create_from_member($object,GETPOST('companyname'));
+
+		if ($result < 0)
+		{
+			$langs->load("errors");
+			$errmsg=$langs->trans($company->error);
+			$errmsgs=$company->errors;
+		}
+	}
+	else
+	{
+		$errmsg=$object->error;
+	}
+}
+
+if ($action == 'confirm_sendinfo' && $confirm == 'yes')
+{
+	if ($object->email)
+	{
+		$from=$conf->email_from;
+		if (! empty($conf->global->ADHERENT_MAIL_FROM)) $from=$conf->global->ADHERENT_MAIL_FROM;
+
+		$result=$object->send_an_email($langs->transnoentitiesnoconv("ThisIsContentOfYourCard")."\n\n%INFOS%\n\n",$langs->transnoentitiesnoconv("CardContent"));
+
+		$langs->load("mails");
+		$mesg=$langs->trans("MailSuccessfulySent", $from, $object->email);
+	}
+}
+
+if ($action == 'update' && ! $_POST["cancel"] && $user->rights->adherent->creer)
+{
+
+	$datenaiss='';
+	if (isset($_POST["naissday"]) && $_POST["naissday"]
+			&& isset($_POST["naissmonth"]) && $_POST["naissmonth"]
+			&& isset($_POST["naissyear"]) && $_POST["naissyear"])
+	{
+		$datenaiss=dol_mktime(12, 0, 0, $_POST["naissmonth"], $_POST["naissday"], $_POST["naissyear"]);
+	}
+
+	
+	if ($result > 0)
+	{
+		$object->oldcopy=dol_clone($object);
+
+		
+		$object->civilite_id = trim($_POST["civilite_id"]);
+		$object->prenom      = trim($_POST["prenom"]);     
+		$object->nom         = trim($_POST["nom"]);        
+		$object->firstname   = trim($_POST["prenom"]);
+		$object->lastname    = trim($_POST["nom"]);
+		$object->login       = trim($_POST["login"]);
+		$object->pass        = trim($_POST["pass"]);
+
+		$object->societe     = trim($_POST["societe"]);
+		$object->adresse     = trim($_POST["address"]);    
+		$object->address     = trim($_POST["address"]);
+		$object->cp          = trim($_POST["zipcode"]);    
+		$object->zip         = trim($_POST["zipcode"]);
+		$object->ville       = trim($_POST["town"]);       
+		$object->town        = trim($_POST["town"]);
+		$object->state_id    = $_POST["departement_id"];
+		$object->country_id  = $_POST["country_id"];
+		$object->fk_departement = $_POST["departement_id"];   
+		$object->pays_id     = $_POST["country_id"];   
+
+		$object->phone       = trim($_POST["phone"]);
+		$object->phone_perso = trim($_POST["phone_perso"]);
+		$object->phone_mobile= trim($_POST["phone_mobile"]);
+		$object->email       = trim($_POST["email"]);
+		$object->naiss       = $datenaiss;
+
+		$object->typeid      = $_POST["typeid"];
+		
+		$object->morphy      = $_POST["morphy"];
+
+		$object->amount      = $_POST["amount"];
+
+		if (GETPOST('deletephoto')) $object->photo='';
+		elseif (! empty($_FILES['photo']['name'])) $object->photo  = dol_sanitizeFileName($_FILES['photo']['name']);
+
+		
+		$object->statut      = $_POST["statut"];
+		$object->public      = $_POST["public"];
+
+		
+		foreach($_POST as $key => $value)
+		{
+			if (preg_match("/^options_/",$key))
+			{
+				$object->array_options[$key]=$_POST[$key];
+			}
+		}
+
+		
+		$nosyncuser=0;
+		if ($object->user_id)	
+		{
+			if ($user->id != $object->user_id && empty($user->rights->user->user->creer)) $nosyncuser=1;		
+		}
+
+		
+		$nosyncuserpass=0;
+		if ($object->user_id)	
+		{
+			if ($user->id != $object->user_id && empty($user->rights->user->user->password)) $nosyncuserpass=1;	
+		}
+
+		$result=$object->update($user,0,$nosyncuser,$nosyncuserpass);
+		if ($result >= 0 && ! count($object->errors))
+		{
+			$dir= $conf->adherent->dir_output . '/' . get_exdir($object->id,2,0,1).'/photos';
+			$file_OK = is_uploaded_file($_FILES['photo']['tmp_name']);
+			if ($file_OK)
+			{
+				if (GETPOST('deletephoto'))
+				{
+					$fileimg=$conf->adherent->dir_output.'/'.get_exdir($object->id,2,0,1).'/photos/'.$object->photo;
+					$dirthumbs=$conf->adherent->dir_output.'/'.get_exdir($object->id,2,0,1).'/photos/thumbs';
+					dol_delete_file($fileimg);
+					dol_delete_dir_recursive($dirthumbs);
+				}
+
+				if (image_format_supported($_FILES['photo']['name']) > 0)
+				{
+					dol_mkdir($dir);
+
+					if (@is_dir($dir))
+					{
+						$newfile=$dir.'/'.dol_sanitizeFileName($_FILES['photo']['name']);
+						if (! dol_move_uploaded_file($_FILES['photo']['tmp_name'],$newfile,1,0,$_FILES['photo']['error']) > 0)
+						{
+							$message .= '<div class="error">'.$langs->trans("ErrorFailedToSaveFile").'</div>';
+						}
+						else
+						{
+							
+							
+							$imgThumbSmall = vignette($newfile, $maxwidthsmall, $maxheightsmall, '_small', $quality);
+
+							
+							
+							$imgThumbMini = vignette($newfile, $maxwidthmini, $maxheightmini, '_mini', $quality);
+						}
+					}
+				}
+				else
+				{
+					$errmsgs[] = "ErrorBadImageFormat";
+				}
+			}
+
+			
+			if (($object->oldcopy->email != $object->email) || ($object->oldcopy->typeid != $object->typeid))
+			{
+				if ($object->oldcopy->email != $object->email)    
+				{
+					if ($object->oldcopy->del_to_abo() < 0)
+					{
+						
+						$errmsgs[]= $langs->trans("FailedToCleanMailmanList").': '.$object->error."<br>\n";
+					}
+				}
+				if ($object->add_to_abo() < 0)    
+				{
+					
+					$errmsgs[]= $langs->trans("FailedToAddToMailmanList").': '.$object->error."<br>\n";
+				}
+			}
+
+			$rowid=$object->id;
+			$action='';
+
+			if (! empty($backtopage))
+			{
+				header("Location: ".$backtopage);
+				exit;
+			}
+		}
+		else
+		{
+			if ($object->error) $errmsg=$object->error;
+			else $errmsgs=$object->errors;
+			$action='';
+		}
+	}
+}
+
+if ($action == 'add' && $user->rights->adherent->creer)
+{
+	if ($canvas) $object->canvas=$canvas;
+	$datenaiss='';
+	if (isset($_POST["naissday"]) && $_POST["naissday"]
+			&& isset($_POST["naissmonth"]) && $_POST["naissmonth"]
+			&& isset($_POST["naissyear"]) && $_POST["naissyear"])
+	{
+		$datenaiss=dol_mktime(12, 0, 0, $_POST["naissmonth"], $_POST["naissday"], $_POST["naissyear"]);
+	}
+	$datecotisation='';
+	if (isset($_POST["reday"]) && isset($_POST["remonth"]) && isset($_POST["reyear"]))
+	{
+		$datecotisation=dol_mktime(12, 0, 0, $_POST["remonth"], $_POST["reday"], $_POST["reyear"]);
+	}
+
+	$typeid=$_POST["typeid"];
+	$civilite_id=$_POST["civilite_id"];
+	$nom=$_POST["nom"];
+	$prenom=$_POST["prenom"];
+	$societe=$_POST["societe"];
+	$address=$_POST["address"];
+	$zip=$_POST["zipcode"];
+	$town=$_POST["town"];
+	$state_id=$_POST["departement_id"];
+	$country_id=$_POST["country_id"];
+
+	$phone=$_POST["phone"];
+	$phone_perso=$_POST["phone_perso"];
+	$phone_mobile=$_POST["phone_mobile"];
+	$email=$_POST["member_email"];
+	$login=$_POST["member_login"];
+	$pass=$_POST["password"];
+	$photo=$_POST["photo"];
+	
+	$morphy=$_POST["morphy"];
+	$cotisation=$_POST["cotisation"];
+	$public=$_POST["public"];
+
+	$userid=$_POST["userid"];
+	$socid=$_POST["socid"];
+
+	$object->civilite_id = $civilite_id;
+	$object->prenom      = $prenom;    
+	$object->nom         = $nom;       
+	$object->firstname   = $prenom;
+	$object->lastname    = $nom;
+	$object->societe     = $societe;
+	$object->adresse     = $address; 
+	$object->address     = $address;
+	$object->cp          = $zip;     
+	$object->zip         = $zip;
+	$object->ville       = $town;    
+	$object->town        = $town;
+	$object->fk_departement = $state_id;
+	$object->state_id    = $state_id;
+	$object->pays_id     = $country_id;
+	$object->country_id  = $country_id;
+	$object->phone       = $phone;
+	$object->phone_perso = $phone_perso;
+	$object->phone_mobile= $phone_mobile;
+	$object->email       = $email;
+	$object->login       = $login;
+	$object->pass        = $pass;
+	$object->naiss       = $datenaiss;
+	$object->photo       = $photo;
+	$object->typeid      = $typeid;
+	
+	$object->morphy      = $morphy;
+	$object->user_id     = $userid;
+	$object->fk_soc      = $socid;
+	$object->public      = $public;
+
+	
+	foreach($_POST as $key => $value)
+	{
+		if (preg_match("/^options_/",$key))
+		{
+			$object->array_options[$key]=$_POST[$key];
+		}
+	}
+
+	
+	if (empty($morphy) || $morphy == "-1") {
+		$error++;
+		$errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("Nature"))."<br>\n";
+	}
+	
+	if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+	{
+		if (empty($login)) {
+			$error++;
+			$errmsg .= $langs->trans("ErrorFieldRequired",$langs->trans("Login"))."<br>\n";
+		}
+		else {
+			$sql = "SELECT login FROM ".MAIN_DB_PREFIX."adherent WHERE login='".$db->escape($login)."'";
+			$result = $db->query($sql);
+			if ($result) {
+				$num = $db->num_rows($result);
+			}
+			if ($num) {
+				$error++;
+				$langs->load("errors");
+				$errmsg .= $langs->trans("ErrorLoginAlreadyExists",$login)."<br>\n";
+			}
+		}
+		if (empty($pass)) {
+			$error++;
+			$errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentities("Password"))."<br>\n";
+		}
+	}
+	if (empty($nom)) {
+		$error++;
+		$langs->load("errors");
+		$errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentities("Lastname"))."<br>\n";
+	}
+	if ($morphy != 'mor' && (!isset($prenom) || $prenom=='')) {
+		$error++;
+		$langs->load("errors");
+		$errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentities("Firstname"))."<br>\n";
+	}
+	if (! ($typeid > 0)) {	
+		$error++;
+		$errmsg .= $langs->trans("ErrorFieldRequired",$langs->transnoentitiesnoconv("Type"))."<br>\n";
+	}
+	if ($conf->global->ADHERENT_MAIL_REQUIRED && ! isValidEMail($email)) {
+		$error++;
+		$langs->load("errors");
+		$errmsg .= $langs->trans("ErrorBadEMail",$email)."<br>\n";
+	}
+	$public=0;
+	if (isset($public)) $public=1;
+
+	if (! $error)
+	{
+		$db->begin();
+
+		
+		$result=$object->create($user);
+		if ($result > 0)
+		{
+			$db->commit();
+			$rowid=$object->id;
+			$action='';
+		}
+		else
+		{
+			$db->rollback();
+
+			if ($object->error) $errmsg=$object->error;
+			else $errmsgs=$object->errors;
+
+			$action = 'create';
+		}
+	}
+	else {
+		$action = 'create';
+	}
+}
+
+if ($user->rights->adherent->supprimer && $action == 'confirm_delete' && $confirm == 'yes')
+{
+	$result=$object->delete($rowid);
+	if ($result > 0)
+	{
+		if (! empty($backtopage))
+		{
+			header("Location: ".$backtopage);
+			exit;
+		}
+		else
+		{
+			header("Location: liste.php");
+			exit;
+		}
+	}
+	else
+	{
+		$errmesg=$object->error;
+	}
+}
+
+if ($user->rights->adherent->creer && $action == 'confirm_valid' && $confirm == 'yes')
+{
+	$error=0;
+
+	$db->begin();
+
+	$adht = new AdherentType($db);
+	$adht->fetch($object->typeid);
+
+	$result=$object->validate($user);
+
+	if ($result >= 0 && ! count($object->errors))
+	{
+		
+		if ($object->email && ! empty($_POST["send_mail"]))
+		{
+			$result=$object->send_an_email($adht->getMailOnValid(),$conf->global->ADHERENT_MAIL_VALID_SUBJECT,array(),array(),array(),"","",0,2);
+			if ($result < 0)
+			{
+				$error++;
+				$errmsg.=$object->error;
+			}
+		}
+
+		
+		
+		if (! $error && $object->add_to_abo() < 0)
+		{
+			$langs->load("errors");
+			$error++;
+			$errmsg.= $langs->trans("ErrorFailedToAddToMailmanList").': '.$object->error." ".join(',',$object->errors)."<br>\n";
+		}
+	}
+	else
+	{
+		$error++;
+		if ($object->error) $errmsg=$object->error;
+		else $errmsgs=$object->errors;
+	}
+
+	if (! $error)
+	{
+		$db->commit();
+	}
+	else
+	{
+		$db->rollback();
+	}
+	$action='';
+}
+
+if ($user->rights->adherent->supprimer && $action == 'confirm_resign')
+{
+	if ($confirm == 'yes')
+	{
+		$adht = new AdherentType($db);
+		$adht->fetch($object->typeid);
+
+		$result=$object->resiliate($user);
+
+		if ($result >= 0 && ! count($object->errors))
+		{
+			if ($object->email && $_POST["send_mail"])
+			{
+				$result=$object->send_an_email($adht->getMailOnResiliate(),$conf->global->ADHERENT_MAIL_RESIL_SUBJECT,array(),array(),array(),"","",0,-1);
+			}
+			if ($result < 0)
+			{
+				$errmsg.=$object->error;
+			}
+
+			
+			if ($object->del_to_abo() < 0)
+			{
+				
+				$errmsg.=$langs->trans("FaildToRemoveFromMailmanList").': '.$object->error."<br>\n";
+			}
+		}
+		else
+		{
+			if ($object->error) $errmsg=$object->error;
+			else $errmsgs=$object->errors;
+			$action='';
+		}
+	}
+	if (! empty($backtopage) && ! $errmsg)
+	{
+		header("Location: ".$backtopage);
+		exit;
+	}
+}
+
+
+if ($user->rights->adherent->supprimer && $action == 'confirm_del_spip' && $confirm == 'yes')
+{
+	if (! count($object->errors))
+	{
+		if (!$mailmanspip->del_to_spip($object))
+		{
+			$errmsg.= $langs->trans('DeleteIntoSpipError').': '.$mailmanspip->error."<BR>\n";
+		}
+	}
+}
+
+if ($user->rights->adherent->creer && $action == 'confirm_add_spip' && $confirm == 'yes')
+{
+	if (! count($object->errors))
+	{
+		if (!$mailmanspip->add_to_spip($object))
+		{
+			$errmsg.= $langs->trans('AddIntoSpipError').': '.$mailmanspip->error."<BR>\n";
+		}
+	}
+}
+
+
+
+
+
+$form = new Form($db);
+$formcompany = new FormCompany($db);
+
+
+$extralabels=$extrafields->fetch_name_optionals_label('member');
+
+$help_url='EN:Module_Foundations|FR:Module_Adh&eacute;rents|ES:M&oacute;dulo_Miembros';
+llxHeader('',$langs->trans("Member"),$help_url);
+
+$countrynotdefined=$langs->trans("ErrorSetACountryFirst").' ('.$langs->trans("SeeAbove").')';
+
+if (is_object($objcanvas) && $objcanvas->displayCanvasExists($action))
+{
+	
+	
+	
+	if (empty($object->error) && $socid)
+	{
+		$object = new Adherent($db);
+		$object->fetch($socid);
+	}
+	$objcanvas->assign_values($action, $socid);	
+	$objcanvas->display_canvas($action);		
+}
+else
+{
+	
+	
+	
+
+	if ($action == 'create')
+	{
+		
+		
+		
+		
+		
+		$object->canvas=$canvas;
+		$object->fk_departement = GETPOST('departement_id', 'int');
+
+		
+		$object->country_id=GETPOST('country_id','int')?GETPOST('country_id','int'):$mysoc->country_id;
+		if ($object->country_id)
+		{
+			$tmparray=getCountry($object->country_id,'all');
+			$object->pays_code=$tmparray['code'];
+			$object->pays=$tmparray['code'];
+			$object->country_code=$tmparray['code'];
+			$object->country=$tmparray['label'];
+		}
+
+		$adht = new AdherentType($db);
+
+		print_fiche_titre($langs->trans("NewMember"));
+
+		dol_htmloutput_mesg($errmsg,$errmsgs,'error');
+		dol_htmloutput_mesg($mesg,$mesgs);
+
+		if ($conf->use_javascript_ajax)
+		{
+			
+			
+							document.formsoc.submit();
+						});
+						function initfieldrequired()
+						{
+							jQuery("
+							jQuery("
+							jQuery("
+							if (jQuery("
+							{
+								jQuery("
+							}
+							if (jQuery("
+							{
+								jQuery("
+								jQuery("
+							}
+						}
+						jQuery("
+							initfieldrequired();
+						});
+						initfieldrequired();
+					})';
+			
+		}
+
+		
+		
+		
+
+		
+
+		
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+		{
+			
+		}
+
+		
+		$morphys["phy"] = $langs->trans("Physical");
+		$morphys["mor"] = $langs->trans("Moral");
+		
+		
+		
+
+		
+		
+		$listetype=$adht->liste_array();
+		if (count($listetype))
+		{
+			
+		} else {
+			
+		}
+		
+
+		
+		
+
+		
+		
+		
+		
+
+		
+		
+		
+
+		
+		
+		
+
+		
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+		{
+			$generated_password=getRandomPassword('');
+			
+			
+			
+		}
+
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+		
+		$object->country_id=$object->country_id?$object->country_id:$mysoc->country_id;
+		
+		
+		if ($user->admin) 
+		
+
+		
+		if (empty($conf->global->MEMBER_DISABLE_STATE))
+		{
+			
+			if ($object->country_id)
+			{
+				
+			}
+			else
+			{
+				
+			}
+			
+		}
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+		$form->select_date(($object->naiss ? $object->naiss : -1),'naiss','','',1,'formsoc');
+		
+
+		
+		
+		
+		
+
+		
+		$parameters=array();
+		$reshook=$hookmanager->executeHooks('formObjectOptions',$parameters,$object,$action);    
+		if (empty($reshook) && ! empty($extrafields->attribute_label))
+		{
+			foreach($extrafields->attribute_label as $key=>$label)
+			{
+				$value=(isset($_POST["options_".$key])?GETPOST('options_'.$key,'alpha'):(isset($object->array_options["options_".$key])?$object->array_options["options_".$key]:''));
+           		
+           		if (! empty($extrafields->attribute_required[$key])) 
+           		
+				
+				
+			}
+		}
+
+		
+
+		
+		
+
+		
+
+		
+
+	}
+
+	if ($action == 'edit')
+	{
+		
+
+		$res=$object->fetch($rowid);
+		if ($res < 0) {
+			dol_print_error($db,$object->error); exit;
+		}
+		$res=$object->fetch_optionals($object->id,$extralabels);
+		if ($res < 0) {
+			dol_print_error($db); exit;
+		}
+
+		$adht = new AdherentType($db);
+		$adht->fetch($object->typeid);
+
+		$country=GETPOST('pays','int');
+		
+		if (!empty($country) || $object->country_id)
+		{
+			$sql = "SELECT rowid, code, libelle as label from ".MAIN_DB_PREFIX."c_pays where rowid = ".(!empty($country)?$country:$object->country_id);
+			$resql=$db->query($sql);
+			if ($resql)
+			{
+				$obj = $db->fetch_object($resql);
+			}
+			else
+			{
+				dol_print_error($db);
+			}
+			$object->pays_id=$obj->rowid;
+			$object->pays_code=$obj->code;
+			$object->pays=$langs->trans("Country".$obj->code)?$langs->trans("Country".$obj->code):$obj->label;
+			$object->country_id=$obj->rowid;
+			$object->country_code=$obj->code;
+			$object->country=$langs->trans("Country".$obj->code)?$langs->trans("Country".$obj->code):$obj->label;
+		}
+
+		$head = member_prepare_head($object);
+
+		dol_fiche_head($head, 'general', $langs->trans("Member"), 0, 'user');
+
+		dol_htmloutput_errors($errmsg,$errmsgs);
+		dol_htmloutput_mesg($mesg);
+
+		if ($conf->use_javascript_ajax)
+		{
+			
+			
+					document.formsoc.submit();
+				});
+				function initfieldrequired()
+				{
+					jQuery("
+					jQuery("
+					jQuery("
+					if (jQuery("
+					{
+						jQuery("
+					}
+					if (jQuery("
+					{
+						jQuery("
+						jQuery("
+					}
+				}
+				jQuery("
+					initfieldrequired();
+				});
+				initfieldrequired();
+			})';
+			
+		}
+
+		$rowspan=15;
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED)) $rowspan++;
+		if (! empty($conf->societe->enabled)) $rowspan++;
+
+		
+		
+		
+		
+		
+		if ($backtopage) 
+
+		
+
+		
+		
+
+		
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+		{
+			
+		}
+
+		
+		$morphys["phy"] = $langs->trans("Physical");
+		$morphys["mor"] = $langs->trans("Morale");
+		
+		
+		
+		
+		
+		
+		if ($caneditfieldmember)
+		{
+			if ($object->photo) 
+			
+			if ($object->photo) 
+			
+			
+			
+		}
+		
+
+		
+		
+		if ($user->rights->adherent->creer)
+		{
+			
+		}
+		else
+		{
+			
+			
+		}
+		
+
+		
+		
+
+		
+		
+		
+		
+		
+
+		
+		
+		
+
+		
+		
+		
+
+		
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+		{
+			
+		}
+
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+		if ($user->admin) 
+		
+
+		
+		if (empty($conf->global->MEMBER_DISABLE_STATE))
+		{
+			
+			
+			
+		}
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+		$form->select_date(($object->naiss ? $object->naiss : -1),'naiss','','',1,'formsoc');
+		
+
+		
+		
+		
+		
+
+		
+		$parameters=array();
+		$reshook=$hookmanager->executeHooks('formObjectOptions',$parameters,$object,$action);    
+		if (empty($reshook) && ! empty($extrafields->attribute_label))
+		{
+			foreach($extrafields->attribute_label as $key=>$label)
+			{
+				$value=(isset($_POST["options_".$key])?$_POST["options_".$key]:$object->array_options["options_".$key]);
+           		
+           		if (! empty($extrafields->attribute_required[$key])) 
+           		
+				
+				
+			}
+		}
+
+		
+		if (! empty($conf->societe->enabled))
+		{
+			
+			if ($object->fk_soc)
+			{
+				$company=new Societe($db);
+				$result=$company->fetch($object->fk_soc);
+				
+			}
+			else
+			{
+				
+			}
+			
+		}
+
+		
+		
+		if ($object->user_id)
+		{
+			
+		}
+		else 
+		
+
+		
+
+		
+		
+		 &nbsp; &nbsp; ';
+		
+		
+
+		
+
+		
+	}
+
+	if ($rowid && $action != 'edit')
+	{
+		dol_htmloutput_mesg($mesg);
+
+		
+		
+		
+		
+		
+
+		$res=$object->fetch($rowid);
+		if ($res < 0) {
+			dol_print_error($db,$object->error); exit;
+		}
+		$res=$object->fetch_optionals($object->id,$extralabels);
+		if ($res < 0) {
+			dol_print_error($db); exit;
+		}
+
+		$adht = new AdherentType($db);
+		$res=$adht->fetch($object->typeid);
+		if ($res < 0) {
+			dol_print_error($db); exit;
+		}
+
+
+		
+		$head = member_prepare_head($object);
+
+		dol_fiche_head($head, 'general', $langs->trans("Member"), 0, 'user');
+
+		dol_htmloutput_errors($errmsg,$errmsgs);
+
+		
+		if ($action == 'create_user')
+		{
+			$login=$object->login;
+			if (empty($login))
+			{
+				
+				$login=dol_buildlogin($object->lastname,$object->firstname);
+			}
+			if (empty($login)) $login=strtolower(substr($object->firstname, 0, 4)) . strtolower(substr($object->lastname, 0, 4));
+
+			
+			$formquestion=array(
+					array('label' => $langs->trans("LoginToCreate"), 'type' => 'text', 'name' => 'login', 'value' => $login)
+			);
+			$text=$langs->trans("ConfirmCreateLogin").'<br>';
+			if (! empty($conf->societe->enabled))
+			{
+				if ($object->fk_soc > 0) $text.=$langs->trans("UserWillBeExternalUser");
+				else $text.=$langs->trans("UserWillBeInternalUser");
+			}
+			$ret=$form->form_confirm($_SERVER["PHP_SELF"]."?rowid=".$object->id,$langs->trans("CreateDolibarrLogin"),$text,"confirm_create_user",$formquestion,'yes');
+			if ($ret == 'html') 
+		}
+
+		
+		if ($action == 'create_thirdparty')
+		{
+			$name = $object->getFullName($langs);
+			if (! empty($name))
+			{
+				if ($object->societe) $name.=' ('.$object->societe.')';
+			}
+			else
+			{
+				$name=$object->societe;
+			}
+
+			
+			$formquestion=array(		array('label' => $langs->trans("NameToCreate"), 'type' => 'text', 'name' => 'companyname', 'value' => $name));
+
+			$ret=$form->form_confirm($_SERVER["PHP_SELF"]."?rowid=".$object->id,$langs->trans("CreateDolibarrThirdParty"),$langs->trans("ConfirmCreateThirdParty"),"confirm_create_thirdparty",$formquestion,1);
+			if ($ret == 'html') 
+		}
+
+		
+		if ($action == 'valid')
+		{
+			$langs->load("mails");
+
+			$adht = new AdherentType($db);
+			$adht->fetch($object->typeid);
+
+			$subjecttosend=$object->makeSubstitution($conf->global->ADHERENT_MAIL_VALID_SUBJECT);
+			$texttosend=$object->makeSubstitution($adht->getMailOnValid());
+
+			$tmp=$langs->trans("SendAnEMailToMember");
+			$tmp.=' ('.$langs->trans("MailFrom").': <b>'.$conf->global->ADHERENT_MAIL_FROM.'</b>, ';
+			$tmp.=$langs->trans("MailRecipient").': <b>'.$object->email.'</b>)';
+			$helpcontent='';
+			$helpcontent.='<b>'.$langs->trans("MailFrom").'</b>: '.$conf->global->ADHERENT_MAIL_FROM.'<br>'."\n";
+			$helpcontent.='<b>'.$langs->trans("MailRecipient").'</b>: '.$object->email.'<br>'."\n";
+			$helpcontent.='<b>'.$langs->trans("Subject").'</b>:<br>'."\n";
+			$helpcontent.=$subjecttosend."\n";
+			$helpcontent.="<br>";
+			$helpcontent.='<b>'.$langs->trans("Content").'</b>:<br>';
+			$helpcontent.=dol_htmlentitiesbr($texttosend)."\n";
+			$label=$form->textwithpicto($tmp,$helpcontent,1,'help');
+
+			
+			$formquestion=array();
+			if ($object->email) $formquestion[]=array('type' => 'checkbox', 'name' => 'send_mail', 'label' => $label,  'value' => ($conf->global->ADHERENT_DEFAULT_SENDINFOBYMAIL?true:false));
+			if (! empty($conf->global->ADHERENT_USE_MAILMAN)) {
+				$formquestion[]=array('type'=>'other','label'=>$langs->transnoentitiesnoconv("SynchroMailManEnabled"),'value'=>'');
+			}
+			if (! empty($conf->global->ADHERENT_USE_SPIP))    {
+				$formquestion[]=array('type'=>'other','label'=>$langs->transnoentitiesnoconv("SynchroSpipEnabled"),'value'=>'');
+			}
+			
+		}
+
+		
+		if ($action == 'sendinfo')
+		{
+			
+		}
+
+		
+		if ($action == 'resign')
+		{
+			$langs->load("mails");
+
+			$adht = new AdherentType($db);
+			$adht->fetch($object->typeid);
+
+			$subjecttosend=$object->makeSubstitution($conf->global->ADHERENT_MAIL_RESIL_SUBJECT);
+			$texttosend=$object->makeSubstitution($adht->getMailOnResiliate());
+
+			$tmp=$langs->trans("SendAnEMailToMember");
+			$tmp.=' ('.$langs->trans("MailFrom").': <b>'.$conf->global->ADHERENT_MAIL_FROM.'</b>, ';
+			$tmp.=$langs->trans("MailRecipient").': <b>'.$object->email.'</b>)';
+			$helpcontent='';
+			$helpcontent.='<b>'.$langs->trans("MailFrom").'</b>: '.$conf->global->ADHERENT_MAIL_FROM.'<br>'."\n";
+			$helpcontent.='<b>'.$langs->trans("MailRecipient").'</b>: '.$object->email.'<br>'."\n";
+			$helpcontent.='<b>'.$langs->trans("Subject").'</b>:<br>'."\n";
+			$helpcontent.=$subjecttosend."\n";
+			$helpcontent.="<br>";
+			$helpcontent.='<b>'.$langs->trans("Content").'</b>:<br>';
+			$helpcontent.=dol_htmlentitiesbr($texttosend)."\n";
+			$label=$form->textwithpicto($tmp,$helpcontent,1,'help');
+
+			
+			$formquestion=array();
+			if ($object->email) $formquestion[]=array('type' => 'checkbox', 'name' => 'send_mail', 'label' => $label, 'value' => (! empty($conf->global->ADHERENT_DEFAULT_SENDINFOBYMAIL)?'true':'false'));
+			if ($backtopage)    $formquestion[]=array('type' => 'hidden', 'name' => 'backtopage', 'value' => ($backtopage != '1' ? $backtopage : $_SERVER["HTTP_REFERER"]));
+			$ret=$form->form_confirm("fiche.php?rowid=".$rowid,$langs->trans("ResiliateMember"),$langs->trans("ConfirmResiliateMember"),"confirm_resign",$formquestion);
+			if ($ret == 'html') 
+		}
+
+		
+		if ($action == 'delete')
+		{
+			$formquestion=array();
+			if ($backtopage) $formquestion[]=array('type' => 'hidden', 'name' => 'backtopage', 'value' => ($backtopage != '1' ? $backtopage : $_SERVER["HTTP_REFERER"]));
+			$ret=$form->form_confirm("fiche.php?rowid=".$rowid,$langs->trans("DeleteMember"),$langs->trans("ConfirmDeleteMember"),"confirm_delete",$formquestion,0,1);
+			if ($ret == 'html') 
+		}
+
+		
+		if ($action == 'add_spip')
+		{
+			$ret=$form->form_confirm("fiche.php?rowid=".$rowid, $langs->trans('AddIntoSpip'), $langs->trans('AddIntoSpipConfirmation'), 'confirm_add_spip');
+			if ($ret == 'html') 
+		}
+
+		
+		if ($action == 'del_spip')
+		{
+			$ret=$form->form_confirm("fiche.php?rowid=$rowid", $langs->trans('DeleteIntoSpip'), $langs->trans('DeleteIntoSpipConfirmation'), 'confirm_del_spip');
+			if ($ret == 'html') 
+		}
+
+		$rowspan=17;
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED)) $rowspan++;
+		if (! empty($conf->societe->enabled)) $rowspan++;
+
+		
+
+		$linkback = '<a href="'.DOL_URL_ROOT.'/adherents/liste.php">'.$langs->trans("BackToList").'</a>';
+
+		
+		
+		
+		
+		
+
+		$showphoto='<td rowspan="'.$rowspan.'" align="center" valign="middle" width="25%">';
+		$showphoto.=$form->showphoto('memberphoto',$object);
+		$showphoto.='</td>';
+
+		
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+		{
+			</td>';
+			 $showphoto='';
+			
+		}
+
+		
+		
+		 $showphoto='';
+		
+
+		
+		
+
+		
+		
+
+		
+		</td>';
+		
+
+		
+		</td>';
+		
+
+		
+		</td></tr>';
+
+		
+		if (empty($conf->global->ADHERENT_LOGIN_NOT_REQUIRED))
+		{
+			
+		}
+
+		
+		
+		dol_print_address($object->address,'gmap','member',$object->id);
+		
+
+		
+		
+
+		
+		
+		$img=picto_from_langcode($object->country_code);
+		if ($img) 
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		
+
+		
+		$parameters=array();
+		$reshook=$hookmanager->executeHooks('formObjectOptions',$parameters,$object,$action);    
+		if (empty($reshook) && ! empty($extrafields->attribute_label))
+		{
+			foreach($extrafields->attribute_label as $key=>$label)
+			{
+				$value=$object->array_options["options_$key"];
+				
+				
+				
+			}
+		}
+
+		
+		if (! empty($conf->societe->enabled))
+		{
+			
+			
+			
+			
+			if ($action != 'editthirdparty' && $user->rights->adherent->creer) rowid='.$object->id.'">'.img_edit($langs->trans('SetLinkToThirdParty'),1).'</a></td>';
+			
+			
+			if ($action == 'editthirdparty')
+			{
+				$htmlname='socid';
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+			}
+			else
+			{
+				if ($object->fk_soc)
+				{
+					$company=new Societe($db);
+					$result=$company->fetch($object->fk_soc);
+					
+				}
+				else
+				{
+					
+				}
+			}
+			
+		}
+
+		
+		
+		
+		
+		
+		if ($action != 'editlogin' && $user->rights->adherent->creer)
+		{
+			
+			if ($user->rights->user->user->creer)
+			{
+				rowid='.$object->id.'">'.img_edit($langs->trans('SetLinkToUser'),1).'</a>';
+			}
+			
+		}
+		
+		
+		if ($action == 'editlogin')
+		{
+			
+		}
+		else
+		{
+			if ($object->user_id)
+			{
+				
+			}
+			else 
+		}
+		
+
+		
+
+		
+
+
+		
+		
+
+		if ($action != 'valid' && $action != 'editlogin' && $action != 'editthirdparty')
+		{
+			
+			if ($user->rights->adherent->creer)
+			{
+				
+			}
+			else
+			{
+				
+				}
+				else
+				{
+					
+				}
+				else
+				{
+					
+					else 
+				}
+				else
+				{
+					action=create_thirdparty">'.$langs->trans("CreateDolibarrThirdParty").'</a>';
+					else action=create_user">'.$langs->trans("CreateDolibarrLogin").'</a>';
+					else 
+			}
+			else
+			{
+				
+
+				if ($isinspip == 1)
+				{
+					
+				}
+				if ($isinspip == 0)
+				{
+					
+				}
+				if ($isinspip == -1)
+				{
+					
+				}
+			}
+
+		}
+
+		
+		
+
+	}
+}
+
+llxFooter();
+
+$db->close();
+?>

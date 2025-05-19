@@ -1,0 +1,143 @@
+<?php
+
+
+declare(strict_types=1);
+
+
+
+
+
+class CreateController extends Controller
+{
+    
+    private $ruleRepos;
+
+    
+    public function __construct()
+    {
+        parent::__construct();
+
+        $this->middleware(
+            function ($request, $next) {
+                app('view')->share('title', (string)trans('firefly.rules'));
+                app('view')->share('mainTitleIcon', 'fa-random');
+
+                $this->ruleRepos = app(FireflyIII\Repositories\Rule\RuleRepositoryInterface::class);
+
+                return $next($request);
+            }
+        );
+    }
+
+    
+    public function create(Request $request, RuleGroup $ruleGroup = null)
+    {
+        $this->createDefaultRuleGroup();
+        $this->createDefaultRule();
+        $preFilled   = [
+            'strict' => true,
+        ];
+        $oldTriggers = [];
+        $oldActions  = [];
+
+        
+        if ($request->old()) {
+            $oldTriggers = $this->getPreviousTriggers($request);
+            $oldActions  = $this->getPreviousActions($request);
+        }
+
+        $triggerCount = \count($oldTriggers);
+        $actionCount  = \count($oldActions);
+        $subTitleIcon = 'fa-clone';
+
+        
+        $subTitle = (string)trans('firefly.make_new_rule_no_group');
+        if (null !== $ruleGroup) {
+            $subTitle = (string)trans('firefly.make_new_rule', ['title' => $ruleGroup->title]);
+        }
+
+        
+        $request->session()->flash('preFilled', $preFilled);
+
+        
+        if (true !== session('rules.create.fromStore')) {
+            $this->rememberPreviousUri('rules.create.uri');
+        }
+        session()->forget('rules.create.fromStore');
+
+        return view(
+            'rules.rule.create', compact('subTitleIcon', 'oldTriggers', 'preFilled', 'oldActions', 'triggerCount', 'actionCount', 'ruleGroup', 'subTitle')
+        );
+    }
+
+    
+    public function createFromBill(Request $request, Bill $bill)
+    {
+        $request->session()->flash('info', (string)trans('firefly.instructions_rule_from_bill', ['name' => $bill->name]));
+
+        $this->createDefaultRuleGroup();
+        $this->createDefaultRule();
+        $preFilled = [
+            'strict'      => true,
+            'title'       => (string)trans('firefly.new_rule_for_bill_title', ['name' => $bill->name]),
+            'description' => (string)trans('firefly.new_rule_for_bill_description', ['name' => $bill->name]),
+        ];
+
+        
+
+        
+        $oldTriggers = $this->getTriggersForBill($bill);
+        $oldActions  = $this->getActionsForBill($bill);
+
+        $triggerCount = \count($oldTriggers);
+        $actionCount  = \count($oldActions);
+        $subTitleIcon = 'fa-clone';
+
+        
+        $subTitle = (string)trans('firefly.make_new_rule_no_group');
+
+        
+        $request->session()->flash('preFilled', $preFilled);
+
+        
+        if (true !== session('rules.create.fromStore')) {
+            $this->rememberPreviousUri('rules.create.uri');
+        }
+        session()->forget('rules.create.fromStore');
+
+        return view(
+            'rules.rule.create', compact('subTitleIcon', 'oldTriggers', 'preFilled', 'oldActions', 'triggerCount', 'actionCount', 'subTitle')
+        );
+    }
+
+    
+    public function store(RuleFormRequest $request)
+    {
+        $data = $request->getRuleData();
+        $rule = $this->ruleRepos->store($data);
+        session()->flash('success', (string)trans('firefly.stored_new_rule', ['title' => $rule->title]));
+        app('preferences')->mark();
+
+        
+        if ('true' === $request->get('return_to_bill') && (int)$request->get('bill_id') > 0) {
+            return redirect(route('bills.show', [(int)$request->get('bill_id')])); 
+        }
+
+        
+        if ((int)$request->get('bill_id') > 0) {
+            return redirect($this->getPreviousUri('bills.create.uri')); 
+        }
+
+        $redirect = redirect($this->getPreviousUri('rules.create.uri'));
+
+        if (1 === (int)$request->get('create_another')) {
+            
+            session()->put('rules.create.fromStore', true);
+            $redirect = redirect(route('rules.create', [$data['rule_group_id']]))->withInput();
+            
+        }
+
+        return $redirect;
+    }
+
+}

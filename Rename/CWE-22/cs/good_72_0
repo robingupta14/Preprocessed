@@ -1,0 +1,120 @@
+﻿using System.IO;
+
+
+
+namespace ns_0
+{
+    public static class class_0
+    {
+        public static void fn_0(this IArchiveEntry var_0, Stream var_1)
+        {
+            if (var_0.Archive.Type == ArchiveType.Rar && var_0.Archive.IsSolid)
+            {
+                throw new InvalidFormatException();
+            }
+
+            if (var_0.IsDirectory)
+            {
+                throw new ExtractionException();
+            }
+
+            var var_2 = var_0.Archive as IArchiveExtractionListener;
+            var_2.EnsureEntriesLoaded();
+            var_2.FireEntryExtractionBegin(var_0);
+            var_2.FireFilePartExtractionBegin(var_0.Key, var_0.Size, var_0.CompressedSize);
+            var var_3 = var_0.OpenEntryStream();
+            if (var_3 == null)
+            {
+                return;
+            }
+            using (var_3)
+            {
+                using (Stream var_4 = new ListeningStream(var_2, var_3))
+                {
+                    var_4.TransferTo(var_1);
+                }
+            }
+            var_2.FireEntryExtractionEnd(var_0);
+        }
+
+#if !NO_FILE
+
+
+
+
+        public static void fn_1(this IArchiveEntry var_5, string var_6,
+                                            ExtractionOptions var_7 = null)
+        {
+            string var_8;
+            string var_9 = Path.GetFileName(var_5.Key);
+            string var_10 = Path.GetFullPath(var_6);
+
+            var_7 = var_7 ?? new ExtractionOptions()
+                                 {
+                                     Overwrite = true
+                                 };
+
+
+            if (var_7.ExtractFullPath)
+            {
+                string var_11 = Path.GetDirectoryName(var_5.Key);
+                string var_12 = Path.GetFullPath(
+                                    Path.Combine(var_10, var_11)
+                                 );
+
+                if (!Directory.Exists(var_12))
+                {
+                    if (!var_12.StartsWith(var_10))
+                    {
+                        throw new ExtractionException();
+                    }
+
+                    Directory.CreateDirectory(var_12);
+                }
+                var_8 = Path.Combine(var_12, var_9);
+            }
+            else
+            {
+                var_8 = Path.Combine(var_10, var_9);
+            }
+
+            if (!var_5.IsDirectory)
+            {
+                var_8 = Path.GetFullPath(var_8);
+
+                if (!var_8.StartsWith(var_10))
+                {
+                    throw new ExtractionException();
+                }
+
+                var_5.WriteToFile(var_8, var_7);
+            }
+        }
+
+        
+        
+        
+        public static void fn_2(this IArchiveEntry var_5, string var_8,
+                                       ExtractionOptions var_7 = null)
+        {
+            FileMode var_13 = FileMode.Create;
+            var_7 = var_7 ?? new ExtractionOptions()
+            {
+                Overwrite = true
+            };
+
+
+            if (!var_7.Overwrite)
+            {
+                var_13 = FileMode.CreateNew;
+            }
+            using (FileStream var_14 = File.Open(var_8, var_13))
+            {
+                var_5.WriteTo(var_14);
+            }
+
+            var_5.PreserveExtractionOptions(var_8, var_7);
+        }
+#endif
+    }
+}

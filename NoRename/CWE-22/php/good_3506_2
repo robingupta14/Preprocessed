@@ -1,0 +1,1648 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function print_header_redirect( $p_url, $p_die = true, $p_sanitize = false, $p_absolute = false ) {
+	$t_use_iis = config_get( 'use_iis' );
+
+	if( ON == config_get_global( 'stop_on_errors' ) && error_handled() ) {
+		return false;
+	}
+
+	
+	if( $p_absolute ) {
+		if( $p_sanitize ) {
+			$t_url = string_sanitize_url( $p_url );
+		} else {
+			$t_url = $p_url;
+		}
+	} else {
+		if( $p_sanitize ) {
+			$t_url = string_sanitize_url( $p_url, true );
+		} else {
+			$t_url = config_get( 'path' ) . $p_url;
+		}
+	}
+
+	$t_url = string_prepare_header( $t_url );
+
+	
+	if( !headers_sent() ) {
+		header( 'Content-Type: text/html; charset=utf-8' );
+
+		if( ON == $t_use_iis ) {
+			header( "Refresh: 0;url=$t_url" );
+		} else {
+			header( "Location: $t_url" );
+		}
+	} else {
+		trigger_error( ERROR_PAGE_REDIRECTION, ERROR );
+		return false;
+	}
+
+	if( $p_die ) {
+		die;
+
+		
+	}
+
+	return true;
+}
+
+
+
+function print_header_redirect_view( $p_bug_id ) {
+	print_header_redirect( string_get_bug_view_url( $p_bug_id ) );
+}
+
+
+
+
+function print_successful_redirect_to_bug( $p_bug_id ) {
+	$t_url = string_get_bug_view_url( $p_bug_id, auth_get_current_user_id() );
+
+	print_successful_redirect( $t_url );
+}
+
+
+
+
+
+function print_successful_redirect( $p_redirect_to ) {
+	if( helper_show_queries() ) {
+		html_page_top( null, $p_redirect_to );
+		
+		
+		print_bracket_link( $p_redirect_to, lang_get( 'proceed' ) );
+		
+		html_page_bottom();
+	} else {
+		print_header_redirect( $p_redirect_to );
+	}
+}
+
+
+function print_avatar( $p_user_id, $p_size = 80 ) {
+	if( !user_exists( $p_user_id ) ) {
+		return;
+	}
+
+	if( access_has_project_level( config_get( 'show_avatar_threshold' ), null, $p_user_id ) ) {
+		$t_avatar = user_get_avatar( $p_user_id, $p_size );
+		if( false !== $t_avatar ) {
+			$t_avatar_url = htmlspecialchars( $t_avatar[0] );
+			$t_width = $t_avatar[1];
+			$t_height = $t_avatar[2];
+			
+}
+
+
+
+function print_user_with_subject( $p_user_id, $p_bug_id ) {
+	$c_user_id = db_prepare_int( $p_user_id );
+
+	if( NO_USER == $p_user_id ) {
+		return;
+	}
+
+	$t_username = user_get_name( $p_user_id );
+	if( user_exists( $p_user_id ) && user_get_field( $p_user_id, 'enabled' ) ) {
+		$t_email = user_get_email( $p_user_id );
+		print_email_link_with_subject( $t_email, $t_username, $p_bug_id );
+	} else {
+		
+		
+		
+	}
+}
+
+
+
+function print_email_input( $p_field_name, $p_email ) {
+	$t_limit_email_domain = config_get( 'limit_email_domain' );
+	if( $t_limit_email_domain ) {
+
+		
+		$p_email = preg_replace( '/@' . preg_quote( $t_limit_email_domain, '/' ) . '$/i', '', $p_email );
+		
+	} else {
+		
+	}
+}
+
+
+
+function print_captcha_input( $p_field_name ) {
+	
+}
+
+
+
+
+
+
+
+
+
+
+function print_user_option_list( $p_user_id, $p_project_id = null, $p_access = ANYBODY ) {
+	$t_users = array();
+
+	if( null === $p_project_id ) {
+		$p_project_id = helper_get_current_project();
+	}
+
+	$t_users = project_get_all_user_rows( $p_project_id, $p_access );
+
+	
+
+	$t_display = array();
+	$t_sort = array();
+	$t_show_realname = ( ON == config_get( 'show_realname' ) );
+	$t_sort_by_last_name = ( ON == config_get( 'sort_by_last_name' ) );
+	foreach( $t_users as $t_user ) {
+		$t_user_name = string_attribute( $t_user['username'] );
+		$t_sort_name = utf8_strtolower( $t_user_name );
+		if( $t_show_realname && ( $t_user['realname'] <> '' ) ) {
+			$t_user_name = string_attribute( $t_user['realname'] );
+			if( $t_sort_by_last_name ) {
+				$t_sort_name_bits = explode( ' ', utf8_strtolower( $t_user_name ), 2 );
+				$t_sort_name = ( isset( $t_sort_name_bits[1] ) ? $t_sort_name_bits[1] . ', ' : '' ) . $t_sort_name_bits[0];
+			} else {
+				$t_sort_name = utf8_strtolower( $t_user_name );
+			}
+		}
+		$t_display[] = $t_user_name;
+		$t_sort[] = $t_sort_name;
+	}
+	array_multisort( $t_sort, SORT_ASC, SORT_STRING, $t_users, $t_display );
+	$t_count = count( $t_sort );
+	for( $i = 0;$i < $t_count;$i++ ) {
+		$t_row = $t_users[$i];
+		
+		check_selected( $p_user_id, $t_row['id'] );
+		
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+function print_reporter_option_list( $p_user_id, $p_project_id = null ) {
+	print_user_option_list( $p_user_id, $p_project_id, config_get( 'report_bug_threshold' ) );
+}
+
+
+function print_tag_attach_form( $p_bug_id, $p_string = '' ) {
+	?>
+		<small><?php 
+	?>
+		<input type="submit" value="<?php 
+}
+
+
+function print_tag_input( $p_bug_id = 0, $p_string = '' ) {
+	?>
+		<input type="hidden" id="tag_separator" value="<?php ">
+			<?php print_tag_option_list( $p_bug_id );?>
+		</select>
+		<?php
+
+		return true;
+}
+
+
+function print_tag_option_list( $p_bug_id = 0 ) {
+	$t_rows = tag_get_candidates_for_bug( $p_bug_id );
+
+	
+	foreach ( $t_rows as $row ) {
+		$t_string = $row['name'];
+		if ( !empty( $row['description'] ) ) {
+			$t_string .= ' - ' . utf8_substr( $row['description'], 0, 20 );
+		}
+		
+	}
+}
+
+
+
+function print_news_item_option_list() {
+	$t_mantis_news_table = db_get_table( 'mantis_news_table' );
+
+	$t_project_id = helper_get_current_project();
+
+	$t_global = access_has_global_level( config_get_global( 'admin_site_threshold' ) );
+	if( $t_global ) {
+		$query = "SELECT id, headline, announcement, view_state
+				FROM $t_mantis_news_table
+				ORDER BY date_posted DESC";
+	} else {
+		$query = "SELECT id, headline, announcement, view_state
+				FROM $t_mantis_news_table
+				WHERE project_id=" . db_param() . "
+				ORDER BY date_posted DESC";
+	}
+	$result = db_query_bound( $query, ($t_global == true ? Array() : Array( $t_project_id ) ) );
+	$news_count = db_num_rows( $result );
+
+	for( $i = 0;$i < $news_count;$i++ ) {
+		$row = db_fetch_array( $result );
+
+		$t_headline = string_display( $row['headline'] );
+		$t_announcement = $row['announcement'];
+		$t_view_state = $row['view_state'];
+		$t_id = $row['id'];
+
+		$t_notes = array();
+		$t_note_string = '';
+
+		if ( 1 == $t_announcement ) {
+			array_push( $t_notes, lang_get( 'announcement' ) );
+		}
+
+		if ( VS_PRIVATE == $t_view_state ) {
+			array_push( $t_notes, lang_get( 'private' ) );
+		}
+
+		if ( count( $t_notes ) > 0 ) {
+			$t_note_string = ' [' . implode( ' ', $t_notes ) . ']';
+		}
+
+		
+	}
+}
+
+
+
+function print_news_entry( $p_headline, $p_body, $p_poster_id, $p_view_state, $p_announcement, $p_date_posted ) {
+	$t_headline = string_display_links( $p_headline );
+	$t_body = string_display_links( $p_body );
+	$t_date_posted = date( config_get( 'normal_date_format' ), $p_date_posted );
+
+	if( VS_PRIVATE == $p_view_state ) {
+		$t_news_css = 'news-heading-private';
+	} else {
+		$t_news_css = 'news-heading-public';
+	}
+
+	$output = '<div align="center">';
+	$output .= '<table class="width75" cellspacing="0">';
+	$output .= '<tr>';
+	$output .= "<td class=\"$t_news_css\">";
+	$output .= "<span class=\"bold\">$t_headline</span> - ";
+	$output .= "<span class=\"italic-small\">$t_date_posted</span> - ";
+	
+
+	
+	print_user( $p_poster_id );
+	$output = '';
+
+	if( 1 == $p_announcement ) {
+		$output .= ' <span class="small">';
+		$output .= '[' . lang_get( 'announcement' ) . ']';
+		$output .= '</span>';
+	}
+	if( VS_PRIVATE == $p_view_state ) {
+		$output .= ' <span class="small">';
+		$output .= '[' . lang_get( 'private' ) . ']';
+		$output .= '</span>';
+	}
+
+	$output .= '</td>';
+	$output .= '</tr>';
+	$output .= '<tr>';
+	$output .= "<td class=\"news-body\">$t_body</td>";
+	$output .= '</tr>';
+	$output .= '</table>';
+	$output .= '</div>';
+
+	
+}
+
+
+
+function print_news_entry_from_row( $p_news_row ) {
+	$t_headline = $p_news_row['headline'];
+	$t_body = $p_news_row['body'];
+	$t_poster_id = $p_news_row['poster_id'];
+	$t_view_state = $p_news_row['view_state'];
+	$t_announcement = $p_news_row['announcement'];
+	$t_date_posted = $p_news_row['date_posted'];
+
+	print_news_entry( $t_headline, $t_body, $t_poster_id, $t_view_state, $t_announcement, $t_date_posted );
+}
+
+
+
+function print_news_string_by_news_id( $p_news_id ) {
+	$row = news_get_row( $p_news_id );
+
+	
+	if(( VS_PRIVATE == $row['view_state'] ) && !access_has_project_level( config_get( 'private_news_threshold' ) ) ) {
+		return;
+	}
+
+	print_news_entry_from_row( $row );
+}
+
+
+function print_assign_to_option_list( $p_user_id = '', $p_project_id = null, $p_threshold = null ) {
+
+	if( null === $p_threshold ) {
+		$p_threshold = config_get( 'handle_bug_threshold' );
+	}
+
+	print_user_option_list( $p_user_id, $p_project_id, $p_threshold );
+}
+
+
+function print_project_option_list( $p_project_id = null, $p_include_all_projects = true, $p_filter_project_id = null, $p_trace = false ) {
+	$t_project_ids = current_user_get_accessible_projects();
+	project_cache_array_rows( $t_project_ids );
+
+	if( $p_include_all_projects ) {
+		
+		check_selected( $p_project_id, ALL_PROJECTS );
+		
+	}
+
+	$t_project_count = count( $t_project_ids );
+	for( $i = 0;$i < $t_project_count;$i++ ) {
+		$t_id = $t_project_ids[$i];
+		if( $t_id != $p_filter_project_id ) {
+			
+			check_selected( $p_project_id, $t_id );
+			
+			print_subproject_option_list( $t_id, $p_project_id, $p_filter_project_id, $p_trace, Array() );
+		}
+	}
+}
+
+
+
+function print_subproject_option_list( $p_parent_id, $p_project_id = null, $p_filter_project_id = null, $p_trace = false, $p_parents = Array() ) {
+	array_push( $p_parents, $p_parent_id );
+	$t_project_ids = current_user_get_accessible_subprojects( $p_parent_id );
+	$t_project_count = count( $t_project_ids );
+	for( $i = 0;$i < $t_project_count;$i++ ) {
+		$t_full_id = $t_id = $t_project_ids[$i];
+		if( $t_id != $p_filter_project_id ) {
+			
+			if( $p_trace ) {
+				$t_full_id = join( $p_parents, ";" ) . ';' . $t_id;
+			}
+			
+			check_selected( $p_project_id, $t_full_id );
+			
+		}
+	}
+}
+
+
+
+function print_extended_project_browser( $p_trace = Array(), $p_project_id = null ) {
+	project_cache_all();
+	$t_project_ids = current_user_get_accessible_projects();
+
+	
+	
+	\n";
+
+	
+	' . "\n";
+	' . "\n";
+	
+	 
+	 
+	
+
+	$t_projects = Array();
+
+	$t_project_count = count( $t_project_ids );
+	for( $i = 0;$i < $t_project_count;$i++ ) {
+		$t_id = $t_project_ids[$i];
+		' . "\n";
+
+		$t_name = project_get_field( $t_id, 'name' );
+		$c_name = addslashes( $t_name );
+		' . "\n";
+
+		$t_projects[$t_id] = $t_name;
+
+		print_extended_project_browser_subproject_javascript( $t_id );
+	}
+
+	
+	
+	' . "\n";
+	
+	
+	' . "\n";
+	
+	' . "\n";
+	' . "\n";
+	
+	' . "\n";
+	
+	
+	
+
+	 document.form_set_project.submit()" class="small">' . "\n";
+	
+	
+	
+
+	foreach( $t_projects as $t_id => $t_name ) {
+		$c_name = string_attribute( $t_name );
+		
+		
+		
+	}
+
+	
+
+	if( 0 === count( $p_trace ) ) {
+		$t_top_id = ALL_PROJECTS;
+	} else {
+		$t_top_id = $p_trace[0];
+		$t_trace_str = join( ';', $p_trace );
+	}
+
+	
+	
+	
+	' . "\n";
+	' . "\n";
+	' . "\n";
+	', $p_trace );
+	$t_top_id = $t_trace_projects[0];
+	$t_level = count( $t_trace_projects );
+	$t_parent_id = $t_trace_projects[$t_level - 1];
+
+	$t_project_ids = current_user_get_accessible_subprojects( $t_parent_id );
+	$t_project_count = count( $t_project_ids );
+
+	for( $i = 0;$i < $t_project_count;$i++ ) {
+		$t_id = $t_project_ids[$i];
+		$t_name = addslashes( str_repeat(( '&
+		' . $t_id . '\'] = \'' . $t_name . '\';' . "\n";
+
+		print_extended_project_browser_subproject_javascript( $p_trace . ';' . $t_id );
+	}
+}
+
+
+
+function print_profile_option_list( $p_user_id, $p_select_id = '', $p_profiles = null ) {
+	if( '' === $p_select_id ) {
+		$p_select_id = profile_get_default( $p_user_id );
+	}
+	if( $p_profiles != null ) {
+		$t_profiles = $p_profiles;
+	} else {
+		$t_profiles = profile_get_all_for_user( $p_user_id );
+	}
+	print_profile_option_list_from_profiles( $t_profiles, $p_select_id );
+}
+
+
+
+function print_profile_option_list_for_project( $p_project_id, $p_select_id = '', $p_profiles = null ) {
+	if( '' === $p_select_id ) {
+		$p_select_id = profile_get_default( auth_get_current_user_id() );
+	}
+	if( $p_profiles != null ) {
+		$t_profiles = $p_profiles;
+	} else {
+		$t_profiles = profile_get_all_for_project( $p_project_id );
+	}
+	print_profile_option_list_from_profiles( $t_profiles, $p_select_id );
+}
+
+
+
+function print_profile_option_list_from_profiles( $p_profiles, $p_select_id ) {
+	
+	foreach( $p_profiles as $t_profile ) {
+		extract( $t_profile, EXTR_PREFIX_ALL, 'v' );
+
+		$t_platform = string_attribute( $t_profile['platform'] );
+		$t_os = string_attribute( $t_profile['os'] );
+		$t_os_build = string_attribute( $t_profile['os_build'] );
+
+		
+		check_selected( $p_select_id, $t_profile['id'] );
+		
+	}
+}
+
+
+
+
+
+function print_category_option_list( $p_category_id = 0, $p_project_id = null ) {
+	$t_category_table = db_get_table( 'mantis_category_table' );
+	$t_project_table = db_get_table( 'mantis_project_table' );
+
+	if( null === $p_project_id ) {
+		$t_project_id = helper_get_current_project();
+	} else {
+		$t_project_id = $p_project_id;
+	}
+
+	if( config_get( 'allow_no_category' ) ) {
+		
+		
+	} else {
+		if( 0 == $p_category_id ) {
+			
+			
+		}
+	}
+
+	$cat_arr = category_get_all_rows( $t_project_id,  null,  true );
+
+	foreach( $cat_arr as $t_category_row ) {
+		$t_category_id = $t_category_row['id'];
+		
+		check_selected( $p_category_id, $t_category_id );
+		
+	}
+}
+
+
+function print_category_filter_option_list( $p_category_name = '', $p_project_id = null ) {
+	$t_cat_arr = category_get_filter_list( $p_project_id );
+
+	natcasesort( $t_cat_arr );
+	foreach( $t_cat_arr as $t_cat ) {
+		$t_name = string_attribute( $t_cat );
+		
+		check_selected( string_attribute( $p_category_name ), $t_name );
+		
+	}
+}
+
+
+
+function print_platform_option_list( $p_platform, $p_user_id = null ) {
+	$t_platforms_array = profile_get_field_all_for_user( 'platform', $p_user_id );
+
+	foreach( $t_platforms_array as $t_platform ) {
+		$t_platform = string_attribute( $t_platform );
+		
+		check_selected( string_attribute( $p_platform ), $t_platform );
+		
+	}
+}
+
+
+
+function print_os_option_list( $p_os, $p_user_id = null ) {
+	$t_os_array = profile_get_field_all_for_user( 'os', $p_user_id );
+
+	foreach( $t_os_array as $t_os ) {
+		$t_os = string_attribute( $t_os );
+		
+		check_selected( string_attribute( $p_os ), $t_os );
+		
+	}
+}
+
+
+function print_os_build_option_list( $p_os_build, $p_user_id = null ) {
+	$t_os_build_array = profile_get_field_all_for_user( 'os_build', $p_user_id );
+
+	foreach( $t_os_build_array as $t_os_build ) {
+		$t_os_build = string_attribute( $t_os_build );
+		
+		check_selected( string_attribute( $p_os_build ), $t_os_build );
+		
+	}
+}
+
+
+
+
+
+
+
+function print_version_option_list( $p_version = '', $p_project_id = null, $p_released = null, $p_leading_blank = true, $p_with_subs = false ) {
+	if( null === $p_project_id ) {
+		$c_project_id = helper_get_current_project();
+	} else {
+		$c_project_id = db_prepare_int( $p_project_id );
+	}
+
+	if( $p_with_subs ) {
+		$versions = version_get_all_rows_with_subs( $c_project_id, $p_released,
+		
+		null );
+	} else {
+		$versions = version_get_all_rows( $c_project_id, $p_released,
+		
+		null );
+	}
+
+	if( $p_leading_blank ) {
+		
+	}
+
+	$t_listed = array();
+	$t_max_length = config_get( 'max_dropdown_length' );
+	$t_show_version_dates = access_has_project_level( config_get( 'show_version_dates_threshold' ) );
+	$t_short_date_format = config_get( 'short_date_format' );
+
+	foreach( $versions as $version ) {
+		
+		
+		if(( (int) $version['obsolete'] ) == 1 ) {
+			if( $version['version'] != $p_version ) {
+				continue;
+			}
+		}
+
+		$t_version = string_attribute( $version['version'] );
+
+		if ( !in_array( $t_version, $t_listed ) ) {
+			$t_listed[] = $t_version;
+			
+			check_selected( string_attribute( $p_version ), $t_version );
+
+			$t_version_string = string_attribute( prepare_version_string( $c_project_id, $version['id'] ) );
+
+			
+		}
+	}
+}
+
+function print_build_option_list( $p_build = '' ) {
+	$t_bug_table = db_get_table( 'mantis_bug_table' );
+	$t_overall_build_arr = array();
+
+	$t_project_id = helper_get_current_project();
+
+	$t_project_where = helper_project_specific_where( $t_project_id );
+
+	
+	$query = "SELECT DISTINCT build
+				FROM $t_bug_table
+				WHERE $t_project_where
+				ORDER BY build DESC";
+	$result = db_query_bound( $query );
+	$option_count = db_num_rows( $result );
+
+	for( $i = 0;$i < $option_count;$i++ ) {
+		$row = db_fetch_array( $result );
+		$t_overall_build_arr[] = $row['build'];
+	}
+
+	$t_max_length = config_get( 'max_dropdown_length' );
+
+	foreach( $t_overall_build_arr as $t_build ) {
+		$t_build = string_attribute( $t_build );
+		
+		check_selected( string_attribute( $p_build ), $t_build );
+		
+	}
+}
+
+
+
+
+function print_enum_string_option_list( $p_enum_name, $p_val = 0 ) {
+	$t_config_var_name = $p_enum_name . '_enum_string';
+	$t_config_var_value = config_get( $t_config_var_name );
+
+	$t_enum_values = MantisEnum::getValues( $t_config_var_value );
+
+	foreach ( $t_enum_values as $t_key ) {
+		$t_elem2 = get_enum_element( $p_enum_name, $t_key );
+
+		
+		check_selected( $p_val, $t_key );
+		
+	}
+}
+
+
+
+
+
+function get_status_option_list( $p_user_auth = 0, $p_current_value = 0, $p_show_current = true, $p_add_close = false, $p_project_id = ALL_PROJECTS ) {
+	$t_config_var_value = config_get( 'status_enum_string', null, null, $p_project_id );
+	$t_enum_workflow = config_get( 'status_enum_workflow', null, null, $p_project_id );
+
+	if( count( $t_enum_workflow ) < 1 ) {
+		
+		$t_enum_values = MantisEnum::getValues( $t_config_var_value );
+	} else {
+		
+		if( isset( $t_enum_workflow[$p_current_value] ) ) {
+			$t_enum_values = MantisEnum::getValues( $t_enum_workflow[$p_current_value] );
+		} else {
+			
+			$t_enum_values = MantisEnum::getValues( $t_config_var_value );
+		}
+	}
+
+	$t_enum_list = array();
+
+	foreach ( $t_enum_values as $t_enum_value ) {
+		if ( ( access_compare_level( $p_user_auth, access_get_status_threshold( $t_enum_value, $p_project_id ) ) )
+				&& ( !(( false == $p_show_current ) && ( $p_current_value == $t_enum_value ) ) ) ) {
+			$t_enum_list[$t_enum_value] = get_enum_element( 'status', $t_enum_value );
+		}
+	}
+
+	if ( $p_show_current ) {
+		$t_enum_list[$p_current_value] = get_enum_element( 'status', $p_current_value );
+	}
+
+	if ( $p_add_close && access_compare_level( $p_current_value, config_get( 'bug_resolved_status_threshold', null, null, $p_project_id ) ) ) {
+		$t_closed = config_get( 'bug_closed_status_threshold', null, null, $p_project_id );
+		$t_enum_list[$t_closed] = get_enum_element( 'status', $t_closed );
+	}
+
+	return $t_enum_list;
+}
+
+
+function print_status_option_list( $p_select_label, $p_current_value = 0, $p_allow_close = false, $p_project_id = ALL_PROJECTS ) {
+	$t_current_auth = access_get_project_level( $p_project_id );
+
+	$t_enum_list = get_status_option_list( $t_current_auth, $p_current_value, true, $p_allow_close, $p_project_id );
+
+	if( count( $t_enum_list ) > 1 ) {
+
+		
+		ksort( $t_enum_list );
+		reset( $t_enum_list );
+		
+		foreach( $t_enum_list as $key => $val ) {
+			
+			check_selected( $key, $p_current_value );
+			
+		}
+		
+	} else if ( count( $t_enum_list ) == 1 ) {
+		
+	} else {
+		
+	}
+}
+
+
+
+function print_project_user_option_list( $p_project_id = null ) {
+	print_user_option_list( 0, $p_project_id );
+}
+
+
+
+function print_project_access_levels_option_list( $p_val, $p_project_id = null ) {
+	$t_current_user_access_level = access_get_project_level( $p_project_id );
+	$t_access_levels_enum_string = config_get( 'access_levels_enum_string' );
+	$t_enum_values = MantisEnum::getValues( $t_access_levels_enum_string );
+	foreach ( $t_enum_values as $t_enum_value ) {
+		
+		if ( $t_enum_value > $t_current_user_access_level ) {
+			continue;
+		}
+		$t_access_level = get_enum_element( 'access_levels', $t_enum_value );
+		
+		check_selected( $p_val, $t_enum_value );
+		
+	}
+}
+
+function print_language_option_list( $p_language ) {
+	$t_arr = config_get( 'language_choices_arr' );
+	$enum_count = count( $t_arr );
+	for( $i = 0;$i < $enum_count;$i++ ) {
+		$t_language = string_attribute( $t_arr[$i] );
+		
+		check_selected( $t_language, $p_language );
+		
+	}
+}
+
+
+function print_all_bug_action_option_list( $p_project_ids = null ) {
+	$t_commands = bug_group_action_get_commands( $p_project_ids);
+	while( list( $t_action_id, $t_action_label ) = each( $t_commands ) ) {
+		
+	}
+}
+
+
+
+
+
+function print_project_user_list_option_list( $p_project_id = null ) {
+	$t_mantis_project_user_list_table = db_get_table( 'mantis_project_user_list_table' );
+	$t_mantis_user_table = db_get_table( 'mantis_user_table' );
+
+	if( null === $p_project_id ) {
+		$p_project_id = helper_get_current_project();
+	}
+	$c_project_id = (int) $p_project_id;
+
+	$t_adm = config_get_global( 'admin_site_threshold' );
+	$query = "SELECT DISTINCT u.id, u.username, u.realname
+				FROM $t_mantis_user_table u
+				LEFT JOIN $t_mantis_project_user_list_table p
+				ON p.user_id=u.id AND p.project_id=" . db_param() . "
+				WHERE u.access_level<" . db_param() . " AND
+					u.enabled = " . db_param() . " AND
+					p.user_id IS NULL
+				ORDER BY u.realname, u.username";
+	$result = db_query_bound( $query, Array( $c_project_id, $t_adm, true ) );
+	$t_display = array();
+	$t_sort = array();
+	$t_users = array();
+	$t_show_realname = ( ON == config_get( 'show_realname' ) );
+	$t_sort_by_last_name = ( ON == config_get( 'sort_by_last_name' ) );
+	$category_count = db_num_rows( $result );
+	for( $i = 0;$i < $category_count;$i++ ) {
+		$row = db_fetch_array( $result );
+		$t_users[] = $row['id'];
+		$t_user_name = string_attribute( $row['username'] );
+		$t_sort_name = $t_user_name;
+		if(( isset( $row['realname'] ) ) && ( $row['realname'] <> '' ) && $t_show_realname ) {
+			$t_user_name = string_attribute( $row['realname'] );
+			if( $t_sort_by_last_name ) {
+				$t_sort_name_bits = explode( ' ', utf8_strtolower( $t_user_name ), 2 );
+				$t_sort_name = ( isset( $t_sort_name_bits[1] ) ? $t_sort_name_bits[1] . ', ' : '' ) . $t_sort_name_bits[0];
+			} else {
+				$t_sort_name = utf8_strtolower( $t_user_name );
+			}
+		}
+		$t_display[] = $t_user_name;
+		$t_sort[] = $t_sort_name;
+	}
+	array_multisort( $t_sort, SORT_ASC, SORT_STRING, $t_users, $t_display );
+	$t_count = count( $t_sort );
+	for( $i = 0;$i < $t_count; $i++ ) {
+		
+	}
+}
+
+
+function print_project_user_list_option_list2( $p_user_id ) {
+	$t_mantis_project_user_list_table = db_get_table( 'mantis_project_user_list_table' );
+	$t_mantis_project_table = db_get_table( 'mantis_project_table' );
+
+	$c_user_id = db_prepare_int( $p_user_id );
+
+	$query = "SELECT DISTINCT p.id, p.name
+				FROM $t_mantis_project_table p
+				LEFT JOIN $t_mantis_project_user_list_table u
+				ON p.id=u.project_id AND u.user_id=" . db_param() . "
+				WHERE p.enabled = " . db_param() . " AND
+					u.user_id IS NULL
+				ORDER BY p.name";
+	$result = db_query_bound( $query, Array( $c_user_id, true ) );
+	$category_count = db_num_rows( $result );
+	for( $i = 0;$i < $category_count;$i++ ) {
+		$row = db_fetch_array( $result );
+		$t_project_name = string_attribute( $row['name'] );
+		$t_user_id = $row['id'];
+		
+	}
+}
+
+
+function print_project_user_list( $p_user_id, $p_include_remove_link = true ) {
+	$t_mantis_project_user_list_table = db_get_table( 'mantis_project_user_list_table' );
+	$t_mantis_project_table = db_get_table( 'mantis_project_table' );
+
+	$c_user_id = db_prepare_int( $p_user_id );
+
+	$query = "SELECT DISTINCT p.id, p.name, p.view_state, u.access_level
+				FROM $t_mantis_project_table p
+				LEFT JOIN $t_mantis_project_user_list_table u
+				ON p.id=u.project_id
+				WHERE p.enabled = '1' AND
+					u.user_id=" . db_param() . "
+				ORDER BY p.name";
+	$result = db_query_bound( $query, Array( $c_user_id ) );
+	$category_count = db_num_rows( $result );
+	for( $i = 0;$i < $category_count;$i++ ) {
+		$row = db_fetch_array( $result );
+		$t_project_id = $row['id'];
+		$t_project_name = string_attribute( $row['name'] );
+		$t_view_state = $row['view_state'];
+		$t_access_level = $row['access_level'];
+		$t_access_level = get_enum_element( 'access_levels', $t_access_level );
+		$t_view_state = get_enum_element( 'project_view_state', $t_view_state );
+
+		
+		if( $p_include_remove_link && access_has_project_level( config_get( 'project_user_threshold' ), $t_project_id ) ) {
+			html_button( 'manage_user_proj_delete.php', lang_get( 'remove_link' ), array( 'project_id' => $t_project_id, 'user_id' => $p_user_id ) );
+		}
+		
+	}
+}
+
+
+
+
+
+
+
+function print_custom_field_projects_list( $p_field_id ) {
+	$c_field_id = (integer) $p_field_id;
+	$t_project_ids = custom_field_get_project_ids( $p_field_id );
+
+	$t_security_token = form_security_param( 'manage_proj_custom_field_remove' );
+
+	foreach( $t_project_ids as $t_project_id ) {
+		$t_project_name = project_get_field( $t_project_id, 'name' );
+		$t_sequence = custom_field_get_sequence( $p_field_id, $t_project_id );
+		
+		print_bracket_link( "manage_proj_custom_field_remove.php?field_id=$c_field_id&project_id=$t_project_id&return=custom_field$t_security_token", lang_get( 'remove_link' ) );
+		
+
+		$t_linked_field_ids = custom_field_get_linked_ids( $t_project_id );
+
+		$t_current_project_fields = array();
+
+		$t_first = true;
+		foreach( $t_linked_field_ids as $t_current_field_id ) {
+			if( $t_first ) {
+				$t_first = false;
+			} else {
+				
+			}
+
+			if( $t_current_field_id == $p_field_id ) {
+				
+			}
+
+			
+			
+
+			if( $t_current_field_id == $p_field_id ) {
+				
+			}
+		}
+
+		
+	}
+}
+
+
+function print_plugin_priority_list( $p_priority ) {
+	if( $p_priority < 1 && $p_priority > 5 ) {
+		
+	}
+
+	for( $i = 5;$i >= 1;$i-- ) {
+		
+	}
+}
+
+
+
+
+
+
+
+function print_bug_link( $p_bug_id, $p_detail_info = true ) {
+	
+}
+
+
+
+function print_formatted_priority_string( $p_status, $p_priority ) {
+	$t_pri_str = get_enum_element( 'priority', $p_priority );
+	$t_priority_threshold = config_get( 'priority_significant_threshold' );
+
+	if( $t_priority_threshold >= 0 &&
+		$p_priority >= $t_priority_threshold &&
+		$p_status < config_get( 'bug_closed_status_threshold' ) ) {
+		
+	} else {
+		
+	}
+}
+
+
+
+function print_formatted_severity_string( $p_status, $p_severity ) {
+	$t_sev_str = get_enum_element( 'severity', $p_severity );
+	$t_severity_threshold = config_get( 'severity_significant_threshold' );
+
+	if( $t_severity_threshold >= 0 &&
+		$p_severity >= $t_severity_threshold &&
+		$p_status < config_get( 'bug_closed_status_threshold' ) ) {
+		
+	} else {
+		
+	}
+}
+
+
+
+
+
+
+function print_view_bug_sort_link( $p_string, $p_sort_field, $p_sort, $p_dir, $p_columns_target = COLUMNS_TARGET_VIEW_PAGE ) {
+	if( $p_columns_target == COLUMNS_TARGET_PRINT_PAGE ) {
+		if( $p_sort_field == $p_sort ) {
+			
+			if( 'ASC' == $p_dir ) {
+				$p_dir = 'DESC';
+			} else {
+				$p_dir = 'ASC';
+			}
+		} else {
+			
+			$t_dir = 'ASC';
+		}
+
+		$t_sort_field = rawurlencode( $p_sort_field );
+		print_link( "view_all_set.php?sort=$t_sort_field&dir=$p_dir&type=2&print=1", $p_string );
+	}
+	else if( $p_columns_target == COLUMNS_TARGET_VIEW_PAGE ) {
+		if( $p_sort_field == $p_sort ) {
+
+			
+			if( 'ASC' == $p_dir ) {
+				$p_dir = 'DESC';
+			} else {
+				$p_dir = 'ASC';
+			}
+		} else {
+			
+			$t_dir = 'ASC';
+		}
+
+		$t_sort_field = rawurlencode( $p_sort_field );
+		print_link( "view_all_set.php?sort=$t_sort_field&dir=$p_dir&type=2", $p_string );
+	} else {
+		
+	}
+}
+
+function print_manage_user_sort_link( $p_page, $p_string, $p_field, $p_dir, $p_sort_by, $p_hide = 0, $p_filter = ALL ) {
+	if( $p_sort_by == $p_field ) {
+
+		
+		if( 'ASC' == $p_dir || ASCENDING == $p_dir ) {
+			$t_dir = 'DESC';
+		} else {
+			$t_dir = 'ASC';
+		}
+	} else {
+		
+		$t_dir = 'ASC';
+	}
+
+	$t_field = rawurlencode( $p_field );
+	print_link( "$p_page?sort=$t_field&dir=$t_dir&save=1&hide=$p_hide&filter=$p_filter", $p_string );
+}
+
+function print_manage_project_sort_link( $p_page, $p_string, $p_field, $p_dir, $p_sort_by ) {
+	if( $p_sort_by == $p_field ) {
+
+		
+		if( 'ASC' == $p_dir || ASCENDING == $p_dir ) {
+			$t_dir = 'DESC';
+		} else {
+			$t_dir = 'ASC';
+		}
+	} else {
+		
+		$t_dir = 'ASC';
+	}
+
+	$t_field = rawurlencode( $p_field );
+	print_link( "$p_page?sort=$t_field&dir=$t_dir", $p_string );
+}
+
+
+
+
+
+function print_button( $p_action_page, $p_label, $p_args_to_post = null ) {
+	$t_form_name = explode( '.php', $p_action_page, 2 );
+	
+	
+	
+	
+	
+	
+
+	if( $p_args_to_post !== null ) {
+		foreach( $p_args_to_post as $t_var => $t_value ) {
+			
+		}
+	}
+
+	
+}
+
+
+function print_bracket_link_prepared( $p_link ) {
+	
+	
+	} else {
+		$t_link = htmlspecialchars( $p_link );
+		if( $p_new_window === true ) {
+			if( $p_class !== '') {
+				
+			} else {
+				
+			}
+		} else {
+			if( $p_class !== '') {
+				
+			} else {
+				
+			}
+		}
+	}
+}
+
+
+function print_page_link( $p_page_url, $p_text = '', $p_page_no = 0, $p_page_cur = 0, $p_temp_filter_id = 0 ) {
+	if( is_blank( $p_text ) ) {
+		$p_text = $p_page_no;
+	}
+
+	if( ( 0 < $p_page_no ) && ( $p_page_no != $p_page_cur ) ) {
+		$t_delimiter = ( strpos( $p_page_url, "?" ) ? "&" : "?" );
+		if( $p_temp_filter_id !== 0 ) {
+			print_link( "$p_page_url${t_delimiter}filter=$p_temp_filter_id&page_number=$p_page_no", $p_text );
+		} else {
+			print_link( "$p_page_url${t_delimiter}page_number=$p_page_no", $p_text );
+		}
+	} else {
+		
+	}
+}
+
+
+function print_page_links( $p_page, $p_start, $p_end, $p_current, $p_temp_filter_id = 0 ) {
+	$t_items = array();
+	$t_link = '';
+
+	
+	
+
+	if( $p_end - $p_start < 1 ) {
+		return;
+	}
+
+	
+	$t_first = lang_get( 'first' );
+	$t_last = lang_get( 'last' );
+	$t_prev = lang_get( 'prev' );
+	$t_next = lang_get( 'next' );
+
+	$t_page_links = 10;
+
+	print( "[ " );
+
+	
+	print_page_link( $p_page, $t_first, 1, $p_current, $p_temp_filter_id );
+	
+	
+	$t_first_page = min( $t_first_page, $p_end - $t_page_links );
+	$t_first_page = max( $t_first_page, $p_start );
+
+	if( $t_first_page > 1 ) {
+		print( " ... " );
+	}
+
+	$t_last_page = $t_first_page + $t_page_links;
+	$t_last_page = min( $t_last_page, $p_end );
+
+	for( $i = $t_first_page;$i <= $t_last_page;$i++ ) {
+		if( $i == $p_current ) {
+			array_push( $t_items, $i );
+		} else {
+			$t_delimiter = ( strpos( $p_page, "?" ) ? "&" : "?" ) ;
+			if( $p_temp_filter_id !== 0 ) {
+				array_push( $t_items, "<a href=\"$p_page${t_delimiter}filter=$p_temp_filter_id&page_number=$i\">$i</a>" );
+			} else {
+				array_push( $t_items, "<a href=\"$p_page${t_delimiter}page_number=$i\">$i</a>" );
+			}
+		}
+	}
+	
+	}
+
+	
+	
+	} else {
+		print_page_link( $p_page, $t_next, null, null, $p_temp_filter_id );
+	}
+	
+
+	print( ' ]' );
+}
+
+
+function print_email_link( $p_email, $p_text ) {
+	
+}
+
+
+function get_email_link( $p_email, $p_text ) {
+	return prepare_email_link( $p_email, $p_text );
+}
+
+
+function print_email_link_with_subject( $p_email, $p_text, $p_bug_id ) {
+	$t_subject = email_build_subject( $p_bug_id );
+	
+}
+
+
+
+function get_email_link_with_subject( $p_email, $p_text, $p_summary ) {
+	if( !access_has_project_level( config_get( 'show_user_email_threshold' ) ) ) {
+		return $p_text;
+	}
+
+	
+	
+	
+	
+	$t_summary = string_url( $p_summary );
+	$t_email = string_url( $p_email );
+	$t_mailto = string_attribute( "mailto:$t_email?subject=$t_summary" );
+	$t_text = string_display( $p_text );
+
+	return "<a href=\"$t_mailto\">$t_text</a>";
+}
+
+
+
+
+
+
+function print_hidden_inputs( $p_assoc_array ) {
+	foreach( $p_assoc_array as $t_key => $t_val ) {
+		print_hidden_input( $t_key, $t_val );
+	}
+}
+
+function print_hidden_input( $p_field_key, $p_field_val ) {
+	if( is_array( $p_field_val ) ) {
+		foreach( $p_field_val AS $t_key => $t_value ) {
+			if( is_array( $t_value ) ) {
+				$t_key = string_html_entities( $t_key );
+				$t_field_key = $p_field_key . '[' . $t_key . ']';
+				print_hidden_input( $t_field_key, $t_value );
+			} else {
+				$t_field_key = $p_field_key . '[' . $t_key . ']';
+				print_hidden_input( $t_field_key, $t_value );
+			}
+		}
+	} else {
+		$t_key = string_html_entities( $p_field_key );
+		$t_val = string_html_entities( $p_field_val );
+		
+	}
+}
+
+
+
+
+
+
+
+function print_documentation_link( $p_a_name = '' ) {
+	
+	
+	
+}
+
+
+function print_hr( $p_hr_size = null, $p_hr_width = null ) {
+	if( null === $p_hr_size ) {
+		$p_hr_size = config_get( 'hr_size' );
+	}
+	if( null === $p_hr_width ) {
+		$p_hr_width = config_get( 'hr_width' );
+	}
+	
+}
+
+
+function print_signup_link() {
+	if ( ( ON == config_get_global( 'allow_signup' ) ) &&
+	     ( LDAP != config_get_global( 'login_method' ) ) &&
+	     ( ON == config_get( 'enable_email_notification' ) )
+	   ) {
+		print_bracket_link( 'signup_page.php', lang_get( 'signup_link' ) );
+	}
+}
+
+
+function print_login_link() {
+	print_bracket_link( 'login_page.php', lang_get( 'login_title' ) );
+}
+
+
+function print_lost_password_link() {
+	
+	if ( ( LDAP != config_get_global( 'login_method' ) ) &&
+	     ( ON == config_get( 'lost_password_feature' ) ) &&
+	     ( ON == config_get( 'send_reset_password' ) ) &&
+	     ( ON == config_get( 'enable_email_notification' ) ) ) {
+		print_bracket_link( 'lost_pwd_page.php', lang_get( 'lost_password_link' ) );
+	}
+}
+
+
+
+
+
+
+
+
+function print_sql_error( $p_query ) {
+	global $g_administrator_email;
+
+	$error = error_string( ERROR_SQL );
+	$error .= lang_get( 'word_separator' );
+	$error .= sprintf( lang_get( 'please_report' ), prepare_email_link( $g_administrator_email, lang_get( 'administrator' ) ) );
+	$error .= "<br />$p_query;<br />";
+	
+}
+
+
+function print_file_icon( $p_filename ) {
+	$t_icon = file_get_icon_url( $p_filename );
+	
+}
+
+
+function print_rss( $p_feed_url, $p_title = '' ) {
+	$t_path = config_get( 'path' );
+	
+}
+
+
+function print_recently_visited() {
+	if( !last_visited_enabled() ) {
+		return;
+	}
+
+	$t_ids = last_visited_get_array();
+
+	if( count( $t_ids ) == 0 ) {
+		return;
+	}
+
+	
+	$t_first = true;
+
+	foreach( $t_ids as $t_id ) {
+		if( !$t_first ) {
+			
+		} else {
+			$t_first = false;
+		}
+
+		
+	}
+	
+}
+
+
+function get_dropdown( $p_control_array, $p_control_name, $p_match = '', $p_add_any = false, $p_multiple = false, $p_change_script = '' ) {
+	$t_control_array = $p_control_array;
+	if( $p_multiple ) {
+		$t_size = ' size="5"';
+		$t_multiple = ' multiple="multiple"';
+	} else {
+		$t_size = '';
+		$t_multiple = '';
+	}
+	$t_script = ( $p_change_script == '' ? '' : ' onchange="' . $p_change_script . '"' );
+	$t_info = sprintf( "<select %s name=\"%s\" id=\"%s\"%s%s>", $t_multiple, $p_control_name, $p_control_name, $t_size, $t_script );
+	if( $p_add_any ) {
+		array_unshift_assoc( $t_control_array, META_FILTER_ANY, lang_trans( '[any]' ) );
+	}
+	while( list( $t_name, $t_desc ) = each( $t_control_array ) ) {
+		$t_sel = '';
+		if( is_array( $p_match ) ) {
+			if( in_array( $t_name, array_values( $p_match ) ) || in_array( $t_desc, array_values( $p_match ) ) ) {
+				$t_sel = ' selected="selected"';
+			}
+		} else {
+			if(( $t_name === $p_match ) || ( $t_desc === $p_match ) ) {
+				$t_sel = ' selected="selected"';
+			}
+		}
+		$t_info .= sprintf( "<option%s value=\"%s\">%s</option>", $t_sel, $t_name, $t_desc );
+	}
+	$t_info .= "</select>\n";
+	return $t_info;
+}
+
+
+
+function print_bug_attachments_list( $p_bug_id ) {
+	$t_attachments = file_get_visible_attachments( $p_bug_id );
+	$t_attachments_count = count( $t_attachments );
+
+	$i = 0;
+	$image_previewed = false;
+
+	foreach ( $t_attachments as $t_attachment ) {
+		$t_file_display_name = string_display_line( $t_attachment['display_name'] );
+		$t_filesize = number_format( $t_attachment['size'] );
+		$t_date_added = date( config_get( 'normal_date_format' ), $t_attachment['date_added'] );
+
+		if ( $image_previewed ) {
+			$image_previewed = false;
+			
+		}
+
+		if ( $t_attachment['can_download'] ) {
+			$t_href_start = '<a href="' . string_attribute( $t_attachment['download_url'] ) . '">';
+			$t_href_end = '</a>';
+
+			$t_href_clicket = " [<a href=\"file_download.php?file_id={$t_attachment['id']}&amp;type=bug\" target=\"_blank\">^</a>]";
+		} else {
+			$t_href_start = '';
+			$t_href_end = '';
+			$t_href_clicket = '';
+		}
+
+		if ( !$t_attachment['exists'] ) {
+			print_file_icon( $t_file_display_name );
+			
+			print_file_icon( $t_file_display_name );
+			
+			
+		}
+
+		if ( $t_attachment['exists'] ) {
+			if ( ( FTP == config_get( 'file_upload_method' ) ) && $t_attachment['exists'] ) {
+				
+			}
+
+			if ( $t_attachment['preview'] && ( $t_attachment['type'] == 'text' ) ) {
+				 $c_id = db_prepare_int( $t_attachment['id'] );
+				 $t_bug_file_table = db_get_table( 'mantis_bug_file_table' );
+
+				
+document.getElementById( span ).style.display = displayType;
+}
+
+ -->
+ </script>";
+				
+
+				
+				switch( config_get( 'file_upload_method' ) ) {
+					case DISK:
+						if ( $t_attachment['exists'] ) {
+							$v_content = file_get_contents( $t_attachment['diskfile'] );
+						}
+						break;
+					case FTP:
+						if( file_exists( $t_attachment['exists'] ) ) {
+							file_get_contents( $t_attachment['diskfile'] );
+						} else {
+							$ftp = file_ftp_connect();
+							file_ftp_get( $ftp, $t_attachment['diskfile'], $t_attachment['diskfile'] );
+							file_ftp_disconnect( $ftp );
+							$v_content = file_get_contents( $t_attachment['diskfile'] );
+						}
+						break;
+					default:
+						$query = "SELECT *
+	                  					FROM $t_bug_file_table
+				            			WHERE id=" . db_param();
+						$result = db_query_bound( $query, Array( $c_id ) );
+						$row = db_fetch_array( $result );
+						$v_content = $row['content'];
+				}
+
+				
+				
+			}
+
+			if ( $t_attachment['can_download'] && $t_attachment['preview'] && $t_attachment['type'] == 'image' ) {
+				$t_preview_style = 'border: 0;';
+				$t_max_width = config_get( 'preview_max_width' );
+				if( $t_max_width > 0 ) {
+					$t_preview_style .= ' max-width:' . $t_max_width . 'px;';
+				}
+
+				$t_max_height = config_get( 'preview_max_height' );
+				if( $t_max_height > 0 ) {
+					$t_preview_style .= ' max-height:' . $t_max_height . 'px;';
+				}
+
+				$t_preview_style = 'style="' . $t_preview_style . '"';
+				$t_title = file_get_field( $t_attachment['id'], 'title' );
+
+				$t_image_url = $t_attachment['download_url'] . '&amp;show_inline=1' . form_security_param( 'file_show_inline' );
+
+				
+				$image_previewed = true;
+			}
+		}
+
+		if ( $i != ( $t_attachments_count - 1 ) ) {
+			
+			$i++;
+		}
+	}
+}
+
+
+
+function print_timezone_option_list( $p_timezone ) {
+	if ( !function_exists( 'timezone_identifiers_list' ) ) {
+		
+		return;
+	}
+
+	$t_identifiers = timezone_identifiers_list();
+
+	foreach ( $t_identifiers as $t_identifier )
+	{
+	    $t_zone = explode( '/', $t_identifier );
+
+	    
+		if ($t_zone[0] == 'Africa' ||
+			$t_zone[0] == 'America' ||
+			$t_zone[0] == 'Antarctica' ||
+			$t_zone[0] == 'Arctic' ||
+			$t_zone[0] == 'Asia' ||
+			$t_zone[0] == 'Atlantic' ||
+			$t_zone[0] == 'Australia' ||
+			$t_zone[0] == 'Europe' ||
+			$t_zone[0] == 'Indian' ||
+			$t_zone[0] == 'Pacific' )
+		{
+	        if ( isset( $t_zone[1] ) != '' )
+	        {
+	            $t_locations[$t_zone[0]][$t_zone[0] . '/' . $t_zone[1]] = array( str_replace( '_', ' ', $t_zone[1] ), $t_identifier );
+	        }
+		}
+	}
+
+	foreach( $t_locations as $t_continent => $t_locations ) {
+		
+		foreach ( $t_locations as $t_location ) {
+			
+			check_selected( $p_timezone, $t_location[1] );
+			
+		}
+	}
+}

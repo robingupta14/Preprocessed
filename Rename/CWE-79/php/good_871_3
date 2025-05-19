@@ -1,0 +1,436 @@
+<?php
+
+
+
+$var_0 = "acme";
+
+$var_1 = "Services: Acme: Certificates";
+
+$var_2 = &getarraybyref($var_3, 'installedpackages', 'acme', 'certificates', 'item');
+
+if($var_8['action'] == "toggle") {
+	$var_4 = $var_8['id'];
+	
+	if (isset($var_2[get_certificate_id($var_4)])) {
+		$var_5 = &$var_2[get_certificate_id($var_4)];
+		if ($var_5['status'] != "disabled"){
+			$var_5['status'] = 'disabled';
+			
+		}else{
+			$var_5['status'] = 'active';
+			
+		}
+		$var_1 .= " set item '$var_4' status to: {$var_5['status']}";
+		
+		touch($var_6);
+		write_config($var_1);
+	}
+	
+	var_7;
+}
+if($var_8['action'] == "issuecert") {
+	$var_4 = $var_8['id'];
+	
+	if (isset($var_2[get_certificate_id($var_4)])) {
+		issue_certificate($var_4, true);
+	}
+	var_7;
+}
+if($var_8['action'] == "renewcert") {
+	$var_4 = $var_8['id'];
+	
+	if (isset($var_2[get_certificate_id($var_4)])) {
+		issue_certificate($var_4, true, true);
+	}
+	var_7;
+}
+
+if ($var_8) {
+	$var_9 = $var_8;
+
+	if ($var_8['del_x']) {
+		
+		$var_10 = false;
+		if (is_array($var_8['rule']) && count($var_8['rule'])) {
+			$var_11 = array();
+			foreach($var_8['rule'] as $var_12) {
+				$var_11[] = get_certificate_id($var_12);
+			}
+			foreach ($var_11 as $var_13) {
+				unset($var_2[$var_13]);
+				$var_10 = true;
+			}
+			if ($var_10) {
+				if (write_config("Acme, deleting certificate(s)")) {
+					
+					touch($var_6);
+				}
+			}
+			header("Location: acme_certificates.php");
+			var_7;
+		}
+	} else {	
+
+		
+		
+		
+		unset($var_14, $var_15, $var_16, $var_17, $var_18, $var_19);
+		foreach ($var_8 as $var_20 => $var_21) {
+			if (preg_match("/move_(.+)/", $var_20, $var_22)) {
+				$var_16 = substr($var_21, 5);
+			}
+		}
+		
+		
+		if (isset($var_16) && is_array($var_8['rule']) && count($var_8['rule'])) {
+			$var_23 = get_certificate_id($var_16);
+			$var_11 = array();
+			foreach($var_8['rule'] as $var_12) {
+				$var_11[] = get_certificate_id($var_12);
+			}
+			array_moveitemsbefore($var_2, $var_23, $var_11);
+		
+			touch($var_6);
+			write_config($var_1);			
+		}
+	}
+}
+
+if ($_GET['act'] == "del") {
+	$var_4 = $_GET['id'];
+	$var_4 = get_certificate_id($var_4);
+	if (isset($var_2[$var_4])) {
+		if (!$var_24) {
+			unset($var_2[$var_4]);
+			$var_1 .= " Item delete";
+			write_config($var_1);
+			touch($var_6);
+		}
+		header("Location: acme_certificates.php");
+		var_7;
+	}
+}
+
+$var_25 = array("Services", "Acme", "Certificates");
+if ($var_24) {
+	print_input_errors($var_24);
+}
+if ($var_26) {
+	print_info_box($var_26);
+}
+
+
+?>
+<div id="renewoutputbox" class="alert alert-success clearfix hidden" role="alert">
+	<button type="button" class="close" data-dismiss="alert" aria-label="Close">
+		<span aria-hidden="true">×</span>
+	</button>
+	<div id="renewoutput" class="pull-left">
+	</div>
+</div>
+	
+<?php
+display_top_tabs_active($acme_tab_array['acme'], "certificates");
+?>
+<div class="panel panel-default" id="search-panel">
+	<div class="panel-heading">
+		<h2 class="panel-title">
+			<?=gettext('Search')?>
+			<span class="widget-heading-icon pull-right">
+				<a data-toggle="collapse" href="
+					<i class="fa fa-plus-circle"></i>
+				</a>
+			</span>
+		</h2>
+	</div>
+	<div id="search-panel_panel-body" class="panel-body collapse in">
+		<div class="form-group">
+			<label class="col-sm-2 control-label">
+				<?=gettext("Search term")?>
+			</label>
+			<div class="col-sm-5"><input class="form-control" name="searchstr" id="searchstr" type="text"/></div>
+			<div class="col-sm-2">
+				<select id="where" class="form-control">
+					<option value="0"><?=gettext("Name")?></option>
+					<option value="1"><?=gettext("Description")?></option>
+					<option value="2" selected><?=gettext("Both")?></option>
+				</select>
+			</div>
+			<div class="col-sm-3">
+				<a id="btnsearch" title="<?=gettext("Search")?>" class="btn btn-primary btn-sm"><i class="fa fa-search icon-embed-btn"></i><?=gettext("Search")?></a>
+				<a id="btnclear" title="<?=gettext("Clear")?>" class="btn btn-info btn-sm"><i class="fa fa-undo icon-embed-btn"></i><?=gettext("Clear")?></a>
+			</div>
+			<div class="col-sm-10 col-sm-offset-2">
+				<span class="help-block"><?=gettext('Enter a search string or *nix regular expression to search certificate names and distinguished names.')?></span>
+			</div>
+		</div>
+	</div>
+</div>
+<form action="acme_certificates.php" method="post">
+	<div class="panel panel-default">
+		<div class="panel-heading">
+			<h2 class="panel-title">Certificates</h2>
+		</div>
+		<div id="mainarea" class="table-responsive panel-body">
+			<table class="table table-hover table-striped table-condensed sortable-theme-bootstrap" data-sortable>
+				<thead>
+					<tr>
+						<th data-sortable="false"></th>
+						<th>On</th>
+						<th>Name</th>
+						<th>Description</th>
+						<th>Account</th>
+						<th data-sortable-type="date">Last renewed</th>
+						<th data-sortable="false">Renew</th>
+						<th data-sortable="false">Actions</th>
+					</tr>
+				</thead>
+				<tbody class="user-entries">
+<?php
+		foreach ($var_2 as $var_27) {
+			$var_28 = $var_27['name'];
+			$var_29 = $var_27['status'] != 'active';
+			?>
+			<tr id="fr<?=$var_28;?>" <?=$var_30?> onClick="fr_toggle('<?=$var_28;?>')" ondblclick="document.location='acme_certificates_edit.php?id=<?=$var_28;?>';" <?=($var_29 ? ' class="disabled"' : '')?>>
+				<td>
+					<input type="checkbox" id="frc<?=$var_28;?>" onClick="fr_toggle('<?=$var_28;?>')" name="rule[]" value="<?=$var_28;?>"/>
+					<a class="fa fa-anchor" id="Xmove_<?=$var_28?>" title="<?=gettext("Move checked entries to here")?>"></a>
+				</td>
+			  <td>
+				<?php
+					if ($var_27['status']=='disabled'){
+						$var_31 = "disabled";
+					} else {
+						$var_31 = "enabled";
+					}?>
+				<a id="btn_<?=$var_28;?>" href='javascript:togglerow("<?=$var_28;?>");'>
+					<?=acmeicon($var_31, gettext("click to toggle enable/disable this certificate renewal"))?>
+				</a>
+			  </td>
+			  <td>
+				<?=$var_27['name'];?>
+			  </td>
+			  <td>
+				<?=htmlspecialchars($var_27['desc']);?>
+			  </td>
+			  <td>
+				<?=htmlspecialchars($var_27['acmeaccount']);?>
+			  </td>
+			  <td style="white-space: nowrap">
+				<?=date('r', $var_27['lastrenewal']);?>
+			  </td>
+			  <td>
+				  <?php
+					$var_32 = "";
+					if (is_array($var_27['a_domainlist']['item'])) {
+						foreach($var_27['a_domainlist']['item'] as $var_33) {
+							if ($var_33['status'] == 'disable') {
+								continue;
+							}
+							$var_32 = $var_33['method'];
+						}
+					}
+			
+				  if ($var_32 == "dns_manual"): ?>
+				  <a href='javascript:renewcertificate("<?=$var_28;?>");' class="btn btn-sm btn-primary">
+					  <i id="btnrenewicon_<?=$var_28;?>" class="fa fa-check"></i> Renew
+				  </a>
+				  <a href='javascript:issuecertificate("<?=$var_28;?>");' class="btn btn-sm btn-primary">
+					  <i id="btnissueicon_<?=$var_28;?>" class="fa fa-check"></i> Issue
+				  </a>
+				  <?php else: ?>
+				  <a href='javascript:issuecertificate("<?=$var_28;?>");' class="btn btn-sm btn-primary">
+					  <i id="btnissueicon_<?=$var_28;?>" class="fa fa-check"></i> Issue/Renew
+				  </a>
+				  <?php endif; ?>
+			  </td>
+			  <td class="action-icons">
+				<button style="display: none;" class="btn btn-default btn-xs" type="submit" id="move_<?=$var_28?>" name="move_<?=$var_28?>" value="move_<?=$var_28?>"></button>
+				<a href="acme_certificates_edit.php?id=<?=$var_28;?>">
+					<?=acmeicon("edit", gettext("edit"))?>
+				</a>
+				<a href="acme_certificates.php?act=del&amp;id=<?=$var_28;?>">
+					<?=acmeicon("delete", gettext("delete"))?>
+				</a>
+				<a href="acme_certificates_edit.php?dup=<?=$var_28;?>">
+					<?=acmeicon("clone", gettext("clone"))?>
+				</a>
+			  </td>
+			</tr><?php
+		}
+?>				
+				</tbody>
+			</table>
+		</div>
+	</div>
+	<nav class="action-buttons">
+		<a href="acme_certificates_edit.php" role="button" class="btn btn-sm btn-success" title="<?=gettext('Add certificate to the end of the list')?>">
+			<i class="fa fa-plus icon-embed-btn"></i>
+			<?=gettext("Add");?>
+		</a>
+		<button name="del_x" type="submit" class="btn btn-danger btn-sm" value="<?=gettext("Delete selected certificates"); ?>" title="<?=gettext('Delete selected certificates')?>">
+			<i class="fa fa-trash icon-embed-btn"></i>
+			<?=gettext("Delete"); ?>
+		</button>
+		<button type="submit" id="order-store" name="order-store" class="btn btn-sm btn-primary" value="store changes" disabled title="<?=gettext('Save certificate order')?>">
+			<i class="fa fa-save icon-embed-btn no-confirm"></i>
+			<?=gettext("Save")?>
+		</button>
+	</nav>
+
+<div class="infoblock blockopen">
+	<?php print_info_box(sprintf(gettext('Use the search box to filter the list and show only matching entries. <br />' .
+						   'Click table column headers to sort table entries. ' .
+						   'Do not use the movement/reordering controls after sorting the table.'), '<br />'), 'info', false); ?>
+</div>
+</form>
+
+<script type="text/javascript">
+
+
+function set_content(elementid, image) {
+	var item = document.getElementById(elementid);
+	item.innerHTML = image;
+}
+
+function js_callbackrenew(data) {
+	$('
+	$('
+}
+
+function js_callback(req_content) {
+	
+	if(req_content !== '') {
+		var itemsplit = req_content.split("|");
+		buttonid = itemsplit[0];
+		enabled = parseInt(itemsplit[1]);
+		if (enabled === 1){
+			img = "<?=acmeicon("enabled", gettext("click to toggle enable/disable this certificate renewal"))?>";
+		} else {
+			img = "<?=acmeicon("disabled", gettext("click to toggle enable/disable this certificate renewal"))?>";
+		}
+		set_content('btn_'+buttonid, img);
+	}
+}
+
+function issuecertificate($id) {
+	$("i[id='btnissueicon_"+$id+"']").removeClass("fa-check").addClass("fa-cog fa-spin");
+	
+	ajaxRequest = $.ajax({
+		url: "",
+		type: "post",
+		data: { id: $id, action: "issuecert"},
+		success: function(data) {
+			js_callbackrenew(data);
+			$("i[id='btnissueicon_"+$id+"']").removeClass("fa-cog fa-spin").addClass("fa-check");
+		},
+		error: function(data) {
+			$("i[id='btnissueicon_"+$id+"']").removeClass("fa-cog fa-spin").addClass("fa-chain-broken");
+		}
+	});
+}
+
+function renewcertificate($id) {
+	$("i[id='btnrenewicon_"+$id+"']").removeClass("fa-check").addClass("fa-cog fa-spin");
+	
+	ajaxRequest = $.ajax({
+		url: "",
+		type: "post",
+		data: { id: $id, action: "renewcert"},
+		success: function(data) {
+			js_callbackrenew(data);
+			$("i[id='btnrenewicon_"+$id+"']").removeClass("fa-cog fa-spin").addClass("fa-check");
+		},
+		error: function(data) {
+			$("i[id='btnrenewicon_"+$id+"']").removeClass("fa-cog fa-spin").addClass("fa-chain-broken");
+		}
+	});
+}
+function togglerow($id) {
+	ajaxRequest = $.ajax({
+		url: "",
+		type: "post",
+		data: { id: $id, action: "toggle"},
+		success: function(data) {
+			js_callback(data);
+		}
+	});
+}
+
+events.push(function() {
+	
+	$('
+		ajaxRequest = $.ajax({
+			url: "/index.php",
+			type: "post",
+			data: { closenotice: "all"},
+			success: function() {
+				window.location = window.location.href;
+			},
+			failure: function() {
+				alert("Error clearing notices!");
+			}
+		});
+	});
+	
+	$('[id^=Xmove_]').click(function (event) {
+		buttonid = event.target.id.slice(1);
+		$("[id='" + buttonid + "']").click();
+		return false;
+	});
+	$('[id^=Xmove_]').css('cursor', 'pointer');
+
+	
+	$('
+	   $('[id^=frc]').prop('checked', true);
+	});
+
+	
+	$("
+	$("
+
+	
+	$("
+		var searchstr = $('
+		var table = $("table tbody");
+		var where = $('
+
+		table.find('tr').each(function (i) {
+			var $tds = $(this).find('td'),
+				shortname = $tds.eq(2).text().trim().toLowerCase(),
+				descr = $tds.eq(3).text().trim().toLowerCase();
+
+			regexp = new RegExp(searchstr);
+			if (searchstr.length > 0) {
+				if (!(regexp.test(shortname) && (where != 1)) && !(regexp.test(descr) && (where != 0))) {
+					$(this).hide();
+				} else {
+					$(this).show();
+				}
+			} else {
+				$(this).show();	
+			}
+		});
+	});
+
+	
+	$("
+		var table = $("table tbody");
+
+		$('
+
+		table.find('tr').each(function (i) {
+			$(this).show();
+		});
+	});
+
+	
+	$("
+		if (event.keyCode == 13) {
+			$("
+		}
+	});
+});
+
+</script>
+<?php include("foot.inc");

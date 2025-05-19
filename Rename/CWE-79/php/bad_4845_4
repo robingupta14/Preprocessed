@@ -1,0 +1,301 @@
+<?php
+	
+	
+	if (empty($settings["no_css"])) {
+?>
+<link rel="stylesheet" href="<?=var_0?>extensions/com.fastspot.form-builder/css/front-end.css"/>
+<?php
+	}
+	
+	
+	
+	
+	if ($form["limit_entries"] && $form["entries"] >= $form["max_entries"]) {
+?>
+<h2>Maximum Entries Reached</h2>
+<p>This form has reached the maximum number of entries.</p>
+<?php
+	} else {
+?>
+<form method="post" action="<?=$var_1?>process/" enctype="multipart/form-data" class="form_builder">
+	<?php
+		$var_2 = count($_SESSION["form_builder"]["errors"]);
+		
+		if ($var_2) {
+	?>
+	<div class="form_builder_errors">
+		<?php if ($var_2 == 1) { ?>
+		<p>A required field was missing. Please fill out all required fields and submit again.</p>
+		<?php } else { ?>
+		<p>Required fields were missing. Please fill out all required fields out and submit again.</p>
+		<?php } ?>
+	</div>
+	<?php
+		}
+		
+		if ($_SESSION["form_builder"]["payment_error"]) {
+	?>
+	<div class="form_builder_errors">
+		<p>Checkout failed — your credit card has not been charged.</p>
+		<p class="form_builder_alert">The error returned was: <?=$_SESSION["form_builder"]["payment_error"]?></p>
+	</div>
+	<?php
+		}
+	?>
+	<div class="form_builder_required_message">
+		<p><span class="form_builder_required_star">*</span> = required field</p>
+	</div>
+	<?php
+		
+		$var_3 = $var_4 = $var_5 = $var_6 = array();
+		$var_7 = false;
+		$var_8 = 0;
+		
+		foreach ($form["fields"] as $var_9) {
+			$var_8++;
+			$var_10 = $var_9["type"];
+			$var_11 = json_decode($var_9["data"], true);
+
+			if ($var_10 != "column") {
+				if ($var_11["name"]) {
+					$var_12 = $var_11["name"];
+				} else {
+					$var_12 = "data_".$var_9["id"];
+				}
+				
+				$var_13 = false;
+				
+				if (isset($_SESSION["form_builder"]["fields"])) {
+					$var_14 = $_SESSION["form_builder"]["fields"][$var_12];
+				} else {
+					if (isset($var_11["default"])) {
+						$var_14 = $var_11["default"];
+					} else {
+						$var_14 = false;
+					}
+				}
+				
+				if (is_array($_SESSION["form_builder"]["errors"]) && in_array($var_12,$_SESSION["form_builder"]["errors"])) {
+					$var_13 = true;
+				}
+				
+			} else {
+				if ($var_7 == "column") {
+					
+				} else {
+					
+				}
+				
+				foreach ($var_9["fields"] as $var_15) {
+					$var_8++;
+					$var_11 = json_decode($var_15["data"],true);
+					
+					if ($var_11["name"]) {
+						$var_12 = $var_11["name"];
+					} else {
+						$var_12 = "data_".$var_15["id"];
+					}
+					
+					$var_13 = false;
+					
+					if (isset($_SESSION["form_builder"]["fields"])) {
+						$var_14 = $_SESSION["form_builder"]["fields"][$var_12];
+					} else {
+						if (isset($var_11["default"])) {
+							$var_14 = $var_11["default"];
+						} else {
+							$var_14 = false;
+						}
+					}
+					
+					if (is_array($_SESSION["form_builder"]["errors"]) && in_array($var_12,$_SESSION["form_builder"]["errors"])) {
+						$var_13 = true;
+					}
+					
+				}
+				
+				
+			}
+			$var_7 = $var_10;
+		}
+	?>
+	<input type="submit" class="form_builder_submit" value="Submit" />
+</form>
+<?php
+		
+		if ($form["paid"]) {
+			if ($form["early_bird_date"] && strtotime($form["early_bird_date"]) > time()) {
+				$var_16 = $form["early_bird_base_price"] ? $form["early_bird_base_price"] : $form["base_price"];
+			} else {
+				$var_16 = $form["base_price"] ? $form["base_price"] : "0.00";
+			}
+?>
+<script type="text/javascript">
+	(function() {
+		var PreviousValues = {};
+		var Total = <?=$var_16?>;
+
+		function formatMoney(places, symbol, thousand, decimal) {
+			places = !isNaN(places = Math.abs(places)) ? places : 2;
+			symbol = symbol !== undefined ? symbol : "$";
+			thousand = thousand || ",";
+			decimal = decimal || ".";
+			var number = this,
+			    negative = number < 0 ? "-" : "",
+			    i = parseInt(number = Math.abs(+number || 0).toFixed(places), 10) + "",
+			    j = (j = i.length) > 3 ? j % 3 : 0;
+			return symbol + negative + (j ? i.substr(0, j) + thousand : "") + i.substr(j).replace(/(\d{3})(?=\d)/g, "$1" + thousand) + (places ? decimal + Math.abs(number - i).toFixed(places).slice(2) : "");
+		}
+
+		<?php
+			
+			foreach ($var_6 as $var_17) {
+		?>
+		document.getElementById("<?=$var_17?>").addEventListener("change", function() {
+			var old_price = PreviousValues[this.getAttribute("name")];
+			
+			if (old_price) {
+				Total -= old_price;
+			}
+			
+			var price = parseFloat(this.value.replace(/[^0-9-.]/g, ''));
+			
+			if (price < 0) {
+				price = 0;
+			}
+			
+			this.value = formatMoney(price);
+			
+			if (isNaN(price)) {
+				PreviousValues[this.getAttribute("name")] = 0;
+			} else {
+				Total += price;
+				PreviousValues[this.getAttribute("name")] = price;
+			}
+			
+			document.getElementById("form_builder_total").innerHTML = formatMoney(Total);
+		});
+		<?php
+			}
+
+			
+			foreach ($var_3 as $var_17) {
+		?>
+		document.getElementById("<?=$var_17?>").addEventListener("change", function() {
+			var price = this.getAttribute("data-price");
+			
+			if (this.checked) {
+				Total += parseFloat(price);
+			} else {
+				Total -= parseFloat(price);
+			}
+			
+			document.getElementById("form_builder_total").innerHTML = formatMoney(Total);
+		});
+		<?php
+			}
+
+			
+			foreach ($var_4 as $var_17) {
+		?>
+		document.getElementById("<?=$var_17?>").addEventListener("change", function() {
+			var old_price = PreviousValues[this.getAttribute("name")];
+			var price = this.getAttribute("data-price");
+			
+			if (old_price) {
+				Total -= old_price;
+			}
+			
+			Total += parseFloat(price);
+			PreviousValues[this.getAttribute("name")] = parseFloat(price);
+			document.getElementById("form_builder_total").innerHTML = formatMoney(Total);
+		});
+		<?php
+			}
+
+			
+			foreach ($var_5 as $var_17) {
+		?>
+		document.getElementById("<?=$var_17?>").addEventListener("change", function() {
+			var old_price = PreviousValues[this.getAttribute("name")];
+			var price = parseFloat(this.options[this.selectedIndex].getAttribute("data-price"));
+			
+			if (old_price) {
+				Total -= old_price;
+			}
+			
+			Total += price;
+			PreviousValues[this.getAttribute("name")] = price;
+			document.getElementById("form_builder_total").innerHTML = formatMoney(Total);
+		});
+		<?php
+			}
+		?>
+
+		window.addEventListener("load", function() {
+			var element;
+			var value;
+			
+			<?
+				
+				foreach ($var_6 as $var_17) {
+			?>
+			element = document.getElementById("<?=$var_17?>");
+			
+			if (element.value) {
+				var price = parseFloat(element.value.replace(/[^0-9-.]/g, ''));
+				if (price < 0) {
+					price = 0;
+				}
+				Total += price;
+				PreviousValues[item.getAttribute("name")] = price;
+				element.value = formatMoney(price);
+			}
+			<?
+				}
+	
+				foreach ($var_3 as $var_17) {
+			?>
+			element = document.getElementById("<?=$var_17?>");
+			
+			if (element.checked) {
+				Total += parseFloat(i.getAttribute("data-price"));
+			}
+			<?
+				}
+				
+				foreach ($var_4 as $var_17) {
+			?>
+			element = document.getElementById("<?=$var_17?>");
+			
+			if (element.checked) {
+				Total += parseFloat(i.getAttribute("data-price"));
+				PreviousValues[i.getAttribute("name")] = parseFloat(i.getAttribute("data-price"));
+			}
+			<?
+				}
+				
+				foreach ($var_5 as $var_17) {
+			?>
+			element = document.getElementById("<?=$var_17?>");
+			value = parseFloat(element.options[element.selectedIndex].getAttribute("data-price"));
+			
+			if (value) {
+				Total += value;
+				PreviousValues[element.getAttribute("name")] = parseFloat(element.options[element.selectedIndex].getAttribute("data-price"));
+			}
+			<?
+				}
+			?>
+			
+			document.getElementById("form_builder_total").innerHTML = formatMoney(Total);
+		});
+	})();
+</script>
+<?
+		}
+
+		unset($_SESSION["form_builder"]["payment_error"]);
+		unset($_SESSION["form_builder"]["errors"]);
+		unset($_SESSION["form_builder"]["fields"]);
+	}

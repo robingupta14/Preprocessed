@@ -1,0 +1,330 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+$var_0 = var_1;
+$var_2 = gettext("Local User Database");
+
+if (isset($_REQUEST['userid']) && is_numericint($_REQUEST['userid'])) {
+	$var_3 = $_REQUEST['userid'];
+}
+
+$var_4 = array(gettext("System"), gettext("User Manager"), gettext("Users"), gettext("Edit"), gettext("Add Privileges"));
+$var_5 = array("", "system_usermanager.php", "system_usermanager.php", "system_usermanager.php?act=edit&userid=" . $var_3, "@self");
+
+if (!isset($config['system']['user'][$var_3]) && !is_array($config['system']['user'][$var_3])) {
+	pfSenseHeader("system_usermanager.php");
+	var_6;
+}
+
+$var_7 = & $config['system']['user'][$var_3];
+
+if (!is_array($var_7['priv'])) {
+	$var_7['priv'] = array();
+}
+
+
+$var_8 = $var_9;
+uasort($var_8, "compare_by_name");
+
+
+phpsession_begin();
+$var_10 = getUserEntry($_SESSION['Username']);
+$var_11 = (is_array($var_10) && userHasPrivilege($var_10, "user-config-readonly"));
+phpsession_end();
+
+if (!empty($var_12) && $var_11) {
+	$var_13 = array(gettext("Insufficient privileges to make the requested change (read only)."));
+}
+
+if ($var_12['save'] && !$var_11) {
+	unset($var_13);
+	$var_14 = $var_12;
+
+	
+	$var_15 = explode(" ", "sysprivs");
+	$var_16 = array(gettext("Selected privileges"));
+
+	do_input_validation($var_12, $var_15, $var_16, $var_13);
+
+	if (!$var_13) {
+
+		if (!is_array($var_14['sysprivs'])) {
+			$var_14['sysprivs'] = array();
+		}
+
+		if (!count($var_7['priv'])) {
+			$var_7['priv'] = $var_14['sysprivs'];
+		} else {
+			$var_7['priv'] = array_merge($var_7['priv'], $var_14['sysprivs']);
+		}
+
+		$var_7['priv'] = sort_user_privs($var_7['priv']);
+		local_user_set($var_7);
+
+		$var_17 = sprintf(gettext("Privileges changed for user: %s"), $var_7['name']);
+		write_config($var_17);
+		syslog($var_0, "{$var_2}: {$var_17}");
+
+		post_redirect("system_usermanager.php", array('act' => 'edit', 'userid' => $var_3));
+
+		var_6;
+	}
+
+}
+
+function fn_0() {
+	global $var_8, $var_7;
+
+	$var_18 = array();
+
+	foreach ($var_8 as $var_19 => $var_20) {
+		if (in_array($var_19, $var_7['priv'])) {
+			continue;
+		}
+
+		$var_18[$var_19] = $var_20['name'];
+	}
+
+	return($var_18);
+}
+
+function fn_1() {
+	global $var_9;
+
+	$var_21 = "";
+
+	foreach ($var_9 as $var_19 => $var_20) {
+		if (isset($var_20['warn']) && ($var_20['warn'] == 'standard-warning-root')) {
+			$var_21 .= '<br/>' . $var_20['name'];
+		}
+	}
+
+	return($var_21);
+}
+
+
+if ($var_13) {
+	print_input_errors($var_13);
+}
+
+$var_22 = array();
+$var_22[] = array(gettext("Users"), true, "system_usermanager.php");
+$var_22[] = array(gettext("Groups"), false, "system_groupmanager.php");
+$var_22[] = array(gettext("Settings"), false, "system_usermanager_settings.php");
+$var_22[] = array(gettext("Authentication Servers"), false, "system_authservers.php");
+display_top_tabs($var_22);
+
+$var_23 = new class_0();
+
+$var_24 = new class_1('User Privileges');
+
+$var_25 = $var_7['name'];
+if (!empty($var_7['descr'])) {
+	$var_25 .= " ({$var_7['descr']})";
+}
+
+$var_24->addInput(new class_2(
+	'User',
+	$var_25
+));
+
+$var_24->addInput(new class_3(
+	'sysprivs',
+	'*Assigned privileges',
+	null,
+	fn_0(),
+	true
+))->addClass('multiselect')
+  ->setHelp('Hold down CTRL (PC)/COMMAND (Mac) key to select multiple items.');
+
+$var_24->addInput(new class_3(
+	'shadow',
+	'Shadow',
+	null,
+	fn_0(),
+	true
+))->addClass('shadowselect')
+  ->setHelp('Hold down CTRL (PC)/COMMAND (Mac) key to select multiple items.');
+
+$var_24->addInput(new class_4(
+	'filtertxt',
+	'Filter',
+	'text',
+	null
+))->setHelp('Show only the choices containing this term');
+
+$var_24->addInput(new class_2(
+	gettext('Privilege information'),
+	'<span class="help-block">'.
+	gettext('The following privileges effectively give the user administrator-level access ' .
+		' because the user gains access to execute general commands, edit system files, ' .
+		' modify users, change passwords or similar:') .
+	'<br/>' .
+	fn_1() .
+	'<br/><br/>' .
+	gettext('Please take care when granting these privileges.') .
+	'</span>'
+));
+
+$var_29 = new class_5(
+	'btnfilter',
+	'Filter',
+	null,
+	'fa-filter'
+);
+
+$var_29->setAttribute('type','button')->addClass('btn btn-info');
+
+$var_23->addGlobal($var_29);
+
+$var_32 = new class_5(
+	'btnclear',
+	'Clear',
+	null,
+	'fa-times'
+);
+
+$var_32->setAttribute('type','button')->addClass('btn btn-warning');
+
+$var_23->addGlobal($var_32);
+
+if (isset($var_3)) {
+	$var_23->addGlobal(new class_4(
+	'userid',
+	null,
+	'hidden',
+	$var_3
+	));
+}
+
+$var_23->add($var_24);
+
+print($var_23);
+?>
+
+<div class="panel panel-body alert-info col-sm-10 col-sm-offset-2" id="pdesc"><?=gettext("Select a privilege from the list above for a description")?></div>
+
+<script type="text/javascript">
+
+events.push(function() {
+
+<?php
+
+
+	
+	if (is_array($var_8)) {
+		$var_34 = 0;
+
+		$var_35 = "var descs = new Array();\n";
+		foreach ($var_8 as $var_19 => $var_20) {
+			if (in_array($var_19, $var_7['priv'])) {
+				continue;
+			}
+			$var_36 = preg_replace("/pfSense/i", $g['product_name'], $var_20['descr']);
+			if (isset($var_20['warn']) && ($var_20['warn'] == 'standard-warning-root')) {
+				$var_36 .= ' ' . gettext('(This privilege effectively gives administrator-level access to the user)');
+			}
+			$var_36 = addslashes($var_36);
+			$var_35 .= "descs[{$var_34}] = '{$var_36}';\n";
+			$var_34++;
+		}
+
+		
+	}
+?>
+
+	$('.shadowselect').parent().parent('div').addClass('hidden');
+
+	
+	$('.multiselect').attr("size","20");
+	$('.shadowselect').attr("size","20");
+
+	
+	$('.multiselect').click(function() {
+		var targetoption = $(this).children('option:selected').val();
+		var idx =  $('.shadowselect option[value="' + targetoption + '"]').index();
+
+		$('
+
+		
+		$(".multiselect option").each(function() {
+			shadowoption = $('.shadowselect option').filter('[value=' + $(this).val() + ']');
+
+			if ($(this).is(':selected')) {
+				shadowoption.prop("selected", true);
+			} else {
+				shadowoption.prop("selected", false);
+			}
+		});
+	});
+
+	$('
+		searchterm = $('
+		copyselect(true);
+
+		
+		$(".multiselect > option").each(function() {
+			if (this.text.toLowerCase().indexOf(searchterm) == -1 ) {
+				$(this).remove();
+			}
+		});
+	});
+
+	$('
+		
+		copyselect(true)
+
+		$('
+	});
+
+	$('
+		if (e.which == 13) {
+			e.preventDefault();
+			$('
+		}
+	});
+
+	
+	$('form').submit(function() {
+
+		$(".multiselect > option").each(function() {
+			$(this).show();
+		});
+
+		$('.shadowselect').remove();
+	});
+
+	function copyselect(selected) {
+		
+		$('.multiselect').html($('.shadowselect').html());
+
+		if (selected) {
+			
+			$(".shadowselect option").each(function() {
+				multioption = $('.multiselect option').filter('[value=' + $(this).val() + ']');
+				if ($(this).is(':selected')) {
+					multioption.prop("selected", true);
+				} else {
+					multioption.prop("selected", false);
+				}
+			});
+		}
+	}
+
+	$('.multiselect').mouseup(function () {
+		$('.multiselect').trigger('click');
+	});
+});
+
+</script>
+
+<?php include("foot.inc");

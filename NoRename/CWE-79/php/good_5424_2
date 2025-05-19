@@ -1,0 +1,449 @@
+<?php
+
+
+
+
+
+
+
+
+OA_Permission::enforceAccount(OA_ACCOUNT_MANAGER, OA_ACCOUNT_ADVERTISER, OA_ACCOUNT_TRAFFICKER);
+
+
+$pref = $GLOBALS['_MAX']['PREF'];
+$hideinactive   = MAX_getStoredValue('hideinactive', ($pref['ui_hide_inactive'] == true), null, true);
+$listorder      = MAX_getStoredValue('listorder', 'date_time');
+$orderdirection = MAX_getStoredValue('orderdirection', 'up');
+$aNodes         = MAX_getStoredArray('nodes', array());
+$editStatuses   = MAX_getStoredValue('editStatuses', false, null, true);
+$day            = MAX_getStoredValue('day', null, 'stats-conversions.php');
+$howLong        = MAX_getStoredValue('howLong', 'd');
+$hour           = MAX_getStoredValue('hour', null, 'stats-conversions.php', true);
+$setPerPage     = MAX_getStoredValue('setPerPage', 15);
+$pageID         = MAX_getStoredValue('pageID', 1);
+
+if (!empty($day)) {
+    
+    $period_preset = '';
+    
+    $howLong = MAX_getValue('howLong', 'd');
+    $hour    = MAX_getValue('hour');
+} else {
+    $period_preset  = MAX_getStoredValue('period_preset', 'today');
+    $period_start   = MAX_getStoredValue('period_start', date('Y-m-d'));
+    $period_end     = MAX_getStoredValue('period_end', date('Y-m-d'));
+}
+
+if (is_numeric($hour) && $hour < 10 && strlen($hour) != 2) {
+    $hour = '0' . $hour;
+}
+
+$expand         = MAX_getValue('expand', '');
+$collapse       = MAX_getValue('collapse');
+
+if ($clientid) {
+    OA_Permission::enforceAccessToObject('clients', $clientid);
+}
+if ($campaignid) {
+    OA_Permission::enforceAccessToObject('campaigns', $campaignid);
+}
+if ($bannerid) {
+    OA_Permission::enforceAccessToObject('banners', $bannerid);
+}
+if ($affiliateid) {
+    OA_Permission::enforceAccessToObject('affiliates', $clientid);
+}
+if ($zoneid) {
+    OA_Permission::enforceAccessToObject('zones', $zoneid);
+}
+
+
+$entityIds = array(
+    'entity'      => 'conversions',
+    'clientid'    => $clientid,
+    'campaignid'  => $campaignid,
+    'bannerid'    => $bannerid,
+    'affiliateid' => $affiliateid,
+    'zoneid'      => $zoneid,
+    'setPerPage'  => $setPerPage,
+    'pageID'      => $pageID
+);
+$addUrl = "entity=conversions&clientid=$clientid&campaignid=$campaignid&bannerid=$bannerid&affiliateid=$affiliateid&zoneid=$zoneid&setPerPage=$setPerPage&pageID=$pageID";
+
+if (!empty($day)) {
+    $entityIds += array(
+        'day' => $day,
+        'hour' => $hour,
+        'howLong' => $howLong
+    );
+    $addUrl .= "&day=".urlencode($day)."&hour=".urlencode($hour)."&howLong=".urlencode($howLong);
+} else {
+    $entityIds += array(
+        'period_preset' => $period_preset,
+        'period_start' => $period_start,
+        'period_end' => $period_end,
+    );
+    $addUrl .= "&period_preset=".urlencode($period_preset)."&period_start=".urlencode($period_start)."&period_end=".urlencode($period_end);
+}
+
+MAX_adjustNodes($aNodes, $expand, $collapse);
+
+if (!OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+    
+    $editStatuses = false;
+}
+else {
+    if($editStatuses) {
+        addPageShortcut($strShortcutShowStatuses, 'stats.php?entity=conversions&editStatuses=0&'.$addUrl, 'iconZoom');
+    }
+    else {
+        addPageShortcut($strShortcutEditStatuses, 'stats.php?entity=conversions&editStatuses=1&'.$addUrl, 'iconEdit');
+    }
+}
+
+
+if ($editStatuses) {
+    $entityIds['editStatuses'] = 1;
+    $addUrl .= '&editStatuses=1';
+}
+
+
+if(OA_Permission::isAccount(OA_ACCOUNT_TRAFFICKER)) {
+    
+    $conf = &$GLOBALS['_MAX']['CONF'];
+    $conf['logging']['adRequests'] = false;
+    $affiliateid = OA_Permission::getEntityId();
+
+    phpAds_PageHeader("1.1");
+    
+} elseif(OA_Permission::isAccount(OA_ACCOUNT_ADVERTISER)) {
+    
+    $clientid = OA_Permission::getEntityId();
+
+    phpAds_PageHeader("1.1");
+    
+} else {
+    
+
+    phpAds_PageHeader("2.1");
+    
+}
+
+$pageName = basename($_SERVER['SCRIPT_NAME']);
+$tabindex = 1;
+$advertisersHidden = 0;
+
+
+if(empty($day)) {
+    $aDates = MAX_getDatesByPeriod($period_preset, $period_start, $period_end);
+} else {
+    $aDates = array();
+    $oDayDate = new Date();
+    $oDayDate->setDate($day, DATE_FORMAT_TIMESTAMP);
+    if(!empty($hour)) {
+        
+        $aDates['day_hour'] = $oDayDate->format('%Y-%m-%d').' '.$hour;
+    } else {
+        
+        switch($howLong) {
+            case 'm':
+                $aDates['month'] = $oDayDate->format('%Y-%m');
+                break;
+            case 'w':
+                $aDates['day_begin'] = $oDayDate->format('%Y-%m-%d');
+                $oDayDate->addSeconds(604800); 
+                $aDates['day_end'] = $oDayDate->format('%Y-%m-%d');
+                break;
+            case 'd':
+            default:
+                $aDates['day'] = $oDayDate->format('%Y-%m-%d');
+                break;
+        }
+    }
+}
+
+$hiddenValues = array(
+    'entity'   => 'conversions',
+    'clientid' => $clientid,
+    'campaignid' => $campaignid,
+    'bannerid' => $bannerid,
+    'affiliateid' => $affiliateid,
+    'zoneid' => $zoneid,
+);
+if(!empty($period_preset)) {
+    MAX_displayDateSelectionForm($period_preset, $period_start, $period_end, $pageName, $tabindex, $hiddenValues);
+} else {
+    $comma = '';
+    foreach($aDates as $dateValue) {
+        
+        $comma = ' - ';
+    }
+}
+
+phpAds_ShowBreak();
+
+$aParams = array();
+$aParams['agency_id'] = OA_Permission::getAgencyId();
+
+$aParams['clientid']    = $clientid;
+$aParams['campaignid']  = $campaignid;
+$aParams['bannerid']    = $bannerid;
+$aZonesIds = null; 
+if (empty($zoneid) && !empty($affiliateid)) {
+    $aZonesIds = Admin_DA::fromCache('getZonesIdsByAffiliateId', $affiliateid);
+}
+if(!empty($zoneid)) {
+    $aZonesIds = array($zoneid);
+}
+$aParams['zonesIds'] = $aZonesIds;
+
+
+
+
+
+
+
+$aParams['perPage'] = '999999';
+$aConversions = Admin_DA::fromCache('getConversions', $aParams + $aDates);
+
+
+$aParams['totalItems'] = count($aConversions);
+$aParams['perPage'] = MAX_getStoredValue('setPerPage', 15);
+
+if (!isset($pageID) || $pageID == 1) {
+    $aParams['startRecord'] = 0;
+} else {
+    $aParams['startRecord'] = (MAX_getStoredValue('pageID', 1) * $aParams['perPage']) - $aParams['perPage'];
+}
+
+
+
+$aConversions = Admin_DA::fromCache('getConversions', $aParams + $aDates);
+
+
+$aParams['perPage'] = MAX_getStoredValue('setPerPage', 15);
+
+
+$pager = & Pager::factory($aParams);
+$per_page = $pager->_perPage;
+$pager->history = $pager->getPageData();
+$pager->pagerLinks = $pager->getLinks();
+
+$pager->pagerLinks = $pager->pagerLinks['all'];
+$pager->pagerSelect = preg_replace('/(<select.*?)(>)/i', '$1 id="setPerPageSelect"$2', $pager->getPerPageSelectBox(15, 120, 15));
+
+
+if (!empty($aConversions)) {
+
+    if($editStatuses) {
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        if ($period_preset == 'specific') {
+            
+            
+        }
+        
+        
+        
+        
+    }
+
+    
+
+    $column1 = _getHtmlHeaderColumn($GLOBALS['strDateTime'], 'date_time', $pageName, $entityIds, $listorder, $orderdirection);
+    $column2 = _getHtmlHeaderColumn($GLOBALS['strStatus'], 'connection_status', $pageName, $entityIds, $listorder, $orderdirection);
+    $column3 = _getHtmlHeaderColumn($GLOBALS['strTrackerID'], 'tracker_id', $pageName, $entityIds, $listorder, $orderdirection);
+    $column4 = _getHtmlHeaderColumn($GLOBALS['strTrackerName'], 'trackername', $pageName, $entityIds, $listorder, $orderdirection);
+    $column5 = _getHtmlHeaderColumn($GLOBALS['strCampaignID'], 'campaignid', $pageName, $entityIds, $listorder, $orderdirection);
+    $column6 = _getHtmlHeaderColumn($GLOBALS['strCampaignName'], 'campaignname', $pageName, $entityIds, $listorder, $orderdirection);
+
+    &nbsp;$column1</td>
+            <td align='center' style='padding: 0 4px'>$column2</td>
+            <td align='$phpAds_TextAlignLeft' style='padding: 0 4px'>$column3</td>
+            <td align='$phpAds_TextAlignLeft' style='padding: 0 4px'>$column4</td>
+            <td align='$phpAds_TextAlignLeft' style='padding: 0 4px'>$column5</td>
+            <td align='$phpAds_TextAlignLeft' style='padding: 0 4px'>$column6</td>
+        </tr>
+        <tr height='1'><td colspan='6' bgcolor='
+
+    
+    $i=0;
+
+    $statusesColors = array(
+        MAX_CONNECTION_STATUS_IGNORE      => 'grey',
+        MAX_CONNECTION_STATUS_PENDING     => 'darkblue',
+        MAX_CONNECTION_STATUS_ONHOLD      => 'blue',
+        MAX_CONNECTION_STATUS_APPROVED    => 'green',
+        MAX_CONNECTION_STATUS_DISAPPROVED => 'red',
+        MAX_CONNECTION_STATUS_DUPLICATE   => 'grey',
+    );
+
+    $totalRequests = 0;
+    $totalViews = 0;
+    $totalClicks = 0;
+    $totalConversions = 0;
+
+    
+    MAX_sortArray($aConversions, ($listorder == 'id' ? 'date_time' : $listorder), $orderdirection == 'up');
+    foreach($aConversions as $conversionId => $conversion) {
+        $conversionExpanded = MAX_isExpanded($conversionId, $expand, $aNodes, 'a');
+
+            $bgcolor = ($i++ % 2 == 0) ? " bgcolor='
+
+            $connectionStatus = $GLOBALS['_MAX']['STATUSES'][$conversion['connection_status']];
+            $translatedStatus = $GLOBALS[$connectionStatus];
+
+            
+            if ($conversionExpanded) {
+                <a href='".htmlspecialchars("$pageName?collapse=a$conversionId&$addUrl", ENT_QUOTES)."'><img src='" . OX::assetPath() . "/images/triangle-d.gif' align='absmiddle' border='0'></a>&nbsp;";
+            } else {
+                <a href='".htmlspecialchars("$pageName?expand=a$conversionId&$addUrl", ENT_QUOTES)."'><img src='" . OX::assetPath() . "/images/$phpAds_TextDirection/triangle-l.gif' align='absmiddle' border='0'></a>&nbsp;";
+            }
+
+            $aConversionStatuses = array(
+                MAX_CONNECTION_STATUS_IGNORE,
+                MAX_CONNECTION_STATUS_PENDING,
+                MAX_CONNECTION_STATUS_ONHOLD,
+                MAX_CONNECTION_STATUS_APPROVED,
+                MAX_CONNECTION_STATUS_DISAPPROVED,
+                MAX_CONNECTION_STATUS_DUPLICATE,
+            );
+
+            
+            if ($editStatuses) {
+                
+                
+                foreach($GLOBALS['_MAX']['STATUSES'] as $statusId => $statusStr) {
+                    <label><input type='radio' name='statusIds[$conversionId]' value='$statusId' ".($conversion['connection_status']==$statusId?' checked':'')." tabindex='".($tabindex++)."'>{$GLOBALS[$statusStr]}</label>";
+                }
+                
+            } else {
+                
+            }
+            
+
+        if ($conversionExpanded) {
+            $aConVariables = Admin_DA::fromCache('getConnectionVariables', $conversionId);
+
+            
+
+            switch ($conversion['connection_action']) {
+                case MAX_CONNECTION_AD_CLICK:   $action = 'Click'; break;
+                case MAX_CONNECTION_AD_ARRIVAL: $action = 'Arrival'; break;
+                case MAX_CONNECTION_MANUAL:     $action = 'Manual'; break;
+                default:                        $action = 'View'; break;
+            }
+
+            $connectionType = $GLOBALS[$GLOBALS['_MAX']['CONN_TYPES'][$conversion['connection_type']]];
+
+            $eventDateStamp = strtotime($conversion['date_time']);
+
+            $secondsLeft = $eventDateStamp - strtotime($conversion['connection_date_time']);
+
+            $days = intval($secondsLeft / 86400);  
+            $partDay = $secondsLeft - ($days * 86400);
+            $hours = intval($partDay / 3600);  
+            $partHour = $partDay - ($hours * 3600);
+            $minutes = intval($partHour / 60);  
+            $seconds = $partHour - ($minutes * 60);
+
+            $windowDelay = $days."d ".$hours."h ".$minutes."m ".$seconds."s";
+
+            
+            if (!is_null($conversion['comments'])) {
+                
+            }
+            
+            foreach($aConVariables as $conVariable) {
+                
+                if (OA_Permission::isAccount(OA_ACCOUNT_TRAFFICKER) && $conVariable['hidden'] == 't') {
+                    continue;
+                }
+                 color: darkgrey'>".
+                        htmlspecialchars(empty($conVariable['description']) ? $conVariable['name'] : $conVariable['description']).
+                        "</th><td style='padding-left: 8px'>".htmlspecialchars($conVariable['value'])."</td></tr>";
+            }
+            
+                
+        }
+        
+    <a href='".htmlspecialchars("$pageName?$addUrl&expand=all", ENT_QUOTES)."' accesskey='$keyExpandAll'>$strExpandAll</a>&nbsp;&nbsp;|&nbsp;&nbsp;<img src='" . OX::assetPath() . "/images/$phpAds_TextDirection/triangle-l.gif' align='absmiddle' border='0'>&nbsp;<a href='$pageName?$addUrl&amp;expand=none' accesskey='$keyCollapseAll'>$strCollapseAll</a>&nbsp;&nbsp;</td>
+
+        </tr>";
+    
+    if($editStatuses) {
+             
+    }
+
+     $pager->pagerLinks &nbsp;&nbsp;</td>
+
+        </tr>
+
+        </table>
+        <br /><br />
+        ";
+
+    if($editStatuses) {
+        
+    }
+
+    
+
+    $getValues = preg_split('/&/D', $_SERVER['QUERY_STRING']);
+    foreach ($getValues as $record) {
+        $filed = explode('=', $record);
+        if ($filed[0] != 'setPerPage' && $filed[0] != 'pageID') {
+            
+        }
+    }
+
+    
+    
+
+    
+
+
+
+function updatePerPage()
+{
+    perPage = $("
+    $form = $("
+
+    $("
+
+    $form.get(0).submit();
+}
+
+-->
+</script>';
+
+} else {
+    
+}
+
+
+$session['prefs'][$pageName]['hideinactive'] = $hideinactive;
+$session['prefs'][$pageName]['listorder'] = $listorder;
+$session['prefs'][$pageName]['nodes'] = implode (",", $aNodes);
+$session['prefs'][$pageName]['orderdirection'] = $orderdirection;
+$session['prefs'][$pageName]['day'] = $day;
+$session['prefs'][$pageName]['howLong'] = $howLong;
+$session['prefs'][$pageName]['hour'] = $hour;
+$session['prefs'][$pageName]['editStatuses'] = $editStatuses;
+$session['prefs']['GLOBALS']['period_preset'] = $period_preset;
+$session['prefs']['GLOBALS']['period_start'] = $period_start;
+$session['prefs']['GLOBALS']['period_end'] = $period_end;
+phpAds_SessionDataStore();
+
+
+phpAds_PageFooter();
+
+?>

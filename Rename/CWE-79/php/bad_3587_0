@@ -1,0 +1,204 @@
+<?php
+    define('AJAX', true);
+
+
+    
+    $var_0 = MainController::current();
+
+    
+    $var_1 = Route::current($var_0);
+
+    if (!$var_2->var_3->can("view_site"))
+        if ($var_5->exists("can_not_view_site"))
+            $var_5->call("can_not_view_site");
+        else
+            show_403(__("Access Denied"), __("You are not allowed to view this site."));
+
+    switch($_POST['action']) {
+        case "edit_post":
+            if (!isset($_POST['id']))
+                error(__("No ID Specified"), __("Please specify an ID of the post you would like to edit."));
+
+            $var_8 = new class_0($_POST['id'], array("filter" => false, "drafts" => true));
+
+            if ($var_8->var_9) {
+                header("HTTP/1.1 404 Not Found");
+                $var_5->call("not_found");
+                var_10;
+            }
+
+            if (!$var_8->editable())
+                show_403(__("Access Denied"), __("You do not have sufficient privileges to edit posts."));
+
+            $var_12 = $var_8->title();
+            $var_13 = var_14."/forms/feathers/".$var_8->var_15.".php";
+            $var_16 = var_17."/".$var_8->var_15."/fields.php";
+
+            $var_18 = array();
+            Trigger::current()->filter($var_18, array("edit_post_options", "post_options"), $var_8);
+
+            $var_0->display("forms/post/edit", array("post" => $var_8,
+                                                    "feather" => Feathers::$var_21[$var_8->var_15],
+                                                    "options" => $var_18,
+                                                    "groups" => Group::find(array("order" => "id ASC"))));
+            break;
+
+        case "delete_post":
+            $var_8 = new class_0($_POST['id'], array("drafts" => true));
+
+            if ($var_8->var_9) {
+                header("HTTP/1.1 404 Not Found");
+                $var_5->call("not_found");
+                var_10;
+            }
+
+            if (!$var_8->deletable())
+                show_403(__("Access Denied"), __("You do not have sufficient privileges to delete this post."));
+
+            class_0::delete($_POST['id']);
+            break;
+
+        case "view_post":
+            fallback($_POST['offset'], 0);
+            fallback($_POST['context']);
+
+            $var_23 = (isset($_POST['reason'])) ? $_POST['reason'] : "" ;
+
+            if (isset($_POST['id']))
+                $var_8 = new class_0($_POST['id'], array("drafts" => true));
+
+            if ($var_8->var_9) {
+                header("HTTP/1.1 404 Not Found");
+                $var_5->call("not_found");
+                var_10;
+            }
+
+            $var_0->display("feathers/".$var_8->var_15, array("post" => $var_8, "ajax_reason" => $var_23));
+            break;
+
+        case "preview":
+            if (empty($_POST['content']))
+                break;
+
+            $var_5->filter($_POST['content'],
+                             array("preview_".$_POST['feather'], "preview"),
+                             $_POST['field'],
+                             $_POST['feather']);
+
+            
+            break;
+
+        case "check_confirm":
+            if (!$var_2->var_3->can("toggle_extensions"))
+                show_403(__("Access Denied"), __("You do not have sufficient privileges to enable/disable extensions."));
+
+            $var_24 = ($_POST['type'] == "module") ? var_25 : var_17 ;
+            $var_26 = YAML::load($var_24."/".$_POST['check']."/info.yaml");
+            fallback($var_26["confirm"], "");
+
+            if (!empty($var_26["confirm"]))
+                
+
+            break;
+
+        case "organize_pages":
+            foreach ($_POST['parent'] as $var_27 => $var_28)
+                $var_29->update("pages", array("id" => $var_27), array("parent_id" => $var_28));
+
+            foreach ($_POST['page_list'] as $var_31 => $var_32)
+                $var_29->update("pages", array("id" => $var_32), array("list_order" => $var_31));
+
+            break;
+
+        case "enable_module": case "enable_feather":
+            $var_33 = ($_POST['action'] == "enable_module") ? "module" : "feather" ;
+
+            if (!$var_2->var_3->can("change_settings"))
+                if ($var_33 == "module")
+                    exit("{ \"notifications\": [\"".__("You do not have sufficient privileges to enable/disable modules.")."\"] }");
+                else
+                    exit("{ \"notifications\": [\"".__("You do not have sufficient privileges to enable/disable feathers.")."\"] }");
+
+            if (($var_33 == "module" and module_enabled($_POST['extension'])) or
+                ($var_33 == "feather" and feather_enabled($_POST['extension'])))
+                exit("{ \"notifications\": [] }");
+
+            $var_34 = ($var_33 == "module") ? "enabled_modules" : "enabled_feathers" ;
+            $var_35        = ($var_33 == "module") ? var_25 : var_17 ;
+
+            if (file_exists($var_35."/".$_POST["extension"]."/locale/".$var_36->var_37.".mo"))
+                load_translator($_POST["extension"], $var_35."/".$_POST["extension"]."/locale/".$var_36->var_37.".mo");
+
+            $var_26 = YAML::load($var_35."/".$_POST["extension"]."/info.yaml");
+            fallback($var_26["uploader"], false);
+            fallback($var_26["notifications"], array());
+
+            foreach ($var_26["notifications"] as &$var_38)
+                $var_38 = addslashes(__($var_38, $_POST["extension"]));
+
+
+            if ($var_26["uploader"])
+                if (!file_exists(var_39.$var_36->var_40))
+                    $var_26["notifications"][] = _f("Please create the <code>%s</code> directory at your Chyrp install's root and CHMOD it to 777.", array($var_36->var_40));
+                elseif (!is_writable(var_39.$var_36->var_40))
+                    $var_26["notifications"][] = _f("Please CHMOD <code>%s</code> to 777.", array($var_36->var_40));
+
+            $var_41 = camelize($_POST["extension"]);
+
+            if ($var_33 == "module" and !is_subclass_of($var_41, "Modules"))
+                error("", __("Item is not a module."));
+
+            if ($var_33 == "feather" and !is_subclass_of($var_41, "Feathers"))
+                error("", __("Item is not a feather."));
+
+            if (method_exists($var_41, "__install"))
+                call_user_func(array($var_41, "__install"));
+
+            $var_42 = $var_36->$var_34;
+            array_push($var_42, $_POST["extension"]);
+            $var_36->set($var_34, $var_42);
+
+            exit('{ "notifications": ['.
+                 (!empty($var_26["notifications"]) ? '"'.implode('", "', $var_26["notifications"]).'"' : "").
+                 '] }');
+
+            break;
+
+        case "disable_module": case "disable_feather":
+            $var_33 = ($_POST['action'] == "disable_module") ? "module" : "feather" ;
+
+            if (!$var_2->var_3->can("change_settings"))
+                if ($var_33 == "module")
+                    exit("{ \"notifications\": [\"".__("You do not have sufficient privileges to enable/disable modules.")."\"] }");
+                else
+                    exit("{ \"notifications\": [\"".__("You do not have sufficient privileges to enable/disable feathers.")."\"] }");
+
+            if (($var_33 == "module" and !module_enabled($_POST['extension'])) or
+                ($var_33 == "feather" and !feather_enabled($_POST['extension'])))
+                exit("{ \"notifications\": [] }");
+
+            $var_41 = camelize($_POST["extension"]);
+            if (method_exists($var_41, "__uninstall"))
+                call_user_func(array($var_41, "__uninstall"), ($_POST['confirm'] == "1"));
+
+            $var_34 = ($var_33 == "module") ? "enabled_modules" : "enabled_feathers" ;
+            $var_36->set($var_34,
+                         array_diff($var_36->$var_34, array($_POST['extension'])));
+
+            exit('{ "notifications": [] }');
+
+            break;
+
+        case "reorder_feathers":
+            $var_44 = oneof(@$_POST['list'], $var_36->var_45);
+            foreach ($var_44 as &$var_46)
+                $var_46 = preg_replace("/feathers\[([^\]]+)\]/", "\\1", $var_46);
+
+            $var_36->set("enabled_feathers", $var_44);
+            break;
+    }
+
+    $var_5->call("ajax");
+
+    if (!empty($_POST['action']))
+        $var_5->call("ajax_".$_POST['action']);

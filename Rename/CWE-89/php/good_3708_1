@@ -1,0 +1,824 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+class class_0 extends var_0 {
+	
+	public function fn_0()
+	{
+		parent::fn_0();
+
+		$var_1->var_2->var_3 = 'reports';
+	}
+
+
+	
+	public function fn_1($var_4 = 1)
+	{
+		$var_1->var_2->var_5 = new class_1('members/reports');
+		$var_1->var_2->var_5->var_6 = Kohana::lang('ui_admin.reports');
+
+
+		if ( ! empty($_GET['status']))
+		{
+			$var_7 = $_GET['status'];
+
+			if (strtolower($var_7) == 'a')
+			{
+				$var_8 = 'incident_active = 0';
+			}
+			elseif (strtolower($var_7) == 'v')
+			{
+				$var_8 = 'incident_verified = 0';
+			}
+			else
+			{
+				$var_7 = "0";
+				$var_8 = '1=1';
+			}
+		}
+		else
+		{
+			$var_7 = "0";
+			$var_8 = "1=1";
+		}
+
+		
+		if (isset($_GET['k']))
+		{
+			
+			
+			$var_9 = preg_replace('/[^\w+]\w*/', '', $_GET['k']);
+			
+			
+			$var_9 = strip_tags($var_9);
+			
+			
+			
+			$var_9 = $var_1->var_10->xss_clean($var_9);
+			
+			$var_8 .= " AND (".$var_1->fn_2($var_9).")";
+		}
+		else
+		{
+			$var_9 = "";
+		}
+
+		
+		$var_13 = FALSE;
+		$var_14 = FALSE;
+		$var_15 = "";
+		
+		if ($var_16)
+		{
+			
+			$var_17 = Validation::factory($var_16);
+
+			 
+			$var_17->pre_filter('trim', TRUE);
+
+			
+			$var_17->add_rules('action','required', 'alpha', 'length[1,1]');
+			$var_17->add_rules('incident_id.*','required','numeric');
+
+			if ($var_17->validate())
+			{
+				
+				if ($var_17->var_21 == 'd')	
+				{
+					foreach ($var_17->var_22 as $var_23)
+					{
+						$var_24 = ORM::factory('incident')
+							->where('user_id', $var_1->var_26->var_27)
+							->find($var_23);
+						if ($var_24->var_29 == true)
+						{
+							$var_22 = $var_24->var_27;
+							$var_30 = $var_24->var_30;
+							$var_24->delete();
+
+							
+							ORM::factory('location')->where('id',$var_30)->delete_all();
+
+							
+							ORM::factory('incident_category')->where('incident_id',$var_22)->delete_all();
+
+							
+							ORM::factory('incident_lang')->where('incident_id',$var_22)->delete_all();
+
+							
+							foreach (ORM::factory('media')->where('incident_id',$var_22)->where('media_type', 1) as $var_33) 
+							{
+								fn_11($var_33->var_27);
+							}
+
+							
+							ORM::factory('media')->where('incident_id',$var_22)->delete_all();
+
+							
+							ORM::factory('incident_person')->where('incident_id',$var_22)->delete_all();
+
+							
+							$var_34 = ORM::factory('message')->where('incident_id',$var_22)->find();
+							if ($var_34->var_29)
+							{
+								$var_34->var_22 = 0;
+								$var_34->save();
+							}
+
+							
+							ORM::factory('comment')->where('incident_id',$var_22)->delete_all();
+
+							
+							Event::run('ushahidi_action.report_delete', $var_24);
+						}
+					}
+					$var_15 = utf8::strtoupper(Kohana::lang('ui_admin.deleted'));
+				}
+				$var_14 = TRUE;
+			}
+			else
+			{
+				$var_13 = TRUE;
+			}
+
+		}
+
+		
+		$var_36 = new class_2(array(
+			'query_string'	 => 'page',
+			'items_per_page' => intval(Kohana::config('settings.items_per_page_admin')),
+			'total_items'	 => ORM::factory('incident')
+				->join('location', 'incident.location_id', 'location.id','INNER')
+				->where($var_8)
+				->where('user_id', $var_1->var_26->var_27)
+				->count_all()
+			));
+
+		$var_39 = ORM::factory('incident')
+			->join('location', 'incident.location_id', 'location.id','INNER')
+			->where($var_8)
+			->where('user_id', $var_1->var_26->var_27)
+			->orderby('incident_dateadd', 'desc')
+			->find_all((int) Kohana::config('settings.items_per_page_admin'), $var_36->var_42);
+
+		$var_43 = array();
+		$var_44 = array();
+		foreach ($var_39 as $var_45)
+		{
+			$var_43[] = $var_45->var_30;
+		}
+		
+		
+		if (count($var_43 ) > 0 ) 
+		{
+			$var_46 = ORM::factory('location')->in('id',implode(',',$var_43))->find_all();
+			$var_48 = array();
+			foreach ($var_46 as $var_49)
+			{
+				$var_48[$var_49->var_27] = $var_49->var_50;
+				$var_44[$var_49->var_27]['country_id'] = $var_49->var_51;
+			}
+		}
+		else
+		{
+			$var_48 = array();
+		}
+
+		$var_1->var_2->var_5->var_48 = $var_48;
+		$var_1->var_2->var_5->var_44 = $var_44;
+
+		
+		$var_52 = array();
+		foreach (ORM::factory('country')->orderby('country')->find_all() as $var_53)
+		{
+			
+			$var_54 = $var_53->var_53;
+			if (strlen($var_54) > 35)
+			{
+				$var_54 = substr($var_54, 0, 35) . "...";
+			}
+			$var_52[$var_53->var_27] = $var_54;
+		}
+
+		$var_1->var_2->var_5->var_52 = $var_52;
+		$var_1->var_2->var_5->var_39 = $var_39;
+		$var_1->var_2->var_5->var_36 = $var_36;
+		$var_1->var_2->var_5->var_13 = $var_13;
+		$var_1->var_2->var_5->var_14 = $var_14;
+		$var_1->var_2->var_5->var_15 = $var_15;
+
+		
+		$var_1->var_2->var_5->var_55 = $var_36->var_55;
+
+		
+		$var_1->var_2->var_5->var_7 = $var_7;
+
+		
+		$var_1->var_2->var_56 = new class_1('admin/reports/reports_js');
+	}
+
+
+	
+	public function fn_3($var_27 = FALSE, $var_57 = FALSE)
+	{
+		$var_58 = new class_3();
+
+		$var_1->var_2->var_5 = new class_1('members/reports_edit');
+		$var_1->var_2->var_5->var_6 = Kohana::lang('ui_admin.create_report');
+
+		
+		$var_59 = array(
+			'location_id' => '',
+			'form_id' => '1',
+			'locale' => '',
+			'incident_title' => '',
+			'incident_description' => '',
+			'incident_date' => '',
+			'incident_hour' => '',
+			'incident_minute' => '',
+			'incident_ampm' => '',
+			'latitude' => '',
+			'longitude' => '',
+			'geometry' => array(),
+			'location_name' => '',
+			'country_id' => '',
+			'country_name' => '',
+			'incident_category' => array(),
+			'incident_news' => array(),
+			'incident_video' => array(),
+			'incident_photo' => array(),
+			'person_first' => '',
+			'person_last' => '',
+			'person_email' => '',
+			'custom_field' => array(),
+			'incident_zoom' => '',
+			'incident_source'=> '',
+			'incident_information' => ''
+		);
+
+		
+		
+		$var_60 = $var_59;
+		$var_13 = FALSE;
+		$var_14 = ($var_57 == 'saved');
+
+		
+		$var_59['locale'] = Kohana::config('locale.language');
+		
+		
+		$var_59['country_id'] = Kohana::config('settings.default_country');
+		$var_59['incident_date'] = date("m/d/Y",time());
+		$var_59['incident_hour'] = date('h');
+		$var_59['incident_minute'] = date('i');
+		$var_59['incident_ampm'] = date('a');
+		
+		
+		$var_61 = $var_59['form_id'];
+		$var_59['custom_field'] = customforms::get_custom_form_fields($var_27, $var_61, TRUE);
+
+		
+		$var_1->var_2->var_5->var_62 = Kohana::config('locale.all_languages');
+
+		
+		$var_1->var_2->var_5->var_63 =Category_Model::get_categories();
+
+		
+		$var_1->var_2->var_5->var_64 = $var_1->fn_4();
+		$var_1->var_2->var_5->var_66 = $var_1->fn_5();
+		$var_1->var_2->var_5->var_68 = $var_1->fn_6();
+		
+		$var_1->var_2->var_5->var_70 = $var_1->fn_7();
+
+		
+		$var_52 = array();
+		foreach (ORM::factory('country')->orderby('country')->find_all() as $var_53)
+		{
+			
+			$var_54 = $var_53->var_53;
+			if (strlen($var_54) > 35)
+			{
+				$var_54 = substr($var_54, 0, 35) . "...";
+			}
+			$var_52[$var_53->var_27] = $var_54;
+		}
+		$var_1->var_2->var_5->var_52 = $var_52;
+		
+		
+		$var_59['country_name'] = $var_52[$var_59['country_id']];
+
+		
+		$var_72 = array();
+		foreach (ORM::factory('form')->where('form_active',1)->find_all() as $var_73)
+		{
+			$var_72[$var_73->var_27] = $var_73->var_74;
+		}
+		
+		$var_1->var_2->var_5->var_72 = $var_72;
+
+		
+		
+		$var_1->var_2->var_5->var_45 = $var_1->fn_8($var_27);
+		
+		
+		
+		if (isset($_GET['cid']) AND ! empty($_GET['cid']) ) {
+
+			$var_76 = (int) $_GET['cid'];
+			$var_77 = ORM::factory('checkin', $var_76);
+
+			if ($var_77->var_29)
+			{
+				
+				if ( (int) $var_77->var_22 > 0)
+				{
+					
+					url::redirect('members/reports/edit/'. $var_77->var_22);
+				}
+
+				$var_78 = $var_77->var_79;
+				$var_80 = text::limit_chars(strip_tags($var_78), 100, "...", true);
+				$var_59['incident_title'] = $var_80;
+				$var_59['incident_description'] = $var_78;
+				$var_59['incident_date'] = date('m/d/Y', strtotime($var_77->var_81));
+				$var_59['incident_hour'] = date('h', strtotime($var_77->var_81));
+				$var_59['incident_minute'] = date('i', strtotime($var_77->var_81));
+				$var_59['incident_ampm'] = date('a', strtotime($var_77->var_81));
+
+				
+				if ($var_77->var_82->var_29)
+				{
+					$var_59['location_id'] = $var_77->var_30;
+					$var_59['latitude'] = $var_77->var_82->var_83;
+					$var_59['longitude'] = $var_77->var_82->var_84;
+					$var_59['location_name'] = $var_77->var_82->var_50;
+				}
+			}
+		}
+		
+
+		
+		if ($var_16)
+		{
+			
+			$var_17 = array_merge($var_16,$var_85);
+			
+			if (reports::validate($var_17))
+			{
+				
+				$var_82 = new class_4();
+				reports::save_location($var_17, $var_82);
+
+				
+				$var_45 = new class_5();
+				reports::save_report($var_17, $var_45, $var_82->var_27);
+
+				
+				reports::save_report_geometry($var_17, $var_45);
+				
+				
+				reports::save_category($var_17, $var_45);
+
+				
+				reports::save_media($var_17, $var_45);
+
+				
+				reports::save_custom_fields($var_17, $var_45);
+
+				
+				reports::save_personal_info($var_17, $var_45);
+				
+				
+				if (isset($var_76) AND $var_76 != "")
+				{
+					$var_77 = ORM::factory('checkin', $var_76);
+					if ($var_77->var_29)
+					{
+						$var_77->var_22 = $var_45->var_27;
+						$var_77->save();
+					
+						
+						foreach ($var_77->var_86 as $var_86)
+						{
+							$var_86->var_22 = $var_45->var_27;
+							$var_86->save();
+						}
+					}
+				}
+
+				
+				
+				
+				Event::run('ushahidi_action.report_submit_members', $var_17);
+
+
+				
+				if ($var_17->var_35 == 1)
+				{
+					
+					url::redirect('members/reports/edit/'. $var_45->var_27 .'/saved');
+				}
+				else
+				{
+					
+					url::redirect('members/reports/');
+				}
+			}
+
+			
+			else
+			{
+				
+				$var_59 = arr::overwrite($var_59, $var_17->as_array());
+
+				
+				$var_60 = arr::overwrite($var_60, $var_17->errors('report'));
+				$var_13 = TRUE;
+			}
+		}
+		else
+		{
+			if ($var_27)
+			{
+				
+				$var_45 = ORM::factory('incident')
+					->where('user_id', $var_1->var_26->var_27)
+					->find($var_27);
+				if ($var_45->var_29 == true)
+				{
+					
+					$var_88 = array();
+					foreach($var_45->var_88 as $var_89)
+					{
+						$var_88[] = $var_89->var_90;
+					}
+
+					
+					$var_91 = array();
+					$var_92 = array();
+					$var_93 = array();
+					foreach($var_45->var_86 as $var_86)
+					{
+						if ($var_86->var_94 == 4)
+						{
+							$var_91[] = $var_86->var_95;
+						}
+						elseif ($var_86->var_94 == 2)
+						{
+							$var_92[] = $var_86->var_95;
+						}
+						elseif ($var_86->var_94 == 1)
+						{
+							$var_93[] = $var_86->var_95;
+						}
+					}
+					
+					
+					$var_96 = "SELECT AsText(geometry) as geometry, geometry_label, 
+						geometry_comment, geometry_color, geometry_strokewidth 
+						FROM ".Kohana::config('database.default.table_prefix')."geometry 
+						WHERE incident_id = ?";
+					$var_97 = $var_58->query($var_96, $var_27);
+					foreach ( $var_97 as $var_23 )
+					{
+						$var_98 = array(
+							"geometry" => $var_23->var_98,
+							"label" => $var_23->var_99,
+							"comment" => $var_23->var_100,
+							"color" => $var_23->var_101,
+							"strokewidth" => $var_23->var_102
+						);
+						$var_59['geometry'][] = json_encode($var_98);
+					}
+					
+					
+					$var_103 = array(
+						'location_id' => $var_45->var_82->var_27,
+						'form_id' => $var_45->var_61,
+						'locale' => $var_45->var_104,
+						'incident_title' => $var_45->var_80,
+						'incident_description' => $var_45->var_78,
+						'incident_date' => date('m/d/Y', strtotime($var_45->var_105)),
+						'incident_hour' => date('h', strtotime($var_45->var_105)),
+						'incident_minute' => date('i', strtotime($var_45->var_105)),
+						'incident_ampm' => date('a', strtotime($var_45->var_105)),
+						'latitude' => $var_45->var_82->var_83,
+						'longitude' => $var_45->var_82->var_84,
+						'location_name' => $var_45->var_82->var_50,
+						'country_id' => $var_45->var_82->var_51,
+						'incident_category' => $var_88,
+						'incident_news' => $var_91,
+						'incident_video' => $var_92,
+						'incident_photo' => $var_93,
+						'person_first' => $var_45->var_106->var_107,
+						'person_last' => $var_45->var_106->var_108,
+						'person_email' => $var_45->var_106->var_109,
+						'incident_source' => '',
+						'incident_information' => '',
+						'custom_field' => customforms::get_custom_form_fields($var_27, $var_45->var_61, TRUE),
+						'incident_zoom' => $var_45->var_110
+					);
+
+					
+					$var_59 = arr::overwrite($var_59, $var_103);
+				}
+				else
+				{
+					
+					url::redirect('members/reports/');
+				}
+
+			}
+		}
+
+		$var_1->var_2->var_5->var_27 = $var_27;
+		$var_1->var_2->var_5->var_59 = $var_59;
+		$var_1->var_2->var_5->var_60 = $var_60;
+		$var_1->var_2->var_5->var_13 = $var_13;
+		$var_1->var_2->var_5->var_14 = $var_14;
+
+		
+		$var_111 = customforms::get_custom_form_fields($var_27, $var_61, FALSE);
+		$var_1->var_2->var_5->var_111 = $var_111;
+
+		
+		$var_112 = ORM::factory('incident')->where('id < ', $var_27)->orderby('id','desc')->find();
+		$var_113 = $var_112->var_29
+		    ? url::base().'members/reports/edit/'.$var_112->var_27
+		    : url::base().'members/reports/';
+		$var_114 = ORM::factory('incident')->where('id > ', $var_27)->orderby('id','desc')->find();
+
+		$var_115 = $var_114->var_29
+		    ? url::base().'members/reports/edit/'.$var_114->var_27
+		    : url::base().'members/reports/';
+		$var_1->var_2->var_5->var_113 = $var_113;
+		$var_1->var_2->var_5->var_115 = $var_115;
+
+		
+		$var_1->var_2->var_116 = TRUE;
+		$var_1->var_2->var_117 = TRUE;
+		$var_1->var_2->var_118 = TRUE;
+		$var_1->var_2->var_119 = TRUE;
+		
+		$var_1->var_2->var_56 = new class_1('reports/submit_edit_js');
+		$var_1->var_2->var_56->var_120 = FALSE;
+		$var_1->var_2->var_56->var_121 = Kohana::config('settings.default_map');
+		$var_1->var_2->var_56->var_122 = Kohana::config('settings.default_zoom');
+
+		if ( ! $var_59['latitude'] OR ! $var_59['latitude'])
+		{
+			$var_1->var_2->var_56->var_83 = Kohana::config('settings.default_lat');
+			$var_1->var_2->var_56->var_84 = Kohana::config('settings.default_lon');
+		}
+		else
+		{
+			$var_1->var_2->var_56->var_83 = $var_59['latitude'];
+			$var_1->var_2->var_56->var_84 = $var_59['longitude'];
+		}
+		
+		$var_1->var_2->var_56->var_110 = $var_59['incident_zoom'];
+		$var_1->var_2->var_56->var_123 = $var_59['geometry'];
+
+		
+		$var_1->var_2->var_5->var_124 = $var_1->fn_9();
+		$var_1->var_2->var_5->var_126 = $var_1->fn_10();
+		
+		
+		$var_128 = new class_6($var_1->var_2->var_56 , 'Normal', FALSE, FALSE);
+		$var_1->var_2->var_56 = $var_128->pack();
+	}
+	
+
+	
+	public function fn_11 ($var_27)
+	{
+		$var_1->var_130 = FALSE;
+		$var_1->var_2 = "";
+
+		if ($var_27)
+		{
+			Media_Model::delete_photo($var_27);
+		}
+	}
+
+	
+
+	
+	
+	private function fn_8( $var_27 )
+	{
+		$var_45 = ORM::factory('incident', $var_27);
+
+		if ($var_27)
+		{
+			$var_45 = ORM::factory('incident', $var_27);
+			return $var_45;
+		}
+		return "0";
+	}
+
+	
+	private function fn_4()
+	{
+		for ($var_131=1; $var_131 <= 12 ; $var_131++)
+		{
+			$var_64[sprintf("%02d", $var_131)] = sprintf("%02d", $var_131);		
+		}
+		return $var_64;
+	}
+
+	private function fn_5()
+	{
+		for ($var_132=0; $var_132 <= 59 ; $var_132++)
+		{
+			$var_66[sprintf("%02d", $var_132)] = sprintf("%02d", $var_132);	
+		}
+		return $var_66;
+	}
+
+	private function fn_6()
+	{
+		return $var_68 = array('pm'=>Kohana::lang('ui_admin.pm'),'am'=>Kohana::lang('ui_admin.am'));
+	}
+	
+	private function fn_7()
+	{
+		for ($var_131 = 0.5; $var_131 <= 8 ; $var_131 += 0.5)
+		{
+			$var_70["$var_131"] = $var_131;
+		}	
+		return $var_70;
+	}
+
+	
+	private function fn_10()
+	{
+	 return "<script type=\"text/javascript\">
+				$(document).ready(function() {
+				$('
+						onSubmit: function(hsb, hex, rgb) {
+							$('
+						},
+						onChange: function(hsb, hex, rgb) {
+							$('
+						},
+						onBeforeShow: function () {
+							$(this).ColorPickerSetColor(this.value);
+						}
+					})
+				.bind('keyup', function(){
+					$(this).ColorPickerSetColor(this.value);
+				});
+				});
+			</script>";
+	}
+
+	private function fn_9()
+	{
+		return "<script type=\"text/javascript\">
+				$(document).ready(function() {
+				$(\"
+				showOn: \"both\",
+				buttonImage: \"" . url::base() . "media/img/icon-calendar.gif\",
+				buttonImageOnly: true
+				});
+				});
+			</script>";
+	}
+
+
+	private function fn_12()
+	{
+		return "<script type=\"text/javascript\">
+				$(document).ready(function() {
+				$('a
+				$('
+				return false;
+				});
+				});
+			</script>";
+	}
+
+
+	
+	public function fn_13()
+	{
+		$var_1->var_2 = "";
+		$var_1->var_130 = FALSE;
+
+		isset($var_16['form_id']) ? $var_61 = $var_16['form_id'] : $var_61 = "1";
+		isset($var_16['incident_id']) ? $var_22 = $var_16['incident_id'] : $var_22 = "";
+
+		$var_133 = "";
+		$var_134 = array();
+		$var_135 = ORM::factory('form', $var_61)->orderby('field_position','asc');
+
+		foreach ($var_135->var_136 as $var_137)
+		{
+			$var_134[$var_137->var_27] = array(
+				'field_id' => $var_137->var_27,
+				'field_name' => $var_137->var_138,
+				'field_type' => $var_137->var_139,
+				'field_required' => $var_137->var_140,
+				'field_maxlength' => $var_137->var_141,
+				'field_height' => $var_137->var_142,
+				'field_width' => $var_137->var_143,
+				'field_isdate' => $var_137->var_144,
+				'field_response' => ''
+				);
+
+			
+			foreach ($var_137->var_145 as $var_145)
+			{
+				if ($var_145->var_22 = $var_22)
+				{
+					$var_134[$var_137->var_27]['field_response'] = $var_145->var_145;
+				}
+			}
+		}
+
+		foreach ($var_134 as $var_146)
+		{
+			$var_133 .= "<div class=\"row\">";
+			$var_133 .= "<h4>" . $var_146['field_name'] . "</h4>";
+			if ($var_146['field_type'] == 1)
+			{ 
+				
+				if ($var_146['field_isdate'] == 1)
+				{
+					$var_133 .= form::input('custom_field['.$var_146['field_id'].']', $var_146['field_response'],
+						' id="custom_field_'.$var_146['field_id'].'" class="text"');
+					$var_133 .= "<script type=\"text/javascript\">
+							$(document).ready(function() {
+							$(\"
+							showOn: \"both\",
+							buttonImage: \"" . url::base() . "media/img/icon-calendar.gif\",
+							buttonImageOnly: true
+							});
+							});
+						</script>";
+				}
+				else
+				{
+					$var_133 .= form::input('custom_field['.$var_146['field_id'].']', $var_146['field_response'],
+						' id="custom_field_'.$var_146['field_id'].'" class="text custom_text"');
+				}
+			}
+			elseif ($var_146['field_type'] == 2)
+			{ 
+				$var_133 .= form::textarea('custom_field['.$var_146['field_id'].']',
+					$var_146['field_response'], ' class="custom_text" rows="3"');
+			}
+			$var_133 .= "</div>";
+		}
+		
+	}
+
+	
+	private function fn_2($var_9)
+	{
+		$var_147 = '';
+		$var_148 = '';
+
+		
+		
+		$var_149 = array('the', 'and', 'a', 'to', 'of', 'in', 'i', 'is', 'that', 'it',
+		'on', 'you', 'this', 'for', 'but', 'with', 'are', 'have', 'be',
+		'at', 'or', 'as', 'was', 'so', 'if', 'out', 'not');
+
+		$var_150 = explode(' ', $var_9);
+		
+		if (is_array($var_150) && !empty($var_150))
+		{
+			array_change_key_case($var_150, var_151);
+			$var_131 = 0;
+			foreach($var_150 as $var_152)
+			{
+				if (!in_array($var_152,$var_149) && !empty($var_152))
+				{
+					$var_153 = mysql_real_escape_string($var_152);
+					if ($var_131 > 0) {
+						$var_147 = ' OR ';
+					}
+					$var_148 = $var_148.$var_147."incident_title LIKE '%$var_153%' OR incident_description LIKE '%"
+					.$var_153."%' OR location_name LIKE '%$var_153%'";
+					$var_131++;
+				}
+			}
+		}
+
+		if ($var_148)
+		{
+			return $var_148;
+		}
+		else
+		{
+			return "1=1";
+		}
+	}
+
+	private function fn_14($var_154)
+	{
+		$var_154 = stripslashes(htmlspecialchars($var_154));
+		return $var_154;
+	}
+}

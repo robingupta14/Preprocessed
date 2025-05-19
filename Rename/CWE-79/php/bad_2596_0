@@ -1,0 +1,264 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+auth_reauthenticate();
+
+access_ensure_global_level( config_get( 'manage_user_threshold' ) );
+
+$var_0 = config_get( 'manage_users_cookie' );
+$var_1 = '<i class="fa fa-lock fa-lg" alt="' . lang_get( 'protected' ) . '" />';
+
+$var_2          = gpc_get_bool( 'save' );
+$var_3        = utf8_strtoupper( gpc_get_string( 'filter', config_get( 'default_manage_user_prefix' ) ) );
+$var_4   = gpc_get_int( 'page_number', 1 );
+
+if( !$var_2 && !is_blank( gpc_get_cookie( $var_0, '' ) ) ) {
+	$var_5 = explode( ':', gpc_get_cookie( $var_0 ) );
+
+	
+	$var_6 = (bool)$var_5[0];
+
+	
+	if ( isset( $var_5[1] ) ) {
+		$var_7 = $var_5[1];
+	} else {
+		$var_7 = 'username';
+	}
+
+	
+	if ( isset( $var_5[2] ) ) {
+		$var_8 = $var_5[2];
+	} else {
+		$var_8 = 'DESC';
+	}
+
+	
+	if ( isset( $var_5[3] ) ) {
+		$var_9 = $var_5[3];
+	}
+} else {
+	$var_7          = gpc_get_string( 'sort', 'username' );
+	$var_8           = gpc_get_string( 'dir', 'ASC' );
+	$var_6 = gpc_get_bool( 'hideinactive' );
+	$var_9 = gpc_get_bool( 'showdisabled' );
+}
+
+
+if( !db_field_exists( $var_7, db_get_table( 'user' ) ) ) {
+	$var_10 = 'username';
+} else {
+	$var_10 = addslashes( $var_7 );
+}
+
+$var_11 = ( $var_8 == 'ASC' ) ? 'ASC' : 'DESC';
+
+
+$var_12 = ( $var_6 == var_13 ) ? var_13 : var_14;
+$var_15 = '&amp;hideinactive=' . $var_12;
+
+
+$var_16 = ( $var_9 == var_13 ) ? var_13 : var_14;
+$var_17 = '&amp;showdisabled=' . $var_16;
+
+
+if( $var_2 ) {
+	$var_18 = $var_12.':'.$var_10.':'.$var_11.':'.$var_16;
+	gpc_set_cookie( $var_0, $var_18, true );
+}
+
+layout_page_header( lang_get( 'manage_users_link' ) );
+
+layout_page_begin( 'manage_overview_page.php' );
+
+print_manage_menu( 'manage_user_page.php' );
+
+
+
+$var_19 = 7 * var_20;
+$var_21 = 'SELECT COUNT(*) AS new_user_count FROM {user}
+	WHERE ' . db_helper_compare_time( db_param(), '<=', 'date_created', $var_19 );
+$var_22 = db_query( $var_21, array( db_now() ) );
+$var_23 = db_fetch_array( $var_22 );
+$var_24 = $var_23['new_user_count'];
+
+
+
+$var_21 = 'SELECT COUNT(*) AS unused_user_count FROM {user}
+	WHERE ( login_count = 0 ) AND ( date_created = last_visit )';
+$var_22 = db_query( $var_21 );
+$var_23 = db_fetch_array( $var_22 );
+$var_25 = $var_23['unused_user_count'];
+
+
+
+$var_26 = array();
+
+$var_26['ALL'] = lang_get( 'show_all_users' );
+
+for( $var_27 = 'A'; $var_27 != 'AA'; $var_27++ ) {
+	$var_26[$var_27] = $var_27;
+}
+
+for( $var_27 = 0; $var_27 <= 9; $var_27++ ) {
+	$var_26[(string)$var_27] = (string)$var_27;
+}
+$var_26['UNUSED'] = lang_get( 'users_unused' );
+$var_26['NEW'] = lang_get( 'users_new' );
+
+
+
+
+
+
+foreach ( $var_26 as $var_28 => $var_29 ) {
+	if( $var_28 === 'UNUSED' ) {
+		$var_30 = ' title="[' . $var_25 . '] (' . lang_get( 'never_logged_in_title' ) . ')"';
+	} else if( $var_28 === 'NEW' ) {
+		$var_30 = ' title="[' . $var_24 . '] (' . lang_get( '1_week_title' ) . ')"';
+	} else {
+		$var_30 = '';
+	}
+	$var_31 = (string)$var_28 === $var_3 ? 'active' : '';
+		print_manage_user_sort_link( 'manage_user_page.php',
+			$var_29,
+			$var_10,
+			$var_11, null, $var_12, $var_28, $var_16,
+			'btn btn-xs btn-white btn-primary ' . $var_31 );
+}
+
+
+
+
+
+$var_32 = array();
+if( $var_3 === 'ALL' ) {
+	$var_33 = '(1 = 1)';
+} else if( $var_3 === 'UNUSED' ) {
+	$var_33 = '(login_count = 0) AND ( date_created = last_visit )';
+} else if( $var_3 === 'NEW' ) {
+	$var_33 = db_helper_compare_time( db_param(), '<=', 'date_created', $var_19 );
+	$var_32[] = db_now();
+} else {
+	$var_32[] = $var_3 . '%';
+	$var_33 = db_helper_like( 'UPPER(username)' );
+}
+
+$var_34 = 50;
+
+$var_35 = ( ( $var_4 - 1 ) * $var_34 );
+
+$var_36 = 0;
+
+
+$var_22 = '';
+
+if( var_14 != $var_16 ) {
+	$var_33 .= ' AND enabled = ' . db_param();
+	$var_32[] = true;
+}
+
+if( var_13 != $var_12 ) {
+	$var_33 .= ' AND ' . db_helper_compare_time( db_param(), '<', 'last_visit', $var_19 );
+	$var_32[] = db_now();
+}
+
+$var_21 = 'SELECT count(*) as user_count FROM {user} WHERE ' . $var_33;
+$var_22 = db_query( $var_21, $var_32 );
+$var_23 = db_fetch_array( $var_22 );
+$var_36 = $var_23['user_count'];
+
+$var_37 = ceil( $var_36 / $var_34 );
+if( $var_37 < 1 ) {
+	$var_37 = 1;
+}
+
+
+if( $var_4 > $var_37 ) {
+	$var_4 = $var_37;
+}
+
+
+if( $var_4 < 1 ) {
+	$var_4 = 1;
+}
+
+
+$var_21 = 'SELECT * FROM {user} WHERE ' . $var_33 . ' ORDER BY ' . $var_10 . ' ' . $var_11;
+$var_22 = db_query( $var_21, $var_32, $var_34, $var_35 );
+
+$var_38 = array();
+while( $var_23 = db_fetch_array( $var_22 ) ) {
+	$var_38[] = $var_23;
+}
+
+$var_39 = count( $var_38 );
+?>
+<div class="widget-box widget-color-blue2">
+<div class="widget-header widget-header-small">
+<h4 class="widget-title lighter">
+	<i class="ace-icon fa fa-users"></i>
+	<?php  ?> />
+			<span class="lbl"> <?php  ?> />
+			<span class="lbl"> <?php 
+
+	foreach( $var_40 as $var_41 ) {
+		
+		print_manage_user_sort_link( 'manage_user_page.php',
+			lang_get( $var_41 ),
+			$var_41,
+			$var_11, $var_10, $var_12, $var_3, $var_16 );
+		print_sort_icon( $var_11, $var_10, $var_41 );
+		
+	}
+?>
+			</tr>
+		</thead>
+
+		<tbody>
+<?php
+	$var_42 = config_get( 'normal_date_format' );
+	$var_43 = array();
+	for( $var_27=0; $var_27<$var_39; $var_27++ ) {
+		
+		$var_44 = $var_38[$var_27];
+		extract( $var_44, var_45, 'u' );
+
+		$var_46  = date( $var_42, $var_46 );
+		$var_47    = date( $var_42, $var_47 );
+
+		if( !isset( $var_43[$var_48] ) ) {
+			$var_43[$var_48] = get_enum_element( 'access_levels', $var_48 );
+		} ?>
+			<tr>
+				<td><?php
+					if( access_has_global_level( $var_48 ) ) { ?>
+						<a href="manage_user_edit_page.php?user_id=<?php 
+					} ?>
+				</td>
+				<td><?php 
+					} var_49 {
+						var_50=$var_10&var_51;var_52=$var_11");
+		?>
+	</div>
+</div>
+</div>
+</div>
+</div>
+<?php
+layout_page_end();

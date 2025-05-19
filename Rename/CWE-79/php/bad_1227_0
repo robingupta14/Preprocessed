@@ -1,0 +1,428 @@
+<?php
+
+
+
+
+
+class class_0 extends var_0
+{
+    
+    public function fn_0(var_1 $var_2)
+    {
+        if (!$var_3->getAdminUser()->isAllowed('emails') && !$var_3->getAdminUser()->isAllowed('gdpr_data_extractor')) {
+            throw new \var_6("Permission denied, user needs 'emails' permission.");
+        }
+
+        $var_7 = new var_8\var_9\var_10\var_11();
+        if ($var_2->get('documentId')) {
+            $var_7->setCondition('documentId = ' . (int)$var_2->get('documentId'));
+        }
+        $var_7->setLimit($var_2->get('limit'));
+        $var_7->setOffset($var_2->get('start'));
+        $var_7->setOrderKey('sentDate');
+
+        if ($var_2->get('filter')) {
+            if ($var_2->get('filter')) {
+                $var_17 = $var_2->get('filter');
+                if ($var_17 == '*') {
+                    $var_17 = '';
+                }
+
+                $var_17 = str_replace('%', '*', $var_17);
+                $var_17 = htmlspecialchars($var_17, var_18);
+
+                if (strpos($var_17, '@')) {
+                    $var_19 = explode(' ', $var_17);
+                    $var_19 = array_map(function ($var_20) {
+                        if (strpos($var_20, '@')) {
+                            $var_20 = '"' . $var_20 . '"';
+                        }
+
+                        return $var_20;
+                    }, $var_19);
+                    $var_17 = implode(' ', $var_19);
+                }
+
+                $var_21 = '( MATCH (`from`,`to`,`cc`,`bcc`,`subject`,`params`) AGAINST (' . $var_7->quote($var_17) . ' IN BOOLEAN MODE) )';
+
+                if ($var_2->get('documentId')) {
+                    $var_21 .= 'AND documentId = ' . (int)$var_2->get('documentId');
+                }
+
+                $var_7->setCondition($var_21);
+            }
+        }
+
+        $var_7->setOrder('DESC');
+
+        $var_24 = $var_7->load();
+        $var_26 = [];
+
+        if (is_array($var_24)) {
+            foreach ($var_24 as $var_27) {
+                $var_28 = $var_27->getObjectVars();
+                unset($var_28['bodyHtml']);
+                unset($var_28['bodyText']);
+                $var_26[] = $var_28;
+            }
+        }
+
+        return $var_3->adminJson([
+            'data' => $var_26,
+            'success' => true,
+            'total' => $var_7->getTotalCount()
+        ]);
+    }
+
+    
+    public function fn_1(var_1 $var_2, ?var_32 $var_33)
+    {
+        if($var_33) {
+            $var_33->disable();
+        }
+
+        if (!$var_3->getAdminUser()->isAllowed('emails')) {
+            throw new \var_6("Permission denied, user needs 'emails' permission.");
+        }
+
+        $var_35 = $var_2->get('type');
+        $var_36 = var_8\var_9\var_10::getById($var_2->get('id'));
+
+        if ($var_2->get('type') == 'text') {
+            $var_37 = $var_3->get('pimcore.templating.engine.php');
+
+            return new class_1('<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><style>body{background-color:
+        } elseif ($request->get('var_35') == 'html') {
+            return new class_1($var_36->getHtmlLog());
+        } elseif ($var_2->get('type') == 'params') {
+            try {
+                $var_39 = $var_3->decodeJson($var_36->getParams());
+            } catch (\var_6 $var_42) {
+                var_43\var_44::warning('Could not decode JSON param string');
+                $var_39 = [];
+            }
+            foreach ($var_39 as &$var_27) {
+                $var_3->fn_2($var_27);
+            }
+
+            return $var_3->adminJson($var_39);
+        } else {
+            return new class_1('No Type specified');
+        }
+    }
+
+    
+    protected function fn_2(&$var_24, &$var_46 = null)
+    {
+        if (!empty($var_24['objectClass'])) {
+            $var_47 = '\\' . ltrim($var_24['objectClass'], '\\');
+            if (!empty($var_24['objectId']) && is_subclass_of($var_47, '\\Pimcore\\Model\\Element\\ElementInterface')) {
+                $var_48 = $var_47::getById($var_24['objectId']);
+                if (is_null($var_48)) {
+                    $var_24['objectPath'] = '';
+                } else {
+                    $var_24['objectPath'] = $var_48->getRealFullPath();
+                }
+                
+                if (stristr($var_47, '\\Pimcore\\Model') === false) {
+                    $var_50 = '\\' . ltrim(get_parent_class($var_47), '\\');
+                } else {
+                    $var_50 = $var_47;
+                }
+                $var_50 = str_replace('\\Pimcore\\Model\\', '', $var_50);
+                $var_50 = str_replace('_', '\\', $var_50);
+
+                $var_28 = explode('\\', $var_50);
+                if (in_array($var_28[0], ['DataObject', 'Document', 'Asset'])) {
+                    $var_24['objectClassBase'] = $var_28[0];
+                    $var_24['objectClassSubType'] = $var_28[1];
+                }
+            }
+        }
+
+        foreach ($var_24 as &$var_51) {
+            if (is_array($var_51)) {
+                $var_3->fn_2($var_51, $var_24);
+            }
+        }
+        if ($var_24['children']) {
+            foreach ($var_24['children'] as $var_52 => $var_27) {
+                if (is_string($var_52)) { 
+                    unset($var_24['children'][$var_52]);
+                }
+            }
+            $var_24['iconCls'] = 'pimcore_icon_folder';
+            $var_24['data'] = ['type' => 'simple', 'value' => 'Children (' . count($var_24['children']) . ')'];
+        } else {
+            
+            if (!$var_24['iconCls']) {
+                if ($var_24['objectClassBase'] == 'DataObject') {
+                    $var_46['iconCls'] = 'pimcore_icon_object';
+                } elseif ($var_24['objectClassBase'] == 'Asset') {
+                    switch ($var_24['objectClassSubType']) {
+                        case 'Image':
+                            $var_46['iconCls'] = 'pimcore_icon_image';
+                            break;
+                        case 'Video':
+                            $var_46['iconCls'] = 'pimcore_icon_wmv';
+                            break;
+                        case 'Text':
+                            $var_46['iconCls'] = 'pimcore_icon_txt';
+                            break;
+                        case 'Document':
+                            $var_46['iconCls'] = 'pimcore_icon_pdf';
+                            break;
+                        default:
+                            $var_46['iconCls'] = 'pimcore_icon_asset';
+                    }
+                } elseif (strpos($var_24['objectClass'], 'Document') === 0) {
+                    $var_46['iconCls'] = 'pimcore_icon_' . strtolower($var_24['objectClassSubType']);
+                } else {
+                    $var_24['iconCls'] = 'pimcore_icon_text';
+                }
+            }
+
+            $var_24['leaf'] = true;
+        }
+    }
+
+    
+    public function fn_3(var_1 $var_2)
+    {
+        if (!$var_3->getAdminUser()->isAllowed('emails')) {
+            throw new \var_6("Permission denied, user needs 'emails' permission.");
+        }
+
+        $var_53 = false;
+        $var_36 = var_8\var_9\var_10::getById($var_2->get('id'));
+        if ($var_36 instanceof var_8\var_9\var_10) {
+            $var_36->delete();
+            $var_53 = true;
+        }
+
+        return $var_3->adminJson([
+            'success' => $var_53,
+        ]);
+    }
+
+    
+    public function fn_4(var_1 $var_2)
+    {
+        if (!$var_3->getAdminUser()->isAllowed('emails')) {
+            throw new \var_6("Permission denied, user needs 'emails' permission.");
+        }
+
+        $var_53 = false;
+        $var_36 = var_8\var_9\var_10::getById($var_2->get('id'));
+
+        if ($var_36 instanceof var_8\var_9\var_10) {
+            $var_55 = new class_2();
+            $var_55->preventDebugInformationAppending();
+            $var_55->disableLogging();
+            $var_55->setIgnoreDebugMode(true);
+
+            if ($var_60 = $var_36->getHtmlLog()) {
+                $var_55->setBodyHtml($var_60);
+            }
+
+            if ($var_62 = $var_36->getTextLog()) {
+                $var_55->setBodyText($var_62);
+            }
+
+            foreach (['From', 'To', 'Cc', 'Bcc', 'ReplyTo'] as $var_65) {
+                $var_66 = 'get' . $var_65;
+                $var_67 = \var_43\var_68\var_43\var_56::parseEmailAddressField($var_36->{$var_66}());
+                if (!empty($var_67)) {
+                    list($var_51) = $var_67;
+                    if ($var_51) {
+                        $var_69 = ($var_65 === 'From') ? 'set' : 'add';
+                        $var_55->{$var_69 . $var_65}($var_51['email'], $var_51['name']);
+                    }
+                }
+            }
+
+            $var_55->setSubject($var_36->getSubject());
+
+            
+            if ($var_36->getDocumentId()) {
+                $var_55->setDocument($var_36->getDocumentId());
+            }
+
+            
+            try {
+                $var_39 = $var_3->decodeJson($var_36->getParams());
+            } catch (\var_6 $var_42) {
+                var_43\var_44::warning('Could not decode JSON param string');
+                $var_39 = [];
+            }
+
+            foreach ($var_39 as $var_27) {
+                $var_24 = null;
+                $var_74 = isset($var_27['children']) && is_array($var_27['children']);
+
+                if ($var_74) {
+                    $var_75 = [];
+                    foreach ($var_27['children'] as $var_76) {
+                        $var_75[$var_76['key']] = $var_3->fn_5($var_76);
+                    }
+                    $var_24 = $var_75;
+                } else {
+                    $var_24 = $var_3->fn_5($var_27);
+                }
+
+                $var_55->setParam($var_27['key'], $var_24);
+            }
+
+            $var_55->send();
+            $var_53 = true;
+        }
+
+        return $var_3->adminJson([
+            'success' => $var_53,
+        ]);
+    }
+
+    
+    public function fn_6(var_1 $var_2)
+    {
+        if (!$var_3->getAdminUser()->isAllowed('emails')) {
+            throw new \var_6("Permission denied, user needs 'emails' permission.");
+        }
+
+        $var_55 = new class_2();
+
+        if ($var_80 = $var_2->get('from')) {
+            $var_81 = \var_43\var_68\var_43\var_56::parseEmailAddressField($var_80);
+            if ($var_81) {
+                
+                list($var_82) = $var_81;
+                $var_55->setFrom($var_82['email'], $var_82['name']);
+            }
+        }
+
+        $var_84 = \var_43\var_68\var_43\var_56::parseEmailAddressField($var_2->get('to'));
+        foreach ($var_84 as $var_85) {
+            $var_55->addTo($var_85['email'], $var_85['name']);
+        }
+
+        $var_55->setSubject($var_2->get('subject'));
+        $var_55->setIgnoreDebugMode(true);
+
+        if ($var_2->get('emailType') == 'text') {
+            $var_55->setBodyText($var_2->get('content'));
+        } elseif ($var_2->get('emailType') == 'html') {
+            $var_55->setBodyHtml($var_2->get('content'));
+        } elseif ($var_2->get('emailType') == 'document') {
+            $var_87 = \var_43\var_88\var_89::getByPath($var_2->get('documentPath'));
+
+            if ($var_87 instanceof \var_43\var_88\var_89\var_9 || $var_87 instanceof \var_43\var_88\var_89\var_90) {
+                $var_55->setDocument($var_87);
+
+                if ($var_2->get('mailParamaters')) {
+                    if ($var_91 = json_decode($var_2->get('mailParamaters'), true)) {
+                        foreach ($var_91 as $var_92) {
+                            if ($var_92['key']) {
+                                $var_55->setParam($var_92['key'], $var_92['value']);
+                            }
+                        }
+                    }
+                }
+            } else {
+                throw new \var_6('Email document not found!');
+            }
+        }
+
+        $var_55->send();
+
+        return $var_3->adminJson([
+            'success' => true,
+        ]);
+    }
+
+    
+    public function fn_7(var_1 $var_2)
+    {
+        if (!$var_3->getAdminUser()->isAllowed('emails')) {
+            throw new \var_6("Permission denied, user needs 'emails' permission.");
+        }
+
+        if ($var_2->get('data')) {
+            $var_24 = $var_3->decodeJson($var_2->get('data'));
+
+            if (is_array($var_24)) {
+                foreach ($var_24 as &$var_51) {
+                    if (is_string($var_51)) {
+                        $var_51 = trim($var_51);
+                    }
+                }
+            }
+
+            if ($var_2->get('xaction') == 'destroy') {
+                $var_93 = var_8\var_9\var_94::getByAddress($var_24['address']);
+                $var_93->delete();
+
+                return $var_3->adminJson(['success' => true, 'data' => []]);
+            } elseif ($var_2->get('xaction') == 'update') {
+                $var_93 = var_8\var_9\var_94::getByAddress($var_24['address']);
+                $var_93->setValues($var_24);
+                $var_93->save();
+
+                return $var_3->adminJson(['data' => $var_93, 'success' => true]);
+            } elseif ($var_2->get('xaction') == 'create') {
+                unset($var_24['id']);
+
+                $var_93 = new var_8\var_9\var_94();
+                $var_93->setValues($var_24);
+                $var_93->save();
+
+                return $var_3->adminJson(['data' => $var_93, 'success' => true]);
+            }
+        } else {
+            
+
+            $var_7 = new var_8\var_9\var_94\var_11();
+
+            $var_7->setLimit($var_2->get('limit'));
+            $var_7->setOffset($var_2->get('start'));
+
+            $var_97 = \var_43\var_98\var_99\var_68\var_100::extractSortingSettings($var_2->var_101->all());
+            if ($var_97['orderKey']) {
+                $var_103 = $var_97['orderKey'];
+            }
+            if ($var_97['order']) {
+                $var_104 = $var_97['order'];
+            }
+
+            if ($var_2->get('filter')) {
+                $var_7->setCondition('`address` LIKE ' . $var_7->quote('%'.$var_2->get('filter').'%'));
+            }
+
+            $var_24 = $var_7->load();
+
+            return $var_3->adminJson([
+                'success' => true,
+                'data' => $var_24,
+                'total' => $var_7->getTotalCount()
+            ]);
+        }
+    }
+
+    
+    protected function fn_5($var_39)
+    {
+        $var_24 = null;
+        if ($var_39['data']['type'] === 'object') {
+            $var_47 = '\\' . ltrim($var_39['data']['objectClass'], '\\');
+            if (!empty($var_39['data']['objectId']) && is_subclass_of($var_47, '\\Pimcore\\Model\\Element\\ElementInterface')) {
+                $var_48 = $var_47::getById($var_39['data']['objectId']);
+                if (!is_null($var_48)) {
+                    $var_24 = $var_48;
+                }
+            }
+        } else {
+            $var_24 = $var_39['data']['value'];
+        }
+
+        return $var_24;
+    }
+}

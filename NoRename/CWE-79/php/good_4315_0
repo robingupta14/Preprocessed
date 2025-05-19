@@ -1,0 +1,824 @@
+<?php
+
+
+class erLhcoreClassBBCode
+{    
+   
+   public static function _make_url_clickable_cb( $matches ) {
+       $url = $matches[2];
+       if ( ')' == $matches[3] && strpos( $url, '(' ) ) {
+           
+           
+           $url .= $matches[3];
+           $suffix = '';
+       } else {
+           $suffix = $matches[3];
+       }
+       
+       while ( substr_count( $url, '(' ) < substr_count( $url, ')' ) ) {
+           $suffix = strrchr( $url, ')' ) . $suffix;
+           $url = substr( $url, 0, strrpos( $url, ')' ) );
+       }
+       $url = self::esc_url($url);
+       if ( empty($url) )
+           return $matches[0];
+       return $matches[1] . "<a href=\"$url\" class=\"link\" rel=\"noreferrer\" target=\"_blank\">$url</a>" . $suffix;
+   }
+   
+   
+   public static function esc_url( $url, $protocols = null, $_context = 'display' ) {
+       $original_url = $url;
+       if ( '' == $url )
+           return $url;
+       $url = str_replace( ' ', '%20', $url );
+       $url = preg_replace('|[^a-z0-9-~+_.?
+       if ( '' === $url ) {
+           return $url;
+       }
+       if ( 0 !== stripos( $url, 'mailto:' ) ) {
+           $strip = array('%0d', '%0a', '%0D', '%0A');
+           $url = self::_deep_replace($strip, $url);
+       }
+       $url = str_replace(';
+       
+       if ( strpos($url, ':') === false && ! in_array( $url[0], array( '/', '
+           ! preg_match('/^[a-z0-9-]+?\.php/i', $url) )
+               $url = 'http:
+           
+           if ( 'display' == $_context ) {
+               $url = self::wp_kses_normalize_entities( $url );
+               $url = str_replace( '&amp;', '&
+               $url = str_replace( "'", '&
+           }
+           if ( ( false !== strpos( $url, '[' ) ) || ( false !== strpos( $url, ']' ) ) ) {
+               $parsed = self::wp_parse_url( $url );
+               $front  = '';
+               if ( isset( $parsed['scheme'] ) ) {
+                   $front .= $parsed['scheme'] . ':
+               } elseif ( '/' === $url[0] ) {
+                   $front .= '
+               }
+               if ( isset( $parsed['user'] ) ) {
+                   $front .= $parsed['user'];
+               }
+               if ( isset( $parsed['pass'] ) ) {
+                   $front .= ':' . $parsed['pass'];
+               }
+               if ( isset( $parsed['user'] ) || isset( $parsed['pass'] ) ) {
+                   $front .= '@';
+               }
+               if ( isset( $parsed['host'] ) ) {
+                   $front .= $parsed['host'];
+               }
+               if ( isset( $parsed['port'] ) ) {
+                   $front .= ':' . $parsed['port'];
+               }
+               $end_dirty = str_replace( $front, '', $url );
+               $end_clean = str_replace( array( '[', ']' ), array( '%5B', '%5D' ), $end_dirty );
+               $url       = str_replace( $end_dirty, $end_clean, $url );
+           }
+           if ( '/' === $url[0] ) {
+               $good_protocol_url = $url;
+           } else {
+               if ( ! is_array( $protocols ) )
+                   $protocols = $protocols = array( 'http', 'https', 'ftp', 'ftps', 'mailto', 'news', 'irc', 'gopher', 'nntp', 'feed', 'telnet', 'mms', 'rtsp', 'svn', 'tel', 'fax', 'xmpp', 'webcal', 'urn' );
+               
+               $good_protocol_url = self::wp_kses_bad_protocol( $url, $protocols );
+               if ( strtolower( $good_protocol_url ) != strtolower( $url ) )
+                   return '';
+           }
+
+           
+           return $url;           
+           
+   }
+   
+   
+   public static function wp_parse_url( $url, $component = -1 ) {
+       $to_unset = array();
+       $url = strval( $url );
+       if ( '
+           $to_unset[] = 'scheme';
+           $url = 'placeholder:' . $url;
+       } elseif ( '/' === substr( $url, 0, 1 ) ) {
+           $to_unset[] = 'scheme';
+           $to_unset[] = 'host';
+           $url = 'placeholder:
+       }
+       $parts = @parse_url( $url );
+       if ( false === $parts ) {
+           
+           return $parts;
+       }
+       
+       foreach ( $to_unset as $key ) {
+           unset( $parts[ $key ] );
+       }
+       return self::_get_component_from_parsed_url_array( $parts, $component );
+   }
+   
+   
+   public static function _get_component_from_parsed_url_array( $url_parts, $component = -1 ) {
+       if ( -1 === $component ) {
+           return $url_parts;
+       }
+       $key = self::_wp_translate_php_url_constant_to_key( $component );
+       if ( false !== $key && is_array( $url_parts ) && isset( $url_parts[ $key ] ) ) {
+           return $url_parts[ $key ];
+       } else {
+           return null;
+       }
+   }
+   
+   
+   public static function _wp_translate_php_url_constant_to_key( $constant ) {
+       $translation = array(
+           PHP_URL_SCHEME   => 'scheme',
+           PHP_URL_HOST     => 'host',
+           PHP_URL_PORT     => 'port',
+           PHP_URL_USER     => 'user',
+           PHP_URL_PASS     => 'pass',
+           PHP_URL_PATH     => 'path',
+           PHP_URL_QUERY    => 'query',
+           PHP_URL_FRAGMENT => 'fragment',
+       );
+       if ( isset( $translation[ $constant ] ) ) {
+           return $translation[ $constant ];
+       } else {
+           return false;
+       }
+   }
+   
+   
+   
+   public static function wp_kses_normalize_entities($string) {
+       
+       $string = str_replace('&', '&amp;', $string);
+       
+       $string = preg_replace_callback('/&amp;([A-Za-z]{2,8}[0-9]{0,2});/', 'erLhcoreClassBBCode::wp_kses_named_entities', $string);
+       $string = preg_replace_callback('/&amp;
+       $string = preg_replace_callback('/&amp;
+       return $string;
+   }
+   
+   
+   public static function wp_kses_normalize_entities3($matches) {
+       if ( empty($matches[1]) )
+           return '';
+       $hexchars = $matches[1];
+       return ( ! self::valid_unicode( hexdec( $hexchars ) ) ) ? "&amp;
+   }
+   
+   
+   public static function valid_unicode($i) {
+       return ( $i == 0x9 || $i == 0xa || $i == 0xd ||
+           ($i >= 0x20 && $i <= 0xd7ff) ||
+           ($i >= 0xe000 && $i <= 0xfffd) ||
+           ($i >= 0x10000 && $i <= 0x10ffff) );
+   }
+   
+   
+   public static function wp_kses_normalize_entities2($matches) {
+       if ( empty($matches[1]) )
+           return '';
+       $i = $matches[1];
+       if (self::valid_unicode($i)) {
+           $i = str_pad(ltrim($i,'0'), 3, '0', STR_PAD_LEFT);
+           $i = "&
+       } else {
+           $i = "&amp;
+       }
+       return $i;
+   }
+   
+   
+   public static function wp_kses_named_entities($matches) {       
+       $allowedentitynames = array(
+           'nbsp',    'iexcl',  'cent',    'pound',  'curren', 'yen',
+           'brvbar',  'sect',   'uml',     'copy',   'ordf',   'laquo',
+           'not',     'shy',    'reg',     'macr',   'deg',    'plusmn',
+           'acute',   'micro',  'para',    'middot', 'cedil',  'ordm',
+           'raquo',   'iquest', 'Agrave',  'Aacute', 'Acirc',  'Atilde',
+           'Auml',    'Aring',  'AElig',   'Ccedil', 'Egrave', 'Eacute',
+           'Ecirc',   'Euml',   'Igrave',  'Iacute', 'Icirc',  'Iuml',
+           'ETH',     'Ntilde', 'Ograve',  'Oacute', 'Ocirc',  'Otilde',
+           'Ouml',    'times',  'Oslash',  'Ugrave', 'Uacute', 'Ucirc',
+           'Uuml',    'Yacute', 'THORN',   'szlig',  'agrave', 'aacute',
+           'acirc',   'atilde', 'auml',    'aring',  'aelig',  'ccedil',
+           'egrave',  'eacute', 'ecirc',   'euml',   'igrave', 'iacute',
+           'icirc',   'iuml',   'eth',     'ntilde', 'ograve', 'oacute',
+           'ocirc',   'otilde', 'ouml',    'divide', 'oslash', 'ugrave',
+           'uacute',  'ucirc',  'uuml',    'yacute', 'thorn',  'yuml',
+           'quot',    'amp',    'lt',      'gt',     'apos',   'OElig',
+           'oelig',   'Scaron', 'scaron',  'Yuml',   'circ',   'tilde',
+           'ensp',    'emsp',   'thinsp',  'zwnj',   'zwj',    'lrm',
+           'rlm',     'ndash',  'mdash',   'lsquo',  'rsquo',  'sbquo',
+           'ldquo',   'rdquo',  'bdquo',   'dagger', 'Dagger', 'permil',
+           'lsaquo',  'rsaquo', 'euro',    'fnof',   'Alpha',  'Beta',
+           'Gamma',   'Delta',  'Epsilon', 'Zeta',   'Eta',    'Theta',
+           'Iota',    'Kappa',  'Lambda',  'Mu',     'Nu',     'Xi',
+           'Omicron', 'Pi',     'Rho',     'Sigma',  'Tau',    'Upsilon',
+           'Phi',     'Chi',    'Psi',     'Omega',  'alpha',  'beta',
+           'gamma',   'delta',  'epsilon', 'zeta',   'eta',    'theta',
+           'iota',    'kappa',  'lambda',  'mu',     'nu',     'xi',
+           'omicron', 'pi',     'rho',     'sigmaf', 'sigma',  'tau',
+           'upsilon', 'phi',    'chi',     'psi',    'omega',  'thetasym',
+           'upsih',   'piv',    'bull',    'hellip', 'prime',  'Prime',
+           'oline',   'frasl',  'weierp',  'image',  'real',   'trade',
+           'alefsym', 'larr',   'uarr',    'rarr',   'darr',   'harr',
+           'crarr',   'lArr',   'uArr',    'rArr',   'dArr',   'hArr',
+           'forall',  'part',   'exist',   'empty',  'nabla',  'isin',
+           'notin',   'ni',     'prod',    'sum',    'minus',  'lowast',
+           'radic',   'prop',   'infin',   'ang',    'and',    'or',
+           'cap',     'cup',    'int',     'sim',    'cong',   'asymp',
+           'ne',      'equiv',  'le',      'ge',     'sub',    'sup',
+           'nsub',    'sube',   'supe',    'oplus',  'otimes', 'perp',
+           'sdot',    'lceil',  'rceil',   'lfloor', 'rfloor', 'lang',
+           'rang',    'loz',    'spades',  'clubs',  'hearts', 'diams',
+           'sup1',    'sup2',   'sup3',    'frac14', 'frac12', 'frac34',
+           'there4',
+       );
+       
+       if ( empty($matches[1]) )
+           return '';
+       $i = $matches[1];
+       return ( ! in_array( $i, $allowedentitynames ) ) ? "&amp;$i;" : "&$i;";
+   }
+   
+   
+   public static function wp_kses_bad_protocol($string, $allowed_protocols) {
+       $string = self::wp_kses_no_null($string);
+       $iterations = 0;
+       do {
+           $original_string = $string;
+           $string = self::wp_kses_bad_protocol_once($string, $allowed_protocols);
+       } while ( $original_string != $string && ++$iterations < 6 );
+       if ( $original_string != $string )
+           return '';
+       return $string;
+   }
+   
+   
+   public static function wp_kses_no_null( $string, $options = null ) {
+       if ( ! isset( $options['slash_zero'] ) ) {
+           $options = array( 'slash_zero' => 'remove' );
+       }
+       $string = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $string );
+       if ( 'remove' == $options['slash_zero'] ) {
+           $string = preg_replace( '/\\\\+0+/', '', $string );
+       }
+       return $string;
+   }
+   
+   
+   public static function wp_kses_bad_protocol_once($string, $allowed_protocols, $count = 1 ) {
+       $string2 = preg_split( '/:|&
+       if ( isset($string2[1]) && ! preg_match('%/\?%', $string2[0]) ) {
+           $string = trim( $string2[1] );
+           $protocol = self::wp_kses_bad_protocol_once2( $string2[0], $allowed_protocols );
+           if ( 'feed:' == $protocol ) {
+               if ( $count > 2 )
+                   return '';
+               $string = self::wp_kses_bad_protocol_once( $string, $allowed_protocols, ++$count );
+               if ( empty( $string ) )
+                   return $string;
+           }
+           $string = $protocol . $string;
+       }
+       return $string;
+   }
+   
+   
+   
+   public static function wp_kses_bad_protocol_once2( $string, $allowed_protocols ) {
+       $string2 = self::wp_kses_decode_entities($string);
+       $string2 = preg_replace('/\s/', '', $string2);
+       $string2 = self::wp_kses_no_null($string2);
+       $string2 = strtolower($string2);
+       $allowed = false;
+       foreach ( (array) $allowed_protocols as $one_protocol )
+           if ( strtolower($one_protocol) == $string2 ) {
+               $allowed = true;
+               break;
+           }
+       if ($allowed)
+           return "$string2:";
+       else
+           return '';
+   }
+   
+   
+   public static function wp_kses_decode_entities($string) {
+       $string = preg_replace_callback('/&
+       $string = preg_replace_callback('/&
+       return $string;
+   }
+   
+   
+   public static function _wp_kses_decode_entities_chr( $match ) {
+       return chr( $match[1] );
+   }
+   
+   public static function _wp_kses_decode_entities_chr_hexdec( $match ) {
+       return chr( hexdec( $match[1] ) );
+   }
+   
+
+   
+   public static function _deep_replace( $search, $subject ) {
+       $subject = (string) $subject;
+       $count = 1;
+       while ( $count ) {
+           $subject = str_replace( $search, '', $subject, $count );
+       }
+       return $subject;
+   }
+
+   public static $replaceEmoji = array(
+       ':\)' => "\u{1F642}",
+       ':D:' => "\u{1F600}",
+       ':D' => "\u{1F600}",
+       ':\(' => "\u{1F641}",
+       ':o:' => "\u{1F62E}",
+       ':o' => "\u{1F62E}",
+       ':p:' => "\u{1F61B}",
+       ':p' => "\u{1F61B}",
+       ';\)' => "\u{1F609}",
+       ';\(' => "\u{1F622}",
+       ':x' => "\u{1F910}",
+       ':\*' => "\u{1F617}",
+       ';\*' => "\u{1F618}",
+       ':\/' => "\u{1F615}"
+   );
+
+   public static function parseEmoji($text) {
+
+       
+       for ($i = 0; $i < 2; $i++) {
+           $text = preg_replace_callback('/(^|\s)(' .implode("|",array_keys(self::$replaceEmoji)) . ')(\s|$)/', function($match) {
+               $char = str_replace(array('/','(',')','*'),array('\/','\(','\)','\*'),$match[2]);
+               return $match[1] . erLhcoreClassBBCode::$replaceEmoji[$char] . $match[3];
+           },  $text);
+       }
+
+       return $text;
+   }
+
+   public static function BBCode2Html($text) {
+    	$text = trim($text);
+
+       $text = self::parseEmoji($text);
+
+       
+       $in = array(
+       );
+
+       
+       $out = array(
+       );
+    	
+    	$in[] = '[
+   public static function _make_web_ftp_clickable_cb( $matches ) {
+       $ret = '';
+       $dest = $matches[2];
+       $dest = 'http:
+       
+       if ( in_array( substr($dest, -1), array('.', ',', ';', ':', ')') ) === true ) {
+           $ret = substr($dest, -1);
+           $dest = substr($dest, 0, strlen($dest)-1);
+       }
+       $dest = self::esc_url($dest);
+       if ( empty($dest) )
+           return $matches[0];
+       
+       return $matches[1] . "<a href=\"$dest\" class=\"link\" rel=\"noreferrer\" target=\"_blank\">$dest</a>$ret";
+   }
+   
+   
+   public static function _make_email_clickable_cb( $matches ) {
+    	$email = $matches[2] . '@' . $matches[3];
+    	return $matches[1] . "<a rel=\"noreferrer\" class=\"link\" href=\"mailto:$email\">$email</a>";
+   }
+
+   
+   public static function _make_paypal_button($matches){
+
+         if (filter_var($matches[1],FILTER_VALIDATE_EMAIL)) {
+            return '<form action="https:
+            <input type="hidden" name="cmd" value="_donations">
+            <input type="hidden" name="business" value="'.$matches[1].'">
+            <input type="hidden" name="lc" value="US">
+            <input type="hidden" name="no_note" value="0">
+            <input type="hidden" name="currency_code" value="USD">
+            <input type="hidden" name="bn" value="PP-DonationsBF:btn_donate_SM.gif:NonHostedGuest">
+            <input type="image" title="Support an artist" src="https:
+            <img alt="" border="0" src="https:
+            </form>';
+        } else {
+            return $matches[0];
+        }
+   }
+
+   public static function _make_button_action($matches) {
+        return "<button type=\"button\" class=\"btn btn-xs text-white fs13 btn-secondary\" onclick=\"lhinst.buttonAction($(this),'" . htmlspecialchars(strip_tags($matches[1])) . "')\">" . htmlspecialchars($matches[2]) . "</button>";
+   }
+
+   public static function _make_youtube_block($matches) {
+
+         $data = parse_url($matches[1]);
+
+         if (isset($data['query'])){
+             parse_str($data['query'],$query);
+             if (stristr($data['host'],'youtube.com') && isset($query['v']) && ($query['v'] != '')) {
+                 return '<iframe class="w-100 h-100" title="YouTube video player" width="480" height="300" src="https:
+             } else {
+                 return $matches[0];
+             }
+         } else {
+             return $matches[0];
+         }
+   }
+
+   public static function _make_upload_link($matches){
+       $data = $matches[1];
+       return '<a class="action-image alert-link" onclick="lhinst.chooseFile()">' . htmlspecialchars($data) . '</a>';
+   }
+
+   public static function _make_url_file($matches)
+   {
+
+   		if (isset($matches[1])){
+   		    $mainData = explode(' ',$matches[1]);
+   		    $parts = explode('_',$mainData[0]);
+   			$fileID = $parts[0];
+   			$hash = $parts[1];
+   			$displayType = isset($parts[2]) ? $parts[2] : null;
+   			try {
+   				$file = erLhcoreClassModelChatFile::fetch($fileID);
+
+   				if (is_object($file)) {
+                    
+                    if ($hash == $file->security_hash) {
+                        $fileExtension = strtolower($file->extension);
+                        if ($fileExtension == 'jpg' || $fileExtension == 'jpeg' || $fileExtension == 'png' || $fileExtension == 'gif'){
+
+                            
+                            $prepend = '';
+                            $append = '';
+                            if (isset($mainData[1])) {
+                                $subpartParts = explode('=',$mainData[1]);
+                                if ($subpartParts[0] == 'link') {
+                                    if (!isset($subpartParts[1])) {
+                                        $prepend = '<a class="link" rel="noreferrer" target="_blank" href="
+                                        $append = '</a>';
+                                    } else {
+                                        $url = self::esc_url($subpartParts[1]);
+                                        if ($url != ''){
+                                            $prepend = '<a class="link" rel="noreferrer" target="_blank" href="' . self::esc_url($subpartParts[1]) . '">';
+                                            $append = '</a>';
+                                        }
+                                    }
+                                }
+                            } else {
+                                $prepend = '';
+                                $append = '<a class="hidden-download" rel="noreferrer" href="
+                            }
+                            return $prepend . '<img id="img-file-' . $file->id . '" class="img-fluid" src="
+                        }
+
+                        $audio = '';
+                        if ($fileExtension == 'mp3' || $fileExtension == 'wav' || $fileExtension == 'ogg') {
+                            return '<a rel="noreferrer" class="hidden-download audio-download" href="
+                        } elseif ($fileExtension == 'mp4' || $fileExtension == 'avi' || $fileExtension == 'mov' || $fileExtension == 'ogg' || $fileExtension == '3gpp') {
+                            $audio = '<br><div class="embed-responsive embed-responsive-16by9"><video class="embed-responsive-item" controls><source src="
+                        } else if ($fileExtension == 'jpg' || $fileExtension == 'jpeg' || $fileExtension == 'png') {
+                            $audio = ' <a rel="noreferrer" class="link" onclick="$(\'
+                        }
+
+                        return "<a href=\"
+                    }
+                }
+
+   			} catch (Exception $e) {}
+
+   			return '';
+   		}
+   		return '';
+   }
+
+   public static function _make_url_survey($matches)
+   {
+       if (isset($matches[1])){
+                  
+           list($surveyId, $surveyItemId) = explode('_',str_replace(array('"','&quot;'),'', $matches[1]));
+           
+           try {
+                             
+               if (is_numeric($surveyItemId) && is_numeric($surveyId)) {
+
+                   $surveyItem = erLhAbstractModelSurveyItem::fetch($surveyItemId);
+
+                   if ($surveyId == $surveyItem->survey_id) 
+                   {
+                       $survey = erLhAbstractModelSurvey::fetch($surveyId);
+                       return "<a href=\"
+                   }
+               }
+               
+           } catch (Exception $e) {}
+       
+           return '';
+       }
+       return '';
+   }
+   
+   public static function _make_url_mail_file($matches){
+
+   		if (isset($matches[1])){
+   			list($fileID,$hash) = explode('_',$matches[1]);
+   			try {
+   				$file = erLhcoreClassModelChatFile::fetch($fileID);
+
+   				
+   				if ($hash == $file->security_hash) {
+   					return erLhcoreClassXMP::getBaseHost().$_SERVER['HTTP_HOST'].erLhcoreClassDesign::baseurldirect('file/downloadfile')."/{$file->id}/{$hash}";
+   				}
+   			} catch (Exception $e) {}
+
+   			return '';
+   		}
+   		return '';
+   }
+
+   public static function _split_str_by_whitespace( $string, $goal ) {
+        $chunks = array();
+
+        $string_nullspace = strtr( $string, "\r\n\t\v\f ", "\0\0\0\0\0\0" );
+
+        while ( $goal < strlen( $string_nullspace ) ) {
+            $pos = strrpos( substr( $string_nullspace, 0, $goal + 1 ), "\000" );
+
+            if ( false === $pos ) {
+                $pos = strpos( $string_nullspace, "\000", $goal + 1 );
+                if ( false === $pos ) {
+                    break;
+                }
+            }
+
+            $chunks[] = substr( $string, 0, $pos + 1 );
+            $string = substr( $string, $pos + 1 );
+            $string_nullspace = substr( $string_nullspace, $pos + 1 );
+        }
+
+        if ( $string ) {
+            $chunks[] = $string;
+        }
+
+        return $chunks;
+    }
+
+   
+   public static function make_clickable_text( $text ) {
+       $r = '';
+       $textarr = preg_split( '/(<[^<>]+>)/', $text, -1, PREG_SPLIT_DELIM_CAPTURE ); 
+       $nested_code_pre = 0; 
+       foreach ( $textarr as $piece ) {
+           if ( preg_match( '|^<code[\s>]|i', $piece ) || preg_match( '|^<pre[\s>]|i', $piece ) || preg_match( '|^<script[\s>]|i', $piece ) || preg_match( '|^<style[\s>]|i', $piece ) )
+               $nested_code_pre++;
+           elseif ( $nested_code_pre && ( '</code>' === strtolower( $piece ) || '</pre>' === strtolower( $piece ) || '</script>' === strtolower( $piece ) || '</style>' === strtolower( $piece ) ) )
+           $nested_code_pre--;
+           if ( $nested_code_pre || empty( $piece ) || ( $piece[0] === '<' && ! preg_match( '|^<\s*[\w]{1,20}+:
+               $r .= $piece;
+               continue;
+           }
+           
+           if ( 10000 < strlen( $piece ) ) {
+               
+               foreach ( self::_split_str_by_whitespace( $piece, 2100 ) as $chunk ) { 
+                   if ( 2101 < strlen( $chunk ) ) {
+                       $r .= $chunk; 
+                   } else {
+                       $r .= self::make_clickable_text( $chunk );
+                   }
+               }
+           } else {
+               $ret = " $piece "; 
+               $url_clickable = '~
+				([\\s(<.,;:!?])                                        
+				(                                                      
+					[\\w]{1,20}+:
+					(?=\S{1,2000}\s)                               
+					[\\w\\x80-\\xff
+					(?:                                            
+						[\'.,;:!?)]                            
+						[\\w\\x80-\\xff
+					)*
+				)
+				(\)?)                                                  
+			~xS'; 
+               
+               $ret = preg_replace_callback( $url_clickable, 'erLhcoreClassBBCode::_make_url_clickable_cb', $ret );
+               $ret = preg_replace_callback( '
+               $ret = preg_replace_callback( '
+               $ret = substr( $ret, 1, -1 ); 
+               $r .= $ret;
+           }
+       }
+       
+       
+       return preg_replace( '
+   }
+
+   public static function makeQuote($matches)
+   {
+       if ($matches[1]) {
+           return '<blockquote class="blockquote"> ' . $matches[1] . ' </blockquote>';
+       } else {
+           return $matches[0];
+       }
+   }
+
+   public static function extractMetaByMessage(& $msg) {
+       $meta = array();
+       if (strpos($msg,'[html_snippet]') !== false) {
+           $matches = array();
+           preg_match_all('/\[html_snippet\](.*?)\[\/html_snippet\]/is',$msg,$matches);
+           foreach ($matches[0] as $index => $match) {
+               $msg = str_replace($match,'',$msg);
+               $meta['html_snippet'][] = $matches[1][$index];
+           }
+       }
+       return $meta;
+   }
+
+   public static function makeSubmessages($msg, $paramsMessage = array()) {
+
+       
+       $msg = preg_replace('
+
+       
+       $msg = preg_replace('
+
+       
+       $msg = preg_replace('
+
+       
+       $msg = preg_replace('
+
+       $msg = trim($msg);
+
+       $messages = array_filter(explode('IMG_REPLACE', $msg));
+       $totalMessages = count($messages);
+
+       $messagesData = array();
+       foreach ($messages as $indexMessage => $message) {
+           if (trim($message) != '')
+           {
+               $msgRendered = erLhcoreClassBBCode::make_clickable(htmlspecialchars($message), $paramsMessage);
+
+               $messagesDataItem['body'] = $msgRendered;
+               $messagesDataItem['flags'] = [];
+
+               $msgRenderedMedia = strip_tags($msgRendered);
+               $emojiMessage = trim(preg_replace('
+
+               if ($msgRenderedMedia == '') {
+                   $messagesDataItem['flags'][] = 'img';
+               }
+
+               if ($emojiMessage == '') {
+                   $messagesDataItem['flags'][] = 'emoji';
+               }
+
+                
+               if (substr($message,0,1) == "\n" && $indexMessage > 0) {
+                   $messagesDataItem['flags'][] = 'nlt';
+               }
+
+               
+               if (substr($message,-1) == "\n" && $indexMessage + 1 != $totalMessages) {
+                   $messagesDataItem['flags'][] = 'nl';
+               }
+
+               $messagesData[] = $messagesDataItem;
+           }
+       }
+
+       return $messagesData;
+   }
+
+   
+   public static function make_clickable($ret, $paramsMessage = array()) {
+        $ret = ' ' . $ret;
+
+        $makeLinksClickable = true;
+        
+        erLhcoreClassChatEventDispatcher::getInstance()->dispatch('chat.before_make_clickable',array('msg' => & $ret, 'makeLinksClickable' => & $makeLinksClickable));
+
+        $ret = preg_replace_callback('/\[img=?(.*?)\](.*?)\[\/img\]/ms', "erLhcoreClassBBCode::_make_url_embed_image", $ret);
+
+        $ret = preg_replace_callback('/\[loc\](.*?)\[\/loc\]/ms', "erLhcoreClassBBCode::_make_embed_map", $ret);
+
+        $ret = preg_replace_callback('/\[url\="?(.*?)"?\](.*?)\[\/url\]/ms', "erLhcoreClassBBCode::_make_url_embed", $ret);
+
+        if (isset($paramsMessage['sender']) && $paramsMessage['sender'] == 0) {
+            $ret = preg_replace('/\[html\](.*?)\[\/html\]/ms','',$ret);
+        }
+
+        $ret = preg_replace_callback('/\[html\](.*?)\[\/html\]/ms', function ($matches) {
+            $html = htmlspecialchars_decode($matches[1]);
+
+            $html = preg_replace_callback('/"window\.parent\.(.*)"/ms',function ($matches){
+                return "'lhinst.executeRemoteCommands([\"lhc_eval:" . $matches[1] . "\"])'";
+            },$html);
+
+            return $html;
+
+        }, $ret);
+
+
+        if ($makeLinksClickable) {
+            $ret = self::make_clickable_text($ret);           
+        }
+
+    	$ret = self::BBCode2Html($ret);
+
+    	
+    	$ret = preg_replace_callback('
+
+    	
+    	$ret = preg_replace_callback('
+
+    	
+    	$ret = preg_replace_callback('
+
+    	
+    	$ret = preg_replace_callback('
+
+    	$ret = preg_replace_callback('
+
+    	$ret = preg_replace('
+
+    	
+    	$ret = preg_replace_callback('
+    	
+    	
+    	$ret = preg_replace_callback('
+
+    	$ret = trim($ret);
+
+        erLhcoreClassChatEventDispatcher::getInstance()->dispatch('chat.after_make_clickable',array('msg' => & $ret));
+        
+    	return $ret;
+   }
+   
+   public static function parseForMail($ret){
+   		
+   		$ret = preg_replace_callback('
+   		return trim($ret);
+   }
+   
+   
+   public static function make_plain($ret){
+        $ret = ' ' . $ret;
+
+       
+       $in = array( 	 '/\[b\](.*?)\[\/b\]/ms',
+           '/\[i\](.*?)\[\/i\]/ms',
+           '/\[u\](.*?)\[\/u\]/ms',
+           '/\[list\=(.*?)\](.*?)\[\/list\]/ms',
+           '/\[list\](.*?)\[\/list\]/ms',
+           '/\[\*\]\s?(.*?)\n/ms',
+           '/\[img\](.*?)\[\/img\]/ms',
+           '/\[url\="?(.*?)"?\](.*?)\[\/url\]/ms',
+           '/\[quote\]/ms',
+           '/\[\/quote\]/ms',
+           '/\[fs(.*?)\](.*?)\[\/fs(.*?)\]/ms',
+           '/\n/ms',
+       );
+
+       
+       $out = array(	 '\1',
+           '\1',
+           '\1',
+           '\2',
+           '\1',
+           '\1',
+           '',
+           '\2 \1',
+           '',
+           '',
+           '\2',
+           ' ',
+       );
+
+    	$ret = preg_replace($in, $out, $ret);
+
+        $ret = trim($ret);
+        return $ret;
+   }
+
+}
+
+
+?>

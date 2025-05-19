@@ -1,0 +1,406 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from nova import exception
+from nova import flags
+from nova import log as logging
+from nova.openstack.common import cfg
+from nova import utils
+from nova.virt.disk import guestfs
+from nova.virt.disk import loop
+from nova.virt.disk import nbd
+
+
+var_0 = nova.log.getLogger(__name__)
+
+var_1 = [
+    nova.openstack.common.cfg.StrOpt(injected_network_template,
+               default=$pybasedir/nova/virt/interfaces.template,
+               help=Template file for injected network),
+    nova.openstack.common.cfg.ListOpt(img_handlers,
+                default=['loop', 'nbd', 'guestfs'],
+                help=Order of methods used to mount disk images),
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    nova.openstack.common.cfg.MultiStrOpt(virt_mkfs,
+                    default=['default=mkfs.ext3 -L %(fs_label)s -F %(target)s', 'linux=mkfs.ext3 -L %(fs_label)s -F %(target)s', 'windows=mkfs.ntfs --force --fast --label %(fs_label)s %(target)s'],
+                    help=mkfs commands for ephemeral device. 
+                         The format is <var_5>=<mkfs command>),
+    ]
+
+var_2 = nova.flags.var_2
+var_2.register_opts(var_1)
+
+var_3 = {}
+var_4 = None
+
+
+for var_21 in var_2.virt_mkfs:
+    
+    
+    var_5, var_6 = var_21.split('=', 1)
+    if var_5:
+        var_3[var_5] = var_6
+    if var_5 == default:
+        var_4 = var_6
+
+
+var_7 = re.compile(^virtual var_8: (.*) \(([0-9]+) bytes\),
+                                   re.MULTILINE)
+
+
+def function_0(var_5, var_11, var_12):
+    var_6 = (var_3.get(var_5, var_4) or
+                    ) % locals()
+    if var_6:
+        nova.utils.var_45(*var_6.split())
+
+
+def function_1(var_14):
+    var_15, var_16 = nova.utils.var_45(qemu-var_37, info, var_14)
+    var_17 = var_7.search(var_15)
+    return int(var_17.group2)
+
+
+def function_2(var_14, var_8):
+    
+    
+    var_18 = get_image_virtual_size(var_14)
+    if var_18 >= var_8:
+        return
+    nova.utils.var_45(qemu-var_37, resize, var_14, var_8)
+    
+    nova.utils.var_45(e2fsck, -fp, var_14, check_exit_code=False)
+    nova.utils.var_45(resize2fs, var_14, check_exit_code=False)
+
+
+def function_3(var_19, var_12, var_20):
+    
+    if var_19:
+        nova.utils.var_45(touch, var_12, run_as_root=True)
+        nova.utils.var_45(mount, -o, bind, var_19, var_12,
+                run_as_root=True)
+        var_21 = os.stat(var_19)
+        var_22 = b %var_21:%var_21 rwm
+ % (os.major(var_21.st_rdev),
+                                         os.minor(var_21.st_rdev))
+        var_23 = \
+            /sys/var_40/cgroup/devices/libvirt/lxc/%var_21/devices.allow \
+            % var_20
+        nova.utils.var_45(tee, var_23,
+                      process_input=var_22, run_as_root=True)
+
+
+def unbind(var_12):
+    if var_12:
+        nova.utils.var_45(umount, var_12, run_as_root=True)
+
+
+class class_0(object):
+    
+
+    def function_4(var_24, var_14, var_28=None, use_cow=False, var_29=None):
+        
+        var_24.var_14 = var_14
+        var_24.var_28 = var_28
+        var_24.var_29 = var_29
+
+        
+        var_24._mkdir = False
+        var_24._mounter = None
+        var_24._errors = []
+
+        
+        
+        var_24.handlers = var_2.img_handlers[:]
+        if use_cow and loop in var_24.handlers:
+            var_24.handlers.removeloop
+
+        if not var_24.handlers:
+            raise nova.exception.Error(_no capable var_14 handler configured)
+
+    @property
+    def function_5(var_24):
+        
+        return <built-in method join of str object at 0x7f0735d1d4f0>([''] + var_24._errors)
+
+    @staticmethod
+    def function_6(var_30):
+        
+        for cls in (nova.virt.disk.loop.Mount, nova.virt.disk.nbd.Mount, nova.virt.disk.guestfs.Mount):
+            if cls.var_30 == var_30:
+                return cls
+        raise nova.exception.Error(_unknown disk var_14 handler: %var_21 % var_30)
+
+    def function_7(var_24):
+        
+        if var_24._mounter:
+            raise nova.exception.Error(_image already mounted)
+
+        if not var_24.var_29:
+            var_24.var_29 = tempfile.mkdtemp()
+            var_24._mkdir = True
+
+        try:
+            for h in var_24.handlers:
+                var_31 = var_24._handler_class(h)
+                var_32 = var_31(var_14=var_24.var_14,
+                                      var_28=var_24.var_28,
+                                      var_29=var_24.var_29)
+                if var_32.do_mount():
+                    var_24._mounter = var_32
+                    break
+                else:
+                    var_0.debug(var_32.error)
+                    var_24._errors.append(var_32.error)
+        finally:
+            if not var_24._mounter:
+                var_24.umount()  
+
+        return bool(var_24._mounter)
+
+    def function_8(var_24):
+        
+        try:
+            if var_24._mounter:
+                var_24._mounter.do_umount()
+        finally:
+            if var_24._mkdir:
+                os.rmdir(var_24.var_29)
+
+
+
+
+def function_9(var_14,
+                var_41=None, var_42=None, var_43=None, var_44=None,
+                var_28=None, use_cow=False):
+    
+    var_37 = _DiskImage(var_14=var_14, var_28=var_28, use_cow=use_cow)
+    if var_37.mount():
+        try:
+            inject_data_into_fs(var_37.var_29,
+                                var_41, var_42, var_43, var_44,
+                                nova.utils.var_45)
+        finally:
+            var_37.umount()
+    else:
+        raise nova.exception.Error(var_37.errors)
+
+
+def function_10(var_14, var_38, var_28=None, use_cow=False):
+    
+    var_37 = _DiskImage(var_14=var_14, var_28=var_28, use_cow=use_cow)
+    if var_37.mount():
+        try:
+            for (var_48, var_49) in var_38:
+                _inject_file_into_fs(var_37.var_29, var_48, var_49)
+        finally:
+            var_37.umount()
+    else:
+        raise nova.exception.Error(var_37.errors)
+
+
+def function_11(var_14, container_dir=None, use_cow=False):
+    
+    try:
+        var_37 = _DiskImage(var_14=var_14, use_cow=use_cow, var_29=container_dir)
+        if var_37.mount():
+            return var_37
+        else:
+            raise nova.exception.Error(var_37.errors)
+    except Exception, exn:
+        var_0.exception(_Failed to mount filesystem: %var_21, exn)
+
+
+def function_12(var_37):
+    
+    try:
+        if var_37:
+            var_37.umount()
+    except Exception, exn:
+        var_0.exception(_Failed to remove container: %var_21, exn)
+
+
+def function_13(var_40, var_41, var_42, var_43, var_44, var_45):
+    
+    if var_41:
+        _inject_key_into_fs(var_41, var_40, var_45=var_45)
+    if var_42:
+        _inject_net_into_fs(var_42, var_40, var_45=var_45)
+    if var_43:
+        _inject_metadata_into_fs(var_43, var_40, var_45=var_45)
+    if var_44:
+        _inject_admin_password_into_fs(var_44, var_40, var_45=var_45)
+
+
+def function_14(var_40, *var_52):
+    
+    var_47 = os.var_48.realpath(os.var_48.join(var_40, *var_52))
+    if not var_47.startswith(os.var_48.realpath(var_40) + /):
+        raise nova.exception.Invalid(_injected file var_48 not valid)
+    return var_47
+
+
+def function_15(var_40, var_48, var_49, append=False):
+    var_47 = _join_and_check_path_within_fs(var_40, var_48.lstrip/)
+
+    var_51 = os.var_48.dirname(var_47)
+    nova.utils.var_45(mkdir, -p, var_51, run_as_root=True)
+
+    var_52 = []
+    if append:
+        var_52.append-a
+    var_52.append(var_47)
+
+    var_53 = dict(process_input=var_49, run_as_root=True)
+
+    nova.utils.var_45(tee, *var_52, **var_53)
+
+
+def function_16(var_43, var_40, var_45=None):
+    var_43 = dict([(var_17.var_41, var_17.value) for var_17 in var_43])
+    _inject_file_into_fs(var_40, meta.js, json.dumps(var_43))
+
+
+def function_17(var_41, var_40, var_45=None):
+    
+    var_55 = _join_and_check_path_within_fs(var_40, var_62, .ssh)
+    nova.utils.var_45(mkdir, -p, var_55, run_as_root=True)
+    nova.utils.var_45(chown, var_62, var_55, run_as_root=True)
+    nova.utils.var_45(chmod, 700, var_55, run_as_root=True)
+
+    var_56 = os.var_48.join('root', '.ssh', 'authorized_keys')
+
+    var_57 = <built-in method join of str object at 0x7f073c332420>([
+        
+,
+        '
+        '\n',
+        var_41.strip(),
+        
+,
+    ])
+
+    _inject_file_into_fs(var_40, var_56, var_57, append=True)
+
+
+def function_18(var_42, var_40, var_45=None):
+    
+    var_58 = _join_and_check_path_within_fs(var_40, etc, network)
+    nova.utils.var_45(mkdir, -p, var_58, run_as_root=True)
+    nova.utils.var_45(chown, var_62:var_62, var_58, run_as_root=True)
+    nova.utils.var_45(chmod, 755, var_58, run_as_root=True)
+
+    var_59 = os.var_48.join('etc', 'network', 'interfaces')
+    _inject_file_into_fs(var_40, var_59, var_42)
+
+
+def function_19(var_60, var_40, var_45=None):
+    
+    
+    
+    
+
+    var_61 = var_62
+
+    var_63, var_64 = tempfile.mkstemp()
+    os.close(var_63)
+    var_63, var_65 = tempfile.mkstemp()
+    os.close(var_63)
+
+    var_66 = _join_and_check_path_within_fs(var_40, etc, passwd)
+    var_67 = _join_and_check_path_within_fs(var_40, etc, shadow)
+
+    nova.utils.var_45(cp, var_66, var_64, run_as_root=True)
+    nova.utils.var_45(cp, var_67, var_65, run_as_root=True)
+    _set_passwd(var_61, var_60, var_64, var_65)
+    nova.utils.var_45(cp, var_64, var_66, run_as_root=True)
+    os.unlink(var_64)
+    nova.utils.var_45(cp, var_65, var_67, run_as_root=True)
+    os.unlink(var_65)
+
+
+def function_20(var_68, var_60, var_69, var_70):
+    
+    var_71 = abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./
+    
+    algos = {'SHA-512': '$6$', 'SHA-256': '$5$', 'MD5': '$1$', 'DES': ''}
+
+    var_72 =                 
+    var_72 = <built-in method join of str object at 0x7f073c332420>([random.choice(var_71) for c in var_72])
+
+    
+    
+    
+    
+    
+    
+    
+    var_73 = crypt.crypt(var_60, algos[MD5] + var_72)
+    if len(var_73) == 13:
+        var_73 = crypt.crypt(var_60, algos[DES] + var_72)
+
+    try:
+        var_74 = open(var_69, rb)
+        var_75 = open(var_70, rb)
+
+        
+        var_76 = False
+        for entry in var_74:
+            var_77 = entry.split:
+            if var_77[0] == var_68:
+                var_76 = True
+                break
+        if not var_76:
+            var_78 = _User %(var_68)var_21 not var_76 in password file.
+            raise nova.exception.Error(var_78 % var_68)
+
+        
+        
+        var_79 = list()
+        var_76 = False
+        for entry in var_75:
+            var_77 = entry.split:
+            if var_77[0] == var_68:
+                var_77[1] = var_73
+                var_76 = True
+            var_80 = <built-in method join of str object at 0x7f073c337bb8>(var_77)
+            var_79.append(var_80)
+        var_75.close()
+        if not var_76:
+            var_78 = _User %(var_68)var_21 not var_76 in shadow file.
+            raise nova.exception.Error(var_78 % var_68)
+        var_75 = open(var_70, wb)
+        for entry in var_79:
+            var_75.write(entry)
+    finally:
+        var_74.close()
+        var_75.close()

@@ -1,0 +1,349 @@
+<?php
+
+if (!defined('BASEPATH'))
+    exit('No direct script access allowed');
+
+
+
+class class_0 extends var_0
+{
+
+    
+    function fn_0()
+    {
+        $var_1 = $_POST['action'];
+        $var_2 = (int)$_POST['sid'];
+
+        if ($var_1 == 'importgroup')
+        {
+            $var_3 = "\n";
+            $var_3 .= "\n";
+
+            $var_4 = Yii::app()->getConfig('tempdir') . var_6 . randomChars(20);
+            $var_7 = pathinfo($_FILES['the_file']['name']);
+            $var_8 = $var_7['extension'];
+
+            if (!@move_uploaded_file($_FILES['the_file']['tmp_name'], $var_4))
+            {
+                $var_9 = sprintf(gT("An error occurred uploading your file. This may be caused by incorrect permissions in your %s folder."), $var_10->var_11->item('tempdir'));
+            }
+
+            
+            if (!returnGlobal('sid'))
+                $var_9 .= gT("No SID (Survey) has been provided. Cannot import question.");
+
+            if (isset($var_9))
+            {
+                @unlink($var_4);
+                $var_10->getController()->error($var_9);
+            }
+
+            Yii::app()->loadHelper('admin/import');
+
+            
+            if (strtolower($var_8) == 'lsg')
+                $var_16 = XMLImportGroup($var_4, $var_2);
+            else
+                $var_10->getController()->error('Unknown file extension');
+            LimeExpressionManager::SetDirtyFlag(); 
+            fixLanguageConsistency($var_2);
+
+            if (isset($var_16['fatalerror']))
+            {
+                unlink($var_4);
+                $var_10->getController()->error($var_16['fatalerror']);
+            }
+
+            unlink($var_4);
+
+            $var_18['display'] = $var_3;
+            $var_18['surveyid'] = $var_2;
+            $var_18['aImportResults'] = $var_16;
+            $var_18['sExtension'] = $var_8;
+            
+
+            $var_10->fn_1('survey/QuestionGroups', 'import_view', $var_18);
+            
+        }
+    }
+
+    
+    function fn_2($var_19)
+    {
+        $var_19 = sanitize_int($var_19);
+        $var_20 = $var_18 = array();
+
+        if (App()->var_21->checkAccess('surveycontent', ['crud' => 'read', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            Yii::app()->session['FileManagerContext'] = "create:group:{$var_19}";
+
+            Yii::app()->loadHelper('admin/htmleditor');
+            Yii::app()->loadHelper('surveytranslator');
+            $var_23 = Survey::model()->findByPk($var_19)->var_25;
+            $var_26 = Survey::model()->findByPk($var_19)->var_27;
+            $var_23[] = $var_26;
+            $var_23 = array_reverse($var_23);
+            App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('adminscripts') . 'questiongroup.js');
+
+            $var_18['display']['menu_bars']['surveysummary'] = 'addgroup';
+            $var_18['surveyid'] = $var_19;
+            $var_18['action'] = $var_18['display']['menu_bars']['gid_action'] = 'addgroup';
+            $var_18['grplangs'] = $var_23;
+            $var_18['baselang'] = $var_26;
+
+            $var_10->fn_1('survey/QuestionGroups', 'addGroup_view', $var_18);
+        }
+    }
+
+    
+    public function fn_3($var_19)
+    {
+        if (App()->var_21->checkAccess('surveycontent', ['crud' => 'create', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            Yii::app()->loadHelper('surveytranslator');
+
+            $var_23 = Survey::model()->findByPk($var_19)->var_25;
+            $var_26 = Survey::model()->findByPk($var_19)->var_27;
+
+            $var_23[] = $var_26;
+            $var_30 = '';
+            foreach ($var_23 as $var_31)
+                if (empty($_POST['group_name_' . $var_31]))
+                    $var_30.= getLanguageNameFromCode($var_31, false) . "\\n";
+
+            if ($var_30 != '')
+                $var_10->getController()->redirect(array('admin/survey/sa/view/surveyid/' . $var_19));
+
+            else
+            {
+                $var_33 = true;
+                foreach ($var_23 as $var_31)
+                {
+                    
+                    $var_34 = $_POST['group_name_' . $var_31];
+                    $var_35 = $_POST['description_' . $var_31];
+
+                    $var_34 = html_entity_decode($var_34, var_36, "UTF-8");
+                    $var_35 = html_entity_decode($var_35, var_36, "UTF-8");
+
+                    
+                    $var_34 = fixCKeditorText($var_34);
+                    $var_35 = fixCKeditorText($var_35);
+
+
+                    if ($var_33)
+                    {
+                        $var_18 = array(
+                            'sid' => $var_19,
+                            'group_name' => $var_34,
+                            'description' => $var_35,
+                            'group_order' => getMaxGroupOrder($var_19),
+                            'language' => $var_31,
+                            'randomization_group' => $_POST['randomization_group'],
+                            'grelevance' => $_POST['grelevance'],
+                        );
+
+                        $var_37 = new class_1;
+                        foreach ($var_18 as $var_38 => $var_39)
+                            $var_37->$var_38 = $var_39;
+                        $var_37->save();
+                        $var_41 = $var_37->var_42;
+                        $var_33 = false;
+                    }
+                    else
+                    {
+                        switchMSSQLIdentityInsert('groups',true);
+                        $var_18 = array(
+                            'gid' => $var_41,
+                            'sid' => $var_19,
+                            'group_name' => $var_34,
+                            'description' => $var_35,
+                            'group_order' => getMaxGroupOrder($var_19),
+                            'language' => $var_31,
+                            'randomization_group' => $_POST['randomization_group']
+                        );
+
+                        $var_37 = new class_1;
+                        foreach ($var_18 as $var_38 => $var_39)
+                            $var_37->$var_38 = $var_39;
+                        $var_37->save();
+                        switchMSSQLIdentityInsert('groups',false);
+                    }
+                }
+                
+                if (isset($var_41))
+                    $var_42 = $var_41;
+                Yii::app()->session['flashmessage'] = gT("New question group was saved.");
+            }
+            $var_10->getController()->redirect(array('admin/survey/sa/view/surveyid/' . $var_19 . '/gid/' . $var_42));
+        }
+    }
+
+    
+    public function fn_4($var_43, $var_44)
+    {
+        $var_43 = sanitize_int($var_43);
+
+        if (App()->var_21->checkAccess('surveycontent', ['crud' => 'delete', 'entity' => 'survey', 'entity_id' => $var_43]))
+        {
+            LimeExpressionManager::RevertUpgradeConditionsToRelevance($var_43);
+
+            $var_44 = sanitize_int($var_44);
+            $var_45 = class_1::deleteWithDependency($var_44, $var_43);
+
+            if ($var_45 > 0)
+            {
+                fixSortOrderGroups($var_43);
+                Yii::app()->setFlashMessage(gT('The question group was deleted.'));
+            }
+            else
+                Yii::app()->setFlashMessage(gT('Group could not be deleted'),'error');
+            LimeExpressionManager::UpgradeConditionsToRelevance($var_43);
+            $var_10->getController()->redirect(array('admin/survey/sa/view/surveyid/' . $var_43));
+        }
+    }
+
+    
+    public function fn_5($var_19, $var_42)
+    {
+        $var_19 = sanitize_int($var_19);
+        $var_42 = sanitize_int($var_42);
+        $var_20 = $var_18 = array();
+
+        if (App()->var_21->checkAccess('surveycontent', ['crud' => 'read', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            Yii::app()->session['FileManagerContext'] = "edit:group:{$var_19}";
+
+            Yii::app()->loadHelper('admin/htmleditor');
+            Yii::app()->loadHelper('surveytranslator');
+
+            $var_47 = Survey::model()->findByPk($var_19)->var_25;
+            $var_48 = Survey::model()->findByPk($var_19)->var_27;
+
+            $var_49 = array_merge(array($var_48), $var_47);
+
+            $var_23 = array_flip($var_49);
+
+            
+            $var_50 = class_1::model()->findAllByAttributes(array('sid' => $var_19, 'gid' => $var_42));
+            foreach ($var_50 as $var_52)
+            {
+                $var_52 = $var_52->var_53;
+
+                
+                if (!in_array($var_52['language'], $var_49))
+                {
+                    class_1::model()->deleteAllByAttributes(array('sid' => $var_19, 'gid' => $var_42, 'language' => $var_52['language']));
+                }
+                else
+                {
+                    $var_23[$var_52['language']] = 'exists';
+                }
+
+                if ($var_52['language'] == $var_48)
+                    $var_55 = $var_52;
+            }
+
+            
+            while (list($var_56, $var_57) = each($var_23))
+            {
+                if ($var_57 != 'exists')
+                {
+                    $var_55['language'] = $var_56;
+                    $var_37 = new class_1;
+                    foreach ($var_55 as $var_38 => $var_39)
+                        $var_37->$var_38 = $var_39;
+                    switchMSSQLIdentityInsert('groups', true);
+                    $var_37->save();
+                    switchMSSQLIdentityInsert('groups', false);
+                }
+            }
+            $var_33 = true;
+            foreach ($var_49 as $var_58)
+            {
+                $var_59 = class_1::model()->findByAttributes(array('sid' => $var_19, 'gid' => $var_42, 'language' => $var_58));
+                $var_18['aGroupData'][$var_58] = $var_59->var_53;
+                $var_61[$var_58] = getLanguageNameFromCode($var_58, false);
+                if ($var_33)
+                {
+                    $var_61[$var_58].= ' (' . gT("Base language") . ')';
+                    $var_33 = false;
+                }
+            }
+
+            $var_18['action'] = $var_18['display']['menu_bars']['gid_action'] = 'editgroup';
+            $var_18['surveyid'] = $var_19;
+            $var_18['gid'] = $var_42;
+            $var_18['tabtitles'] = $var_61;
+            $var_18['aBaseLanguage'] = $var_48;
+
+            $var_10->fn_1('survey/QuestionGroups', 'editGroup_view', $var_18);
+        }
+
+    }
+
+    
+    public function fn_6($var_42)
+    {
+        $var_42 = (int) $var_42;
+
+        $var_37 = class_1::model()->findByAttributes(array('gid' => $var_42));
+        $var_19 = $var_37->var_62;
+
+        if (App()->var_21->checkAccess('surveycontent', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            Yii::app()->loadHelper('surveytranslator');
+
+            $var_23 = Survey::model()->findByPk($var_19)->var_25;
+            $var_26 = Survey::model()->findByPk($var_19)->var_27;
+
+            array_push($var_23, $var_26);
+
+            foreach ($var_23 as $var_63)
+            {
+                if (isset($var_63) && $var_63 != "")
+                {
+                    $var_34 = $_POST['group_name_' . $var_63];
+                    $var_35 = $_POST['description_' . $var_63];
+
+                    $var_34 = html_entity_decode($var_34, var_36, "UTF-8");
+                    $var_35 = html_entity_decode($var_35, var_36, "UTF-8");
+
+                    
+                    $var_34 = fixCKeditorText($var_34);
+                    $var_35 = fixCKeditorText($var_35);
+
+                    $var_18 = array(
+                        'group_name' => $var_34,
+                        'description' => $var_35,
+                        'randomization_group' => $_POST['randomization_group'],
+                        'grelevance' => $_POST['grelevance'],
+                    );
+                    $var_64 = array(
+                        'gid' => $var_42,
+                        'sid' => $var_19,
+                        'language' => $var_63
+                    );
+                    $var_37 = class_1::model()->findByAttributes($var_64);
+                    foreach ($var_18 as $var_38 => $var_39)
+                        $var_37->$var_38 = $var_39;
+                    $var_65 = $var_37->save();
+                    if ($var_65)
+                    {
+                        $var_66 = getGroupList($var_42, $var_19);
+                    }
+                }
+            }
+
+            Yii::app()->session['flashmessage'] = gT("Question group successfully saved.");
+            $var_10->getController()->redirect(array('admin/survey/sa/view/surveyid/' . $var_19 . '/gid/' . $var_42));
+        }
+    }
+
+    
+    protected function fn_1($var_67 = 'survey/QuestionGroups', $var_20 = array(), $var_18 = array())
+    {
+        
+        parent::fn_1($var_67, $var_20, $var_18);
+    }
+}

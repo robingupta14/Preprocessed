@@ -1,0 +1,234 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+$var_0      = MAX_getValue('clientid');
+$var_1    = MAX_getValue('campaignid');
+$var_2      = MAX_getValue('bannerid');
+$var_3   = MAX_getValue('affiliteid');
+$var_4        = MAX_getValue('zoneid');
+$var_5 = MAX_getValue('period_preset');
+$var_6  = MAX_getValue('period_start');
+$var_7    = MAX_getValue('period_end');
+$var_8           = MAX_getValue('day');
+$var_9       = MAX_getValue('howLong');
+$var_10          = MAX_getValue('hour');
+$var_11     = MAX_getValue('returnurl');
+$var_12     = MAX_getValue('statusIds');
+$var_13        = (int) MAX_getValue('pageID');
+$var_14    = (int) MAX_getValue('setPerPage', 15);
+
+$var_15 = array();
+
+$var_15['clientid']   = $var_0;
+$var_15['campaignid'] = $var_1;
+$var_15['bannerid']   = $var_2;
+
+
+OA_Permission::enforceAccount(var_16);
+
+
+OA_Permission::checkSessionToken();
+
+if (!empty($var_8)) {
+    
+    $var_5 = '';
+    
+    $var_9 = MAX_getValue('howLong', 'd');
+    $var_10    = MAX_getValue('hour');
+} else {
+    $var_5  = MAX_getStoredValue('period_preset', 'today');
+    $var_6   = MAX_getStoredValue('period_start', date('Y-m-d'));
+    $var_7     = MAX_getStoredValue('period_end', date('Y-m-d'));
+}
+
+if(!empty($var_5)) {
+    $var_17 = MAX_getDatesByPeriod($var_5, $var_6, $var_7);
+} else {
+    $var_17 = array();
+    $var_18 = new class_0();
+    $var_18->setDate($var_8, var_20);
+    if(!empty($var_10)) {
+        
+        $var_17['day_hour'] = $var_18->format('%Y-%m-%d').' '.$var_10;
+    } else {
+        
+        switch($var_9) {
+            case 'm':
+                $var_17['month'] = $var_18->format('%Y-%m');
+                break;
+            case 'w':
+                $var_17['day_begin'] = $var_18->format('%Y-%m-%d');
+                $var_18->addSeconds(604800); 
+                $var_17['day_end'] = $var_18->format('%Y-%m-%d');
+                break;
+            case 'd':
+            default:
+                $var_17['day'] = $var_18->format('%Y-%m-%d');
+                break;
+        }
+    }
+}
+
+
+$var_15['agency_id'] = OA_Permission::getAgencyId();
+
+
+
+
+
+
+$var_23 = Admin_DA::getConversions($var_15 + $var_17);
+if (!empty($var_23))
+{
+    $var_24 = $GLOBALS['_MAX']['CONF'];
+
+    $var_25 = false;
+
+    
+    foreach($var_12 as $var_26 => $var_27) {
+        if(isset($var_23[$var_26]) && $var_23[$var_26]['connection_status'] != $var_27) {
+
+            $var_25 = true;
+            
+            $var_28 = OA_Dal::factoryDO('data_intermediate_ad_connection');
+            $var_28->get($var_26);
+            $var_28->var_30 = $var_27;
+            $var_28->update();
+
+            if($var_23[$var_26]['connection_status'] == var_32 || $var_27 == var_32) {
+                
+                $var_33 = Admin_DA::fromCache('getConnectionVariables', $var_26);
+                
+                $var_34 = 0;
+                $var_35    = 0;
+                foreach($var_33 as $var_36) {
+                    if($var_36['purpose'] == 'basket_value') {
+                        $var_34 += $var_36['value'];
+                    } elseif ($var_36['purpose'] == 'num_items') {
+                        $var_35    += $var_36['value'];
+                    }
+                }
+
+                
+                $var_37 = $var_23[$var_26]['date_time'];
+                $var_38 = new class_0($var_37);
+                $var_38->toUTC();
+
+                $var_40 = OX_OperationInterval::convertDateToOperationIntervalID($var_38);
+                $var_41 = $var_38->format('%Y-%m-%d');
+                $var_42 = $var_38->format('%H');
+
+                
+                $var_43 = $var_23[$var_26]['ad_id'];
+                $var_44 = $var_23[$var_26]['creative_id'];
+                $var_45 = $var_23[$var_26]['zone_id'];
+
+                $var_46 = null;
+                
+                if($var_23[$var_26]['connection_status'] == var_32) {
+                    
+                    
+                    $var_46 = '-';
+                }
+
+                
+                if($var_27 == var_32) {
+                    
+                    
+                    $var_46 = '+';
+                }
+
+                
+                if ($var_23[$var_26]['connection_action'] == var_47) {
+                    $var_48 = 'data_summary_ad_arrival_hourly';
+
+                    
+                    $var_49 = &MAX_Plugin::getPlugins('Maintenance');
+                    foreach($var_49 as $var_50) {
+                        if ($var_50->getHook() == var_52) {
+                            $var_50->serviceLocatorRegister();
+
+                            
+                            if ($var_54->get('financeSummaryTable') == $var_48) {
+                                break;
+                            } else {
+                                $var_50->serviceLocatorRemove();
+                            }
+                        }
+                    }
+
+                } else {
+                    $var_50 = null;
+                    $var_48 = 'data_summary_ad_hourly';
+                }
+
+                
+                $var_56 = OA_Dal::factoryDAL('data_intermediate_ad');
+                $var_56->addConversion($var_46,
+                    $var_34, $var_35, $var_43,
+                    $var_44, $var_45, $var_41, $var_42);
+
+                
+                $var_56->addConversion($var_46,
+                    $var_34, $var_35, $var_43,
+                    $var_44, $var_45, $var_41, $var_42, $var_48);
+
+                
+                $var_54 =& OA_ServiceLocator::instance();
+                $var_58 = &$var_54->get('OX_Dal_Maintenance_Statistics');
+                if (!$var_58) {
+                    $var_59 = new class_1();
+                    $var_58 = $var_59->factory();
+                }
+                $var_61 = new class_0($var_38->format('%Y-%m-%d %H:00:00'));
+                $var_62   = new class_0($var_38->format('%Y-%m-%d %H:00:00'));
+                $var_58->_saveSummaryUpdateWithFinanceInfo($var_61, $var_62, $var_48);
+
+                if (!is_null($var_50)) {
+                    $var_50->serviceLocatorRemove();
+                }
+            }
+        }
+    }
+    if($var_25) {
+        
+        $var_64 = array(
+                'cacheDir' => var_65,
+        );
+        $var_66 = new class_2($var_64);
+        $var_66->clean(OX_getHostName().'stats');
+    }
+}
+
+$var_68 = "entity=conversions&clientid=$var_0&campaignid=$var_1&bannerid=$var_2&affiliateid=$var_3&zoneid=$var_4";
+
+if (!empty($var_5)) {
+    $var_68 .= "&period_preset={$var_5}&period_start={$var_6}&period_end={$var_7}";
+}
+if (!empty($var_8)) {
+    $var_68 .= "&day={$var_8}";
+}
+if (!empty($var_9)) {
+    $var_68 .= "&howLong={$var_9}";
+}
+if (!empty($var_10)) {
+    $var_68 .= "&hour={$var_10}";
+}
+if (!empty($var_13)) {
+    $var_68 .= "&pageID={$var_13}";
+}
+if (!empty($var_14)) {
+    $var_68 .= "&setPerPage={$var_14}";
+}
+
+Header ("Location: ".$var_11."?".$var_68);
+
+?>

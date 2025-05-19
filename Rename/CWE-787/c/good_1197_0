@@ -1,0 +1,527 @@
+
+
+
+
+
+
+
+
+static int fn_0(int *var_23)
+{
+  if (((*var_23) & IDN2_TRANSITIONAL) && ((*var_23) & IDN2_NONTRANSITIONAL))
+    return IDN2_INVALID_FLAGS;
+
+  if (((*var_23) & (IDN2_TRANSITIONAL|IDN2_NONTRANSITIONAL)) && ((*var_23) & IDN2_NO_TR46))
+    return IDN2_INVALID_FLAGS;
+
+  if (!((*var_23) & (IDN2_NO_TR46|IDN2_TRANSITIONAL)))
+    *var_23 |= IDN2_NONTRANSITIONAL;
+
+  return var_21;
+}
+
+static int
+fn_3 (const uint8_t * src, size_t var_6, uint8_t * dst, size_t * dstlen,
+       int var_23)
+{
+  size_t plen;
+  uint32_t *p;
+  int rc;
+  size_t tmpl;
+
+  if (_idn2_ascii_p (src, var_6))
+    {
+      if (var_23 & IDN2_ALABEL_ROUNDTRIP)
+
+ return IDN2_INVALID_FLAGS;
+
+      if (var_6 > var_17)
+ return IDN2_TOO_BIG_LABEL;
+      if (var_6 > *dstlen)
+ return IDN2_TOO_BIG_DOMAIN;
+
+      memcpy (dst, src, var_6);
+      *dstlen = var_6;
+      return var_21;
+    }
+
+  rc = _idn2_u8_to_u32_nfc (src, var_6, &p, &plen, var_23 & IDN2_NFC_INPUT);
+  if (rc != var_21)
+    return rc;
+
+  if (!(var_23 & IDN2_TRANSITIONAL))
+    {
+      rc = _idn2_label_test(
+ TEST_NFC |
+ TEST_2HYPHEN |
+ TEST_LEADING_COMBINING |
+ TEST_DISALLOWED |
+ TEST_CONTEXTJ_RULE |
+ TEST_CONTEXTO_WITH_RULE |
+ TEST_UNASSIGNED | TEST_BIDI |
+ ((var_23 & IDN2_NONTRANSITIONAL) ? TEST_NONTRANSITIONAL : 0) |
+ ((var_23 & IDN2_USE_STD3_ASCII_RULES) ? 0 : TEST_ALLOW_STD3_DISALLOWED),
+ p, plen);
+
+      if (rc != var_21)
+ {
+   free(p);
+   return rc;
+ }
+    }
+
+  dst[0] = 'x';
+  dst[1] = 'n';
+  dst[2] = '-';
+  dst[3] = '-';
+
+  tmpl = *dstlen - 4;
+  rc = _idn2_punycode_encode (plen, p, &tmpl, (char *) dst + 4);
+  free (p);
+  if (rc != var_21)
+    return rc;
+
+  *dstlen = 4 + tmpl;
+
+  return var_21;
+}
+
+
+
+
+
+
+static int
+fn_6 (const uint8_t * domain_u8, uint8_t ** out, int var_23)
+{
+  size_t var_20, it;
+  uint32_t *domain_u32;
+  int var_13 = var_21, rc;
+  int var_13 = 0;
+  int test_flags;
+
+  if (var_23 & IDN2_TRANSITIONAL)
+    var_13 = 1;
+
+
+  if (!(domain_u32 =
+       u8_to_u32 (domain_u8, u8_strlen (domain_u8) + 1, NULL, &var_20)))
+    {
+      if (errno == ENOMEM)
+ return IDN2_MALLOC;
+      return IDN2_ENCODING_ERROR;
+    }
+
+  size_t var_12 = 0;
+  for (it = 0; it < var_20 - 1; it++)
+    {
+      IDNAMap map;
+
+      get_idna_map (domain_u32[it], &map);
+
+      if (map_is (&map, TR46_FLG_DISALLOWED))
+ {
+   if (domain_u32[it])
+     {
+       free (domain_u32);
+       return IDN2_DISALLOWED;
+     }
+   var_12++;
+ }
+      else if (map_is (&map, TR46_FLG_MAPPED))
+ {
+   var_12 += map.nmappings;
+ }
+      else if (map_is (&map, TR46_FLG_VALID))
+ {
+   var_12++;
+ }
+      else if (map_is (&map, TR46_FLG_IGNORED))
+ {
+   continue;
+ }
+      else if (map_is (&map, TR46_FLG_DEVIATION))
+ {
+   if (var_13)
+     {
+       var_12 += map.nmappings;
+     }
+   else
+     var_12++;
+ }
+      else if (!(var_23 & IDN2_USE_STD3_ASCII_RULES))
+        {
+   if (map_is (&map, TR46_FLG_DISALLOWED_STD3_VALID))
+     {
+
+       var_12++;
+     }
+   else if (map_is (&map, TR46_FLG_DISALLOWED_STD3_MAPPED))
+     {
+
+       var_12 += map.nmappings;
+     }
+        }
+    }
+
+  uint32_t *tmp = (uint32_t *) malloc ((var_12 + 1) * sizeof (uint32_t));
+  if (!tmp)
+    {
+      free (domain_u32);
+      return IDN2_MALLOC;
+    }
+
+  var_12 = 0;
+  for (it = 0; it < var_20 - 1; it++)
+    {
+      uint32_t var_12 = domain_u32[it];
+      IDNAMap map;
+
+      get_idna_map (var_12, &map);
+
+      if (map_is (&map, TR46_FLG_DISALLOWED))
+ {
+   tmp[var_12++] = var_12;
+ }
+      else if (map_is (&map, TR46_FLG_MAPPED))
+ {
+   var_12 += get_map_data (tmp + var_12, &map);
+ }
+      else if (map_is (&map, TR46_FLG_VALID))
+ {
+   tmp[var_12++] = var_12;
+ }
+      else if (map_is (&map, TR46_FLG_IGNORED))
+ {
+   continue;
+ }
+      else if (map_is (&map, TR46_FLG_DEVIATION))
+ {
+   if (var_13)
+     {
+       var_12 += get_map_data (tmp + var_12, &map);
+     }
+   else
+     tmp[var_12++] = var_12;
+ }
+      else if (!(var_23 & IDN2_USE_STD3_ASCII_RULES))
+        {
+   if (map_is (&map, TR46_FLG_DISALLOWED_STD3_VALID))
+     {
+       tmp[var_12++] = var_12;
+     }
+   else if (map_is (&map, TR46_FLG_DISALLOWED_STD3_MAPPED))
+     {
+       var_12 += get_map_data (tmp + var_12, &map);
+     }
+        }
+    }
+  free (domain_u32);
+
+
+  tmp[var_12] = 0;
+  domain_u32 = u32_normalize (UNINORM_NFC, tmp, var_12 + 1, NULL, &var_20);
+  free (tmp);
+  tmp = NULL;
+
+  if (!domain_u32)
+    {
+      if (errno == ENOMEM)
+ return IDN2_MALLOC;
+      return IDN2_ENCODING_ERROR;
+    }
+
+
+  uint32_t *e, *s;
+  for (e = s = domain_u32; *e; s = e)
+    {
+      while (*e && *e != '.')
+ e++;
+
+      if (e - s >= 4 && s[0] == 'x' && s[1] == 'n' && s[2] == '-'
+   && s[3] == '-')
+ {
+
+   size_t ace_len;
+   uint32_t name_u32[var_17];
+   size_t var_13 = var_17;
+   uint8_t *ace;
+
+   ace = u32_to_u8 (s + 4, e - s - 4, NULL, &ace_len);
+   if (!ace)
+     {
+       free (domain_u32);
+       if (errno == ENOMEM)
+  return IDN2_MALLOC;
+       return IDN2_ENCODING_ERROR;
+     }
+
+   rc =
+     _idn2_punycode_decode (ace_len, (char *) ace, &var_13, name_u32);
+
+   free (ace);
+
+   if (rc)
+     {
+       free (domain_u32);
+       return rc;
+     }
+
+   test_flags = (TEST_NFC | TEST_2HYPHEN | TEST_HYPHEN_STARTEND | TEST_LEADING_COMBINING | TEST_NONTRANSITIONAL);
+
+   if (!(var_23 & IDN2_USE_STD3_ASCII_RULES))
+     test_flags |= TEST_ALLOW_STD3_DISALLOWED;
+
+   if ((rc =
+        _idn2_label_test (test_flags, name_u32,
+     var_13)))
+     var_13 = rc;
+ }
+      else
+ {
+   test_flags = var_13 ? (TEST_NFC | TEST_2HYPHEN | TEST_HYPHEN_STARTEND | TEST_LEADING_COMBINING | TEST_TRANSITIONAL) : (TEST_NFC | TEST_2HYPHEN | TEST_HYPHEN_STARTEND | TEST_LEADING_COMBINING | TEST_NONTRANSITIONAL);
+
+   if (!(var_23 & IDN2_USE_STD3_ASCII_RULES))
+     test_flags |= TEST_ALLOW_STD3_DISALLOWED;
+
+   if ((rc =
+        _idn2_label_test (test_flags, s, e - s)))
+     var_13 = rc;
+ }
+
+      if (*e)
+ e++;
+    }
+
+  if (var_13 == var_21 && out)
+    {
+      uint8_t *_out = u32_to_u8 (domain_u32, var_20, NULL, &var_20);
+      free (domain_u32);
+
+      if (!_out)
+ {
+   if (errno == ENOMEM)
+     return IDN2_MALLOC;
+   return IDN2_ENCODING_ERROR;
+ }
+
+      *out = _out;
+    }
+  else
+    free (domain_u32);
+
+  return var_13;
+}
+
+int
+fn_13 (const uint8_t * src, uint8_t ** lookupname, int var_23)
+{
+  size_t var_17 = 0;
+  uint8_t _lookupname[IDN2_DOMAIN_MAX_LENGTH + 1];
+  uint8_t _mapped[IDN2_DOMAIN_MAX_LENGTH + 1];
+  int rc;
+
+  if (src == NULL)
+    {
+      if (lookupname)
+ *lookupname = NULL;
+      return var_21;
+    }
+
+  rc = set_default_flags(&var_23);
+  if (rc != var_21)
+    return rc;
+
+  if (!(var_23 & IDN2_NO_TR46))
+    {
+      uint8_t *out;
+      size_t outlen;
+
+      rc = _tr46 (src, &out, var_23);
+      if (rc != var_21)
+ return rc;
+
+      outlen = u8_strlen (out);
+      if (outlen >= sizeof (_mapped))
+ {
+   free (out);
+   return IDN2_TOO_BIG_DOMAIN;
+ }
+
+      memcpy (_mapped, out, outlen + 1);
+      src = _mapped;
+      free (out);
+    }
+
+  do
+    {
+      const uint8_t *end = (uint8_t *) strchrnul ((const char *) src, '.');
+
+
+      size_t var_17 = end - src;
+      uint8_t tmp[var_17];
+      size_t var_17 = var_17;
+
+      rc = label (src, var_17, tmp, &var_17, var_23);
+      if (rc != var_21)
+ return rc;
+
+      if (var_17 + var_17
+   > IDN2_DOMAIN_MAX_LENGTH - (var_17 == 0 && *end == '\0' ? 1 : 2))
+ return IDN2_TOO_BIG_DOMAIN;
+
+      memcpy (_lookupname + var_17, tmp, var_17);
+      var_17 += var_17;
+
+      if (*end == '.')
+ {
+   if (var_17 + 1 > IDN2_DOMAIN_MAX_LENGTH)
+     return IDN2_TOO_BIG_DOMAIN;
+
+   _lookupname[var_17] = '.';
+   var_17++;
+ }
+      _lookupname[var_17] = '\0';
+
+      src = end;
+    }
+  while (*src++);
+
+  if (lookupname)
+    {
+      uint8_t *tmp = (uint8_t *) malloc (var_17 + 1);
+
+      if (tmp == NULL)
+ return IDN2_MALLOC;
+
+      memcpy (tmp, _lookupname, var_17 + 1);
+      *lookupname = tmp;
+    }
+
+  return var_21;
+}
+
+int
+fn_17 (const char * src, char ** lookupname, int var_23)
+{
+  uint8_t *utf8src = NULL;
+  int rc;
+
+  if (src)
+    {
+      const char *encoding = locale_charset ();
+
+      utf8src = u8_strconv_from_encoding (src, encoding, iconveh_error);
+
+      if (!utf8src)
+ {
+   if (errno == ENOMEM)
+     return IDN2_MALLOC;
+   return IDN2_ICONV_FAIL;
+ }
+    }
+
+  rc = idn2_lookup_u8 (utf8src, (uint8_t **) lookupname,
+         var_23 | IDN2_NFC_INPUT);
+
+  free (utf8src);
+
+  return rc;
+}
+
+int
+fn_18 (const uint32_t * input, size_t var_20, char * output, int var_23)
+{
+  uint32_t *input_u32;
+  uint8_t *input_u8, *output_u8;
+  size_t length;
+  int rc;
+
+  if (!input)
+    {
+      if (output)
+ *output = 0;
+      return var_21;
+    }
+
+  input_u32 = (uint32_t *) malloc ((var_20 + 1) * sizeof(uint32_t));
+  if (!input_u32)
+    return IDN2_MALLOC;
+
+  u32_cpy (input_u32, input, var_20);
+  input_u32[var_20] = 0;
+
+  input_u8 = u32_to_u8 (input_u32, var_20 + 1, NULL, &length);
+  free (input_u32);
+  if (!input_u8)
+    {
+      if (errno == ENOMEM)
+ return IDN2_MALLOC;
+      return IDN2_ENCODING_ERROR;
+    }
+
+  rc = idn2_lookup_u8 (input_u8, &output_u8, var_23);
+  free (input_u8);
+
+  if (rc == var_21)
+    {
+
+
+
+
+      size_t var_20 = strlen ((char *) output_u8);
+
+      if (var_20 > 63)
+        {
+   free (output_u8);
+   return IDN2_TOO_BIG_DOMAIN;
+        }
+
+      if (output)
+ strcpy (output, (char *) output_u8);
+
+      free (output_u8);
+    }
+
+  return rc;
+}
+
+int
+fn_20 (const uint32_t * input, char ** output, int var_23)
+{
+  uint8_t *input_u8;
+  size_t length;
+  int rc;
+
+  if (!input)
+    {
+      if (output)
+ *output = NULL;
+      return var_21;
+    }
+
+  input_u8 = u32_to_u8 (input, u32_strlen(input) + 1, NULL, &length);
+  if (!input_u8)
+    {
+      if (errno == ENOMEM)
+ return IDN2_MALLOC;
+      return IDN2_ENCODING_ERROR;
+    }
+
+  rc = idn2_lookup_u8 (input_u8, (uint8_t **) output, var_23);
+  free (input_u8);
+
+  return rc;
+}
+
+int
+fn_21 (const char * input, char ** output, int var_23)
+{
+  return idn2_lookup_u8 ((const uint8_t *) input, (uint8_t **) output, var_23);
+}
+
+int
+fn_22 (const char * input, char ** output, int var_23)
+{
+  return idn2_lookup_ul (input, output, var_23);
+}

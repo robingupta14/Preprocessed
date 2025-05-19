@@ -1,0 +1,2407 @@
+<?php
+
+
+
+
+
+
+
+
+
+date_default_timezone_set('UTC');
+
+
+
+$GLOBALS['config']['DATADIR'] = 'data'; 
+$GLOBALS['config']['CONFIG_FILE'] = $GLOBALS['config']['DATADIR'].'/config.php'; 
+$GLOBALS['config']['DATASTORE'] = $GLOBALS['config']['DATADIR'].'/datastore.php'; 
+$GLOBALS['config']['LINKS_PER_PAGE'] = 20; 
+$GLOBALS['config']['IPBANS_FILENAME'] = $GLOBALS['config']['DATADIR'].'/ipbans.php'; 
+$GLOBALS['config']['BAN_AFTER'] = 4;        
+$GLOBALS['config']['BAN_DURATION'] = 1800;  
+$GLOBALS['config']['OPEN_SHAARLI'] = false; 
+$GLOBALS['config']['HIDE_TIMESTAMPS'] = false; 
+$GLOBALS['config']['ENABLE_THUMBNAILS'] = true; 
+$GLOBALS['config']['CACHEDIR'] = 'cache'; 
+$GLOBALS['config']['PAGECACHE'] = 'pagecache'; 
+$GLOBALS['config']['ENABLE_LOCALCACHE'] = true; 
+$GLOBALS['config']['PUBSUBHUB_URL'] = ''; 
+$GLOBALS['config']['UPDATECHECK_FILENAME'] = $GLOBALS['config']['DATADIR'].'/lastupdatecheck.txt'; 
+$GLOBALS['config']['UPDATECHECK_INTERVAL'] = 86400 ; 
+                                          
+
+
+
+if (is_file($GLOBALS['config']['DATADIR'].'/options.php')) require($GLOBALS['config']['DATADIR'].'/options.php');
+
+define('shaarli_version','0.0.41 beta');
+define('PHPPREFIX','<?php  ?>'); 
+
+
+$cookie=session_get_cookie_params();
+$cookiedir = ''; if(dirname($_SERVER['SCRIPT_NAME'])!='/') $cookiedir=dirname($_SERVER["SCRIPT_NAME"]).'/';
+session_set_cookie_params($cookie['lifetime'],$cookiedir,$_SERVER['HTTP_HOST']); 
+
+
+define('INACTIVITY_TIMEOUT',3600); 
+ini_set('session.use_cookies', 1);       
+ini_set('session.use_only_cookies', 1);  
+ini_set('session.use_trans_sid', false); 
+session_name('shaarli');
+if (session_id() == '') session_start();  
+
+
+ini_set('max_input_time','60');  
+ini_set('memory_limit', '128M');  
+ini_set('post_max_size', '16M');
+ini_set('upload_max_filesize', '16M');
+checkphpversion();
+error_reporting(E_ALL^E_WARNING);  
+
+
+raintpl::$tpl_dir = "tpl/"; 
+if (!is_dir('tmp')) { mkdir('tmp',705); chmod('tmp',705); }
+raintpl::$cache_dir = "tmp/"; 
+
+ob_start();  
+
+
+
+if (get_magic_quotes_gpc())
+{
+    function stripslashes_deep($value) { $value = is_array($value) ? array_map('stripslashes_deep', $value) : stripslashes($value); return $value; }
+    $_POST = array_map('stripslashes_deep', $_POST);
+    $_GET = array_map('stripslashes_deep', $_GET);
+    $_COOKIE = array_map('stripslashes_deep', $_COOKIE);
+}
+
+
+header("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT");
+header("Cache-Control: no-store, no-cache, must-revalidate");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+
+
+if (!is_writable(realpath(dirname(__FILE__)))) die('<pre>ERROR: Shaarli does not have the right to write in its own directory ('.realpath(dirname(__FILE__)).').</pre>');
+if (!is_dir($GLOBALS['config']['DATADIR'])) { mkdir($GLOBALS['config']['DATADIR'],705); chmod($GLOBALS['config']['DATADIR'],705); }
+if (!is_dir('tmp')) { mkdir('tmp',705); chmod('tmp',705); } 
+if (!is_file($GLOBALS['config']['DATADIR'].'/.htaccess')) { file_put_contents($GLOBALS['config']['DATADIR'].'/.htaccess',"Allow from none\nDeny from all\n"); } 
+
+if (!is_file($GLOBALS['config']['DATADIR'].'/.htaccess')) die('<pre>ERROR: Shaarli does not have the right to write in its data directory ('.realpath($GLOBALS['config']['DATADIR']).').</pre>');
+if ($GLOBALS['config']['ENABLE_LOCALCACHE'])
+{
+    if (!is_dir($GLOBALS['config']['CACHEDIR'])) { mkdir($GLOBALS['config']['CACHEDIR'],705); chmod($GLOBALS['config']['CACHEDIR'],705); }
+    if (!is_file($GLOBALS['config']['CACHEDIR'].'/.htaccess')) { file_put_contents($GLOBALS['config']['CACHEDIR'].'/.htaccess',"Allow from none\nDeny from all\n"); } 
+}
+
+
+if (empty($GLOBALS['title'])) $GLOBALS['title']='Shared links on '.htmlspecialchars(indexUrl());
+if (empty($GLOBALS['timezone'])) $GLOBALS['timezone']=date_default_timezone_get();
+if (empty($GLOBALS['redirector'])) $GLOBALS['redirector']='';
+if (empty($GLOBALS['disablesessionprotection'])) $GLOBALS['disablesessionprotection']=false;
+if (empty($GLOBALS['disablejquery'])) $GLOBALS['disablejquery']=false;
+if (empty($GLOBALS['privateLinkByDefault'])) $GLOBALS['privateLinkByDefault']=false;
+
+
+
+if (!is_file($GLOBALS['config']['CONFIG_FILE'])) install();
+
+
+
+autoLocale(); 
+header('Content-Type: text/html; charset=utf-8'); 
+
+
+function checkphpversion()
+{
+    if (version_compare(PHP_VERSION, '5.1.0') < 0)
+    {
+        header('Content-Type: text/plain; charset=utf-8');
+        
+        exit;
+    }
+}
+
+
+
+
+
+function checkUpdate()
+{
+    if (!isLoggedIn()) return ''; 
+
+    
+    if (!is_file($GLOBALS['config']['UPDATECHECK_FILENAME']) || (filemtime($GLOBALS['config']['UPDATECHECK_FILENAME'])<time()-($GLOBALS['config']['UPDATECHECK_INTERVAL'])))
+    {
+        $version=shaarli_version;
+        list($httpstatus,$headers,$data) = getHTTP('http:
+        if (strpos($httpstatus,'200 OK')!==false) $version=$data;
+        
+        file_put_contents($GLOBALS['config']['UPDATECHECK_FILENAME'],$version); 
+    }
+    
+    $newestversion=file_get_contents($GLOBALS['config']['UPDATECHECK_FILENAME']);
+    if (version_compare($newestversion,shaarli_version)==1) return $newestversion;
+    return '';
+}
+
+
+
+
+
+class pageCache
+{
+    private $url; 
+    private $shouldBeCached; 
+    private $filename; 
+
+    
+    public function __construct($url,$shouldBeCached)
+    {
+        $this->url = $url;
+        $this->filename = $GLOBALS['config']['PAGECACHE'].'/'.sha1($url).'.cache';
+        $this->shouldBeCached = $shouldBeCached;
+    }
+
+    
+    
+    public function cachedVersion()
+    {
+        if (!$this->shouldBeCached) return null;
+        if (is_file($this->filename)) { return file_get_contents($this->filename); exit; }
+        return null;
+    }
+
+    
+    public function cache($page)
+    {
+        if (!$this->shouldBeCached) return;
+        if (!is_dir($GLOBALS['config']['PAGECACHE'])) { mkdir($GLOBALS['config']['PAGECACHE'],705); chmod($GLOBALS['config']['PAGECACHE'],705); }
+        file_put_contents($this->filename,$page);
+    }
+
+    
+    
+    public static function purgeCache()
+    {
+        if (is_dir($GLOBALS['config']['PAGECACHE']))
+        {
+            $handler = opendir($GLOBALS['config']['PAGECACHE']);
+            if ($handler!==false)
+            {
+                while (($filename = readdir($handler))!==false)
+                {
+                    if (endsWith($filename,'.cache')) { unlink($GLOBALS['config']['PAGECACHE'].'/'.$filename); }
+                }
+                closedir($handler);
+            }
+        }
+    }
+
+}
+
+
+
+
+function logm($message)
+{
+    $t = strval(date('Y/m/d_H:i:s')).' - '.$_SERVER["REMOTE_ADDR"].' - '.strval($message)."\n";
+    file_put_contents($GLOBALS['config']['DATADIR'].'/log.txt',$t,FILE_APPEND);
+}
+
+
+function nl2br_escaped($html)
+{
+    return str_replace('>','&gt;',str_replace('<','&lt;',nl2br($html)));
+}
+
+
+function smallHash($text)
+{
+    $t = rtrim(base64_encode(hash('crc32',$text,true)),'=');
+    $t = str_replace('+','-',$t); 
+    $t = str_replace('/','_',$t);
+    $t = str_replace('=','@',$t);
+    return $t;
+}
+
+
+
+function text2clickable($url)
+{
+    $redir = empty($GLOBALS['redirector']) ? '' : $GLOBALS['redirector'];
+    return preg_replace('!(((?:https?|ftp|file):
+}
+
+
+
+function keepMultipleSpaces($text)
+{
+    return str_replace('  ',' &nbsp;',$text);
+
+}
+
+
+
+function autoLocale()
+{
+    $loc='en_US'; 
+    if (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) 
+    {   
+        if (preg_match('/([a-z]{2}(-[a-z]{2})?)/i',$_SERVER['HTTP_ACCEPT_LANGUAGE'],$matches)) $loc=$matches[1];
+    }
+    setlocale(LC_TIME,$loc);  
+}
+
+
+
+
+if (!empty($GLOBALS['config']['PUBSUBHUB_URL'])) include './publisher.php';
+function pubsubhub()
+{
+    if (!empty($GLOBALS['config']['PUBSUBHUB_URL']))
+    {
+       $p = new Publisher($GLOBALS['config']['PUBSUBHUB_URL']);
+       $topic_url = array (
+                       indexUrl().'?do=atom',
+                       indexUrl().'?do=rss'
+                    );
+       $p->publish_update($topic_url);
+    }
+}
+
+
+
+
+
+function allIPs()
+{
+    $ip = $_SERVER["REMOTE_ADDR"];
+    
+    if (isset($_SERVER['HTTP_X_FORWARDED_FOR'])) { $ip=$ip.'_'.$_SERVER['HTTP_X_FORWARDED_FOR']; }
+    if (isset($_SERVER['HTTP_CLIENT_IP'])) { $ip=$ip.'_'.$_SERVER['HTTP_CLIENT_IP']; }
+    return $ip;
+}
+
+
+function check_auth($login,$password)
+{
+    $hash = sha1($password.$login.$GLOBALS['salt']);
+    if ($login==$GLOBALS['login'] && $hash==$GLOBALS['hash'])
+    {   
+        $_SESSION['uid'] = sha1(uniqid('',true).'_'.mt_rand()); 
+        $_SESSION['ip']=allIPs();                
+        $_SESSION['username']=$login;
+        $_SESSION['expires_on']=time()+INACTIVITY_TIMEOUT;  
+        logm('Login successful');
+        return True;
+    }
+    logm('Login failed for user '.$login);
+    return False;
+}
+
+
+function isLoggedIn()
+{
+    if ($GLOBALS['config']['OPEN_SHAARLI']) return true;
+
+    if (!isset($GLOBALS['login'])) return false;  
+
+    
+    if (empty($_SESSION['uid']) || ($GLOBALS['disablesessionprotection']==false && $_SESSION['ip']!=allIPs()) || time()>=$_SESSION['expires_on'])
+    {
+        logout();
+        return false;
+    }
+    if (!empty($_SESSION['longlastingsession']))  $_SESSION['expires_on']=time()+$_SESSION['longlastingsession']; 
+    else $_SESSION['expires_on']=time()+INACTIVITY_TIMEOUT; 
+
+    return true;
+}
+
+
+function logout() { if (isset($_SESSION)) { unset($_SESSION['uid']); unset($_SESSION['ip']); unset($_SESSION['username']); unset($_SESSION['privateonly']); }  }
+
+
+
+
+
+if (!is_file($GLOBALS['config']['IPBANS_FILENAME'])) file_put_contents($GLOBALS['config']['IPBANS_FILENAME'], "<?php\n\$GLOBALS['IPBANS']=".var_export(array('FAILURES'=>array(),'BANS'=>array()),true).";\n?>");
+
+function ban_loginFailed()
+{
+    $ip=$_SERVER["REMOTE_ADDR"]; $gb=$GLOBALS['IPBANS'];
+    if (!isset($gb['FAILURES'][$ip])) $gb['FAILURES'][$ip]=0;
+    $gb['FAILURES'][$ip]++;
+    if ($gb['FAILURES'][$ip]>($GLOBALS['config']['BAN_AFTER']-1))
+    {
+        $gb['BANS'][$ip]=time()+$GLOBALS['config']['BAN_DURATION'];
+        logm('IP address banned from login');
+    }
+    $GLOBALS['IPBANS'] = $gb;
+    file_put_contents($GLOBALS['config']['IPBANS_FILENAME'], "<?php\n\$GLOBALS['IPBANS']=".var_export($gb,true).";\n?>");
+}
+
+
+function ban_loginOk()
+{
+    $ip=$_SERVER["REMOTE_ADDR"]; $gb=$GLOBALS['IPBANS'];
+    unset($gb['FAILURES'][$ip]); unset($gb['BANS'][$ip]);
+    $GLOBALS['IPBANS'] = $gb;
+    file_put_contents($GLOBALS['config']['IPBANS_FILENAME'], "<?php\n\$GLOBALS['IPBANS']=".var_export($gb,true).";\n?>");
+}
+
+
+function ban_canLogin()
+{
+    $ip=$_SERVER["REMOTE_ADDR"]; $gb=$GLOBALS['IPBANS'];
+    if (isset($gb['BANS'][$ip]))
+    {
+        
+        if ($gb['BANS'][$ip]<=time())
+        {   
+            logm('Ban lifted.');
+            unset($gb['FAILURES'][$ip]); unset($gb['BANS'][$ip]);
+            file_put_contents($GLOBALS['config']['IPBANS_FILENAME'], "<?php\n\$GLOBALS['IPBANS']=".var_export($gb,true).";\n?>");
+            return true; 
+        }
+        return false; 
+    }
+    return true; 
+}
+
+
+
+if (isset($_POST['login']))
+{
+    if (!ban_canLogin()) die('I said: NO. You are banned for the moment. Go away.');
+    if (isset($_POST['password']) && tokenOk($_POST['token']) && (check_auth($_POST['login'], $_POST['password'])))
+    {   
+        ban_loginOk();
+        
+        if (!empty($_POST['longlastingsession']))
+        {
+            $_SESSION['longlastingsession']=31536000;  
+            $_SESSION['expires_on']=time()+$_SESSION['longlastingsession'];  
+
+            $cookiedir = ''; if(dirname($_SERVER['SCRIPT_NAME'])!='/') $cookiedir=dirname($_SERVER["SCRIPT_NAME"]).'/';
+            session_set_cookie_params($_SESSION['longlastingsession'],$cookiedir,$_SERVER['HTTP_HOST']); 
+            
+            session_regenerate_id(true);  
+        }
+        else 
+        {
+            $cookiedir = ''; if(dirname($_SERVER['SCRIPT_NAME'])!='/') $cookiedir=dirname($_SERVER["SCRIPT_NAME"]).'/';
+            session_set_cookie_params(0,$cookiedir,$_SERVER['HTTP_HOST']); 
+            session_regenerate_id(true);
+        }
+        
+        if (isset($_GET['post'])) { header('Location: ?post='.urlencode($_GET['post']).(!empty($_GET['title'])?'&title='.urlencode($_GET['title']):'').(!empty($_GET['source'])?'&source='.urlencode($_GET['source']):'')); exit; }
+        if (isset($_POST['returnurl']))
+        {
+            if (endsWith($_POST['returnurl'],'?do=login')) { header('Location: ?'); exit; } 
+            header('Location: '.$_POST['returnurl']); exit;
+        }
+        header('Location: ?'); exit;
+    }
+    else
+    {
+        ban_loginFailed();
+        $redir = '';
+        if (isset($_GET['post'])) { $redir = '&post='.urlencode($_GET['post']).(!empty($_GET['title'])?'&title='.urlencode($_GET['title']):'').(!empty($_GET['source'])?'&source='.urlencode($_GET['source']):'');  }
+        document.location=\'?do=login'.$redir.'\';</script>'; 
+        exit;
+    }
+}
+
+
+
+
+
+
+
+function serverUrl()
+{
+    $https = (!empty($_SERVER['HTTPS']) && (strtolower($_SERVER['HTTPS'])=='on')) || $_SERVER["SERVER_PORT"]=='443'; 
+    $serverport = ($_SERVER["SERVER_PORT"]=='80' || ($https && $_SERVER["SERVER_PORT"]=='443') ? '' : ':'.$_SERVER["SERVER_PORT"]);
+    return 'http'.($https?'s':'').':
+}
+
+
+
+function indexUrl()
+{
+    $scriptname = $_SERVER["SCRIPT_NAME"];
+    
+    
+    if (endswith($scriptname,'index.php')) $scriptname = substr($scriptname,0,strlen($scriptname)-9);
+    return serverUrl() . $scriptname;
+}
+
+
+
+function pageUrl()
+{
+    return indexUrl().(!empty($_SERVER["QUERY_STRING"]) ? '?'.$_SERVER["QUERY_STRING"] : '');
+}
+
+
+function return_bytes($val)
+{
+    $val = trim($val); $last=strtolower($val[strlen($val)-1]);
+    switch($last)
+    {
+        case 'g': $val *= 1024;
+        case 'm': $val *= 1024;
+        case 'k': $val *= 1024;
+    }
+    return $val;
+}
+
+
+
+function getMaxFileSize()
+{
+    $size1 = return_bytes(ini_get('post_max_size'));
+    $size2 = return_bytes(ini_get('upload_max_filesize'));
+    
+    $maxsize = min($size1,$size2);
+    
+    return $maxsize;
+}
+
+
+function startsWith($haystack,$needle,$case=true)
+{
+    if($case){return (strcmp(substr($haystack, 0, strlen($needle)),$needle)===0);}
+    return (strcasecmp(substr($haystack, 0, strlen($needle)),$needle)===0);
+}
+
+
+function endsWith($haystack,$needle,$case=true)
+{
+    if($case){return (strcmp(substr($haystack, strlen($haystack) - strlen($needle)),$needle)===0);}
+    return (strcasecmp(substr($haystack, strlen($haystack) - strlen($needle)),$needle)===0);
+}
+
+
+function linkdate2timestamp($linkdate)
+{
+    $Y=$M=$D=$h=$m=$s=0;
+    $r = sscanf($linkdate,'%4d%2d%2d_%2d%2d%2d',$Y,$M,$D,$h,$m,$s);
+    return mktime($h,$m,$s,$M,$D,$Y);
+}
+
+
+function linkdate2rfc822($linkdate)
+{
+    return date('r',linkdate2timestamp($linkdate)); 
+}
+
+
+function linkdate2iso8601($linkdate)
+{
+    return date('c',linkdate2timestamp($linkdate)); 
+}
+
+
+function linkdate2locale($linkdate)
+{
+    return utf8_encode(strftime('%c',linkdate2timestamp($linkdate))); 
+    
+    
+}
+
+
+function http_parse_headers_shaarli( $headers )
+{
+    $res=array();
+    foreach($headers as $header)
+    {
+        $i = strpos($header,': ');
+        if ($i!==false)
+        {
+            $key=substr($header,0,$i);
+            $value=substr($header,$i+2,strlen($header)-$i-2);
+            $res[$key]=$value;
+        }
+    }
+    return $res;
+}
+
+
+function getHTTP($url,$timeout=30)
+{
+    try
+    {
+        $options = array('http'=>array('method'=>'GET','timeout' => $timeout, 'user_agent' => 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0')); 
+        $context = stream_context_create($options);
+        $data=file_get_contents($url,false,$context,-1, 4000000); 
+        if (!$data) { return array('HTTP Error',array(),''); }
+        $httpStatus=$http_response_header[0]; 
+        $responseHeaders=http_parse_headers_shaarli($http_response_header);
+        return array($httpStatus,$responseHeaders,$data);
+    }
+    catch (Exception $e) {}
+}
+
+
+
+function html_extract_title($html)
+{
+  return preg_match('!<title>(.*?)</title>!is', $html, $matches) ? trim(str_replace("\n",' ', $matches[1])) : '' ;
+}
+
+
+
+
+if (!isset($_SESSION['tokens'])) $_SESSION['tokens']=array();  
+
+
+function getToken()
+{
+    $rnd = sha1(uniqid('',true).'_'.mt_rand().$GLOBALS['salt']);  
+    $_SESSION['tokens'][$rnd]=1;  
+    return $rnd;
+}
+
+
+
+function tokenOk($token)
+{
+    if (isset($_SESSION['tokens'][$token]))
+    {
+        unset($_SESSION['tokens'][$token]); 
+        return true; 
+    }
+    return false; 
+}
+
+
+
+class pageBuilder
+{
+    private $tpl; 
+
+    function __construct()
+    {
+        $this->tpl=false;
+    }
+
+    private function initialize()
+    {
+        $this->tpl = new RainTPL;
+        $this->tpl->assign('newversion',checkUpdate());
+        $this->tpl->assign('feedurl',htmlspecialchars(indexUrl()));
+        $searchcrits=''; 
+        if (!empty($_GET['searchtags'])) $searchcrits.='&searchtags='.urlencode($_GET['searchtags']);
+        elseif (!empty($_GET['searchterm'])) $searchcrits.='&searchterm='.urlencode($_GET['searchterm']);
+        $this->tpl->assign('searchcrits',$searchcrits);
+        $this->tpl->assign('source',indexUrl());
+        $this->tpl->assign('version',shaarli_version);
+        $this->tpl->assign('scripturl',indexUrl());
+        $this->tpl->assign('pagetitle','Shaarli');
+        $this->tpl->assign('privateonly',!empty($_SESSION['privateonly'])); 
+        if (!empty($GLOBALS['title'])) $this->tpl->assign('pagetitle',$GLOBALS['title']);
+        if (!empty($GLOBALS['pagetitle'])) $this->tpl->assign('pagetitle',$GLOBALS['pagetitle']);
+        $this->tpl->assign('shaarlititle',empty($GLOBALS['title']) ? 'Shaarli': $GLOBALS['title'] );
+        return;
+    }
+
+    
+    public function assign($what,$where)
+    {
+        if ($this->tpl===false) $this->initialize(); 
+        $this->tpl->assign($what,$where);
+    }
+
+    
+    
+    public function renderPage($page)
+    {
+        if ($this->tpl===false) $this->initialize(); 
+        $this->tpl->draw($page);
+    }
+}
+
+
+
+class linkdb implements Iterator, Countable, ArrayAccess
+{
+    private $links; 
+    private $urls;  
+    private $keys;  
+    private $position; 
+    private $loggedin; 
+
+    
+    function __construct($isLoggedIn)
+    
+    {
+        $this->loggedin = $isLoggedIn;
+        $this->checkdb(); 
+        $this->readdb();  
+    }
+
+    
+    public function count() { return count($this->links); }
+
+    
+    public function offsetSet($offset, $value)
+    {
+        if (!$this->loggedin) die('You are not authorized to add a link.');
+        if (empty($value['linkdate']) || empty($value['url'])) die('Internal Error: A link should always have a linkdate and url.');
+        if (empty($offset)) die('You must specify a key.');
+        $this->links[$offset] = $value;
+        $this->urls[$value['url']]=$offset;
+    }
+    public function offsetExists($offset) { return array_key_exists($offset,$this->links); }
+    public function offsetUnset($offset)
+    {
+        if (!$this->loggedin) die('You are not authorized to delete a link.');
+        $url = $this->links[$offset]['url']; unset($this->urls[$url]);
+        unset($this->links[$offset]);
+    }
+    public function offsetGet($offset) { return isset($this->links[$offset]) ? $this->links[$offset] : null; }
+
+    
+    function rewind() { $this->keys=array_keys($this->links); rsort($this->keys); $this->position=0; } 
+    function key() { return $this->keys[$this->position]; } 
+    function current() { return $this->links[$this->keys[$this->position]]; } 
+    function next() { ++$this->position; } 
+    function valid() { return isset($this->keys[$this->position]); }    
+
+    
+    private function checkdb() 
+    {
+        if (!file_exists($GLOBALS['config']['DATASTORE'])) 
+        {
+             $this->links = array();
+             $link = array('title'=>'Shaarli - sebsauvage.net','url'=>'http:
+             $this->links[$link['linkdate']] = $link;
+             $link = array('title'=>'My secret stuff... - Pastebin.com','url'=>'http:
+             $this->links[$link['linkdate']] = $link;
+             file_put_contents($GLOBALS['config']['DATASTORE'], PHPPREFIX.base64_encode(gzdeflate(serialize($this->links))).PHPSUFFIX); 
+        }
+    }
+
+    
+    private function readdb()
+    {
+        
+        $this->links=(file_exists($GLOBALS['config']['DATASTORE']) ? unserialize(gzinflate(base64_decode(substr(file_get_contents($GLOBALS['config']['DATASTORE']),strlen(PHPPREFIX),-strlen(PHPSUFFIX))))) : array() );
+        
+
+        
+        if (!$this->loggedin)
+        {
+            $toremove=array();
+            foreach($this->links as $link) { if ($link['private']!=0) $toremove[]=$link['linkdate']; }
+            foreach($toremove as $linkdate) { unset($this->links[$linkdate]); }
+        }
+
+        
+        $this->urls=array();
+        foreach($this->links as $link) { $this->urls[$link['url']]=$link['linkdate']; }
+    }
+
+    
+    public function savedb()
+    {
+        if (!$this->loggedin) die('You are not authorized to change the database.');
+        file_put_contents($GLOBALS['config']['DATASTORE'], PHPPREFIX.base64_encode(gzdeflate(serialize($this->links))).PHPSUFFIX);
+        invalidateCaches();
+    }
+
+    
+    public function getLinkFromUrl($url)
+    {
+        if (isset($this->urls[$url])) return $this->links[$this->urls[$url]];
+        return false;
+    }
+
+    
+    
+    public function filterFulltext($searchterms)
+    {
+        
+        
+        $filtered=array();
+        $s = strtolower($searchterms);
+        foreach($this->links as $l)
+        {
+            $found=   (strpos(strtolower($l['title']),$s)!==false)
+                   || (strpos(strtolower($l['description']),$s)!==false)
+                   || (strpos(strtolower($l['url']),$s)!==false)
+                   || (strpos(strtolower($l['tags']),$s)!==false);
+            if ($found) $filtered[$l['linkdate']] = $l;
+        }
+        krsort($filtered);
+        return $filtered;
+    }
+
+    
+    
+    
+    public function filterTags($tags,$casesensitive=false)
+    {
+        $t = str_replace(',',' ',($casesensitive?$tags:strtolower($tags)));
+        $searchtags=explode(' ',$t);
+        $filtered=array();
+        foreach($this->links as $l)
+        {
+            $linktags = explode(' ',($casesensitive?$l['tags']:strtolower($l['tags'])));
+            if (count(array_intersect($linktags,$searchtags)) == count($searchtags))
+                $filtered[$l['linkdate']] = $l;
+        }
+        krsort($filtered);
+        return $filtered;
+    }
+
+    
+    
+    
+    public function filterDay($day)
+    {
+        $filtered=array();
+        foreach($this->links as $l)
+        {
+            if (startsWith($l['linkdate'],$day)) $filtered[$l['linkdate']] = $l;
+        }
+        ksort($filtered);
+        return $filtered;
+    }
+    
+    
+    public function filterSmallHash($smallHash)
+    {
+        $filtered=array();
+        foreach($this->links as $l)
+        {
+            if ($smallHash==smallHash($l['linkdate'])) 
+            {
+                $filtered[$l['linkdate']] = $l;
+                return $filtered;
+            }
+        }
+        return $filtered;
+    }
+
+    
+    
+    public function allTags()
+    {
+        $tags=array();
+        foreach($this->links as $link)
+            foreach(explode(' ',$link['tags']) as $tag)
+                if (!empty($tag)) $tags[$tag]=(empty($tags[$tag]) ? 1 : $tags[$tag]+1);
+        arsort($tags); 
+        return $tags;
+    }
+
+    
+    
+    public function days()
+    {
+        $linkdays=array();
+        foreach(array_keys($this->links) as $day)
+        {
+            $linkdays[substr($day,0,8)]=0;
+        }
+        $linkdays=array_keys($linkdays);
+        sort($linkdays);
+        return $linkdays;
+    }
+}
+
+
+
+function showRSS()
+{
+    header('Content-Type: application/rss+xml; charset=utf-8');
+
+    
+    
+    $usepermalinks = isset($_GET['permalinks']);
+
+    
+    $query = $_SERVER["QUERY_STRING"];
+    $cache = new pageCache(pageUrl(),startsWith($query,'do=rss') && !isLoggedIn());
+    $cached = $cache->cachedVersion(); if (!empty($cached)) {  exit; }
+
+    
+    $LINKSDB=new linkdb(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI']);  
+
+    
+    $linksToDisplay=array();
+    if (!empty($_GET['searchterm'])) $linksToDisplay = $LINKSDB->filterFulltext($_GET['searchterm']);
+    elseif (!empty($_GET['searchtags']))   $linksToDisplay = $LINKSDB->filterTags(trim($_GET['searchtags']));
+    else $linksToDisplay = $LINKSDB;
+    $nblinksToDisplay = 50;  
+    if (!empty($_GET['nb']))  
+    { 
+        $nblinksToDisplay = $_GET['nb']=='all' ? count($linksToDisplay) : max($_GET['nb']+0,1) ;
+    }
+
+    $pageaddr=htmlspecialchars(indexUrl());
+    
+    
+    if (!empty($GLOBALS['config']['PUBSUBHUB_URL']))
+    {
+        
+        
+    }
+    $i=0;
+    $keys=array(); foreach($linksToDisplay as $key=>$value) { $keys[]=$key; }  
+    while ($i<$nblinksToDisplay && $i<count($keys))
+    {
+        $link = $linksToDisplay[$keys[$i]];
+        $guid = $pageaddr.'?'.smallHash($link['linkdate']);
+        $rfc822date = linkdate2rfc822($link['linkdate']);
+        $absurl = htmlspecialchars($link['url']);
+        if (startsWith($absurl,'?')) $absurl=$pageaddr.$absurl;  
+        if ($usepermalinks===true)
+            
+        else
+            
+        if (!$GLOBALS['config']['HIDE_TIMESTAMPS'] || isLoggedIn()) 
+        if ($link['tags']!='') 
+        {
+            foreach(explode(' ',$link['tags']) as $tag) {  }
+        }
+
+        
+        $descriptionlink = '(<a href="'.$guid.'">Permalink</a>)';
+        
+        if ($usepermalinks===true) $descriptionlink = '(<a href="'.$absurl.'">Link</a>)';
+        if (strlen($link['description'])>0) $descriptionlink = '<br>'.$descriptionlink;
+        
+        $i++;
+    }
+    
+
+    $cache->cache(ob_get_contents());
+    ob_end_flush();
+    exit;
+}
+
+
+
+function showATOM()
+{
+    header('Content-Type: application/atom+xml; charset=utf-8');
+
+    
+    
+    $usepermalinks = isset($_GET['permalinks']);
+
+    
+    $query = $_SERVER["QUERY_STRING"];
+    $cache = new pageCache(pageUrl(),startsWith($query,'do=atom') && !isLoggedIn());
+    $cached = $cache->cachedVersion(); if (!empty($cached)) {  exit; }
+    
+
+    $LINKSDB=new linkdb(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI']);  
+
+
+    
+    $linksToDisplay=array();
+    if (!empty($_GET['searchterm'])) $linksToDisplay = $LINKSDB->filterFulltext($_GET['searchterm']);
+    elseif (!empty($_GET['searchtags']))   $linksToDisplay = $LINKSDB->filterTags(trim($_GET['searchtags']));
+    else $linksToDisplay = $LINKSDB;
+    $nblinksToDisplay = 50;  
+    if (!empty($_GET['nb']))  
+    { 
+        $nblinksToDisplay = $_GET['nb']=='all' ? count($linksToDisplay) : max($_GET['nb']+0,1) ;
+    }
+
+    $pageaddr=htmlspecialchars(indexUrl());
+    $latestDate = '';
+    $entries='';
+    $i=0;
+    $keys=array(); foreach($linksToDisplay as $key=>$value) { $keys[]=$key; }  
+    while ($i<$nblinksToDisplay && $i<count($keys))
+    {
+        $link = $linksToDisplay[$keys[$i]];
+        $guid = $pageaddr.'?'.smallHash($link['linkdate']);
+        $iso8601date = linkdate2iso8601($link['linkdate']);
+        $latestDate = max($latestDate,$iso8601date);
+        $absurl = htmlspecialchars($link['url']);
+        if (startsWith($absurl,'?')) $absurl=$pageaddr.$absurl;  
+        $entries.='<entry><title>'.htmlspecialchars($link['title']).'</title>';
+        if ($usepermalinks===true)
+            $entries.='<link href="'.$guid.'" /><id>'.$guid.'</id>';
+        else
+            $entries.='<link href="'.$absurl.'" /><id>'.$guid.'</id>';
+        if (!$GLOBALS['config']['HIDE_TIMESTAMPS'] || isLoggedIn()) $entries.='<updated>'.htmlspecialchars($iso8601date).'</updated>';
+
+        
+        $descriptionlink = htmlspecialchars('(<a href="'.$guid.'">Permalink</a>)');
+        
+        if ($usepermalinks===true) $descriptionlink = htmlspecialchars('(<a href="'.$absurl.'">Link</a>)');
+        if (strlen($link['description'])>0) $descriptionlink = '&lt;br&gt;'.$descriptionlink;
+
+        $entries.='<content type="html">'.htmlspecialchars(nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))))).$descriptionlink."</content>\n";
+        if ($link['tags']!='') 
+        {
+            foreach(explode(' ',$link['tags']) as $tag)
+                { $entries.='<category scheme="'.htmlspecialchars($pageaddr,ENT_QUOTES).'" term="'.htmlspecialchars($tag,ENT_QUOTES).'" />'."\n"; }
+        }
+        $entries.="</entry>\n";
+        $i++;
+    }
+    $feed='<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http:
+    $feed.='<title>'.htmlspecialchars($GLOBALS['title']).'</title>';
+    if (!$GLOBALS['config']['HIDE_TIMESTAMPS'] || isLoggedIn()) $feed.='<updated>'.htmlspecialchars($latestDate).'</updated>';
+    $feed.='<link rel="self" href="'.htmlspecialchars(serverUrl().$_SERVER["REQUEST_URI"]).'" />';
+    if (!empty($GLOBALS['config']['PUBSUBHUB_URL']))
+    {
+        $feed.='<!-- PubSubHubbub Discovery -->';
+        $feed.='<link rel="hub" href="'.htmlspecialchars($GLOBALS['config']['PUBSUBHUB_URL']).'" />';
+        $feed.='<!-- End Of PubSubHubbub Discovery -->';
+    }
+    $feed.='<author><name>'.htmlspecialchars($pageaddr).'</name><uri>'.htmlspecialchars($pageaddr).'</uri></author>';
+    $feed.='<id>'.htmlspecialchars($pageaddr).'</id>'."\n\n"; 
+    $feed.=$entries;
+    $feed.='</feed><!-- Cached version of '.htmlspecialchars(pageUrl()).' -->';
+    
+
+    $cache->cache(ob_get_contents());
+    ob_end_flush();
+    exit;
+}
+
+
+
+
+
+function showDailyRSS()
+{
+    
+    $query = $_SERVER["QUERY_STRING"];
+    $cache = new pageCache(pageUrl(),startsWith($query,'do=dailyrss') && !isLoggedIn());
+    $cached = $cache->cachedVersion(); if (!empty($cached)) {  exit; }
+    
+    $LINKSDB=new linkdb(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI']);  
+
+    
+    $linkdates=array(); foreach($LINKSDB as $linkdate=>$value) { $linkdates[]=$linkdate; }
+    rsort($linkdates);
+    $nb_of_days=7; 
+    $today=Date('Ymd');
+    $days=array();
+    foreach($linkdates as $linkdate)
+    {
+        $day=substr($linkdate,0,8); 
+        if (strcmp($day,$today)<0)
+        {
+            if (empty($days[$day])) $days[$day]=array();
+            $days[$day][]=$linkdate;
+        }
+        if (count($days)>$nb_of_days) break; 
+    }
+
+    
+    header('Content-Type: application/rss+xml; charset=utf-8');
+    $pageaddr=htmlspecialchars(indexUrl());
+    
+    
+    
+
+    foreach($days as $day=>$linkdates) 
+    {
+        $daydate = utf8_encode(strftime('%A %d, %B %Y',linkdate2timestamp($day.'_000000'))); 
+        $rfc822date = linkdate2rfc822($day.'_000000');
+        $absurl=htmlspecialchars(indexUrl().'?do=daily&day='.$day);  
+        
+        
+
+        
+        $html='';
+        $href='';
+        $links=array();
+        
+        foreach($linkdates as $linkdate)
+        {
+            $l = $LINKSDB[$linkdate];
+            $l['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($l['description']))));
+            $l['thumbnail'] = thumbnail($l['url']);
+            $l['localdate']=linkdate2locale($l['linkdate']);
+            if (startsWith($l['url'],'?')) $l['url']=indexUrl().$l['url'];  
+            $links[$linkdate]=$l;
+        }
+        
+        $tpl = new RainTPL;
+        $tpl->assign('links',$links);
+        $html = $tpl->draw('dailyrss',$return_string=true);
+        
+        
+
+    }
+    
+
+    $cache->cache(ob_get_contents());
+    ob_end_flush();
+    exit;
+}
+
+
+function showDaily()
+{
+    $LINKSDB=new linkdb(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI']);  
+
+
+    $day=Date('Ymd',strtotime('-1 day')); 
+    if (isset($_GET['day'])) $day=$_GET['day'];
+
+    $days = $LINKSDB->days();
+    $i = array_search($day,$days);
+    if ($i==false) { $i=count($days)-1; $day=$days[$i]; }
+    $previousday='';
+    $nextday='';
+    if ($i!==false)
+    {
+        if ($i>1) $previousday=$days[$i-1];
+        if ($i<count($days)-1) $nextday=$days[$i+1];
+    }
+
+    $linksToDisplay=$LINKSDB->filterDay($day);
+    
+    foreach($linksToDisplay as $key=>$link)
+    {
+        $taglist = explode(' ',$link['tags']);
+        uasort($taglist, 'strcasecmp');
+        $linksToDisplay[$key]['taglist']=$taglist;
+        $linksToDisplay[$key]['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
+        $linksToDisplay[$key]['thumbnail'] = thumbnail($link['url']);
+    }
+
+    
+    $columns=array(array(),array(),array()); 
+    $fill=array(0,0,0);  
+    foreach($linksToDisplay as $key=>$link)
+    {
+        
+        
+        
+        
+        $length=strlen($link['title'])+(342*strlen($link['description']))/836;
+        if ($link['thumbnail']) $length +=100; 
+        
+        $smallest=min($fill); 
+        $index=array_search($smallest,$fill); 
+        array_push($columns[$index],$link); 
+        $fill[$index]+=$length;
+    }
+    $PAGE = new pageBuilder;
+    $PAGE->assign('linksToDisplay',$linksToDisplay);
+    $PAGE->assign('linkcount',count($LINKSDB));
+    $PAGE->assign('col1',$columns[0]);
+    $PAGE->assign('col1',$columns[0]);
+    $PAGE->assign('col2',$columns[1]);
+    $PAGE->assign('col3',$columns[2]);
+    $PAGE->assign('day',utf8_encode(strftime('%A %d, %B %Y',linkdate2timestamp($day.'_000000'))));
+    $PAGE->assign('previousday',$previousday);
+    $PAGE->assign('nextday',$nextday);
+    $PAGE->renderPage('daily');
+    exit;
+}
+
+
+
+
+function renderPage()
+{
+    $LINKSDB=new linkdb(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI']);  
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=login'))
+    {
+        if ($GLOBALS['config']['OPEN_SHAARLI']) { header('Location: ?'); exit; }  
+        $token=''; if (ban_canLogin()) $token=getToken(); 
+        $PAGE = new pageBuilder;
+        $PAGE->assign('token',$token);
+        $PAGE->assign('returnurl',(isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER']:''));
+        $PAGE->renderPage('loginform');
+        exit;
+    }
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=logout'))
+    {
+        invalidateCaches();
+        logout();
+        header('Location: ?');
+        exit;
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=picwall'))
+    {
+        
+        $links=array();
+        if (!empty($_GET['searchterm'])) $links = $LINKSDB->filterFulltext($_GET['searchterm']);
+        elseif (!empty($_GET['searchtags']))   $links = $LINKSDB->filterTags(trim($_GET['searchtags']));
+        else $links = $LINKSDB;
+        $body='';
+        $linksToDisplay=array();
+
+        
+        foreach($links as $link)
+        {
+            $permalink='?'.htmlspecialchars(smallhash($link['linkdate']),ENT_QUOTES);
+            $thumb=lazyThumbnail($link['url'],$permalink);
+            if ($thumb!='') 
+            {
+                $link['thumbnail']=$thumb; 
+                $link['permalink']=$permalink;
+                $linksToDisplay[]=$link; 
+            }
+        }
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->assign('linksToDisplay',$linksToDisplay);
+        $PAGE->renderPage('picwall');
+        exit;
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=tagcloud'))
+    {
+        $tags= $LINKSDB->allTags();
+        
+        
+        $maxcount=0; foreach($tags as $key=>$value) $maxcount=max($maxcount,$value);
+        ksort($tags);
+        $tagList=array();
+        foreach($tags as $key=>$value)
+        {
+            $tagList[$key] = array('count'=>$value,'size'=>max(40*$value/$maxcount,8));
+        }
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->assign('tags',$tagList);
+        $PAGE->renderPage('tagcloud');
+        exit;
+    }
+
+    
+    if (isset($_GET['addtag']))
+    {
+        
+        if (empty($_SERVER['HTTP_REFERER'])) { header('Location: ?searchtags='.urlencode($_GET['addtag'])); exit; } 
+        parse_str(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_QUERY), $params);
+        $params['searchtags'] = (empty($params['searchtags']) ?  trim($_GET['addtag']) : trim($params['searchtags']).' '.trim($_GET['addtag']));
+        unset($params['page']); 
+        header('Location: ?'.http_build_query($params));
+        exit;
+    }
+
+    
+    if (isset($_GET['removetag']))
+    {
+        
+        if (empty($_SERVER['HTTP_REFERER'])) { header('Location: ?'); exit; } 
+        parse_str(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_QUERY), $params);
+        if (isset($params['searchtags']))
+        {
+            $tags = explode(' ',$params['searchtags']);
+            $tags=array_diff($tags, array($_GET['removetag'])); 
+            if (count($tags)==0) unset($params['searchtags']); else $params['searchtags'] = implode(' ',$tags);
+            unset($params['page']); 
+        }
+        header('Location: ?'.http_build_query($params));
+        exit;
+    }
+
+    
+    if (isset($_GET['linksperpage']))
+    {
+        if (is_numeric($_GET['linksperpage'])) { $_SESSION['LINKS_PER_PAGE']=abs(intval($_GET['linksperpage'])); }
+        
+        $referer = '?';
+        if (!empty($_SERVER['HTTP_REFERER']) && strcmp(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_HOST),$_SERVER['HTTP_HOST'])==0)
+            $referer = $_SERVER['HTTP_REFERER'];
+        header('Location: '.$referer);
+        exit;
+    }
+
+    
+    if (isset($_GET['privateonly']))
+    {
+        if (empty($_SESSION['privateonly']))
+        {
+            $_SESSION['privateonly']=1; 
+        }
+        else
+        {
+            unset($_SESSION['privateonly']); 
+        }
+        
+        $referer = '?';
+        if (!empty($_SERVER['HTTP_REFERER']) && strcmp(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_HOST),$_SERVER['HTTP_HOST'])==0)
+            $referer = $_SERVER['HTTP_REFERER'];
+        header('Location: '.$referer);
+        exit;
+    }
+
+    
+    if (!isLoggedIn())
+    {
+        
+        
+        if (isset($_GET['post']))
+        {
+            header('Location: ?do=login&post='.urlencode($_GET['post']).(!empty($_GET['title'])?'&title='.urlencode($_GET['title']):'').(!empty($_GET['source'])?'&source='.urlencode($_GET['source']):'')); 
+            exit;
+        }
+        $PAGE = new pageBuilder;
+        buildLinkList($PAGE,$LINKSDB); 
+        $PAGE->renderPage('linklist');
+        exit; 
+    }
+
+    
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=tools'))
+    {
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->assign('pageabsaddr',indexUrl());
+        $PAGE->renderPage('tools');
+        exit;
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=changepasswd'))
+    {
+        if ($GLOBALS['config']['OPEN_SHAARLI']) die('You are not supposed to change a password on an Open Shaarli.');
+        if (!empty($_POST['setpassword']) && !empty($_POST['oldpassword']))
+        {
+            if (!tokenOk($_POST['token'])) die('Wrong token.'); 
+
+            
+            $oldhash = sha1($_POST['oldpassword'].$GLOBALS['login'].$GLOBALS['salt']);
+            if ($oldhash!=$GLOBALS['hash']) { document.location=\'?do=changepasswd\';</script>'; exit; }
+            
+            $GLOBALS['salt'] = sha1(uniqid('',true).'_'.mt_rand()); 
+            $GLOBALS['hash'] = sha1($_POST['setpassword'].$GLOBALS['login'].$GLOBALS['salt']);
+            writeConfig();
+            document.location=\'?do=tools\';</script>';
+            exit;
+        }
+        else 
+        {
+            $PAGE = new pageBuilder;
+            $PAGE->assign('linkcount',count($LINKSDB));
+            $PAGE->assign('token',getToken());
+            $PAGE->renderPage('changepassword');
+            exit;
+        }
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=configure'))
+    {
+        if (!empty($_POST['title']) )
+        {
+            if (!tokenOk($_POST['token'])) die('Wrong token.'); 
+            $tz = 'UTC';
+            if (!empty($_POST['continent']) && !empty($_POST['city']))
+                if (isTZvalid($_POST['continent'],$_POST['city']))
+                    $tz = $_POST['continent'].'/'.$_POST['city'];
+            $GLOBALS['timezone'] = $tz;
+            $GLOBALS['title']=$_POST['title'];
+            $GLOBALS['redirector']=$_POST['redirector'];
+            $GLOBALS['disablesessionprotection']=!empty($_POST['disablesessionprotection']);
+            $GLOBALS['disablejquery']=!empty($_POST['disablejquery']);
+            $GLOBALS['privateLinkByDefault']=!empty($_POST['privateLinkByDefault']);
+            writeConfig();
+            document.location=\'?do=tools\';</script>';
+            exit;
+        }
+        else 
+        {
+            $PAGE = new pageBuilder;
+            $PAGE->assign('linkcount',count($LINKSDB));
+            $PAGE->assign('token',getToken());
+            $PAGE->assign('title',htmlspecialchars( empty($GLOBALS['title']) ? '' : $GLOBALS['title'] , ENT_QUOTES));
+            $PAGE->assign('redirector',htmlspecialchars( empty($GLOBALS['redirector']) ? '' : $GLOBALS['redirector'] , ENT_QUOTES));
+            list($timezone_form,$timezone_js) = templateTZform($GLOBALS['timezone']);
+            $PAGE->assign('timezone_form',$timezone_form); 
+            $PAGE->assign('timezone_js',$timezone_js);
+            $PAGE->renderPage('configure');
+            exit;
+        }
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=changetag'))
+    {
+        if (empty($_POST['fromtag']))
+        {
+            $PAGE = new pageBuilder;
+            $PAGE->assign('linkcount',count($LINKSDB));
+            $PAGE->assign('token',getToken());
+            $PAGE->renderPage('changetag');
+            exit;
+        }
+        if (!tokenOk($_POST['token'])) die('Wrong token.');
+
+        
+        if (!empty($_POST['deletetag']) && !empty($_POST['fromtag']))
+        {
+            $needle=trim($_POST['fromtag']);
+            $linksToAlter = $LINKSDB->filterTags($needle,true); 
+            foreach($linksToAlter as $key=>$value)
+            {
+                $tags = explode(' ',trim($value['tags']));
+                unset($tags[array_search($needle,$tags)]); 
+                $value['tags']=trim(implode(' ',$tags));
+                $LINKSDB[$key]=$value;
+            }
+            $LINKSDB->savedb(); 
+            document.location=\'?\';</script>';
+            exit;
+        }
+
+        
+        if (!empty($_POST['renametag']) && !empty($_POST['fromtag']) && !empty($_POST['totag']))
+        {
+            $needle=trim($_POST['fromtag']);
+            $linksToAlter = $LINKSDB->filterTags($needle,true); 
+            foreach($linksToAlter as $key=>$value)
+            {
+                $tags = explode(' ',trim($value['tags']));
+                $tags[array_search($needle,$tags)] = trim($_POST['totag']); 
+                $value['tags']=trim(implode(' ',$tags));
+                $LINKSDB[$key]=$value;
+            }
+            $LINKSDB->savedb(); 
+            document.location=\'?searchtags='.urlencode($_POST['totag']).'\';</script>';
+            exit;
+        }
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=addlink'))
+    {
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->renderPage('addlink');
+        exit;
+    }
+
+    
+    if (isset($_POST['save_edit']))
+    {
+        if (!tokenOk($_POST['token'])) die('Wrong token.'); 
+        $tags = trim(preg_replace('/\s\s+/',' ', $_POST['lf_tags'])); 
+        $linkdate=$_POST['lf_linkdate'];
+        $url = trim($_POST['lf_url']);
+        if (!startsWith($url,'http:') && !startsWith($url,'https:') && !startsWith($url,'ftp:') && !startsWith($url,'magnet:') && !startsWith($url,'?'))
+            $url = 'http:
+        $link = array('title'=>trim($_POST['lf_title']),'url'=>$url,'description'=>trim($_POST['lf_description']),'private'=>(isset($_POST['lf_private']) ? 1 : 0),
+                      'linkdate'=>$linkdate,'tags'=>str_replace(',',' ',$tags));
+        if ($link['title']=='') $link['title']=$link['url']; 
+        $LINKSDB[$linkdate] = $link;
+        $LINKSDB->savedb(); 
+        pubsubhub();
+
+        
+        if (isset($_GET['source']) && $_GET['source']=='bookmarklet') { </script>'; exit; }
+        $returnurl = ( isset($_POST['returnurl']) ? $_POST['returnurl'] : '?' );
+        $returnurl .= '
+        header('Location: '.$returnurl); 
+        exit;
+    }
+
+    
+    if (isset($_POST['cancel_edit']))
+    {
+        
+        if (isset($_GET['source']) && $_GET['source']=='bookmarklet') { </script>'; exit; }
+        $returnurl = ( isset($_POST['returnurl']) ? $_POST['returnurl'] : '?' );
+        $returnurl .= '
+        header('Location: '.$returnurl); 
+        exit;
+    }
+
+    
+    if (isset($_POST['delete_link']))
+    {
+        if (!tokenOk($_POST['token'])) die('Wrong token.');
+        
+        
+        
+        $linkdate=$_POST['lf_linkdate'];
+        unset($LINKSDB[$linkdate]);
+        $LINKSDB->savedb(); 
+
+        
+        if (isset($_GET['source']) && $_GET['source']=='bookmarklet') { </script>'; exit; }
+        $returnurl = ( isset($_POST['returnurl']) ? $_POST['returnurl'] : '?' );
+        if ($returnurl=='?') { $returnurl = (isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '?'); }
+        header('Location: '.$returnurl); 
+        exit;
+    }
+
+    
+    if (isset($_GET['edit_link']))
+    {
+        $link = $LINKSDB[$_GET['edit_link']];  
+        if (!$link) { header('Location: ?'); exit; } 
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->assign('link',$link);
+        $PAGE->assign('link_is_new',false);
+        $PAGE->assign('token',getToken()); 
+        $PAGE->assign('http_referer',(isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : ''));
+        $PAGE->renderPage('editlink');
+        exit;
+    }
+
+    
+    if (isset($_GET['post']))
+    {
+        $url=$_GET['post'];
+
+        
+        $i=strpos($url,'&utm_source='); if ($i!==false) $url=substr($url,0,$i);
+        $i=strpos($url,'?utm_source='); if ($i!==false) $url=substr($url,0,$i);
+        $i=strpos($url,'
+
+        $link_is_new = false;
+        $link = $LINKSDB->getLinkFromUrl($url); 
+        if (!$link)
+        {
+            $link_is_new = true;  
+            $linkdate = strval(date('Ymd_His'));
+            $title = (empty($_GET['title']) ? '' : $_GET['title'] ); 
+            $description = (empty($_GET['description']) ? '' : $_GET['description']); 
+            $tags = (empty($_GET['tags']) ? '' : $_GET['tags'] ); 
+            $private = (!empty($_GET['private']) && $_GET['private'] === "1" ? 1 : 0); 
+            if (($url!='') && parse_url($url,PHP_URL_SCHEME)=='') $url = 'http:
+            
+            if (empty($title) && parse_url($url,PHP_URL_SCHEME)=='http')
+            {
+                list($status,$headers,$data) = getHTTP($url,4); 
+                
+                if (strpos($status,'200 OK')!==false)
+ 					 {
+                        
+ 						preg_match('
+ 
+ 						
+ 						if (!empty($meta[0]))
+ 						{
+ 							
+ 							preg_match('
+ 							
+							$html_charset = (!empty($enc[1])) ? strtolower($enc[1]) : 'utf-8';
+ 						}
+ 						else { $html_charset = 'utf-8'; }
+ 
+ 						
+ 						$title = html_extract_title($data);
+ 						if (!empty($title))
+ 						{
+ 							
+ 							$title = ($html_charset == 'iso-8859-1') ? utf8_encode($title) : $title;
+ 						}
+ 					}
+            }
+            if ($url=='') $url='?'.smallHash($linkdate); 
+            $link = array('linkdate'=>$linkdate,'title'=>$title,'url'=>$url,'description'=>$description,'tags'=>$tags,'private'=>$private);
+        }
+
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->assign('link',$link);
+        $PAGE->assign('link_is_new',$link_is_new);
+        $PAGE->assign('token',getToken()); 
+        $PAGE->assign('http_referer',(isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : ''));
+        $PAGE->renderPage('editlink');
+        exit;
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=export'))
+    {
+        if (empty($_GET['what']))
+        {
+            $PAGE = new pageBuilder;
+            $PAGE->assign('linkcount',count($LINKSDB));
+            $PAGE->renderPage('export');
+            exit;
+        }
+        $exportWhat=$_GET['what'];
+        if (!array_intersect(array('all','public','private'),array($exportWhat))) die('What are you trying to export ???');
+
+        header('Content-Type: text/html; charset=utf-8');
+        header('Content-disposition: attachment; filename=bookmarks_'.$exportWhat.'_'.strval(date('Ymd_His')).'.html');
+        $currentdate=date('Y/m/d H:i:s');
+         charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+HTML;
+        foreach($LINKSDB as $link)
+        {
+            if ($exportWhat=='all' ||
+               ($exportWhat=='private' && $link['private']!=0) ||
+               ($exportWhat=='public' && $link['private']==0))
+            {
+                
+                if ($link['tags']!='') 
+                
+                if ($link['description']!='') 
+            }
+        }
+                exit;
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=upload'))
+    {
+        
+        if (!isset($_POST['token']) || (!isset($_FILES)) || (isset($_FILES['filetoupload']['size']) && $_FILES['filetoupload']['size']==0))
+        {
+            $returnurl = ( empty($_SERVER['HTTP_REFERER']) ? '?' : $_SERVER['HTTP_REFERER'] );
+            document.location=\''.htmlspecialchars($returnurl).'\';</script>';
+            exit;
+        }
+        if (!tokenOk($_POST['token'])) die('Wrong token.');
+        importFile();
+        exit;
+    }
+
+    
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=import'))
+    {
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->assign('token',getToken());
+        $PAGE->assign('maxfilesize',getMaxFileSize());
+        $PAGE->renderPage('import');
+        exit;
+    }
+
+    
+    $PAGE = new pageBuilder;
+    $PAGE->assign('linkcount',count($LINKSDB));
+    buildLinkList($PAGE,$LINKSDB); 
+    $PAGE->renderPage('linklist');
+    exit;
+}
+
+
+
+function importFile()
+{
+    if (!(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI'])) { die('Not allowed.'); }
+    $LINKSDB=new linkdb(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI']);  
+    $filename=$_FILES['filetoupload']['name'];
+    $filesize=$_FILES['filetoupload']['size'];
+    $data=file_get_contents($_FILES['filetoupload']['tmp_name']);
+    $private = (empty($_POST['private']) ? 0 : 1); 
+    $overwrite = !empty($_POST['overwrite']) ; 
+    $import_count=0;
+
+    
+    $type='unknown';
+    if (startsWith($data,'<!DOCTYPE NETSCAPE-Bookmark-file-1>')) $type='netscape'; 
+
+    
+    if ($type=='netscape')
+    {
+        
+        
+        foreach(explode('<DT>',$data) as $html) 
+        {
+            $link = array('linkdate'=>'','title'=>'','url'=>'','description'=>'','tags'=>'','private'=>0);
+            $d = explode('<DD>',$html);
+            if (startswith($d[0],'<A '))
+            {
+                $link['description'] = (isset($d[1]) ? html_entity_decode(trim($d[1]),ENT_QUOTES,'UTF-8') : '');  
+                preg_match('!<A .*?>(.*?)</A>!i',$d[0],$matches); $link['title'] = (isset($matches[1]) ? trim($matches[1]) : '');  
+                $link['title'] = html_entity_decode($link['title'],ENT_QUOTES,'UTF-8');
+                preg_match_all('! ([A-Z_]+)=\"(.*?)"!i',$html,$matches,PREG_SET_ORDER);  
+                $raw_add_date=0;
+                foreach($matches as $m)
+                {
+                    $attr=$m[1]; $value=$m[2];
+                    if ($attr=='HREF') $link['url']=html_entity_decode($value,ENT_QUOTES,'UTF-8');
+                    elseif ($attr=='ADD_DATE')
+                    {
+                        $raw_add_date=intval($value);
+                        if ($raw_add_date>30000000000) $raw_add_date/=1000;	
+                    }
+                    elseif ($attr=='PRIVATE') $link['private']=($value=='0'?0:1);
+                    elseif ($attr=='TAGS') $link['tags']=html_entity_decode(str_replace(',',' ',$value),ENT_QUOTES,'UTF-8');
+                }
+                if ($link['url']!='')
+                {
+                    if ($private==1) $link['private']=1;
+                    $dblink = $LINKSDB->getLinkFromUrl($link['url']); 
+                    if ($dblink==false)
+                    {  
+                       if (empty($raw_add_date)) $raw_add_date=time(); 
+
+                       
+                       
+                       
+                       
+                       while (!empty($LINKSDB[date('Ymd_His',$raw_add_date)])) { $raw_add_date++; }
+                       $link['linkdate']=date('Ymd_His',$raw_add_date);
+                       $LINKSDB[$link['linkdate']] = $link;
+                       $import_count++;
+                    }
+                    else 
+                    {
+                        if ($overwrite)
+                        {   
+                            $link['linkdate']=$dblink['linkdate'];
+                            $LINKSDB[$link['linkdate']] = $link;
+                            $import_count++;
+                        }
+                    }
+
+                }
+            }
+        }
+        $LINKSDB->savedb();
+
+        document.location=\'?\';</script>';
+    }
+    else
+    {
+        document.location=\'?\';</script>';
+    }
+}
+
+
+
+
+function buildLinkList($PAGE,$LINKSDB)
+{
+    
+    $linksToDisplay=array();
+    $search_type='';
+    $search_crits='';
+    if (isset($_GET['searchterm'])) 
+    {
+        $linksToDisplay = $LINKSDB->filterFulltext(trim($_GET['searchterm']));
+        $search_crits=htmlspecialchars(trim($_GET['searchterm']));
+        $search_type='fulltext';
+    }
+    elseif (isset($_GET['searchtags'])) 
+    {
+        $linksToDisplay = $LINKSDB->filterTags(trim($_GET['searchtags']));
+        $search_crits=explode(' ',trim($_GET['searchtags']));
+        $search_type='tags';
+    }
+    elseif (isset($_SERVER['QUERY_STRING']) && preg_match('/[a-zA-Z0-9-_@]{6}(&.+?)?/',$_SERVER['QUERY_STRING'])) 
+    {
+        $linksToDisplay = $LINKSDB->filterSmallHash(substr(trim($_SERVER["QUERY_STRING"], '/'),0,6));
+        if (count($linksToDisplay)==0)
+        {
+            header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found");
+            
+            
+            exit;
+        }
+        $search_type='permalink';
+    }
+    else
+        $linksToDisplay = $LINKSDB;  
+
+    
+    if (!empty($_SESSION['privateonly']))
+    {
+        $tmp = array();
+        foreach($linksToDisplay as $linkdate=>$link)
+        {
+            if ($link['private']!=0) $tmp[$linkdate]=$link;
+        }
+        $linksToDisplay=$tmp;
+    }
+
+    
+    
+    $keys=array(); foreach($linksToDisplay as $key=>$value) { $keys[]=$key; } 
+
+    
+    if (count($linksToDisplay)==1) $GLOBALS['pagetitle'] = $linksToDisplay[$keys[0]]['title'].' - '.$GLOBALS['title'];
+
+    
+    $pagecount = ceil(count($keys)/$_SESSION['LINKS_PER_PAGE']);
+    $pagecount = ($pagecount==0 ? 1 : $pagecount);
+    $page=( empty($_GET['page']) ? 1 : intval($_GET['page']));
+    $page = ( $page<1 ? 1 : $page );
+    $page = ( $page>$pagecount ? $pagecount : $page );
+    $i = ($page-1)*$_SESSION['LINKS_PER_PAGE']; 
+    $end = $i+$_SESSION['LINKS_PER_PAGE'];
+    $linkDisp=array(); 
+    while ($i<$end && $i<count($keys))
+    {
+        $link = $linksToDisplay[$keys[$i]];
+        $link['description']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
+        $title=$link['title'];
+        $classLi =  $i%2!=0 ? '' : 'publicLinkHightLight';
+        $link['class'] = ($link['private']==0 ? $classLi : 'private');
+        $link['localdate']=linkdate2locale($link['linkdate']);
+        $taglist = explode(' ',$link['tags']);
+        uasort($taglist, 'strcasecmp');
+        $link['taglist']=$taglist;
+        $linkDisp[$keys[$i]] = $link;
+        $i++;
+    }
+
+    
+    $searchterm= ( empty($_GET['searchterm']) ? '' : '&searchterm='.$_GET['searchterm'] );
+    $searchtags= ( empty($_GET['searchtags']) ? '' : '&searchtags='.$_GET['searchtags'] );
+    $paging='';
+    $previous_page_url=''; if ($i!=count($keys)) $previous_page_url='?page='.($page+1).$searchterm.$searchtags;
+    $next_page_url='';if ($page>1) $next_page_url='?page='.($page-1).$searchterm.$searchtags;
+
+    $token = ''; if (isLoggedIn()) $token=getToken();
+
+    
+    $PAGE->assign('linkcount',count($LINKSDB));
+    $PAGE->assign('previous_page_url',$previous_page_url);
+    $PAGE->assign('next_page_url',$next_page_url);
+    $PAGE->assign('page_current',$page);
+    $PAGE->assign('page_max',$pagecount);
+    $PAGE->assign('result_count',count($linksToDisplay));
+    $PAGE->assign('search_type',$search_type);
+    $PAGE->assign('search_crits',$search_crits);
+    $PAGE->assign('redirector',empty($GLOBALS['redirector']) ? '' : $GLOBALS['redirector']); 
+    $PAGE->assign('token',$token);
+    $PAGE->assign('links',$linkDisp);
+    return;
+}
+
+
+
+
+
+
+
+
+
+
+function computeThumbnail($url,$href=false)
+{
+    if (!$GLOBALS['config']['ENABLE_THUMBNAILS']) return array();
+    if ($href==false) $href=$url;
+
+    
+    
+    
+    $domain = parse_url($url,PHP_URL_HOST);
+    if ($domain=='youtube.com' || $domain=='www.youtube.com')
+    {
+        parse_str(parse_url($url,PHP_URL_QUERY), $params); 
+        if (!empty($params['v'])) return array('src'=>'http:
+                                               'href'=>$href,'width'=>'120','height'=>'90','alt'=>'YouTube thumbnail');
+    }
+    if ($domain=='youtu.be') 
+    {
+        $path = parse_url($url,PHP_URL_PATH);
+        return array('src'=>'http:
+                     'href'=>$href,'width'=>'120','height'=>'90','alt'=>'YouTube thumbnail');
+    }
+    if ($domain=='pix.toile-libre.org') 
+    {
+        parse_str(parse_url($url,PHP_URL_QUERY), $params); 
+        if (!empty($params) && !empty($params['img'])) return array('src'=>'http:
+                                                                    'href'=>$href,'style'=>'max-width:120px; max-height:150px','alt'=>'pix.toile-libre.org thumbnail');
+    }
+
+    if ($domain=='imgur.com')
+    {
+        $path = parse_url($url,PHP_URL_PATH);
+        if (startsWith($path,'/a/')) return array(); 
+        if (startsWith($path,'/r/')) return array('src'=>'http:
+                                                  'href'=>$href,'width'=>'90','height'=>'90','alt'=>'imgur.com thumbnail');
+        if (startsWith($path,'/gallery/')) return array('src'=>'http:
+                                                        'href'=>$href,'width'=>'90','height'=>'90','alt'=>'imgur.com thumbnail');
+
+        if (substr_count($path,'/')==1) return array('src'=>'http:
+                                                     'href'=>$href,'width'=>'90','height'=>'90','alt'=>'imgur.com thumbnail');
+    }
+    if ($domain=='i.imgur.com')
+    {
+        $pi = pathinfo(parse_url($url,PHP_URL_PATH));
+        if (!empty($pi['filename'])) return array('src'=>'http:
+                                                  'href'=>$href,'width'=>'90','height'=>'90','alt'=>'imgur.com thumbnail');
+    }
+    if ($domain=='dailymotion.com' || $domain=='www.dailymotion.com')
+    {
+        if (strpos($url,'dailymotion.com/video/')!==false)
+        {
+            $thumburl=str_replace('dailymotion.com/video/','dailymotion.com/thumbnail/video/',$url);
+            return array('src'=>$thumburl,
+                         'href'=>$href,'width'=>'120','style'=>'height:auto;','alt'=>'DailyMotion thumbnail');
+        }
+    }
+    if (endsWith($domain,'.imageshack.us'))
+    {
+        $ext=strtolower(pathinfo($url,PATHINFO_EXTENSION));
+        if ($ext=='jpg' || $ext=='jpeg' || $ext=='png' || $ext=='gif')
+        {
+            $thumburl = substr($url,0,strlen($url)-strlen($ext)).'th.'.$ext;
+            return array('src'=>$thumburl,
+                         'href'=>$href,'width'=>'120','style'=>'height:auto;','alt'=>'imageshack.us thumbnail');
+        }
+    }
+
+    
+    
+    
+
+    if (!$GLOBALS['config']['ENABLE_LOCALCACHE']) return array(); 
+
+    if ($domain=='flickr.com' || endsWith($domain,'.flickr.com')
+        || $domain=='vimeo.com'
+        || $domain=='ted.com' || endsWith($domain,'.ted.com')
+        || $domain=='xkcd.com' || endsWith($domain,'.xkcd.com')
+    )
+    {
+        if ($domain=='vimeo.com')
+        {   
+            $path = parse_url($url,PHP_URL_PATH);
+            if (!preg_match('!/\d+.+?!',$path)) return array(); 
+        }
+        if ($domain=='xkcd.com' || endsWith($domain,'.xkcd.com'))
+        {   
+            $path = parse_url($url,PHP_URL_PATH);
+            if (!preg_match('!/\d+.+?!',$path)) return array();
+        }
+        if ($domain=='ted.com' || endsWith($domain,'.ted.com'))
+        {   
+            $path = parse_url($url,PHP_URL_PATH);
+            if ("/talks/" !== substr($path,0,7)) return array(); 
+        }
+        $sign = hash_hmac('sha256', $url, $GLOBALS['salt']); 
+        return array('src'=>indexUrl().'?do=genthumbnail&hmac='.htmlspecialchars($sign).'&url='.urlencode($url),
+                     'href'=>$href,'width'=>'120','style'=>'height:auto;','alt'=>'thumbnail');
+    }
+
+    
+    
+    
+    $ext=strtolower(pathinfo($url,PATHINFO_EXTENSION));
+    if ($ext=='jpg' || $ext=='jpeg' || $ext=='png' || $ext=='gif')
+    {
+        $sign = hash_hmac('sha256', $url, $GLOBALS['salt']); 
+        return array('src'=>indexUrl().'?do=genthumbnail&hmac='.htmlspecialchars($sign).'&url='.urlencode($url),
+                     'href'=>$href,'width'=>'120','style'=>'height:auto;','alt'=>'thumbnail');
+    }
+    return array(); 
+
+}
+
+
+
+
+
+
+
+
+function thumbnail($url,$href=false)
+{
+    $t = computeThumbnail($url,$href);
+    if (count($t)==0) return ''; 
+
+    $html='<a href="'.htmlspecialchars($t['href']).'"><img src="'.htmlspecialchars($t['src']).'"';
+    if (!empty($t['width']))  $html.=' width="'.htmlspecialchars($t['width']).'"';
+    if (!empty($t['height'])) $html.=' height="'.htmlspecialchars($t['height']).'"';
+    if (!empty($t['style']))  $html.=' style="'.htmlspecialchars($t['style']).'"';
+    if (!empty($t['alt']))    $html.=' alt="'.htmlspecialchars($t['alt']).'"';
+    $html.='></a>';
+    return $html;
+}
+
+
+
+
+
+
+
+
+function lazyThumbnail($url,$href=false)
+{
+    $t = computeThumbnail($url,$href);
+    if (count($t)==0) return ''; 
+
+    $html='<a href="'.htmlspecialchars($t['href']).'">';
+
+    
+    if (!empty($GLOBALS['disablejquery'])) 
+        $html.='<img class="lazyimage" src="'.htmlspecialchars($t['src']).'"';
+    else
+        $html.='<img class="lazyimage" src="
+
+    if (!empty($t['width']))  $html.=' width="'.htmlspecialchars($t['width']).'"';
+    if (!empty($t['height'])) $html.=' height="'.htmlspecialchars($t['height']).'"';
+    if (!empty($t['style']))  $html.=' style="'.htmlspecialchars($t['style']).'"';
+    if (!empty($t['alt']))    $html.=' alt="'.htmlspecialchars($t['alt']).'"';
+    $html.='>';
+
+    
+    $html.='<noscript><img src="'.htmlspecialchars($t['src']).'"';
+    if (!empty($t['width']))  $html.=' width="'.htmlspecialchars($t['width']).'"';
+    if (!empty($t['height'])) $html.=' height="'.htmlspecialchars($t['height']).'"';
+    if (!empty($t['style']))  $html.=' style="'.htmlspecialchars($t['style']).'"';
+    if (!empty($t['alt']))    $html.=' alt="'.htmlspecialchars($t['alt']).'"';
+    $html.='></noscript></a>';
+
+    return $html;
+}
+
+
+
+
+
+function install()
+{
+    
+    if (endsWith($_SERVER['HTTP_HOST'],'.free.fr') && !is_dir($_SERVER['DOCUMENT_ROOT'].'/sessions')) mkdir($_SERVER['DOCUMENT_ROOT'].'/sessions',705);
+
+
+    
+    
+    
+    if (isset($_GET['test_session']) && ( !isset($_SESSION) || !isset($_SESSION['session_tested']) || $_SESSION['session_tested']!='Working'))
+    {   
+        
+        
+        
+        die;
+    }
+    if (!isset($_SESSION['session_tested']))
+    {   
+        $_SESSION['session_tested'] = 'Working';  
+        header('Location: '.indexUrl().'?test_session');  
+    }
+    if (isset($_GET['test_session']))
+    {   
+        header('Location: '.indexUrl());
+    }
+
+
+    if (!empty($_POST['setlogin']) && !empty($_POST['setpassword']))
+    {
+        $tz = 'UTC';
+        if (!empty($_POST['continent']) && !empty($_POST['city']))
+            if (isTZvalid($_POST['continent'],$_POST['city']))
+                $tz = $_POST['continent'].'/'.$_POST['city'];
+        $GLOBALS['timezone'] = $tz;
+        
+        $GLOBALS['login'] = $_POST['setlogin'];
+        $GLOBALS['salt'] = sha1(uniqid('',true).'_'.mt_rand()); 
+        $GLOBALS['hash'] = sha1($_POST['setpassword'].$GLOBALS['login'].$GLOBALS['salt']);
+        $GLOBALS['title'] = (empty($_POST['title']) ? 'Shared links on '.htmlspecialchars(indexUrl()) : $_POST['title'] );
+        writeConfig();
+        document.location=\'?do=login\';</script>';
+        exit;
+    }
+
+    
+    list($timezone_form,$timezone_js) = templateTZform();
+    $timezone_html=''; if ($timezone_form!='') $timezone_html='<tr><td valign="top"><b>Timezone:</b></td><td>'.$timezone_form.'</td></tr>';
+
+    $PAGE = new pageBuilder;
+    $PAGE->assign('timezone_html',$timezone_html);
+    $PAGE->assign('timezone_js',$timezone_js);
+    $PAGE->renderPage('install');
+    exit;
+}
+
+
+
+
+
+
+function templateTZform($ptz=false)
+{
+    if (function_exists('timezone_identifiers_list')) 
+    {
+        
+        if ($ptz==false) { $l=timezone_identifiers_list(); $ptz=$l[0]; }
+        $spos=strpos($ptz,'/'); $pcontinent=substr($ptz,0,$spos); $pcity=substr($ptz,$spos+1);
+
+        
+        $timezone_form = '';
+        $timezone_js = '';
+        
+        
+        $continents = array();
+        $cities = array();
+        foreach(timezone_identifiers_list() as $tz)
+        {
+            if ($tz=='UTC') $tz='UTC/UTC';
+            $spos = strpos($tz,'/');
+            if ($spos!==false)
+            {
+                $continent=substr($tz,0,$spos); $city=substr($tz,$spos+1);
+                $continents[$continent]=1;
+                if (!isset($cities[$continent])) $cities[$continent]='';
+                $cities[$continent].='<option value="'.$city.'"'.($pcity==$city?'selected':'').'>'.$city.'</option>';
+            }
+        }
+        $continents_html = '';
+        $continents = array_keys($continents);
+        foreach($continents as $continent)
+            $continents_html.='<option  value="'.$continent.'"'.($pcontinent==$continent?'selected':'').'>'.$continent.'</option>';
+        $cities_html = $cities[$pcontinent];
+        $timezone_form = "Continent: <select name=\"continent\" id=\"continent\" onChange=\"onChangecontinent();\">${continents_html}</select>";
+        $timezone_form .= "&nbsp;&nbsp;&nbsp;&nbsp;City: <select name=\"city\" id=\"city\">${cities[$pcontinent]}</select><br />";
+        $timezone_js = "<script language=\"JavaScript\">";
+        $timezone_js .= "function onChangecontinent(){document.getElementById(\"city\").innerHTML = citiescontinent[document.getElementById(\"continent\").value];}";
+        $timezone_js .= "var citiescontinent = ".json_encode($cities).";" ;
+        $timezone_js .= "</script>" ;
+        return array($timezone_form,$timezone_js);
+    }
+    return array('','');
+}
+
+
+
+
+function isTZvalid($continent,$city)
+{
+    $tz = $continent.'/'.$city;
+    if (function_exists('timezone_identifiers_list')) 
+    {
+        if (in_array($tz, timezone_identifiers_list())) 
+                    return true;
+    }
+    return false;
+}
+if (!function_exists('json_encode')) {
+    function json_encode($data) {
+        switch ($type = gettype($data)) {
+            case 'NULL':
+                return 'null';
+            case 'boolean':
+                return ($data ? 'true' : 'false');
+            case 'integer':
+            case 'double':
+            case 'float':
+                return $data;
+            case 'string':
+                return '"' . addslashes($data) . '"';
+            case 'object':
+                $data = get_object_vars($data);
+            case 'array':
+                $output_index_count = 0;
+                $output_indexed = array();
+                $output_associative = array();
+                foreach ($data as $key => $value) {
+                    $output_indexed[] = json_encode($value);
+                    $output_associative[] = json_encode($key) . ':' . json_encode($value);
+                    if ($output_index_count !== NULL && $output_index_count++ !== $key) {
+                        $output_index_count = NULL;
+                    }
+                }
+                if ($output_index_count !== NULL) {
+                    return '[' . implode(',', $output_indexed) . ']';
+                } else {
+                    return '{' . implode(',', $output_associative) . '}';
+                }
+            default:
+                return ''; 
+        }
+    }
+}
+
+
+
+function processWS()
+{
+    if (empty($_GET['ws']) || empty($_GET['term'])) return;
+    $term = $_GET['term'];
+    $LINKSDB=new linkdb(isLoggedIn() || $GLOBALS['config']['OPEN_SHAARLI']);  
+    header('Content-Type: application/json; charset=utf-8');
+
+    
+    if ($_GET['ws']=='tags')
+    {
+        $tags=explode(' ',str_replace(',',' ',$term)); $last = array_pop($tags); 
+        $addtags=''; if ($tags) $addtags=implode(' ',$tags).' '; 
+        $suggested=array();
+        
+        if (empty($_SESSION['tags'])) $_SESSION['tags'] = $LINKSDB->allTags();
+        foreach($_SESSION['tags'] as $key=>$value)
+        {
+            if (startsWith($key,$last,$case=false) && !in_array($key,$tags)) $suggested[$addtags.$key.' ']=0;
+        }
+        
+        exit;
+    }
+
+    
+    if ($_GET['ws']=='singletag')
+    {
+        
+        if (empty($_SESSION['tags'])) $_SESSION['tags'] = $LINKSDB->allTags();
+        foreach($_SESSION['tags'] as $key=>$value)
+        {
+            if (startsWith($key,$term,$case=true)) $suggested[$key]=0;
+        }
+        
+        exit;
+    }
+}
+
+
+
+
+
+function writeConfig()
+{
+    if (is_file($GLOBALS['config']['CONFIG_FILE']) && !isLoggedIn()) die('You are not authorized to alter config.'); 
+    $config='<?php $GLOBALS[\'login\']='.var_export($GLOBALS['login'],true).'; $GLOBALS[\'hash\']='.var_export($GLOBALS['hash'],true).'; $GLOBALS[\'salt\']='.var_export($GLOBALS['salt'],true).'; ';
+    $config .='$GLOBALS[\'timezone\']='.var_export($GLOBALS['timezone'],true).'; date_default_timezone_set('.var_export($GLOBALS['timezone'],true).'); $GLOBALS[\'title\']='.var_export($GLOBALS['title'],true).';';
+    $config .= '$GLOBALS[\'redirector\']='.var_export($GLOBALS['redirector'],true).'; ';
+    $config .= '$GLOBALS[\'disablesessionprotection\']='.var_export($GLOBALS['disablesessionprotection'],true).'; ';
+    $config .= '$GLOBALS[\'disablejquery\']='.var_export($GLOBALS['disablejquery'],true).'; ';
+    $config .= '$GLOBALS[\'privateLinkByDefault\']='.var_export($GLOBALS['privateLinkByDefault'],true).'; ';
+    $config .= ' ?>';
+    if (!file_put_contents($GLOBALS['config']['CONFIG_FILE'],$config) || strcmp(file_get_contents($GLOBALS['config']['CONFIG_FILE']),$config)!=0)
+    {
+        document.location=\'?\';</script>';
+        exit;
+    }
+}
+
+
+function genThumbnail()
+{
+    
+    $sign = hash_hmac('sha256', $_GET['url'], $GLOBALS['salt']);
+    if ($sign!=$_GET['hmac']) die('Naughty boy !');
+
+    
+    $thumbname=hash('sha1',$_GET['url']).'.jpg';
+    if (is_file($GLOBALS['config']['CACHEDIR'].'/'.$thumbname))
+    {   
+        header('Content-Type: image/jpeg');
+        
+        return;
+    }
+    
+    $blankname=hash('sha1',$_GET['url']).'.gif';
+    if (is_file($GLOBALS['config']['CACHEDIR'].'/'.$blankname))
+    {
+        header('Content-Type: image/gif');
+        
+        return;
+    }
+
+    
+    $url = $_GET['url'];
+    $domain = parse_url($url,PHP_URL_HOST);
+
+    if ($domain=='flickr.com' || endsWith($domain,'.flickr.com'))
+    {
+        
+        $url = str_replace('http:
+
+        
+        $imageurl='';
+        if (endswith(parse_url($url,PHP_URL_PATH),'.jpg'))
+        {  
+            preg_match('!(http:
+            if (!empty($matches[1])) $imageurl=$matches[1].'m.jpg';
+        }
+        else 
+        {
+            list($httpstatus,$headers,$data) = getHTTP($url,20); 
+            if (strpos($httpstatus,'200 OK')!==false)
+            {
+                
+                preg_match('!<link rel=\"image_src\" href=\"(.+?)\"!',$data,$matches);
+                if (!empty($matches[1])) $imageurl=$matches[1];
+
+                
+                
+                
+                if ($imageurl=='')
+                {
+                    preg_match('!<meta property=\"og:image\" content=\"(.+?)\"!',$data,$matches);
+                    if (!empty($matches[1])) $imageurl=$matches[1];
+                }
+            }
+        }
+
+        if ($imageurl!='')
+        {   
+            list($httpstatus,$headers,$data) = getHTTP($imageurl,10); 
+            if (strpos($httpstatus,'200 OK')!==false)
+            {
+                file_put_contents($GLOBALS['config']['CACHEDIR'].'/'.$thumbname,$data); 
+                header('Content-Type: image/jpeg');
+                
+                return;
+            }
+        }
+    }
+
+    elseif ($domain=='vimeo.com' )
+    {
+        
+        
+        $vid = substr(parse_url($url,PHP_URL_PATH),1);
+        list($httpstatus,$headers,$data) = getHTTP('http:
+        if (strpos($httpstatus,'200 OK')!==false)
+        {
+            $t = unserialize($data);
+            $imageurl = $t[0]['thumbnail_medium'];
+            
+            list($httpstatus,$headers,$data) = getHTTP($imageurl,10);
+            if (strpos($httpstatus,'200 OK')!==false)
+            {
+                file_put_contents($GLOBALS['config']['CACHEDIR'].'/'.$thumbname,$data); 
+                header('Content-Type: image/jpeg');
+                
+                return;
+            }
+        }
+    }
+
+    elseif ($domain=='ted.com' || endsWith($domain,'.ted.com'))
+    {
+        
+        
+        
+        list($httpstatus,$headers,$data) = getHTTP($url,5);
+        if (strpos($httpstatus,'200 OK')!==false)
+        {
+            
+            preg_match('!link rel="image_src" href="(http:
+            if (!empty($matches[1]))
+            {   
+                $imageurl=$matches[1];
+                list($httpstatus,$headers,$data) = getHTTP($imageurl,20); 
+                if (strpos($httpstatus,'200 OK')!==false)
+                {
+                    $filepath=$GLOBALS['config']['CACHEDIR'].'/'.$thumbname;
+                    file_put_contents($filepath,$data); 
+                    if (resizeImage($filepath))
+                    {
+                        header('Content-Type: image/jpeg');
+                        
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    elseif ($domain=='xkcd.com' || endsWith($domain,'.xkcd.com'))
+    {
+        
+        
+        
+        list($httpstatus,$headers,$data) = getHTTP($url,5);
+        if (strpos($httpstatus,'200 OK')!==false)
+        {
+            
+            preg_match('!<img src="(http:
+            if (!empty($matches[1]))
+            {   
+                $imageurl=$matches[1];
+                list($httpstatus,$headers,$data) = getHTTP($imageurl,20); 
+                if (strpos($httpstatus,'200 OK')!==false)
+                {
+                    $filepath=$GLOBALS['config']['CACHEDIR'].'/'.$thumbname;
+                    file_put_contents($filepath,$data); 
+                    if (resizeImage($filepath))
+                    {
+                        header('Content-Type: image/jpeg');
+                        
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    else
+    {
+        
+        list($httpstatus,$headers,$data) = getHTTP($url,30);  
+        if (strpos($httpstatus,'200 OK')!==false)
+        {
+            $filepath=$GLOBALS['config']['CACHEDIR'].'/'.$thumbname;
+            file_put_contents($filepath,$data); 
+            if (resizeImage($filepath))
+            {
+                header('Content-Type: image/jpeg');
+                
+                return;
+            }
+        }
+    }
+
+
+    
+    $blankgif = base64_decode('R0lGODlhCAAIAIAAAP
+    file_put_contents($GLOBALS['config']['CACHEDIR'].'/'.$blankname,$blankgif); 
+    header('Content-Type: image/gif');
+    
+}
+
+
+
+function resizeImage($filepath)
+{
+    if (!function_exists('imagecreatefromjpeg')) return false; 
+
+    
+    
+    $header=file_get_contents($filepath,false,NULL,0,256); 
+    $im=false;
+    $i=strpos($header,'GIF8'); if (($i!==false) && ($i==0)) $im = imagecreatefromgif($filepath); 
+    $i=strpos($header,'PNG'); if (($i!==false) && ($i==1)) $im = imagecreatefrompng($filepath);
+    $i=strpos($header,'JFIF'); if ($i!==false) $im = imagecreatefromjpeg($filepath);
+    if (!$im) return false;  
+    $w = imagesx($im);
+    $h = imagesy($im);
+    $ystart = 0; $yheight=$h;
+    if ($h>$w) { $ystart= ($h/2)-($w/2); $yheight=$w/2; }
+    $nw = 120;   
+    $nh = min(floor(($h*$nw)/$w),120); 
+    
+    $im2 = imagecreatetruecolor($nw,$nh);
+    imagecopyresampled($im2, $im, 0, 0, 0, $ystart, $nw, $nh, $w, $yheight);
+    imageinterlace($im2,true); 
+    $tempname=$filepath.'_TEMP.jpg';
+    imagejpeg($im2, $tempname, 90);
+    imagedestroy($im);
+    imagedestroy($im2);
+    unlink($filepath);
+    rename($tempname,$filepath);  
+    return true;
+}
+
+
+
+function invalidateCaches()
+{
+    unset($_SESSION['tags']);  
+    pageCache::purgeCache();   
+}
+
+if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=genthumbnail')) { genThumbnail(); exit; }  
+if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=rss')) { showRSS(); exit; }
+if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=atom')) { showATOM(); exit; }
+if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=dailyrss')) { showDailyRSS(); exit; }
+if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=daily')) { showDaily(); exit; }
+if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'ws=')) { processWS(); exit; } 
+if (!isset($_SESSION['LINKS_PER_PAGE'])) $_SESSION['LINKS_PER_PAGE']=$GLOBALS['config']['LINKS_PER_PAGE'];
+renderPage();
+?>

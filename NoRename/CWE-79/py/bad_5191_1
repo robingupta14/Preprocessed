@@ -1,0 +1,561 @@
+from __future__ import unicode_literals
+
+
+from django.conf import settings
+from django.core.urlresolvers import Resolver404, resolve
+from django.http import (
+    HttpRequest, HttpResponse, HttpResponseNotFound, build_request_repr,
+)
+from django.template import Context, Engine, TemplateDoesNotExist
+from django.template.defaultfilters import force_escape, pprint
+from django.utils import lru_cache, six, timezone
+from django.utils.datastructures import MultiValueDict
+from django.utils.encoding import force_bytes, smart_text
+from django.utils.html import escape
+from django.utils.module_loading import import_string
+from django.utils.translation import ugettext as _
+
+
+
+DEBUG_ENGINE = Engine(debug=True)
+
+HIDDEN_SETTINGS = re.compileAPI|TOKEN|KEY|SECRET|PASS|SIGNATURE
+
+CLEANSED_SUBSTITUTE = ********************
+
+
+def linebreak_iter(template_source):
+    yield 0
+    p = template_source.find
+
+    while p >= 0:
+        yield p + 1
+        p = template_source.find(
+, p + 1)
+    yield len(template_source) + 1
+
+
+class CallableSettingWrapper(object):
+    
+    def __init__(self, callable_setting):
+        self._wrapped = callable_setting
+
+    def __repr__(self):
+        return repr(self._wrapped)
+
+
+def cleanse_setting(key, value):
+    
+    try:
+        if HIDDEN_SETTINGS.search(key):
+            cleansed = CLEANSED_SUBSTITUTE
+        else:
+            if isinstance(value, dict):
+                cleansed = {k: cleanse_setting(k, v) for k, v in value.items()}
+            else:
+                cleansed = value
+    except TypeError:
+        
+        cleansed = value
+
+    if callable(cleansed):
+        
+        cleansed = CallableSettingWrapper(cleansed)
+
+    return cleansed
+
+
+def get_safe_settings():
+    Returns a dictionary of the settings module, with sensitive settings blurred out.
+    settings_dict = {}
+    for k in dir(settings):
+        if k.isupper():
+            settings_dict[k] = cleanse_setting(k, getattr(settings, k))
+    return settings_dict
+
+
+def technical_500_response(request, exc_type, exc_value, tb, status_code=500):
+    
+    reporter = ExceptionReporter(request, exc_type, exc_value, tb)
+    if request.is_ajax():
+        text = reporter.get_traceback_text()
+        return HttpResponse(text, status=status_code, content_type=text/plain)
+    else:
+        html = reporter.get_traceback_html()
+        return HttpResponse(html, status=status_code, content_type=text/html)
+
+
+@django.utils.lru_cache.lru_cache()
+def get_default_exception_reporter_filter():
+    
+    return import_string(django.conf.settings.DEFAULT_EXCEPTION_REPORTER_FILTER)()
+
+
+def get_exception_reporter_filter(request):
+    default_filter = get_default_exception_reporter_filter()
+    return getattr(request, exception_reporter_filter, default_filter)
+
+
+class ExceptionReporterFilter(object):
+    
+
+    def get_request_repr(self, request):
+        if request is None:
+            return repr(None)
+        else:
+            return build_request_repr(request, POST_override=self.get_post_parameters(request))
+
+    def get_post_parameters(self, request):
+        if request is None:
+            return {}
+        else:
+            return request.POST
+
+    def get_traceback_frame_variables(self, request, tb_frame):
+        return list(django.utils.six.iteritems(tb_frame.f_locals))
+
+
+class SafeExceptionReporterFilter(ExceptionReporterFilter):
+    
+
+    def is_active(self, request):
+        
+        return django.conf.settings.DEBUG is False
+
+    def get_cleansed_multivaluedict(self, request, multivaluedict):
+        
+        sensitive_post_parameters = getattr(request, sensitive_post_parameters, [])
+        if self.is_active(request) and sensitive_post_parameters:
+            multivaluedict = multivaluedict.copy()
+            for param in sensitive_post_parameters:
+                if param in multivaluedict:
+                    multivaluedict[param] = CLEANSED_SUBSTITUTE
+        return multivaluedict
+
+    def get_post_parameters(self, request):
+        
+        if request is None:
+            return {}
+        else:
+            sensitive_post_parameters = getattr(request, sensitive_post_parameters, [])
+            if self.is_active(request) and sensitive_post_parameters:
+                cleansed = request.POST.copy()
+                if sensitive_post_parameters == __ALL__:
+                    
+                    for k, v in cleansed.items():
+                        cleansed[k] = CLEANSED_SUBSTITUTE
+                    return cleansed
+                else:
+                    
+                    for param in sensitive_post_parameters:
+                        if param in cleansed:
+                            cleansed[param] = CLEANSED_SUBSTITUTE
+                    return cleansed
+            else:
+                return request.POST
+
+    def cleanse_special_types(self, request, value):
+        if isinstance(value, HttpRequest):
+            
+            value = self.get_request_repr(value)
+        elif isinstance(value, MultiValueDict):
+            
+            value = self.get_cleansed_multivaluedict(request, value)
+        return value
+
+    def get_traceback_frame_variables(self, request, tb_frame):
+        
+        
+        
+        current_frame = tb_frame.f_back
+        sensitive_variables = None
+        while current_frame is not None:
+            if (current_frame.f_code.co_name == sensitive_variables_wrapper
+                    and sensitive_variables_wrapper in current_frame.f_locals):
+                
+                
+                wrapper = current_frame.f_locals[sensitive_variables_wrapper]
+                sensitive_variables = getattr(wrapper, sensitive_variables, None)
+                break
+            current_frame = current_frame.f_back
+
+        cleansed = {}
+        if self.is_active(request) and sensitive_variables:
+            if sensitive_variables == __ALL__:
+                
+                for name, value in tb_frame.f_locals.items():
+                    cleansed[name] = CLEANSED_SUBSTITUTE
+            else:
+                
+                for name, value in tb_frame.f_locals.items():
+                    if name in sensitive_variables:
+                        value = CLEANSED_SUBSTITUTE
+                    else:
+                        value = self.cleanse_special_types(request, value)
+                    cleansed[name] = value
+        else:
+            
+            
+            for name, value in tb_frame.f_locals.items():
+                cleansed[name] = self.cleanse_special_types(request, value)
+
+        if (tb_frame.f_code.co_name == sensitive_variables_wrapper
+                and sensitive_variables_wrapper in tb_frame.f_locals):
+            
+            
+            
+            
+            cleansed[func_args] = CLEANSED_SUBSTITUTE
+            cleansed[func_kwargs] = CLEANSED_SUBSTITUTE
+
+        return cleansed.items()
+
+
+class ExceptionReporter(object):
+    
+    def __init__(self, request, exc_type, exc_value, tb, is_email=False):
+        self.request = request
+        self.filter = get_exception_reporter_filter(self.request)
+        self.exc_type = exc_type
+        self.exc_value = exc_value
+        self.tb = tb
+        self.is_email = is_email
+
+        self.template_info = None
+        self.template_does_not_exist = False
+        self.loader_debug_info = None
+
+        
+        if isinstance(self.exc_type, django.utils.six.string_types):
+            self.exc_value = Exception(Deprecated String Exception: %r % self.exc_type)
+            self.exc_type = type(self.exc_value)
+
+    def format_path_status(self, path):
+        if not os.path.exists(path):
+            return File does not exist
+        if not os.path.isfile(path):
+            return Not a file
+        if not os.access(path, os.R_OK):
+            return File is not readable
+        return File exists
+
+    def get_traceback_data(self):
+        
+        try:
+            default_template_engine = django.template.Engine.get_default()
+        except Exception:
+            
+            
+            
+            
+            default_template_engine = None
+
+        
+        
+        
+        if self.exc_type and issubclass(self.exc_type, TemplateDoesNotExist):
+            if default_template_engine is None:
+                template_loaders = []
+            else:
+                self.template_does_not_exist = True
+                self.loader_debug_info = []
+                
+                
+                try:
+                    template_loaders = default_template_engine.template_loaders
+                except Exception:
+                    template_loaders = []
+
+            for loader in template_loaders:
+                try:
+                    source_list_func = loader.get_template_sources
+                    
+                    
+                    template_list = [{
+                        name: t,
+                        status: self.format_path_status(t),
+                    } for t in source_list_func(str(self.exc_value))]
+                except AttributeError:
+                    template_list = []
+                loader_name = loader.__module__ + . + loader.__class_django.utils.translation.ugettext.__name__
+                self.loader_debug_info.append({
+                    loader: loader_name,
+                    templates: template_list,
+                })
+
+        
+        if (default_template_engine is not None
+                and default_template_engine.debug
+                and hasattr(self.exc_value, django_template_source)):
+            self.get_template_exception_info()
+
+        frames = self.get_traceback_frames()
+        for i, frame in enumerate(frames):
+            if vars in frame:
+                frame_vars = []
+                for k, v in frame[vars]:
+                    v = pprint(v)
+                    
+                    if isinstance(v, django.utils.six.binary_type):
+                        v = v.decode('utf-8', 'replace')  
+                    
+                    if len(v) > 4096:
+                        v = %s... <trimmed %d bytes string> % (v[0:4096], len(v))
+                    frame_vars.append((k, force_escape(v)))
+                frame[vars] = frame_vars
+            frames[i] = frame
+
+        unicode_hint = 
+        if self.exc_type and issubclass(self.exc_type, UnicodeError):
+            start = getattr(self.exc_value, start, None)
+            end = getattr(self.exc_value, end, None)
+            if start is not None and end is not None:
+                unicode_str = self.exc_value.args[1]
+                unicode_hint = smart_text(
+                    unicode_str[max(start - 5, 0):min(end + 5, len(unicode_str))],
+                    ascii, errors=replace
+                )
+        from django import get_version
+        c = {
+            is_email: self.is_email,
+            unicode_hint: unicode_hint,
+            frames: frames,
+            request: self.request,
+            filtered_POST: self.filter.get_post_parameters(self.request),
+            settings: get_safe_settings(),
+            sys_executable: sys.executable,
+            sys_version_info: %d.%d.%d % sys.version_info[0:3],
+            server_time: django.utils.timezone.now(),
+            django_version_info: get_version(),
+            sys_path: sys.path,
+            template_info: self.template_info,
+            template_does_not_exist: self.template_does_not_exist,
+            loader_debug_info: self.loader_debug_info,
+        }
+        
+        if self.exc_type:
+            c[exception_type] = self.exc_type.__name__
+        if self.exc_value:
+            c[exception_value] = smart_text(self.exc_value, errors=replace)
+        if frames:
+            c[lastframe] = frames[-1]
+        return c
+
+    def get_traceback_html(self):
+        Return HTML version of debug 500 HTTP error page.
+        t = DEBUG_ENGINE.from_string(TECHNICAL_500_TEMPLATE)
+        c = Context(self.get_traceback_data(), use_l10n=False)
+        return t.render(c)
+
+    def get_traceback_text(self):
+        Return plain text version of debug 500 HTTP error page.
+        t = DEBUG_ENGINE.from_string(TECHNICAL_500_TEXT_TEMPLATE)
+        c = Context(self.get_traceback_data(), autoescape=False, use_l10n=False)
+        return t.render(c)
+
+    def get_template_exception_info(self):
+        origin, (start, end) = self.exc_value.django_template_source
+        template_source = origin.reload()
+        context_lines = 10
+        line = 0
+        upto = 0
+        source_lines = []
+        before = during = after = 
+        for num, next in enumerate(linebreak_iter(template_source)):
+            if start >= upto and end <= next:
+                line = num
+                before = escape(template_source[upto:start])
+                during = escape(template_source[start:end])
+                after = escape(template_source[end:next])
+            source_lines.append((num, escape(template_source[upto:next])))
+            upto = next
+        total = len(source_lines)
+
+        top = max(1, line - context_lines)
+        bottom = min(total, line + 1 + context_lines)
+
+        
+        try:
+            message = self.exc_value.args[0]
+        except IndexError:
+            message = (Could not get exception message)
+
+        self.template_info = {
+            message: message,
+            source_lines: source_lines[top:bottom],
+            before: before,
+            during: during,
+            after: after,
+            top: top,
+            bottom: bottom,
+            total: total,
+            line: line,
+            name: origin.name,
+        }
+
+    def _get_lines_from_file(self, filename, lineno, context_lines, loader=None, module_name=None):
+        
+        source = None
+        if loader is not None and hasattr(loader, get_source):
+            try:
+                source = loader.get_source(module_name)
+            except ImportError:
+                pass
+            if source is not None:
+                source = source.splitlines()
+        if source is None:
+            try:
+                with open(filename, rb) as fp:
+                    source = fp.read().splitlines()
+            except (OSError, IOError):
+                pass
+        if source is None:
+            return (None, [], None, [])
+
+        
+        
+        
+        if isinstance(source[0], django.utils.six.binary_type):
+            encoding = ascii
+            for line in source[:2]:
+                
+                
+                match = re.search(b'coding[:=]\\s*([-\\w.]+)', line)
+                if match:
+                    encoding = match.group1.decodeascii
+                    break
+            source = [django.utils.six.text_type(sline, encoding, replace) for sline in source]
+
+        lower_bound = max(0, lineno - context_lines)
+        upper_bound = lineno + context_lines
+
+        pre_context = source[lower_bound:lineno]
+        context_line = source[lineno]
+        post_context = source[lineno + 1:upper_bound]
+
+        return lower_bound, pre_context, context_line, post_context
+
+    def get_traceback_frames(self):
+        frames = []
+        tb = self.tb
+        while tb is not None:
+            
+            
+            if tb.tb_frame.f_locals.get__traceback_hide__:
+                tb = tb.tb_next
+                continue
+            filename = tb.tb_frame.f_code.co_filename
+            function = tb.tb_frame.f_code.co_name
+            lineno = tb.tb_lineno - 1
+            loader = tb.tb_frame.f_globals.get__loader__
+            module_name = tb.tb_frame.f_globals.get__name__ or 
+            pre_context_lineno, pre_context, context_line, post_context = self._get_lines_from_file(
+                filename, lineno, 7, loader, module_name,
+            )
+            if pre_context_lineno is not None:
+                frames.append({
+                    tb: tb,
+                    type: django if module_name.startswithdjango. else user,
+                    filename: filename,
+                    function: function,
+                    lineno: lineno + 1,
+                    vars: self.filter.get_traceback_frame_variables(self.request, tb.tb_frame),
+                    id: id(tb),
+                    pre_context: pre_context,
+                    context_line: context_line,
+                    post_context: post_context,
+                    pre_context_lineno: pre_context_lineno + 1,
+                })
+            tb = tb.tb_next
+
+        return frames
+
+    def format_exception(self):
+        
+        frames = self.get_traceback_frames()
+        tb = [(f[filename], f[lineno], f[function], f[context_line]) for f in frames]
+        list = ['Traceback (most recent call last):\n']
+        list += traceback.format_list(tb)
+        list += traceback.format_exception_only(self.exc_type, self.exc_value)
+        return list
+
+
+def technical_404_response(request, exception):
+    Create a technical 404 error response. The exception should be the Http404.
+    try:
+        error_url = exception.args[0][path]
+    except (IndexError, TypeError, KeyError):
+        error_url = request.path_info[1:]  
+
+    try:
+        tried = exception.args[0][tried]
+    except (IndexError, TypeError, KeyError):
+        tried = []
+    else:
+        if (not tried                           
+            or (request.path == /
+                and len(tried) == 1             
+                and len(tried[0]) == 1
+                and getattr(tried[0][0], app_name, ) == getattr(tried[0][0], namespace, ) == admin)):
+            return default_urlconf(request)
+
+    urlconf = getattr(request, urlconf, django.conf.settings.ROOT_URLCONF)
+    if isinstance(urlconf, types.ModuleType):
+        urlconf = urlconf.__name__
+
+    caller = 
+    try:
+        resolver_match = resolve(request.path)
+    except Resolver404:
+        pass
+    else:
+        obj = resolver_match.func
+
+        if hasattr(obj, __name__):
+            caller = obj.__name__
+        elif hasattr(obj, __class__) and hasattr(obj.__class__, __name__):
+            caller = obj.__class_django.utils.translation.ugettext.__name__
+
+        if hasattr(obj, __module__):
+            module = obj.__module__
+            caller = %s.%s % (module, caller)
+
+    t = DEBUG_ENGINE.from_string(TECHNICAL_404_TEMPLATE)
+    c = Context({
+        urlconf: urlconf,
+        root_urlconf: django.conf.settings.ROOT_URLCONF,
+        request_path: error_url,
+        urlpatterns: tried,
+        reason: force_bytes(exception, errors=replace),
+        request: request,
+        settings: get_safe_settings(),
+        raising_view_name: caller,
+    })
+    return HttpResponseNotFound(t.render(c), content_type=text/html)
+
+
+def default_urlconf(request):
+    Create an empty URLconf 404 error response.
+    t = DEBUG_ENGINE.from_string(DEFAULT_URLCONF_TEMPLATE)
+    c = Context({
+        title: _Welcome to Django,
+        heading: _It worked!,
+        subheading: _Congratulations on your first Django-powered page.,
+        instructions: _Of course, you haven't actually done any work yet. Next, start your first app by running <code>python manage.py startapp [app_label]</code>.,
+        explanation: _You're seeing this message because you have <code>DEBUG = True</code> in your Django settings file and you haven't configured any URLs. Get to work!,
+    })
+
+    return HttpResponse(t.render(c), content_type=text/html)
+
+
+
+
+
+
+TECHNICAL_500_TEMPLATE = ()
+
+TECHNICAL_500_TEXT_TEMPLATE = 
+
+TECHNICAL_404_TEMPLATE = 
+
+DEFAULT_URLCONF_TEMPLATE = 

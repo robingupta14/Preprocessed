@@ -1,0 +1,589 @@
+<?php
+
+
+
+
+
+class TemplateParser
+{
+
+    
+    const CONTEXT_INSIDE_VIEWHELPER_ARGUMENTS = 1;
+    const CONTEXT_OUTSIDE_VIEWHELPER_ARGUMENTS = 2;
+
+    
+    protected $escapingEnabled = true;
+
+    
+    protected $configuration;
+
+    
+    protected $settings;
+
+    
+    protected $renderingContext;
+
+    
+    protected $pointerLineNumber = 1;
+
+    
+    protected $pointerLineCharacter = 1;
+
+    
+    protected $pointerTemplateCode = null;
+
+    
+    protected $parsedTemplates = [];
+
+    
+    public function setRenderingContext(RenderingContextInterface $renderingContext)
+    {
+        $this->renderingContext = $renderingContext;
+        $this->configuration = $renderingContext->buildParserConfiguration();
+    }
+
+    
+    public function getCurrentParsingPointers()
+    {
+        return [$this->pointerLineNumber, $this->pointerLineCharacter, $this->pointerTemplateCode];
+    }
+
+    
+    public function isEscapingEnabled()
+    {
+        return $this->escapingEnabled;
+    }
+
+    
+    public function setEscapingEnabled($escapingEnabled)
+    {
+        $this->escapingEnabled = (boolean) $escapingEnabled;
+    }
+
+    
+    public function parse($templateString, $templateIdentifier = null)
+    {
+        if (!is_string($templateString)) {
+            throw new Exception('Parse requires a template string as argument, ' . gettype($templateString) . ' given.', 1224237899);
+        }
+        try {
+            $this->reset();
+
+            $templateString = $this->preProcessTemplateSource($templateString);
+
+            $splitTemplate = $this->splitTemplateAtDynamicTags($templateString);
+            $parsingState = $this->buildObjectTree($splitTemplate, self::CONTEXT_OUTSIDE_VIEWHELPER_ARGUMENTS);
+        } catch (Exception $error) {}
+        $this->parsedTemplates[$templateIdentifier] = $parsingState;
+        return $parsingState;
+    }
+
+    
+    public function createParsingRelatedExceptionWithContext(\Exception $error, $templateIdentifier)
+    {
+        list ($line, $character, $templateCode) = $this->getCurrentParsingPointers();
+        $exceptionClass = get_class($error);
+        return new $exceptionClass(
+            sprintf(
+                'Fluid parse error in template %s, line %d at character %d. Error: %s (error code %d). Template source chunk: %s',
+                $templateIdentifier,
+                $line,
+                $character,
+                $error->getMessage(),
+                $error->getCode(),
+                $templateCode
+            ),
+            $error->getCode(),
+            $error
+        );
+    }
+
+    
+    public function getOrParseAndStoreTemplate($templateIdentifier, $templateSourceClosure)
+    {
+        $compiler = $this->renderingContext->getTemplateCompiler();
+        if (isset($this->parsedTemplates[$templateIdentifier])) {
+            $parsedTemplate = $this->parsedTemplates[$templateIdentifier];
+        } elseif ($compiler->has($templateIdentifier)) {
+            $parsedTemplate = $compiler->get($templateIdentifier);
+            if ($parsedTemplate instanceof UncompilableTemplateInterface) {
+                $parsedTemplate = $this->parseTemplateSource($templateIdentifier, $templateSourceClosure);
+            }
+        } else {
+            $parsedTemplate = $this->parseTemplateSource($templateIdentifier, $templateSourceClosure);
+            try {
+                $compiler->store($templateIdentifier, $parsedTemplate);
+            } catch (StopCompilingException $stop) {}
+        }
+        return $parsedTemplate;
+    }
+
+    
+    protected function parseTemplateSource($templateIdentifier, $templateSourceClosure)
+    {
+        $parsedTemplate = $this->parse(
+            $templateSourceClosure($this, $this->renderingContext->getTemplatePaths()),
+            $templateIdentifier
+        );
+        $parsedTemplate->setIdentifier($templateIdentifier);
+        $this->parsedTemplates[$templateIdentifier] = $parsedTemplate;
+        return $parsedTemplate;
+    }
+
+    
+    protected function preProcessTemplateSource($templateSource)
+    {
+        foreach ($this->renderingContext->getTemplateProcessors() as $templateProcessor) {
+            $templateSource = $templateProcessor->preProcessSource($templateSource);
+        }
+        return $templateSource;
+    }
+
+    
+    protected function reset()
+    {
+        $this->escapingEnabled = true;
+        $this->pointerLineNumber = 1;
+        $this->pointerLineCharacter = 1;
+    }
+
+    
+    protected function splitTemplateAtDynamicTags($templateString)
+    {
+        return preg_split(Patterns::$SPLIT_PATTERN_TEMPLATE_DYNAMICTAGS, $templateString, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+    }
+
+    
+    protected function buildObjectTree(array $splitTemplate, $context)
+    {
+        $state = $this->getParsingState();
+        $previousBlock = '';
+
+        foreach ($splitTemplate as $templateElement) {
+            if ($context === self::CONTEXT_OUTSIDE_VIEWHELPER_ARGUMENTS) {
+                
+                
+                
+                $this->pointerTemplateCode = $templateElement;
+            }
+            $this->pointerLineNumber += substr_count($templateElement, PHP_EOL);
+            $this->pointerLineCharacter = strlen(substr($previousBlock, strrpos($previousBlock, PHP_EOL))) + 1;
+            $previousBlock = $templateElement;
+            $matchedVariables = [];
+
+            if (preg_match(Patterns::$SCAN_PATTERN_TEMPLATE_VIEWHELPERTAG, $templateElement, $matchedVariables) > 0) {
+                try {
+                    if ($this->openingViewHelperTagHandler(
+                        $state,
+                        $matchedVariables['NamespaceIdentifier'],
+                        $matchedVariables['MethodIdentifier'],
+                        $matchedVariables['Attributes'],
+                        ($matchedVariables['Selfclosing'] === '' ? false : true),
+                        $templateElement
+                    )) {
+                        continue;
+                    }
+                } catch (\TYPO3Fluid\Fluid\Core\ViewHelper\Exception $error) {
+                    $this->textHandler(
+                        $state,
+                        $this->renderingContext->getErrorHandler()->handleViewHelperError($error)
+                    );
+                } catch (Exception $error) {}
+            } elseif (preg_match(Patterns::$SCAN_PATTERN_TEMPLATE_CLOSINGVIEWHELPERTAG, $templateElement, $matchedVariables) > 0) {
+                if ($this->closingViewHelperTagHandler(
+                    $state,
+                    $matchedVariables['NamespaceIdentifier'],
+                    $matchedVariables['MethodIdentifier']
+                )) {
+                    continue;
+                }
+            }
+            $this->textAndShorthandSyntaxHandler($state, $templateElement, $context);
+        }
+
+        if ($state->countNodeStack() !== 1) {
+            throw new Exception(
+                'Not all tags were closed!',
+                1238169398
+            );
+        }
+        return $state;
+    }
+    
+    protected function openingViewHelperTagHandler(ParsingState $state, $namespaceIdentifier, $methodIdentifier, $arguments, $selfclosing, $templateElement)
+    {
+        $viewHelperResolver = $this->renderingContext->getViewHelperResolver();
+        if ($viewHelperResolver->isNamespaceIgnored($namespaceIdentifier)) {
+            return null;
+        }
+        if (!$viewHelperResolver->isNamespaceValid($namespaceIdentifier)) {
+            throw new UnknownNamespaceException('Unknown Namespace: ' . $namespaceIdentifier);
+        }
+
+        $viewHelper = $viewHelperResolver->createViewHelperInstance($namespaceIdentifier, $methodIdentifier);
+        $argumentDefinitions = $viewHelper->prepareArguments();
+        $viewHelperNode = $this->initializeViewHelperAndAddItToStack(
+            $state,
+            $namespaceIdentifier,
+            $methodIdentifier,
+            $this->parseArguments($arguments, $viewHelper)
+        );
+
+        if ($viewHelperNode) {
+            $viewHelperNode->setPointerTemplateCode($templateElement);
+            if ($selfclosing === true) {
+                $state->popNodeFromStack();
+                $this->callInterceptor($viewHelperNode, InterceptorInterface::INTERCEPT_CLOSING_VIEWHELPER, $state);
+                
+                $state->getNodeFromStack()->addChildNode($viewHelperNode);
+            }
+        }
+
+        return $viewHelperNode;
+    }
+
+    
+    protected function initializeViewHelperAndAddItToStack(ParsingState $state, $namespaceIdentifier, $methodIdentifier, $argumentsObjectTree)
+    {
+        $viewHelperResolver = $this->renderingContext->getViewHelperResolver();
+        if ($viewHelperResolver->isNamespaceIgnored($namespaceIdentifier)) {
+            return null;
+        }
+        if (!$viewHelperResolver->isNamespaceValid($namespaceIdentifier)) {
+            throw new UnknownNamespaceException('Unknown Namespace: ' . $namespaceIdentifier);
+        }
+        try {
+            $currentViewHelperNode = new ViewHelperNode(
+                $this->renderingContext,
+                $namespaceIdentifier,
+                $methodIdentifier,
+                $argumentsObjectTree,
+                $state
+            );
+
+            $this->callInterceptor($currentViewHelperNode, InterceptorInterface::INTERCEPT_OPENING_VIEWHELPER, $state);
+            $viewHelper = $currentViewHelperNode->getUninitializedViewHelper();
+            $viewHelper::postParseEvent($currentViewHelperNode, $argumentsObjectTree, $state->getVariableContainer());
+            $state->pushNodeToStack($currentViewHelperNode);
+            return $currentViewHelperNode;
+        } catch (\TYPO3Fluid\Fluid\Core\ViewHelper\Exception $error) {
+            $this->textHandler(
+                $state,
+                $this->renderingContext->getErrorHandler()->handleViewHelperError($error)
+            );
+        } catch (Exception $error) {}
+        return null;
+    }
+
+    
+    protected function closingViewHelperTagHandler(ParsingState $state, $namespaceIdentifier, $methodIdentifier)
+    {
+        $viewHelperResolver = $this->renderingContext->getViewHelperResolver();
+        if ($viewHelperResolver->isNamespaceIgnored($namespaceIdentifier)) {
+            return false;
+        }
+        if (!$viewHelperResolver->isNamespaceValid($namespaceIdentifier)) {
+            throw new UnknownNamespaceException('Unknown Namespace: ' . $namespaceIdentifier);
+        }
+        $lastStackElement = $state->popNodeFromStack();
+        if (!($lastStackElement instanceof ViewHelperNode)) {
+            throw new Exception('You closed a templating tag which you never opened!', 1224485838);
+        }
+        $actualViewHelperClassName = $viewHelperResolver->resolveViewHelperClassName($namespaceIdentifier, $methodIdentifier);
+        $expectedViewHelperClassName = $lastStackElement->getViewHelperClassName();
+        if ($actualViewHelperClassName !== $expectedViewHelperClassName) {
+            throw new Exception(
+                'Templating tags not properly nested. Expected: ' . $expectedViewHelperClassName . '; Actual: ' .
+                $actualViewHelperClassName,
+                1224485398
+            );
+        }
+        $this->callInterceptor($lastStackElement, InterceptorInterface::INTERCEPT_CLOSING_VIEWHELPER, $state);
+        $state->getNodeFromStack()->addChildNode($lastStackElement);
+
+        return true;
+    }
+
+    
+    protected function objectAccessorHandler(ParsingState $state, $objectAccessorString, $delimiter, $viewHelperString, $additionalViewHelpersString)
+    {
+        $viewHelperString .= $additionalViewHelpersString;
+        $numberOfViewHelpers = 0;
+
+        
+        
+        if (strlen($delimiter) === 0 && strlen($viewHelperString) > 0) {
+            $viewHelperString = $objectAccessorString . $viewHelperString;
+            $objectAccessorString = '';
+        }
+
+        
+        $matches = [];
+        if (strlen($viewHelperString) > 0 && preg_match_all(Patterns::$SPLIT_PATTERN_SHORTHANDSYNTAX_VIEWHELPER, $viewHelperString, $matches, PREG_SET_ORDER) > 0) {
+            
+            
+            
+            $viewHelperResolver = $this->renderingContext->getViewHelperResolver();
+            foreach (array_reverse($matches) as $singleMatch) {
+                if (!$viewHelperResolver->isNamespaceValid($singleMatch['NamespaceIdentifier'])) {
+                    throw new UnknownNamespaceException('Unknown Namespace: ' . $singleMatch['NamespaceIdentifier']);
+                }
+                $viewHelper = $viewHelperResolver->createViewHelperInstance($singleMatch['NamespaceIdentifier'], $singleMatch['MethodIdentifier']);
+                if (strlen($singleMatch['ViewHelperArguments']) > 0) {
+                    $arguments = $this->recursiveArrayHandler($singleMatch['ViewHelperArguments'], $viewHelper);
+                } else {
+                    $arguments = [];
+                }
+                $viewHelperNode = $this->initializeViewHelperAndAddItToStack(
+                    $state,
+                    $singleMatch['NamespaceIdentifier'],
+                    $singleMatch['MethodIdentifier'],
+                    $arguments
+                );
+                if ($viewHelperNode) {
+                    $numberOfViewHelpers++;
+                }
+            }
+        }
+
+        
+        if (strlen($objectAccessorString) > 0) {
+            $node = new ObjectAccessorNode($objectAccessorString);
+            $this->callInterceptor($node, InterceptorInterface::INTERCEPT_OBJECTACCESSOR, $state);
+            $state->getNodeFromStack()->addChildNode($node);
+        }
+
+        
+        for ($i = 0; $i < $numberOfViewHelpers; $i++) {
+            $node = $state->popNodeFromStack();
+            $this->callInterceptor($node, InterceptorInterface::INTERCEPT_CLOSING_VIEWHELPER, $state);
+            $state->getNodeFromStack()->addChildNode($node);
+        }
+    }
+
+    
+    protected function callInterceptor(NodeInterface & $node, $interceptionPoint, ParsingState $state)
+    {
+        if ($this->configuration === null) {
+            return;
+        }
+        if ($this->escapingEnabled) {
+            
+            foreach ($this->configuration->getEscapingInterceptors($interceptionPoint) as $interceptor) {
+                $node = $interceptor->process($node, $interceptionPoint, $state);
+            }
+        }
+
+        
+        foreach ($this->configuration->getInterceptors($interceptionPoint) as $interceptor) {
+            $node = $interceptor->process($node, $interceptionPoint, $state);
+        }
+    }
+
+    
+    protected function parseArguments($argumentsString, ViewHelperInterface $viewHelper)
+    {
+        $argumentDefinitions = $this->renderingContext->getViewHelperResolver()->getArgumentDefinitionsForViewHelper($viewHelper);
+        $argumentsObjectTree = [];
+        $undeclaredArguments = [];
+        $matches = [];
+        if (preg_match_all(Patterns::$SPLIT_PATTERN_TAGARGUMENTS, $argumentsString, $matches, PREG_SET_ORDER) > 0) {
+            $escapingEnabledBackup = $this->escapingEnabled;
+            $this->escapingEnabled = false;
+            foreach ($matches as $singleMatch) {
+                $argument = $singleMatch['Argument'];
+                $value = $this->unquoteString($singleMatch['ValueQuoted']);
+                $argumentsObjectTree[$argument] = $this->buildArgumentObjectTree($value);
+                if (isset($argumentDefinitions[$argument])) {
+                    $argumentDefinition = $argumentDefinitions[$argument];
+                    if ($argumentDefinition->getType() === 'boolean' || $argumentDefinition->getType() === 'bool') {
+                        $argumentsObjectTree[$argument] = new BooleanNode($argumentsObjectTree[$argument]);
+                    }
+                } else {
+                    $undeclaredArguments[$argument] = $argumentsObjectTree[$argument];
+                }
+            }
+            $this->escapingEnabled = $escapingEnabledBackup;
+        }
+        $this->abortIfRequiredArgumentsAreMissing($argumentDefinitions, $argumentsObjectTree);
+        $viewHelper->validateAdditionalArguments($undeclaredArguments);
+        return $argumentsObjectTree + $undeclaredArguments;
+    }
+
+    
+    protected function buildArgumentObjectTree($argumentString)
+    {
+        if (strpos($argumentString, '{') === false && strpos($argumentString, '<') === false) {
+            if (is_numeric($argumentString)) {
+                return new NumericNode($argumentString);
+            }
+            return new TextNode($argumentString);
+        }
+        $splitArgument = $this->splitTemplateAtDynamicTags($argumentString);
+        $rootNode = $this->buildObjectTree($splitArgument, self::CONTEXT_INSIDE_VIEWHELPER_ARGUMENTS)->getRootNode();
+        return $rootNode;
+    }
+
+    
+    public function unquoteString($quotedValue)
+    {
+        $value = $quotedValue;
+        if ($value === '') {
+            return $value;
+        }
+        if ($quotedValue[0] === '"') {
+            $value = str_replace('\\"', '"', preg_replace('/(^"|"$)/', '', $quotedValue));
+        } elseif ($quotedValue[0] === '\'') {
+            $value = str_replace("\\'", "'", preg_replace('/(^\'|\'$)/', '', $quotedValue));
+        }
+        return str_replace('\\\\', '\\', $value);
+    }
+
+    
+    protected function textAndShorthandSyntaxHandler(ParsingState $state, $text, $context)
+    {
+        $sections = preg_split(Patterns::$SPLIT_PATTERN_SHORTHANDSYNTAX, $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+        if ($sections === false) {
+            
+            $this->textHandler($state, $text);
+            return;
+        }
+        foreach ($sections as $section) {
+            $matchedVariables = [];
+            $expressionNode = null;
+            if (preg_match(Patterns::$SCAN_PATTERN_SHORTHANDSYNTAX_OBJECTACCESSORS, $section, $matchedVariables) > 0) {
+                $this->objectAccessorHandler(
+                    $state,
+                    $matchedVariables['Object'],
+                    $matchedVariables['Delimiter'],
+                    (isset($matchedVariables['ViewHelper']) ? $matchedVariables['ViewHelper'] : ''),
+                    (isset($matchedVariables['AdditionalViewHelpers']) ? $matchedVariables['AdditionalViewHelpers'] : '')
+                );
+            } elseif ($context === self::CONTEXT_INSIDE_VIEWHELPER_ARGUMENTS
+                && preg_match(Patterns::$SCAN_PATTERN_SHORTHANDSYNTAX_ARRAYS, $section, $matchedVariables) > 0
+            ) {
+                
+                $this->arrayHandler($state, $this->recursiveArrayHandler($matchedVariables['Array']));
+            } else {
+                
+                
+                foreach ($this->renderingContext->getExpressionNodeTypes() as $expressionNodeTypeClassName) {
+                    $detectionExpression = $expressionNodeTypeClassName::$detectionExpression;
+                    $matchedVariables = [];
+                    preg_match_all($detectionExpression, $section, $matchedVariables, PREG_SET_ORDER);
+                    if (is_array($matchedVariables) === true) {
+                        foreach ($matchedVariables as $matchedVariableSet) {
+                            $expressionStartPosition = strpos($section, $matchedVariableSet[0]);
+                            
+                            $expressionNode = new $expressionNodeTypeClassName($matchedVariableSet[0], $matchedVariableSet, $state);
+                            try {
+                                
+                                if ($expressionNode instanceof ParseTimeEvaluatedExpressionNodeInterface) {
+                                    $expressionNode->evaluate($this->renderingContext);
+                                }
+
+                                if ($expressionStartPosition > 0) {
+                                    $state->getNodeFromStack()->addChildNode(new TextNode(substr($section, 0, $expressionStartPosition)));
+                                }
+
+                                $this->callInterceptor($expressionNode, InterceptorInterface::INTERCEPT_EXPRESSION, $state);
+                                $state->getNodeFromStack()->addChildNode($expressionNode);
+
+                                $expressionEndPosition = $expressionStartPosition + strlen($matchedVariableSet[0]);
+                                if ($expressionEndPosition < strlen($section)) {
+                                    $this->textAndShorthandSyntaxHandler($state, substr($section, $expressionEndPosition), $context);
+                                    break;
+                                }
+                            } catch (ExpressionException $error) {}
+                        }
+                    }
+                }
+
+                if (!$expressionNode) {
+                    
+                    $this->textHandler($state, $section);
+                }
+            }
+        }
+    }
+
+    
+    protected function arrayHandler(ParsingState $state, $arrayText)
+    {
+        $arrayNode = new ArrayNode($arrayText);
+        $state->getNodeFromStack()->addChildNode($arrayNode);
+    }
+
+    
+    protected function recursiveArrayHandler($arrayText, ViewHelperInterface $viewHelper = null)
+    {
+        $undeclaredArguments = [];
+        $argumentDefinitions = [];
+        if ($viewHelper instanceof ViewHelperInterface) {
+            $argumentDefinitions = $this->renderingContext->getViewHelperResolver()->getArgumentDefinitionsForViewHelper($viewHelper);
+        }
+        $matches = [];
+        $arrayToBuild = [];
+        if (preg_match_all(Patterns::$SPLIT_PATTERN_SHORTHANDSYNTAX_ARRAY_PARTS, $arrayText, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $singleMatch) {
+                $arrayKey = $this->unquoteString($singleMatch['Key']);
+                $assignInto = &$arrayToBuild;
+                if (!isset($argumentDefinitions[$arrayKey])) {
+                    $assignInto = &$undeclaredArguments;
+                }
+
+                if (array_key_exists('Subarray', $singleMatch) && !empty($singleMatch['Subarray'])) {
+                    $assignInto[$arrayKey] = new ArrayNode($this->recursiveArrayHandler($singleMatch['Subarray']));
+                } elseif (!empty($singleMatch['VariableIdentifier'])) {
+                    $assignInto[$arrayKey] = new ObjectAccessorNode($singleMatch['VariableIdentifier']);
+                } elseif (array_key_exists('Number', $singleMatch) && (!empty($singleMatch['Number']) || $singleMatch['Number'] === '0')) {
+                    
+                    $assignInto[$arrayKey] = $singleMatch['Number'] + 0;
+                } elseif ((array_key_exists('QuotedString', $singleMatch) && !empty($singleMatch['QuotedString']))) {
+                    $argumentString = $this->unquoteString($singleMatch['QuotedString']);
+                    $assignInto[$arrayKey] = $this->buildArgumentObjectTree($argumentString);
+                }
+
+                if (isset($argumentDefinitions[$arrayKey]) && ($argumentDefinitions[$arrayKey]->getType() === 'boolean' || $argumentDefinitions[$arrayKey]->getType() === 'bool')) {
+                    $assignInto[$arrayKey] = new BooleanNode($assignInto[$arrayKey]);
+                }
+            }
+        }
+        if ($viewHelper instanceof ViewHelperInterface) {
+            $this->abortIfRequiredArgumentsAreMissing($argumentDefinitions, $arrayToBuild);
+            $viewHelper->validateAdditionalArguments($undeclaredArguments);
+        }
+        return $arrayToBuild + $undeclaredArguments;
+    }
+
+    
+    protected function textHandler(ParsingState $state, $text)
+    {
+        $node = new TextNode($text);
+        $this->callInterceptor($node, InterceptorInterface::INTERCEPT_TEXT, $state);
+        $state->getNodeFromStack()->addChildNode($node);
+    }
+
+    
+    protected function getParsingState()
+    {
+        $rootNode = new RootNode();
+        $variableProvider = $this->renderingContext->getVariableProvider();
+        $state = new ParsingState();
+        $state->setRootNode($rootNode);
+        $state->pushNodeToStack($rootNode);
+        $state->setVariableProvider($variableProvider->getScopeCopy($variableProvider->getAll()));
+        return $state;
+    }
+
+    
+    protected function abortIfRequiredArgumentsAreMissing($expectedArguments, $actualArguments)
+    {
+        $actualArgumentNames = array_keys($actualArguments);
+        foreach ($expectedArguments as $name => $expectedArgument) {
+            if ($expectedArgument->isRequired() && !in_array($name, $actualArgumentNames)) {
+                throw new Exception('Required argument "' . $name . '" was not supplied.', 1237823699);
+            }
+        }
+    }
+}

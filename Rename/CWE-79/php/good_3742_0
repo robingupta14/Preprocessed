@@ -1,0 +1,102 @@
+<?php
+
+
+
+$var_0 = TRUE; 
+
+
+
+$var_1 = !OC_Config::getValue('installed', false);
+if($var_1) {
+	
+	$var_2 = var_3::$var_4."/config/autoconfig.php";
+	if( file_exists( $var_2 )){
+		OC_Log::write('core','Autoconfig file found, setting up owncloud...',var_5::var_6);
+		$var_7['install'] = 'true';
+		$var_7 = array_merge ($var_7, $var_8);
+	        unlink($var_2);
+	}
+	OC_Util::addScript('setup');
+	exit();
+}
+
+
+if($_SERVER['REQUEST_METHOD']=='PROPFIND'){
+	header('location: '.OC_Helper::linkToRemote('webdav'));
+	exit();
+}
+elseif(!OC_User::isLoggedIn() && substr(var_3::$var_9,-3) == 'css'){
+	OC_App::loadApps();
+	OC::loadfile();
+}
+
+elseif(OC_User::isLoggedIn()) {
+	OC_App::loadApps();
+	if(isset($_GET["logout"]) and ($_GET["logout"])) {
+		OC_User::logout();
+		header("Location: ".var_3::$var_10.'/');
+		exit();
+	}else{
+		if(is_null(var_3::$var_9)){
+			OC::loadapp();
+		}else{
+			OC::loadfile();
+		}
+	}
+
+
+} else {
+	OC_App::loadApps();
+	$var_11 = false;
+	
+	if(isset($_COOKIE["oc_remember_login"]) && isset($_COOKIE["oc_token"]) && isset($_COOKIE["oc_username"]) && $_COOKIE["oc_remember_login"]) {
+		if(defined("DEBUG") && var_12) {
+			OC_Log::write('core','Trying to login from cookie',var_5::var_12);
+		}
+		
+		if(isset($_COOKIE['oc_token']) && OC_User::userExists($_COOKIE['oc_username']) &&
+		OC_Preferences::getValue($_COOKIE['oc_username'], "login", "token") == $_COOKIE['oc_token']) {
+			OC_User::setUserId($_COOKIE['oc_username']);
+			OC_Util::redirectToDefaultPage();
+		}
+		else {
+			OC_User::unsetMagicInCookie();
+		}
+
+	
+	} elseif(isset($var_7["user"]) and isset($var_7['password']) and isset($var_14['sectoken']) and isset($var_7['sectoken']) and ($var_14['sectoken']==$var_7['sectoken']) ) {
+		if(OC_User::login($var_7["user"], $var_7["password"])) {
+			if(!empty($var_7["remember_login"])){
+				if(defined("DEBUG") && var_12) {
+					OC_Log::write('core','Setting remember login to cookie',var_5::var_12);
+				}
+				$var_13 = md5($var_7["user"].time().$var_7['password']);
+				OC_Preferences::setValue($var_7['user'], 'login', 'token', $var_13);
+				OC_User::setMagicInCookie($var_7["user"], $var_13);
+			}
+			else {
+				OC_User::unsetMagicInCookie();
+			}
+			OC_Util::redirectToDefaultPage();
+		} else {
+			$var_11 = true;
+		}
+	
+	
+	} elseif(isset($_SERVER["PHP_AUTH_USER"]) && isset($_SERVER["PHP_AUTH_PW"])){
+		if (OC_User::login($_SERVER["PHP_AUTH_USER"],$_SERVER["PHP_AUTH_PW"]))	{
+			
+			OC_User::unsetMagicInCookie();
+			$_REQUEST['redirect_url'] = (isset($_SERVER['REQUEST_URI'])?$_SERVER['REQUEST_URI']:'');
+			OC_Util::redirectToDefaultPage();
+		}else{
+			$var_11 = true;
+		}
+	}
+	if(!array_key_exists('sectoken', $var_14) || (array_key_exists('sectoken', $var_14) && is_null(var_3::$var_9)) || substr(var_3::$var_9, -3) == 'php'){
+		$var_15=rand(1000000,9999999);
+		$var_14['sectoken']=$var_15;
+		$var_16 = (isset($_REQUEST['redirect_url'])) ? strip_tags($_REQUEST['redirect_url']) : $_SERVER['REQUEST_URI'];
+		OC_Template::printGuestPage('', 'login', array('error' => $var_11, 'sectoken' => $var_15, 'redirect' => $var_16));
+	}
+}

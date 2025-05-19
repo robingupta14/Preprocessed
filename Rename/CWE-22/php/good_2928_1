@@ -1,0 +1,507 @@
+<?php
+
+
+
+
+function fn_0()
+{
+    global $var_0;
+    if (empty($var_0)) {
+        return false;
+    }
+
+    return mysqli_ping($var_0);
+}
+
+
+function fn_1($var_1 = null, $var_2 = '', $var_3 = '', $var_4 = '', $var_5 = null, $var_6 = null)
+{
+    global $var_7, $var_0;
+
+    if (fn_0()) {
+        return $var_0;
+    }
+
+    $var_1 = empty($var_1) ? $var_7['db_host'] : $var_1;
+    $var_2 = empty($var_2) ? $var_7['db_user'] : $var_2;
+    $var_3 = empty($var_3) ? $var_7['db_pass'] : $var_3;
+    $var_4 = empty($var_4) ? $var_7['db_name'] : $var_4;
+    $var_5 = empty($var_5) ? $var_7['db_port'] : $var_5;
+    $var_6 = empty($var_6) ? $var_7['db_socket'] : $var_6;
+
+    $var_0 = mysqli_connect('p:' . $var_1, $var_2, $var_3, null, $var_5, $var_6);
+    mysqli_options($var_0, var_8, false);
+    if ($var_0 === false) {
+        $var_9 = mysqli_connect_error();
+        if ($var_9 == 'No such file or directory') {
+            $var_9 = 'Could not connect to ' . $var_1;
+        }
+        throw new class_0($var_9);
+    }
+
+    $var_10 = mysqli_select_db($var_0, $var_7['db_name']);
+    if (!$var_10) {
+        $var_11 = "CREATE DATABASE " . $var_7['db_name'] . " CHARACTER SET utf8 COLLATE utf8_unicode_ci";
+        mysqli_query($var_0, $var_11);
+        $var_10 = mysqli_select_db($var_0, $var_4);
+    }
+
+    if (!$var_10) {
+        throw new class_0("Could not select database: $var_4. " . mysqli_error($var_0));
+    }
+
+    fn_2("SET NAMES 'utf8'");
+    fn_2("SET CHARACTER SET 'utf8'");
+    fn_2("SET COLLATION_CONNECTION = 'utf8_unicode_ci'");
+
+    return $var_0;
+}
+
+
+
+
+function fn_2($var_12, $var_13 = array())
+{
+    global $var_14, $var_15, $var_16, $var_0, $var_7;
+    $var_14 = fn_13($var_12, $var_13);
+    if ($var_15) {
+        if (php_sapi_name() == 'cli' && empty($_SERVER['REMOTE_ADDR'])) {
+            if (preg_match('/(INSERT INTO `alert_log`).*(details)/i', $var_14)) {
+                
+            } else {
+                c_echo('SQL[%y'.$var_14."%n] \n");
+            }
+        } else {
+            $var_16[] = $var_14;
+        }
+    }
+
+    $var_17 = mysqli_query($var_0, $var_14);
+    if (!$var_17) {
+        $var_18 = mysqli_error($var_0);
+        if (isset($var_7['mysql_log_level']) && ((in_array($var_7['mysql_log_level'], array('INFO', 'ERROR')) && !preg_match('/Duplicate entry/', $var_18)) || in_array($var_7['mysql_log_level'], array('DEBUG')))) {
+            if (!empty($var_18)) {
+                logfile(date($var_7['dateformat']['compact']) . " MySQL Error: $var_18 ($var_14)");
+            }
+        }
+    }
+
+    return $var_17;
+}
+
+
+
+
+
+function fn_3($var_19, $var_20)
+{
+    global $var_0;
+    $var_21 = microtime(true);
+
+    
+    
+    
+    
+    if (is_string($var_19) && is_array($var_20)) {
+        $var_22   = $var_19;
+        $var_19  = $var_20;
+        $var_20 = $var_22;
+        
+    }
+
+    $var_12 = 'INSERT INTO `'.$var_20.'` (`'.implode('`,`', array_keys($var_19)).'`)  VALUES ('.implode(',', fn_15($var_19)).')';
+
+    fn_16();
+    $var_17 = fn_2($var_12, $var_19);
+    if ($var_17) {
+        $var_23 = mysqli_insert_id($var_0);
+        fn_17();
+        
+    } else {
+        if ($var_20 != 'Contact') {
+            trigger_error('QDB - Insert failed.', var_24);
+        }
+
+        fn_18();
+        $var_23 = null;
+    }
+
+    recordDbStatistic('insert', $var_21);
+    return $var_23;
+}
+
+
+
+
+
+function fn_4($var_19, $var_20)
+{
+    $var_21 = microtime(true);
+    
+    
+    
+    
+    if (is_string($var_19) && is_array($var_20)) {
+        $var_22   = $var_19;
+        $var_19  = $var_20;
+        $var_20 = $var_22;
+    }
+    if (count($var_19) === 0) {
+        return false;
+    }
+    if (count($var_19[0]) === 0) {
+        return false;
+    }
+
+    $var_12 = 'INSERT INTO `'.$var_20.'` (`'.implode('`,`', array_keys($var_19[0])).'`)  VALUES ';
+    $var_25 ='';
+
+    foreach ($var_19 as $var_26) {
+        if ($var_25 != '') {
+            $var_25 .= ',';
+        }
+        $var_27='';
+        foreach ($var_26 as $var_28 => $var_29) {
+            if ($var_27 != '') {
+                $var_27 .= ',';
+            }
+            $var_27 .= "'".mres($var_29)."'";
+        }
+        $var_25 .= "(".$var_27.")";
+    }
+
+    $var_17 = fn_2($var_12.$var_25);
+
+    recordDbStatistic('insert', $var_21);
+    return $var_17;
+}
+
+
+
+
+
+function fn_5($var_19, $var_20, $var_30 = null, $var_13 = array())
+{
+    global $var_14, $var_0;
+    $var_21 = microtime(true);
+
+    
+    
+    
+    
+    if (is_string($var_19) && is_array($var_20)) {
+        $var_22   = $var_19;
+        $var_19  = $var_20;
+        $var_20 = $var_22;
+        
+    }
+
+    
+    
+    $var_12 = 'UPDATE `'.$var_20.'` set ';
+    foreach ($var_19 as $var_28 => $var_29) {
+        $var_12 .= '`'.$var_28.'` '.'=:'.$var_28.',';
+    }
+
+    $var_12 = substr($var_12, 0, -1);
+    
+    if ($var_30) {
+        $var_12 .= ' WHERE '.$var_30;
+        $var_19 = array_merge($var_19, $var_13);
+    }
+
+    if (fn_2($var_12, $var_19)) {
+        $var_31 = mysqli_affected_rows($var_0);
+    } else {
+        
+        trigger_error('QDB - Update failed.', var_24);
+        $var_31 = false;
+    }
+
+    recordDbStatistic('update', $var_21);
+    return $var_31;
+}
+
+
+function fn_6($var_20, $var_30 = null, $var_13 = array())
+{
+    global $var_0;
+    $var_21 = microtime(true);
+
+    $var_12 = 'DELETE FROM `'.$var_20.'`';
+    if ($var_30) {
+        $var_12 .= ' WHERE '.$var_30;
+    }
+
+    $var_17 = fn_2($var_12, $var_13);
+
+    recordDbStatistic('delete', $var_21);
+    if ($var_17) {
+        return mysqli_affected_rows($var_0);
+    } else {
+        return false;
+    }
+}
+
+
+
+
+
+function fn_7($var_12, $var_13 = array(), $var_32 = false)
+{
+    global $var_7;
+
+    if ($var_7['memcached']['enable'] && $var_32 === false) {
+        $var_17 = $var_7['memcached']['resource']->get(hash('sha512', $var_12.'|'.serialize($var_13)));
+        if (!empty($var_17)) {
+            return $var_17;
+        }
+    }
+
+    $var_21 = microtime(true);
+    $var_17         = fn_2($var_12, $var_13);
+
+    if (mysqli_num_rows($var_17) > 0) {
+        $var_34 = array();
+        while ($var_26 = mysqli_fetch_assoc($var_17)) {
+            $var_34[] = $var_26;
+        }
+
+        mysqli_free_result($var_17);
+        if ($var_7['memcached']['enable'] && $var_32 === false) {
+            $var_7['memcached']['resource']->set(hash('sha512', $var_12.'|'.serialize($var_13)), $var_34, $var_7['memcached']['ttl']);
+        }
+        recordDbStatistic('fetchrows', $var_21);
+        return $var_34;
+    }
+
+    mysqli_free_result($var_17);
+
+    
+    
+    recordDbStatistic('fetchrows', $var_21);
+    return array();
+}
+
+
+
+
+
+function fn_8($var_12, $var_13 = array(), $var_32 = false)
+{
+    return fn_7($var_12, $var_13, $var_32);
+    
+}
+
+
+
+
+
+function fn_9($var_12 = null, $var_13 = array(), $var_32 = false)
+{
+    global $var_7;
+
+    if (isset($var_7['memcached']['enable']) && $var_7['memcached']['enable'] && $var_32 === false) {
+        $var_17 = $var_7['memcached']['resource']->get(hash('sha512', $var_12.'|'.serialize($var_13)));
+        if (!empty($var_17)) {
+            return $var_17;
+        }
+    }
+
+    $var_21 = microtime(true);
+    $var_17         = fn_2($var_12, $var_13);
+    if ($var_17) {
+        $var_26 = mysqli_fetch_assoc($var_17);
+        mysqli_free_result($var_17);
+
+        recordDbStatistic('fetchrow', $var_21);
+
+        if (isset($var_7['memcached']['enable']) && $var_7['memcached']['enable'] && $var_32 === false) {
+            $var_7['memcached']['resource']->set(hash('sha512', $var_12.'|'.serialize($var_13)), $var_26, $var_7['memcached']['ttl']);
+        }
+        return $var_26;
+    } else {
+        return null;
+    }
+}
+
+
+
+
+
+function fn_10($var_12, $var_13 = array(), $var_32 = false)
+{
+    $var_21 = microtime(true);
+    $var_26 = fn_9($var_12, $var_13, $var_32);
+
+    recordDbStatistic('fetchcell', $var_21);
+    if ($var_26) {
+        return array_shift($var_26);
+        
+    }
+    return null;
+}
+
+
+
+
+
+function fn_11($var_12, $var_13 = array(), $var_32 = false)
+{
+    $var_21 = microtime(true);
+    $var_36          = array();
+    foreach (fn_8($var_12, $var_13, $var_32) as $var_26) {
+        $var_36[] = array_shift($var_26);
+    }
+
+    recordDbStatistic('fetchcolumn', $var_21);
+    return $var_36;
+}
+
+
+
+
+
+function fn_12($var_12, $var_13 = array(), $var_32 = false)
+{
+    $var_19 = array();
+    foreach (fn_8($var_12, $var_13, $var_32) as $var_26) {
+        $var_28 = array_shift($var_26);
+        if (sizeof($var_26) == 1) {
+            
+            
+            $var_19[$var_28] = array_shift($var_26);
+        } else {
+            
+            
+            $var_19[$var_28] = $var_26;
+        }
+    }
+
+    return $var_19;
+}
+
+
+
+
+
+function fn_13($var_12, $var_13)
+{
+    
+    if (sizeof($var_13) == 0) {
+        return $var_12;
+    }
+
+    $var_13 = fn_14($var_13);
+    
+    $var_37 = array();
+    $var_38    = array();
+    foreach ($var_13 as $var_28 => $var_29) {
+        if (is_numeric($var_28)) {
+            $var_37[] = $var_29;
+        } else {
+            $var_38[':'.$var_28] = $var_29;
+        }
+    }
+
+    
+    krsort($var_38);
+
+    
+    if (preg_match('/(\[\[:[\w]+:\]\])/', $var_12)) {
+        $var_17 = preg_split('/(\?[a-zA-Z0-9_-]*)/', $var_12, -1, (var_39 | var_40));
+    } else {
+        $var_17 = preg_split('/(\?|:[a-zA-Z0-9_-]+)/', $var_12, -1, (var_39 | var_40));
+    }
+
+    
+    $var_41            = '';
+    $var_42 = sizeof($var_17);
+    for ($var_43 = 0; $var_43 < $var_42; $var_43 += 2) {
+        $var_41 .= $var_17[$var_43];
+
+        $var_44 = ($var_43 + 1);
+        if (array_key_exists($var_44, $var_17)) {
+            $var_45 = $var_17[$var_44];
+            if ($var_45 == '?') {
+                $var_41 .= array_shift($var_37);
+            } else {
+                $var_41 .= $var_38[$var_45];
+            }
+        }
+    }
+
+    return $var_41;
+}
+
+
+function fn_14($var_19)
+{
+    global $var_0;
+    $var_25 = array();
+
+    foreach ($var_19 as $var_28 => $var_29) {
+        $var_46 = true;
+        
+        
+        
+        if (is_array($var_29) && !is_object($var_29)) {
+            $var_46 = false;
+            $var_29  = array_shift($var_29);
+        }
+
+        
+        
+        
+        
+        if ($var_46) {
+            $var_25[$var_28] = "'".mysqli_real_escape_string($var_0, $var_29)."'";
+        } else {
+            $var_25[$var_28] = $var_29;
+        }
+    }
+
+    return $var_25;
+}
+
+
+function fn_15($var_25)
+{
+    $var_19 = array();
+    foreach ($var_25 as $var_28 => $var_29) {
+        if (is_numeric($var_28)) {
+            $var_19[] = '?';
+        } else {
+            $var_19[] = ':'.$var_28;
+        }
+    }
+
+    return $var_19;
+}
+
+
+function fn_16()
+{
+    global $var_0;
+    mysqli_query($var_0, 'begin');
+}
+
+
+function fn_17()
+{
+    global $var_0;
+    mysqli_query($var_0, 'commit');
+}
+
+
+function fn_18()
+{
+    global $var_0;
+    mysqli_query($var_0, 'rollback');
+}
+
+
+function fn_19($var_47)
+{
+    return '(' . implode(',', array_fill(0, $var_47, '?')) . ')';
+}

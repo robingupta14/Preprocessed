@@ -1,0 +1,512 @@
+<?PHP
+
+
+
+
+
+$langs->load("orders");
+$langs->load("bills");
+$langs->load("companies");
+
+$action=GETPOST('action','alpha');
+$backtopage=GETPOST('backtopage','alpha');
+
+
+$socid = GETPOST("id");
+if ($user->societe_id > 0)
+{
+	$socid = $user->societe_id;
+}
+
+
+
+
+if (GETPOST('cancel') && ! empty($backtopage))
+{
+     Header("Location: ".$backtopage);
+     exit;
+}
+
+if ($action == 'confirm_split' && GETPOST("confirm") == 'yes')
+{
+	
+	
+
+	$error=0;
+	$remid=GETPOST("remid")?GETPOST("remid"):0;
+	$discount=new DiscountAbsolute($db);
+	$res=$discount->fetch($remid);
+	if (! $res > 0)
+	{
+		$error++;
+		$mesg='<div class="error">'.$langs->trans("ErrorFailedToLoadDiscount").'</div>';
+	}
+	if (! $error && price2num($_POST["amount_ttc_1"]+$_POST["amount_ttc_2"]) != $discount->amount_ttc)
+	{
+		$error++;
+		$mesg='<div class="error">'.$langs->trans("TotalOfTwoDiscountMustEqualsOriginal").'</div>';
+	}
+	if (! $error && $discount->fk_facture_line)
+	{
+		$error++;
+		$mesg='<div class="error">'.$langs->trans("ErrorCantSplitAUsedDiscount").'</div>';
+	}
+	if (! $error)
+	{
+		$newdiscount1=new DiscountAbsolute($db);
+		$newdiscount2=new DiscountAbsolute($db);
+		$newdiscount1->fk_facture_source=$discount->fk_facture_source;
+		$newdiscount2->fk_facture_source=$discount->fk_facture_source;
+		$newdiscount1->fk_facture=$discount->fk_facture;
+		$newdiscount2->fk_facture=$discount->fk_facture;
+		$newdiscount1->fk_facture_line=$discount->fk_facture_line;
+		$newdiscount2->fk_facture_line=$discount->fk_facture_line;
+		if ($discount->description == '(CREDIT_NOTE)')
+		{
+			$newdiscount1->description=$discount->description;
+			$newdiscount2->description=$discount->description;
+		}
+		else
+		{
+			$newdiscount1->description=$discount->description.' (1)';
+			$newdiscount2->description=$discount->description.' (2)';
+		}
+		$newdiscount1->fk_user=$discount->fk_user;
+		$newdiscount2->fk_user=$discount->fk_user;
+		$newdiscount1->fk_soc=$discount->fk_soc;
+		$newdiscount2->fk_soc=$discount->fk_soc;
+		$newdiscount1->datec=$discount->datec;
+		$newdiscount2->datec=$discount->datec;
+		$newdiscount1->tva_tx=$discount->tva_tx;
+		$newdiscount2->tva_tx=$discount->tva_tx;
+		$newdiscount1->amount_ttc=$_POST["amount_ttc_1"];
+		$newdiscount2->amount_ttc=price2num($discount->amount_ttc-$newdiscount1->amount_ttc);
+		$newdiscount1->amount_ht=price2num($newdiscount1->amount_ttc/(1+$newdiscount1->tva_tx/100),'MT');
+		$newdiscount2->amount_ht=price2num($newdiscount2->amount_ttc/(1+$newdiscount2->tva_tx/100),'MT');
+		$newdiscount1->amount_tva=price2num($newdiscount1->amount_ttc-$newdiscount2->amount_ht);
+		$newdiscount2->amount_tva=price2num($newdiscount2->amount_ttc-$newdiscount2->amount_ht);
+
+		$db->begin();
+		$discount->fk_facture_source=0;	
+		$res=$discount->delete($user);
+		$newid1=$newdiscount1->create($user);
+		$newid2=$newdiscount2->create($user);
+		if ($res > 0 && $newid1 > 0 && $newid2 > 0)
+		{
+			$db->commit();
+			header("Location: ".$_SERVER["PHP_SELF"].'?id='.$_REQUEST['id']);	
+			exit;
+		}
+		else
+		{
+			$db->rollback();
+		}
+	}
+}
+
+if ($action == 'setremise')
+{
+	
+	
+
+	if (price2num($_POST["amount_ht"]) > 0)
+	{
+		$error=0;
+		if (empty($_POST["desc"]))
+		{
+			$mesg='<div class="error">'.$langs->trans("ErrorFieldRequired",$langs->trans("ReasonDiscount")).'</div>';
+			$error++;
+		}
+
+		if (! $error)
+		{
+			$soc = new Societe($db);
+			$soc->fetch($_GET["id"]);
+			$discountid=$soc->set_remise_except($_POST["amount_ht"],$user,$_POST["desc"],$_POST["tva_tx"]);
+
+			if ($discountid > 0)
+			{
+			    if (! empty($backtopage))
+			    {
+			        Header("Location: ".$backtopage.'&discountid='.$discountid);
+			        exit;
+			    }
+				else
+				{
+				    Header("Location: remx.php?id=".$_GET["id"]);
+				    exit;
+				}
+			}
+			else
+			{
+				$error++;
+				$mesg='<div class="error">'.$soc->error.'</div>';
+			}
+		}
+	}
+	else
+	{
+		$mesg='<div class="error">'.$langs->trans("ErrorFieldFormat",$langs->trans("NewGlobalDiscount")).'</div>';
+	}
+}
+
+if (GETPOST("action") == 'confirm_remove' && GETPOST("confirm")=='yes')
+{
+	
+	
+
+	$db->begin();
+
+	$discount = new DiscountAbsolute($db);
+	$result=$discount->fetch(GETPOST("remid"));
+	$result=$discount->delete($user);
+	if ($result > 0)
+	{
+		$db->commit();
+		header("Location: ".$_SERVER["PHP_SELF"].'?id='.GETPOST('id'));	
+		exit;
+	}
+	else
+	{
+		$mesg='<div class="error">'.$discount->error.'</div>';
+		$db->rollback();
+	}
+}
+
+
+
+
+$form=new Form($db);
+$facturestatic=new Facture($db);
+
+llxHeader('',$langs->trans("GlobalDiscount"));
+
+if ($socid > 0)
+{
+	dol_htmloutput_mesg($mesg);
+
+	
+	$objsoc = new Societe($db);
+	$objsoc->id=$socid;
+	$objsoc->fetch($socid);
+
+	
+	$head = societe_prepare_head($objsoc);
+
+	dol_fiche_head($head, 'absolutediscount', $langs->trans("ThirdParty"),0,'company');
+
+
+	
+	
+	
+    
+
+	
+
+	
+	
+	
+	
+	
+
+	
+	$remise_all=$remise_user=0;
+	$sql = "SELECT SUM(rc.amount_ht) as amount, rc.fk_user";
+	$sql.= " FROM ".MAIN_DB_PREFIX."societe_remise_except as rc";
+	$sql.= " WHERE rc.fk_soc =". $objsoc->id;
+	$sql.= " AND (fk_facture_line IS NULL AND fk_facture IS NULL)";
+	$sql.= " GROUP BY rc.fk_user";
+	$resql=$db->query($sql);
+	if ($resql)
+	{
+		$obj = $db->fetch_object($resql);
+		$remise_all+=$obj->amount;
+		if ($obj->fk_user == $user->id) $remise_user+=$obj->amount;
+	}
+	else
+	{
+		dol_print_error($db);
+	}
+
+	
+	'.$langs->trans("Currency".$conf->currency).' '.$langs->trans("HT").'</td></tr>';
+
+	
+	'.$langs->trans("Currency".$conf->currency).' '.$langs->trans("HT").'</td></tr>';
+	
+	
+
+	print_fiche_titre($langs->trans("NewGlobalDiscount"),'','');
+	
+	
+	'.$langs->trans("Currency".$conf->currency).'</td></tr>';
+	
+	
+	
+	
+	
+	
+
+	
+
+	
+	
+    if (! empty($backtopage))
+    {
+         &nbsp; ';
+	    
+    }
+	
+
+	
+
+	dol_fiche_end();
+
+	
+
+	if ($_GET['action'] == 'remove')
+	{
+		$ret=$form->form_confirm($_SERVER["PHP_SELF"].'?id='.$objsoc->id.'&remid='.$_GET["remid"], $langs->trans('RemoveDiscount'), $langs->trans('ConfirmRemoveDiscount'), 'confirm_remove', '', 0, 1);
+	}
+
+	
+	$sql = "SELECT rc.rowid, rc.amount_ht, rc.amount_tva, rc.amount_ttc, rc.tva_tx,";
+	$sql.= " rc.datec as dc, rc.description,";
+	$sql.= " rc.fk_facture_source,";
+	$sql.= " u.login, u.rowid as user_id,";
+	$sql.= " fa.facnumber as ref, fa.type as type";
+	$sql.= " FROM  ".MAIN_DB_PREFIX."user as u, ".MAIN_DB_PREFIX."societe_remise_except as rc";
+	$sql.= " LEFT JOIN ".MAIN_DB_PREFIX."facture as fa ON rc.fk_facture_source = fa.rowid";
+	$sql.= " WHERE rc.fk_soc =". $objsoc->id;
+	$sql.= " AND u.rowid = rc.fk_user";
+	$sql.= " AND (rc.fk_facture_line IS NULL AND rc.fk_facture IS NULL)";
+	$sql.= " ORDER BY rc.datec DESC";
+
+	$resql=$db->query($sql);
+	if ($resql)
+	{
+		print_titre($langs->trans("DiscountStillRemaining"));
+		
+		
+			
+		
+		
+		
+		
+		
+		
+		</td>';
+		
+
+		$var = true;
+		$i = 0 ;
+		$num = $db->num_rows($resql);
+		while ($i < $num)
+		{
+			$obj = $db->fetch_object($resql);
+			$var = !$var;
+			
+			
+			if ($obj->description == '(CREDIT_NOTE)')
+			{
+				
+				$facturestatic->id=$obj->fk_facture_source;
+				$facturestatic->ref=$obj->ref;
+				$facturestatic->type=$obj->type;
+				
+				
+			}
+			elseif ($obj->description == '(DEPOSIT)')
+			{
+				
+				$facturestatic->id=$obj->fk_facture_source;
+				$facturestatic->ref=$obj->ref;
+				$facturestatic->type=$obj->type;
+				
+				
+			}
+			else
+			{
+				
+				
+				
+			}
+			
+			
+			
+			
+			
+			
+			
+			if ($user->rights->societe->creer || $user->rights->facture->creer)
+			{
+				
+				action=split&amp;remid='.$obj->rowid.'">'.img_picto($langs->trans("SplitDiscount"),'split').'</a>';
+				 ';
+				action=remove&amp;remid='.$obj->rowid.'">'.img_delete($langs->trans("RemoveDiscount")).'</a>';
+				
+			}
+			else </td>';
+			
+
+			if ($_GET["action"]=='split' && $_GET['remid'] == $obj->rowid)
+			{
+				
+				
+				$amount1=price2num($obj->amount_ttc/2,'MT');
+				$amount2=($obj->amount_ttc-$amount1);
+				$formquestion=array(
+				'text' => $langs->trans('TypeAmountOfEachNewDiscount'),
+				array('type' => 'text', 'name' => 'amount_ttc_1', 'label' => $langs->trans("AmountTTC").' 1', 'value' => $amount1, 'size' => '5'),
+				array('type' => 'text', 'name' => 'amount_ttc_2', 'label' => $langs->trans("AmountTTC").' 2', 'value' => $amount2, 'size' => '5')
+				);
+				$langs->load("dict");
+				$ret=$form->form_confirm($_SERVER["PHP_SELF"].'?id='.$objsoc->id.'&remid='.$obj->rowid, $langs->trans('SplitDiscount'), $langs->trans('ConfirmSplitDiscount',price($obj->amount_ttc),$langs->transnoentities("Currency".$conf->currency)), 'confirm_split', $formquestion, 0, 0);
+				
+				
+			}
+			$i++;
+		}
+		$db->free($resql);
+		
+	}
+	else
+	{
+		dol_print_error($db);
+	}
+
+	
+
+	
+
+	
+	$sql = "SELECT rc.rowid, rc.amount_ht, rc.amount_tva, rc.amount_ttc, rc.tva_tx,";
+	$sql.= " rc.datec as dc, rc.description, rc.fk_facture_line, rc.fk_facture,";
+	$sql.= " rc.fk_facture_source,";
+	$sql.= " u.login, u.rowid as user_id,";
+	$sql.= " f.rowid, f.facnumber,";
+	$sql.= " fa.facnumber as ref, fa.type as type";
+	$sql.= " FROM ".MAIN_DB_PREFIX."facture as f";
+	$sql.= " , ".MAIN_DB_PREFIX."user as u";
+	$sql.= " , ".MAIN_DB_PREFIX."facturedet as fc";
+	$sql.= " , ".MAIN_DB_PREFIX."societe_remise_except as rc";
+	$sql.= " LEFT JOIN ".MAIN_DB_PREFIX."facture as fa ON rc.fk_facture_source = fa.rowid";
+	$sql.= " WHERE rc.fk_soc =". $objsoc->id;
+	$sql.= " AND rc.fk_facture_line = fc.rowid";
+	$sql.= " AND fc.fk_facture = f.rowid";
+	$sql.= " AND rc.fk_user = u.rowid";
+	$sql.= " ORDER BY dc DESC";
+	
+	
+	$sql2 = "SELECT rc.rowid, rc.amount_ht, rc.amount_tva, rc.amount_ttc, rc.tva_tx,";
+	$sql2.= " rc.datec as dc, rc.description, rc.fk_facture_line, rc.fk_facture,";
+	$sql2.= " rc.fk_facture_source,";
+	$sql2.= " u.login, u.rowid as user_id,";
+	$sql2.= " f.rowid, f.facnumber,";
+	$sql2.= " fa.facnumber as ref, fa.type as type";
+	$sql2.= " FROM ".MAIN_DB_PREFIX."facture as f";
+	$sql2.= " , ".MAIN_DB_PREFIX."user as u";
+	$sql2.= " , ".MAIN_DB_PREFIX."societe_remise_except as rc";
+	$sql2.= " LEFT JOIN ".MAIN_DB_PREFIX."facture as fa ON rc.fk_facture_source = fa.rowid";
+	$sql2.= " WHERE rc.fk_soc =". $objsoc->id;
+	$sql2.= " AND rc.fk_facture = f.rowid";
+	$sql2.= " AND rc.fk_user = u.rowid";
+
+	$sql2.= " ORDER BY dc DESC";
+
+	$resql=$db->query($sql);
+	$resql2=null;
+	if ($resql) $resql2=$db->query($sql2);
+	if ($resql2)
+	{
+		print_titre($langs->trans("DiscountAlreadyCounted"));
+		
+		
+			
+		
+		
+		
+		
+		
+		
+		</td>';
+		
+
+		$var = true;
+		$tab_sqlobj=array();
+		$tab_sqlobjOrder=array();
+		$num = $db->num_rows($resql);
+		for ($i = 0;$i < $num;$i++)
+		{
+			$sqlobj = $db->fetch_object($resql);
+			$tab_sqlobj[] = $sqlobj;
+			$tab_sqlobjOrder[]=$db->jdate($sqlobj->dc);
+		}
+		$db->free($resql);
+
+		$num = $db->num_rows($resql2);
+		for ($i = 0;$i < $num;$i++)
+		{
+			$sqlobj = $db->fetch_object($resql2);
+			$tab_sqlobj[] = $sqlobj;
+			$tab_sqlobjOrder[]= $db->jdate($sqlobj->dc);
+		}
+		$db->free($resql2);
+		array_multisort($tab_sqlobjOrder,SORT_DESC,$tab_sqlobj);
+
+		$num = count($tab_sqlobj);
+		$i = 0 ;
+		while ($i < $num )
+		{
+			$obj = array_shift($tab_sqlobj);
+			$var = !$var;
+			
+			
+			if ($obj->description == '(CREDIT_NOTE)')
+			{
+				
+				$facturestatic->id=$obj->fk_facture_source;
+				$facturestatic->ref=$obj->ref;
+				$facturestatic->type=$obj->type;
+				
+				
+			}
+			elseif ($obj->description == '(DEPOSIT)')
+			{
+				
+				$facturestatic->id=$obj->fk_facture_source;
+				$facturestatic->ref=$obj->ref;
+				$facturestatic->type=$obj->type;
+				
+				
+			}
+			else
+			{
+				
+				
+				
+			}
+			
+			
+			
+			
+			
+			
+			
+			</td>';
+			
+			$i++;
+		}
+		
+	}
+	else
+	{
+		
+	}
+
+}
+
+$db->close();
+
+llxFooter();
+?>

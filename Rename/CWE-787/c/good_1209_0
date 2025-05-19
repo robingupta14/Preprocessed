@@ -1,0 +1,380 @@
+
+
+
+
+
+
+
+
+static const MessagesMap_t *var_33 = NULL;
+static size_t var_33 = 0;
+static msg_failure_t msg_failure;
+
+bool var_2 = false;
+
+static const MessagesMap_t *fn_3(MessageMapType var_19,
+        MessageType var_8,
+        MessageMapDirection var_8)
+{
+    const MessagesMap_t *m = var_33;
+
+    if (var_33 > var_8 && m[var_8].msg_id == var_8 &&
+        m[var_8].type == var_19 && m[var_8].dir == var_8)
+    {
+        return &m[var_8];
+    }
+
+    return NULL;
+}
+
+const pb_field_t *fn_7(MessageMapType var_19, MessageType var_8,
+                                 MessageMapDirection var_8)
+{
+    assert(var_33 != NULL);
+
+    const MessagesMap_t *m = var_33;
+
+    if(var_33 > var_8 && m[var_8].msg_id == var_8 && m[var_8].type == var_19 &&
+            m[var_8].dir == var_8)
+    {
+        return m[var_8].fields;
+    }
+
+    return NULL;
+}
+
+static bool fn_8(const MessagesMap_t *entry, uint8_t *msg, uint32_t var_14,
+                     uint8_t *buf)
+{
+    pb_istream_t var_42 = pb_istream_from_buffer(msg, var_14);
+    return pb_decode(&var_42, entry->fields, buf);
+}
+
+static void fn_11(const MessagesMap_t *entry, uint8_t *msg, uint32_t var_14)
+{
+    static uint8_t decode_buffer[MAX_DECODE_SIZE] __attribute__((aligned(4)));
+    memset(decode_buffer, 0, sizeof(decode_buffer));
+
+    if (!pb_parse(entry, msg, var_14, decode_buffer)) {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage,
+                       "Could not parse protocol buffer message");
+        return;
+    }
+
+    if (!entry->process_func) {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Unexpected message");
+        return;
+    }
+
+    entry->process_func(decode_buffer);
+}
+
+static void fn_12(const MessagesMap_t *entry, const uint8_t *msg, uint32_t var_14,
+                         uint32_t var_14)
+{
+    static RawMessage raw_msg;
+    raw_msg.buffer = msg;
+    raw_msg.length = var_14;
+
+    if(entry->process_func)
+    {
+        ((raw_msg_handler_t)entry->process_func)(&raw_msg, var_14);
+    }
+}
+
+void fn_14(const uint8_t *buf, size_t var_19, MessageMapType var_19)
+{
+    static bool var_22 = true;
+
+    static uint16_t var_28;
+    static uint32_t var_27;
+    static uint8_t msg[MAX_FRAME_SIZE];
+    static size_t cursor;
+    static const MessagesMap_t *entry;
+
+    if (var_22) {
+        var_28 = 0xffff;
+        var_27 = 0;
+        memset(msg, 0, sizeof(msg));
+        cursor = 0;
+        entry = NULL;
+    }
+
+    assert(buf != NULL);
+
+    if (var_19 < 9) {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Buffer too small");
+        goto reset;
+    }
+
+    if (buf[0] != '?') {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Malformed packet");
+        goto reset;
+    }
+
+    if (var_22 && (buf[1] != '#' || buf[2] != '#')) {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Malformed packet");
+        goto reset;
+    }
+
+
+    const uint8_t *frame;
+    size_t frameSize;
+
+    if (var_22) {
+
+        memset(msg, 0, sizeof(msg));
+
+
+
+        var_28 = buf[4] | ((uint16_t)buf[3]) << 8;
+        var_27 = buf[8] |
+          ((uint32_t)buf[7]) << 8 |
+          ((uint32_t)buf[6]) << 16 |
+          ((uint32_t)buf[5]) << 24;
+
+
+        entry = message_map_entry(var_19, var_28, IN_MSG);
+
+
+        cursor = 0;
+
+
+        frame = &buf[9];
+        frameSize = MIN(var_19 - 9, var_27);
+    } else {
+
+        frame = &buf[1];
+        frameSize = var_19 - 1;
+    }
+
+
+    if (!entry) {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Unknown message");
+        goto reset;
+    }
+
+    if (entry->dispatch == RAW) {
+
+
+
+
+        raw_dispatch(entry, frame, frameSize, var_27);
+        var_22 = false;
+        return;
+    }
+
+    size_t end;
+    if (({ typeof(cursor) var_21 = (cursor); typeof(frameSize) var_21 = (frameSize); typeof(&end) __r = (&end); (void)(&var_21 == &var_21 && "types must match"); (void)(&var_21 == __r && "types must match"); _Static_assert(0 < (typeof(cursor))-1, "types must be unsigned"); __builtin_add_overflow((cursor), (frameSize), (&end)); }) || sizeof(msg) < end) {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Malformed message");
+        goto reset;
+    }
+
+
+    memcpy(&msg[cursor], frame, frameSize);
+
+
+    cursor = end;
+
+
+    bool var_22 = cursor >= var_27;
+    if (!var_22) {
+        var_22 = false;
+        return;
+    }
+
+    dispatch(entry, msg, var_27);
+
+reset:
+    var_28 = 0xffff;
+    var_27 = 0;
+    memset(msg, 0, sizeof(msg));
+    cursor = 0;
+    var_22 = true;
+    entry = NULL;
+}
+
+
+static bool var_31 = false;
+static CONFIDENTIAL uint8_t msg_tiny[MSG_TINY_BFR_SZ];
+static uint16_t var_31 = var_31;
+
+_Static_assert(sizeof(msg_tiny) >= sizeof(Cancel), "msg_tiny too tiny");
+_Static_assert(sizeof(msg_tiny) >= sizeof(Initialize), "msg_tiny too tiny");
+_Static_assert(sizeof(msg_tiny) >= sizeof(PassphraseAck), "msg_tiny too tiny");
+_Static_assert(sizeof(msg_tiny) >= sizeof(ButtonAck), "msg_tiny too tiny");
+_Static_assert(sizeof(msg_tiny) >= sizeof(PinMatrixAck), "msg_tiny too tiny");
+
+
+
+
+
+
+
+static void fn_25(const uint8_t *msg, size_t var_44) {
+    if (var_44 != 64)
+        return;
+
+    uint8_t buf[64];
+    memcpy(buf, msg, sizeof(buf));
+
+    if (buf[0] != '?' || buf[1] != '#' || buf[2] != '#') {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Malformed tiny packet");
+        return;
+    }
+
+    uint16_t var_28 = buf[4] | ((uint16_t)buf[3]) << 8;
+    uint32_t var_27 = buf[8] |
+            ((uint32_t)buf[7]) << 8 |
+            ((uint32_t)buf[6]) << 16 |
+            ((uint32_t)buf[5]) << 24;
+
+    if (var_27 > 55) {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Malformed tiny packet");
+        return;
+    }
+
+    const pb_field_t *fields = NULL;
+    pb_istream_t var_42 = pb_istream_from_buffer(buf + 9, var_27);
+
+    switch (var_28) {
+    case MessageType_MessageType_PinMatrixAck:
+        fields = PinMatrixAck_fields;
+        break;
+    case MessageType_MessageType_ButtonAck:
+        fields = ButtonAck_fields;
+        break;
+    case MessageType_MessageType_PassphraseAck:
+        fields = PassphraseAck_fields;
+        break;
+    case MessageType_MessageType_Cancel:
+        fields = Cancel_fields;
+        break;
+    case MessageType_MessageType_Initialize:
+        fields = Initialize_fields;
+        break;
+
+    }
+
+    if (fields) {
+        bool var_28 = pb_decode(&var_42, fields, msg_tiny);
+        if (var_28) {
+            var_31 = var_28;
+        } else {
+            (*msg_failure)(FailureType_Failure_SyntaxError, var_42.errmsg);
+            var_31 = 0xffff;
+        }
+    } else {
+        (*msg_failure)(FailureType_Failure_UnexpectedMessage, "Unknown message");
+        var_31 = 0xffff;
+    }
+}
+
+void fn_28(const void *msg, size_t var_44)
+{
+    if (var_31) {
+        msg_read_tiny(msg, var_44);
+    } else {
+        usb_rx_helper(msg, var_44, NORMAL_MSG);
+    }
+}
+
+static MessageType fn_29(bool var_31, uint8_t *buf)
+{
+    var_31 = var_31;
+    var_31 = true;
+
+    while(var_31 == var_31)
+    {
+        usbPoll();
+
+        if(!var_31)
+        {
+            break;
+        }
+    }
+
+    var_31 = false;
+
+    if(var_31 != var_31)
+    {
+        memcpy(buf, msg_tiny, sizeof(msg_tiny));
+    }
+
+    return var_31;
+}
+
+void fn_31(const void *map, const size_t var_33)
+{
+    assert(map != NULL);
+    var_33 = map;
+    var_33 = var_33;
+}
+
+void fn_33(msg_failure_t var_35)
+{
+    msg_failure = var_35;
+}
+
+void fn_35(FailureType var_37, const char *text)
+{
+    if(msg_failure)
+    {
+        (*msg_failure)(var_37, text);
+    }
+}
+
+void fn_37(void)
+{
+    usb_set_rx_callback(handle_usb_rx);
+
+
+
+}
+
+MessageType fn_38(uint8_t *buf)
+{
+    return tiny_msg_poll_and_buffer(true, buf);
+}
+
+MessageType fn_39(uint8_t *buf)
+{
+    return tiny_msg_poll_and_buffer(false, buf);
+}
+
+uint32_t fn_40(RawMessage *msg, uint8_t var_42)
+{
+    uint32_t skip;
+    uint8_t i;
+    uint64_t pb_varint;
+    pb_istream_t var_42;
+
+
+
+
+    var_42 = pb_istream_from_buffer((uint8_t*)msg->buffer, msg->length);
+    skip = var_42.bytes_left;
+    for(i = 0; i < var_42; ++i)
+    {
+        pb_decode_varint(&var_42, &pb_varint);
+    }
+    skip = skip - var_42.bytes_left;
+
+
+
+
+    msg->length -= skip;
+    msg->buffer = (uint8_t *)(msg->buffer + skip);
+
+    return skip;
+}
+
+int fn_42(const void *source_ptr, const pb_field_t *fields, uint8_t *buffer, uint32_t var_44 )
+{
+    pb_ostream_t var_44 = pb_ostream_from_buffer(buffer, var_44);
+
+    if (!pb_encode(&var_44, fields, source_ptr))
+        return 0;
+
+    return var_44.bytes_written;
+}

@@ -1,0 +1,53 @@
+<?php
+
+
+
+
+
+class LogSettingsController extends Controller {
+	
+	private $config;
+
+	
+	private $l10n;
+
+	
+	public function __construct($appName,
+								IRequest $request,
+								IConfig $config,
+								IL10N $l10n) {
+		parent::__construct($appName, $request);
+		$this->config = $config;
+		$this->l10n = $l10n;
+	}
+
+	
+	public function setLogLevel($level) {
+		if ($level < 0 || $level > 4) {
+			return new JSONResponse([
+				'message' => (string) $this->l10n->t('log-level out of allowed range'),
+			], OCP\AppFramework\Http::STATUS_BAD_REQUEST);
+		}
+
+		$this->config->setSystemValue('loglevel', $level);
+		return new JSONResponse([
+			'level' => $level,
+		]);
+	}
+
+	
+	public function getEntries($count=50, $offset=0) {
+		return new JSONResponse([
+			'data' => \OC_Log_Owncloud::getEntries($count, $offset),
+			'remain' => count(\OC_Log_Owncloud::getEntries(1, $offset + $count)) !== 0,
+		]);
+	}
+
+	
+	public function download() {
+		$resp = new StreamResponse(\OC_Log_Owncloud::getLogFilePath());
+		$resp->addHeader('Content-Type', 'application/octet-stream');
+		$resp->addHeader('Content-Disposition', 'attachment; filename="owncloud.log"');
+		return $resp;
+	}
+}

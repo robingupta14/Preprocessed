@@ -1,0 +1,249 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
+	 $g_allow_browser_cache = 1;
+
+	 
+
+
+	$f_master_bug_id = gpc_get_int( 'm_id', 0 );
+
+	
+	if ( ( ALL_PROJECTS == helper_get_current_project() ) && ( 0 == $f_master_bug_id ) ) {
+		print_header_redirect( 'login_select_proj_page.php?ref=bug_report_page.php' );
+	}
+
+	if ( $f_master_bug_id > 0 ) {
+		
+		bug_ensure_exists( $f_master_bug_id );
+
+		
+		if ( bug_is_readonly( $f_master_bug_id ) ) {
+			error_parameters( $f_master_bug_id );
+			trigger_error( ERROR_BUG_READ_ONLY_ACTION_DENIED, ERROR );
+		}
+
+		$t_bug = bug_get( $f_master_bug_id, true );
+
+		
+		access_ensure_bug_level( config_get( 'update_bug_threshold', null, $t_bug->project_id ), $f_master_bug_id );
+
+		
+		
+		if( $t_bug->project_id != helper_get_current_project() ) {
+            
+            
+            $g_project_override = $t_bug->project_id;
+            $t_changed_project = true;
+        } else {
+            $t_changed_project = false;
+        }
+
+	    access_ensure_project_level( config_get( 'report_bug_threshold' ) );
+
+		$f_build				= $t_bug->build;
+		$f_platform				= $t_bug->platform;
+		$f_os					= $t_bug->os;
+		$f_os_build				= $t_bug->os_build;
+		$f_product_version		= $t_bug->version;
+		$f_target_version		= $t_bug->target_version;
+		$f_profile_id			= 0;
+		$f_handler_id			= $t_bug->handler_id;
+
+		$f_category_id			= $t_bug->category_id;
+		$f_reproducibility		= $t_bug->reproducibility;
+		$f_severity				= $t_bug->severity;
+		$f_priority				= $t_bug->priority;
+		$f_summary				= $t_bug->summary;
+		$f_description			= $t_bug->description;
+		$f_steps_to_reproduce	= $t_bug->steps_to_reproduce;
+		$f_additional_info		= $t_bug->additional_information;
+		$f_view_state			= $t_bug->view_state;
+		$f_due_date				= $t_bug->due_date;
+
+		$t_project_id			= $t_bug->project_id;
+	} else {
+	    access_ensure_project_level( config_get( 'report_bug_threshold' ) );
+
+		$f_build				= gpc_get_string( 'build', '' );
+		$f_platform				= gpc_get_string( 'platform', '' );
+		$f_os					= gpc_get_string( 'os', '' );
+		$f_os_build				= gpc_get_string( 'os_build', '' );
+		$f_product_version		= gpc_get_string( 'product_version', '' );
+		$f_target_version		= gpc_get_string( 'target_version', '' );
+		$f_profile_id			= gpc_get_int( 'profile_id', 0 );
+		$f_handler_id			= gpc_get_int( 'handler_id', 0 );
+
+		$f_category_id			= gpc_get_int( 'category_id', 0 );
+		$f_reproducibility		= gpc_get_int( 'reproducibility', config_get( 'default_bug_reproducibility' ) );
+		$f_severity				= gpc_get_int( 'severity', config_get( 'default_bug_severity' ) );
+		$f_priority				= gpc_get_int( 'priority', config_get( 'default_bug_priority' ) );
+		$f_summary				= gpc_get_string( 'summary', '' );
+		$f_description			= gpc_get_string( 'description', '' );
+		$f_steps_to_reproduce	= gpc_get_string( 'steps_to_reproduce', config_get( 'default_bug_steps_to_reproduce' ) );
+		$f_additional_info		= gpc_get_string( 'additional_info', config_get ( 'default_bug_additional_info' ) );
+		$f_view_state			= gpc_get_int( 'view_state', config_get( 'default_bug_view_status' ) );
+		$f_due_date				= gpc_get_string( 'due_date', '');
+
+		if ( $f_due_date == '' ) {
+			$f_due_date = date_get_null();
+		}
+
+		$t_project_id			= helper_get_current_project();
+
+		$t_changed_project		= false;
+	}
+
+	$f_report_stay			          = gpc_get_bool( 'report_stay', false );
+	$f_copy_notes_from_parent         = gpc_get_bool( 'copy_notes_from_parent', false);
+	$f_copy_attachments_from_parent   = gpc_get_bool( 'copy_attachments_from_parent', false);
+
+	$t_fields = config_get( 'bug_report_page_fields' );
+	$t_fields = columns_filter_disabled( $t_fields );
+
+	$tpl_show_category = in_array( 'category_id', $t_fields );
+	$tpl_show_reproducibility = in_array( 'reproducibility', $t_fields );
+	$tpl_show_severity = in_array( 'severity', $t_fields );
+	$tpl_show_priority = in_array( 'priority', $t_fields );
+	$tpl_show_steps_to_reproduce = in_array( 'steps_to_reproduce', $t_fields );
+	$tpl_show_handler = in_array( 'handler', $t_fields ) && access_has_project_level( config_get( 'update_bug_assign_threshold' ) );
+	$tpl_show_profiles = config_get( 'enable_profiles' );
+	$tpl_show_platform = $tpl_show_profiles && in_array( 'platform', $t_fields );
+	$tpl_show_os = $tpl_show_profiles && in_array( 'os', $t_fields );
+	$tpl_show_os_version = $tpl_show_profiles && in_array( 'os_version', $t_fields );
+
+	$tpl_show_versions = version_should_show_product_version( $t_project_id );
+	$tpl_show_product_version = $tpl_show_versions && in_array( 'product_version', $t_fields );
+	$tpl_show_product_build = $tpl_show_versions && in_array( 'product_build', $t_fields ) && config_get( 'enable_product_build' ) == ON;
+	$tpl_show_target_version = $tpl_show_versions && in_array( 'target_version', $t_fields ) && access_has_project_level( config_get( 'roadmap_update_threshold' ) );
+	$tpl_show_additional_info = in_array( 'additional_info', $t_fields );
+	$tpl_show_due_date = in_array( 'due_date', $t_fields ) && access_has_project_level( config_get( 'due_date_update_threshold' ), helper_get_current_project(), auth_get_current_user_id() );
+	$tpl_show_attachments = in_array( 'attachments', $t_fields ) && file_allow_bug_upload();
+	$tpl_show_view_state = in_array( 'view_state', $t_fields ) && access_has_project_level( config_get( 'set_view_status_threshold' ) );
+
+	
+	html_robots_noindex();
+
+	html_page_top( lang_get( 'report_bug_link' ) );
+
+	print_recently_visited();
+?>
+<br />
+<div align="center">
+<form name="report_bug_form" method="post" <?php if ( $tpl_show_attachments ) {  } ?> action="bug_report.php">
+<?php 
+
+	if ( $tpl_show_category ) {
+?>
+	<tr <?php  print_documentation_link( 'category' ) ?>
+		</td>
+		<td width="70%">
+			<?php if ( $t_changed_project ) {
+				
+			} ?>
+			<select <?php 
+				?>
+			</select>
+		</td>
+	</tr>
+<?php }
+
+	if ( $tpl_show_reproducibility ) {
+?>
+
+	<tr <?php 
+
+		if ( !date_is_null( $f_due_date ) ) {
+			$t_date_to_display = date( config_get( 'calendar_date_format' ), $f_due_date );
+		}
+?>
+	<tr <?php 
+			date_print_calendar();
+		?>
+		</td>
+	</tr>
+<?php } ?>
+<?php if ( $tpl_show_platform || $tpl_show_os || $tpl_show_os_version ) { ?>
+	<tr <?php  collapse_icon('profile'); ?>
+				<?php  ?>
+			<table class="width90" cellspacing="0">
+					<?php } else { ?>
+						<?php  ?>
+					<?php } ?>
+					<tr <?php  ?>
+							</select>
+							<?php
+								} else {
+									projax_autocomplete( 'platform_get_with_prefix', 'platform', array( 'value' => string_attribute( $f_platform ), 'size' => '32', 'maxlength' => '32', 'tabindex' => helper_get_tab_index_value() ) );
+								}
+							?>
+						</td>
+					</tr>
+					<tr <?php  ?>
+							</select>
+							<?php
+								} else {
+									projax_autocomplete( 'os_get_with_prefix', 'os', array( 'value' => string_attribute( $f_os ), 'size' => '32', 'maxlength' => '32', 'tabindex' => helper_get_tab_index_value() ) );
+								}
+							?>
+						</td>
+					</tr>
+					<tr <?php  ?>
+								</select>
+							<?php
+								} else {
+									projax_autocomplete( 'os_build_get_with_prefix', 'os_build', array( 'value' => string_attribute( $f_os_build ), 'size' => '16', 'maxlength' => '16', 'tabindex' => helper_get_tab_index_value() ) );
+								}
+							?>
+						</td>
+					</tr>
+			<?php if( ON == config_get( 'use_javascript' ) ) { ?>
+			</table>
+			<?php collapse_closed( 'profile' ); collapse_icon('profile'); ?>
+			<?php collapse_end( 'profile' ); ?>
+		<?php } ?>
+		</td>
+	</tr>
+<?php } ?>
+<?php
+	if ( $tpl_show_product_version ) {
+		$t_product_version_released_mask = VERSION_RELEASED;
+
+		if (access_has_project_level( config_get( 'report_issues_for_unreleased_versions_threshold' ) ) ) {
+			$t_product_version_released_mask = VERSION_ALL;
+		}
+?>
+	<tr <?php 
+	$t_related_custom_field_ids = custom_field_get_linked_ids( $t_project_id );
+
+	foreach( $t_related_custom_field_ids as $t_id ) {
+		$t_def = custom_field_get_definition( $t_id );
+		if( ( $t_def['display_report'] || $t_def['require_report']) && custom_field_has_write_access_to_project( $t_id, $t_project_id ) ) {
+			$t_custom_fields_found = true;
+?>
+	<tr <?php 
+?>
+	<tr <?php 
+-->
+</script>
+<?php  }
+if ( $tpl_show_due_date ) {
+	date_finish_calendar( 'due_date', 'trigger' );
+}
+
+html_page_bottom();

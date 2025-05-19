@@ -1,0 +1,3451 @@
+<?php
+
+
+ 
+spl_autoload_register(array('Jojo', 'autoload'));
+
+
+if (!defined('_DEBUG') || !_DEBUG) {
+    set_error_handler(array('Jojo', 'errorHandler'), E_ALL);
+}
+
+class Jojo {
+
+    
+    static function registerURI($pattern, $class, $customFunction = null)
+    {
+        global $_uriPatterns;
+        if (!isset($_uriPatterns)) {
+            $_uriPatterns = array();
+        }
+        $_uriPatterns[] = array(
+                            'pattern' => $pattern,
+                            'class' => $class,
+                            'custom' => $customFunction
+                            );
+    }
+
+    
+    public static function authenticate()
+    {
+        global $smarty, $_USERID, $_USERTIMEZONE, $_USERGROUPS;
+
+        
+        $newlogin = false;
+        $referer = Jojo::getFormData('referer', isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '');
+
+        $logindata = false;
+        if (isset($_SESSION['userid']) && !empty($_SESSION['userid'])) {
+            
+            $logindata = Jojo::selectRow("SELECT * FROM {user} WHERE userid = ? AND us_locked = 0 LIMIT 1", array($_SESSION['userid']));
+        } elseif (isset($_COOKIE['jojoR'])) {
+            
+            $values = explode(':', base64_decode($_COOKIE['jojoR']));
+            if (count($values) == 2) {
+                $validtoken = Jojo::selectQuery("SELECT * FROM {auth_token} WHERE userid = ? AND token = ? LIMIT 1", $values);
+                if (count($validtoken)) {
+                    array_unshift($values, time());
+                    $res = Jojo::updateQuery("UPDATE {auth_token} SET lastused = ? WHERE userid = ? AND token = ? ", $values);
+                    $logindata = Jojo::selectRow("SELECT * FROM {user} WHERE userid = ? AND us_locked = 0 LIMIT 1", array($validtoken[0]['userid']));
+                }
+                if ($logindata) {
+                    
+                    $_SESSION['loggingin'] = true;
+                }
+            }
+        }
+
+        if (!$logindata) {
+            
+            $_USERID = false;
+            $_USERGROUPS[] = 'notloggedin';
+            return;
+        }
+
+        
+        $_USERID = $logindata['userid'];
+        $_USERTIMEZONE = $logindata['us_timezone'];
+        $_SESSION['userid'] = $_USERID;
+
+        
+        $smarty->assign('loggedIn', true);
+        $smarty->assign('userrecord', $logindata);
+
+        
+
+        
+        $_USERGROUPS = array('everyone');
+        $groups = Jojo::selectQuery("SELECT * FROM {usergroup_membership} WHERE userid = ?", array($_USERID));
+
+        
+        foreach ($groups as $group) {
+            if($group['groupid'] != 'notloggedin') { 
+               $_USERGROUPS[] = $group['groupid'];
+               if ($group['groupid'] == 'admin') {
+                   $smarty->assign('adminloggedin', true);
+                   
+                   $_SESSION['showhidden'] = true;
+               }
+            }
+        }
+    }
+
+    
+    static function semiRand($min = 0, $max = 1000000, $seedling = '')
+    {
+        $hash = md5($_SERVER['HTTP_HOST'] . '/' . $_SERVER['REQUEST_URI'] . $seedling . 'sss');
+        $seed = intval(substr($hash, 0, 5), 16);
+        mt_srand($seed);
+        $random = mt_rand($min, $max);
+        mt_srand(); 
+        return $random;
+    }
+    
+    static function semiRandomText($variations, $variables=false, $metadesc=false)
+    {
+        if (!$variations) return false;
+        if (!is_array($variations)) $variations = array($variations);
+        if (!$variables) $variables = array();
+        $goodvariations = array();
+
+        
+        foreach ($variations as $variation) {
+            preg_match_all('/\\[(.*?)\\]/', $variation, $result, PREG_PATTERN_ORDER);
+            $required = $result[1];
+            $ok = true;
+            $relevance = 0;
+            foreach ($required as $requiredvariable) {
+                if (empty($variables[$requiredvariable])) {
+                    $ok = false;
+                } else {
+                    $relevance++;
+                }
+            }
+            if ($ok) $goodvariations[$relevance][] = $variation;
+        }
+
+        
+        if (!count($goodvariations)) return false;
+        $goodvariations = end($goodvariations);
+
+        
+        $text = $goodvariations[Jojo::semiRand(0, count($goodvariations)-1)];
+
+        
+        foreach ($variables as $variable => $value) {
+            $text = str_replace('['.$variable.']', $value, $text);
+        }
+
+        return $text;
+    }
+
+    
+    static function listPluginsReverse($file, $whichplugin = 'all', $onlyplugins = false, $forceclean = false)
+    {
+        $plugins = self::listPlugins($file, $whichplugin = 'all', $onlyplugins = false, $forceclean = false);
+        return array_reverse($plugins);
+    }
+
+    
+    static function listPlugins($file, $whichplugin = 'all', $onlyplugins = false, $forceclean = false)
+    {
+        global $_db;
+        static $_plugins;
+        static $_files;
+
+        
+        $cachefile = _CACHEDIR . '/listPlugins.txt';
+        if (!is_array($_plugins) && !($forceclean || Jojo::ctrlF5()) && file_exists($cachefile)) {
+            list($_plugins, $_files) = @unserialize(file_get_contents($cachefile));
+        }
+
+        
+        if (!is_array($_plugins) || $forceclean) {
+            $_plugins = array();
+            $_files = array();
+            $_plugins['jojo_core'] = _BASEPLUGINDIR . '/jojo_core'; 
+            $data = Jojo::selectQuery("SELECT name FROM {plugin} WHERE active='yes' AND name != 'jojo_core' ORDER BY priority DESC");
+            foreach ($data as $plugin) {
+                
+                if (strpos($plugin['name'], '.phar')) {
+                    if (file_exists('phar:
+                        $_plugins[$plugin['name']] = 'phar:
+                    } elseif (defined('_ALTPLUGINDIR') && file_exists(_ALTPLUGINDIR . '/' . $plugin['name'])) {
+                        $_plugins[$plugin['name']] = 'phar:
+                    } elseif (file_exists(_BASEPLUGINDIR . '/' . $plugin['name'])) {
+                        $_plugins[$plugin['name']] = 'phar:
+                    }
+                } else {
+                    if (file_exists(_PLUGINDIR . '/' . $plugin['name'])) {
+                        $_plugins[$plugin['name']] = _PLUGINDIR . '/' . $plugin['name'];
+                    } elseif (defined('_ALTPLUGINDIR') && file_exists(_ALTPLUGINDIR . '/' . $plugin['name'])) {
+                        $_plugins[$plugin['name']] = _ALTPLUGINDIR . '/' . $plugin['name'];
+                    } elseif (file_exists(_BASEPLUGINDIR . '/' . $plugin['name'])) {
+                        $_plugins[$plugin['name']] = _BASEPLUGINDIR . '/' . $plugin['name'];
+                    }
+                }
+            }
+        }
+
+        $found = array();
+        if ($whichplugin == 'all') {
+            if (isset($_files[$file])) {
+                
+                $found = $_files[$file];
+            } else {
+                
+                foreach ($_plugins as $pluginname => $plugindir) {
+                    if (file_exists($plugindir . '/' . $file)) {
+                        $found[] = $plugindir . '/' . $file;
+                    }
+                }
+
+                
+                $_files[$file] = $found;
+                file_put_contents($cachefile, serialize(array($_plugins, $_files)));
+            }
+
+            if (!$onlyplugins) {
+                foreach(Jojo::listThemes($file, $whichplugin, $forceclean) as $themeFile) {
+                    $found[] = $themeFile;
+                }
+            }
+            return $found;
+        }
+
+        
+        if (file_exists($_plugins[$whichplugin] . '/' . $file)) {
+            $found[] = $_plugins[$whichplugin] . '/' . $file;
+            return $found;
+        }
+
+        if (!$onlyplugins) {
+            return Jojo::listThemes($file, $whichplugin, $forceclean);
+        }
+        return $found;
+    }
+
+    static function listThemes($file, $whichtheme = 'all', $forceclean = false)
+    {
+        global $_db;
+        static $_themes;
+        static $_files;
+
+        
+        $cachefile = _CACHEDIR . '/listThemes.txt';
+        if (!is_array($_themes) && !($forceclean || Jojo::ctrlF5()) && file_exists($cachefile)) {
+            list($_themes, $_files) = @unserialize(file_get_contents($cachefile));
+        }
+
+        
+        if (!is_array($_themes)) {
+            $_themes = array();
+            $_files = array();
+            $data = Jojo::selectQuery("SELECT name FROM {theme} WHERE active='yes'");
+            foreach ($data as $theme) {
+                
+                if (file_exists(_THEMEDIR . '/' . $theme['name'])) {
+                    $_themes[$theme['name']] = _THEMEDIR . '/' . $theme['name'];
+                } elseif (file_exists(_BASETHEMEDIR . '/' . $theme['name'])) {
+                    $_themes[$theme['name']] = _BASETHEMEDIR . '/' . $theme['name'];
+                }
+            }
+
+            
+            file_put_contents($cachefile, serialize(array($_themes, $_files)));
+        }
+
+        
+        $found = array();
+        if ($whichtheme == 'all') {
+            if (isset($_files[$file])) {
+                
+                $found = $_files[$file];
+            } else {
+                
+                foreach ($_themes as $themename => $themedir) {
+                    if (file_exists($themedir . '/' . $file)) {
+                        $found[] = $themedir . '/' . $file;
+                    }
+                }
+
+                
+                $_files[$file] = $found;
+                file_put_contents($cachefile, serialize(array($_themes, $_files)));
+            }
+            return $found;
+        }
+
+        
+        if (file_exists($_themes[$whichtheme] . '/' . $file)) {
+            $found[] = $_themes[$whichtheme] . '/' . $file;
+            return $found;
+        }
+        return $found;
+    }
+
+    
+    public static function adodb()
+    {
+        return Jojo::_connectToDB();
+    }
+
+    
+    static function _connectToDB()
+    {
+        global $_db;
+
+        if (!isset($_db)) {
+            
+            if (!defined('_DBUSER')) {
+                
+            }
+
+            
+            global $ADODB_COUNTRECS, $ADODB_FETCH_MODE;
+            $ADODB_COUNTRECS = false;
+            $ADODB_FETCH_MODE = ADODB_FETCH_NUM;
+            $_db = ADONewConnection('mysql');
+            $_db->Connect(_DBHOST, _DBUSER, _DBPASS, _DBNAME);
+            $_db->query("SET CHARACTER SET 'utf8'");
+            $_db->query("SET NAMES 'utf8'");
+            if (_DEBUG) {
+                $_db->LogSQL(true);
+            }
+        }
+        return $_db;
+    }
+
+    
+
+    
+    static function prefixTables($query)
+    {
+        return strtr($query, array('{' => '`' . _TBLPREFIX, '}' => '`'));
+    }
+
+    
+    static function selectQuery($query, $values = array())
+    {
+        Jojo::_connectToDB();
+
+        if (strpos($query, '{') === false) {
+            $log = new Jojo_Eventlog();
+            $log->code = 'sql';
+            $log->importance = 'very low';
+            $backtrace = debug_backtrace();
+            $log->shortdesc = 'SQL Query does not have marked table from ' . $backtrace[0]['file'] . ' line ' . $backtrace[0]['line'];
+            $log->desc = "SQL Query does not have marked tables: \n\n" . $query . "\n\n table names should have curly brackets around them.";
+            $log->savetodb();
+            unset($log);
+        }
+
+        
+        $values = is_array($values) ? $values : array($values);
+
+        
+        $query = Jojo::prefixTables($query);
+
+        
+        global $_db;
+        $_db->SetFetchMode(ADODB_FETCH_ASSOC);
+
+        
+        $rs = $_db->Execute($query, $values);
+
+        if (!$rs) {
+            
+            
+            var_dump(debug_backtrace());
+            exit();
+        }
+
+        
+        $rows = !$rs->EOF ? $rs->GetArray() : array();
+
+        
+        return $rows;
+    }
+
+    
+    static function selectAssoc($query, $values = array())
+    {
+        Jojo::_connectToDB();
+
+        
+        return Jojo::adodb()->getAssoc(Jojo::prefixTables($query), $values);
+    }
+
+    
+    static function selectRow($query, $values = array())
+    {
+        
+        $values = is_array($values) ? $values : array($values);
+
+        
+        return Jojo::adodb()->getRow(Jojo::prefixTables($query), $values);
+    }
+
+    
+    static function updateQuery($query, $values = array())
+    {
+        Jojo::_connectToDB();
+
+        if (strpos($query, '{') === false) {
+            $log = new Jojo_Eventlog();
+            $log->code = 'sql';
+            $log->importance = 'very low';
+            $backtrace = debug_backtrace();
+            $log->shortdesc = 'SQL Query does not have marked table from '. $backtrace[0]['file'] .' line '.$backtrace[0]['line'];
+            $log->desc = "SQL Query does not have marked tables: \n\n" . $query . "\n\n table names should have curly brackets around them.";
+            $log->savetodb();
+            unset($log);
+        }
+
+        
+        $values = is_array($values) ? $values : array($values);
+
+        
+        $query = Jojo::prefixTables($query);
+
+        if (_DEBUG) {
+            if (strtoupper(substr($query, 0, 6)) != 'UPDATE' &&
+                strtoupper(substr($query, 0, 7)) != 'REPLACE') {
+                
+                if (function_exists('xdebug_get_function_stack')) {
+                    $stack = xdebug_get_function_stack();
+                    $last = array_pop($stack);
+                    
+                }
+                
+            }
+        }
+
+        
+        global $_db;
+
+        
+        $rs = $_db->Execute($query, $values);
+
+        if (!$rs) {
+            
+            
+            var_dump(debug_backtrace());
+            exit();
+        }
+
+        
+        return $_db->Affected_Rows();
+    }
+
+    
+    static function deleteQuery($query, $values = array())
+    {
+        Jojo::_connectToDB();
+
+        if (strpos($query, '{') === false) {
+            $log = new Jojo_Eventlog();
+            $log->code = 'sql';
+            $log->importance = 'very low';
+            $backtrace = debug_backtrace();
+            $log->shortdesc = 'SQL Query does not have marked table from '. $backtrace[0]['file'] .' line '.$backtrace[0]['line'];
+            $log->desc = "SQL Query does not have marked tables: \n\n" . $query . "\n\n table names should have curly brackets around them.";
+            $log->savetodb();
+            unset($log);
+        }
+
+        
+        $values = is_array($values) ? $values : array($values);
+
+        
+        $query = Jojo::prefixTables($query);
+
+        if (_DEBUG) {
+            if (strtoupper(substr($query, 0, 6)) != 'DELETE') {
+                
+            }
+        }
+
+        
+        global $_db;
+
+        
+        $rs = $_db->Execute($query, $values);
+
+        if (!$rs) {
+            
+            
+            var_dump(debug_backtrace());
+            exit();
+        }
+
+        
+        return $_db->Affected_Rows();
+    }
+
+    
+    static function insertQuery($query, $values = array())
+    {
+        Jojo::_connectToDB();
+
+        if (strpos($query, '{') === false) {
+            $log = new Jojo_Eventlog();
+            $log->code = 'sql';
+            $log->importance = 'very low';
+            $backtrace = debug_backtrace();
+            $log->shortdesc = 'SQL Query does not have marked table from '. $backtrace[0]['file'] .' line '.$backtrace[0]['line'];
+            $log->desc = "SQL Query does not have marked tables: \n\n" . $query . "\n\n table names should have curly brackets around them.";
+            $log->savetodb();
+            unset($log);
+        }
+
+        
+        $values = is_array($values) ? $values : array($values);
+
+        
+        $query = Jojo::prefixTables($query);
+
+        
+        global $_db;
+
+        
+        $rs = $_db->Execute($query, $values);
+
+        if (!$rs) {
+            
+            
+            exit();
+        }
+
+        
+        return $_db->Insert_ID();
+    }
+
+    
+    static function structureQuery($query)
+    {
+        Jojo::_connectToDB();
+
+        if (strpos($query, '{') === false) {
+            $log = new Jojo_Eventlog();
+            $log->code = 'sql';
+            $log->importance = 'very low';
+            $backtrace = debug_backtrace();
+            $log->shortdesc = 'SQL Query does not have marked table from '. $backtrace[0]['file'] .' line '.$backtrace[0]['line'];
+            $log->desc = "SQL Query does not have marked tables: \n\n" . $query . "\n\n table names should have curly brackets around them.";
+            $log->savetodb();
+            unset($log);
+        }
+
+        
+        $query = Jojo::prefixTables($query);
+
+        if (_DEBUG) {
+            
+        }
+        
+        global $_db;
+
+        
+        $rs = $_db->Execute($query);
+
+        if (!$rs) {
+            
+            
+            exit();
+        }
+
+        
+        return ($_db->Affected_Rows()) ? $_db->Affected_Rows() : true;
+    }
+
+    
+    static function checkTable($tablename, $createQuery)
+    {
+        Jojo::_connectToDB();
+        global $_db;
+
+        
+        $createQuery = preg_replace('/TYPE\\s*=\\s*(innodb|myisam)/i', 'ENGINE=$1', $createQuery);
+
+        $result = array();
+        if (!Jojo::tableexists($tablename)) {
+            
+            Jojo::structureQuery($createQuery);
+            $result['created'] = true;
+        } else {
+            
+
+            
+            $new = explode("\n", $createQuery);
+            $newCols = array();
+            foreach ($new as $k => $v) {
+                $v = trim($v);
+                if ($v && $v[0] == '`') {
+                    $newCols[substr($v, 1, strpos($v, '`', 2) - 1)] = rtrim($v, ',');
+                }
+            }
+
+            
+            Jojo::adodb()->execute("SET SQL_QUOTE_SHOW_CREATE = 1;");
+            $res = Jojo::selectQuery(sprintf("SHOW CREATE TABLE {%s};", $tablename));
+
+            $current = explode("\n", $res[0]['Create Table']);;
+            $currentCols = array();
+            foreach ($current as $k => $v) {
+                $v = trim($v);
+                if ($v && $v[0] == '`') {
+                    $currentCols[substr($v, 1, strpos($v, '`', 2) - 1)] = rtrim($v, ',');
+                }
+            }
+
+            
+            $different = array();
+            $after = '';
+            foreach ($newCols as $f => $sql) {
+                if (isset($currentCols[$f]) && $currentCols[$f] != $sql) {
+                    
+
+                    
+                    $regex = '/(varchar|char|int) *\\( *([0-9]+) *\\)/i';
+                    $replace = '\\1(\\2)';
+                    $currentCols[$f]  = preg_replace($regex, $replace, $currentCols[$f] );
+                    $sql              = preg_replace($regex, $replace, $sql );
+                    
+                    $regex = '/\b(varchar|char|int|bigint|default|not|null|enum|auto_increment|on|update)\b/i';
+                    $currentCols[$f]  = preg_replace_callback($regex, create_function('$matches', 'return strtoupper($matches[0]);'), $currentCols[$f]);
+                    $sql              = preg_replace_callback($regex, create_function('$matches', 'return strtoupper($matches[0]);'), $sql);
+                    
+                    $regex = '/\s{2,}/i';
+                    $replace = '\\1(\\2)';
+                    $currentCols[$f]  = trim(preg_replace($regex, $replace, $currentCols[$f]));
+                    $sql              = trim(preg_replace($regex, $replace, $sql));
+                    
+                    $regex = '/\b(int)( ?[^(\\s])/i';
+                    $replace = '\\1(11)\\2';
+                    $currentCols[$f]  = preg_replace($regex, $replace, $currentCols[$f]);
+                    $sql              = preg_replace($regex, $replace, $sql);
+                    
+                    $regex = '/\b(bigint)( ?[^(\\s])/i';
+                    $replace = '\\1(20)\\2';
+                    $currentCols[$f]  = preg_replace($regex, $replace, $currentCols[$f]);
+                    $sql              = preg_replace($regex, $replace, $sql);
+
+                    $eArray = explode(' ', $currentCols[$f]);
+                    $fArray = explode(' ', $sql);
+
+                    
+                    if ((strpos(strtolower($currentCols[$f]),'varchar')!==false) && (strpos(strtolower($currentCols[$f]),'not null')!==false) && (strpos(strtolower($currentCols[$f]),'default')===false)) {
+                        $eArray[] = 'DEFAULT';
+                        $eArray[] = '\'\'';
+                    }
+
+                    
+                    if ((strpos(strtolower($currentCols[$f]),'text') !== false) && (strpos(strtolower($currentCols[$f]),'null') === false)) {
+                        $eArray[] = 'NULL';
+                    }
+
+                    if (count(array_intersect($eArray, $fArray)) != count($fArray)) {
+                        
+                        $changesql = preg_replace('/`(.*?)`(.*)/', '`$1` `$1` $2', $sql);
+                        if ($changesql == '') $changesql = $sql;
+                        $result['different'][$f] = array(
+                                                    'found' => $currentCols[$f],
+                                                    'expected' => $sql,
+                                                    'alter' => 'ALTER TABLE {'.$tablename.'} CHANGE '.$changesql.';'
+                                                    );
+                    }
+                } elseif (!isset($currentCols[$f])) {
+                    
+                    $query = sprintf('ALTER TABLE {%s} ADD COLUMN %s', $tablename, $sql);
+                    if ($after) {
+                        $query .= " AFTER `$after`";
+                    }
+                    Jojo::structureQuery($query);
+                    $result['added'][$f] = 'added';
+                }
+                $after = $f;
+            }
+        }
+        return $result;
+    }
+
+    static function printTableDifference($table,$difference) {
+        if (isset($difference) && is_array($difference)) {
+            foreach ($difference as $col => $v) {
+                
+                &nbsp;&nbsp;&nbsp;Found: %s<br/>&nbsp;&nbsp;&nbsp;&nbsp;Expected: %s<br/>", $v['found'], $v['expected']);
+                &nbsp;&nbsp;&nbsp;SQL: %s<br />",$v['alter']);
+                &nbsp;&nbsp;&nbsp;<form method=\"post\"><input type=\"hidden\" name=\"sql\" value=\"%s\" /><input type=\"submit\" name=\"submit\" value=\"Fix\" /></form></div>",$v['alter']);
+            }
+        }
+    }
+
+    
+    static function tableExists($tablename, $type = 'TABLES')
+    {
+        
+        $tables = Jojo::adodb()->getAssoc("SHOW FULL TABLES");
+
+        
+        if (!is_array($tables)) {
+            Jojo::_connectToDB();
+            $tablename = trim(Jojo::prefixTables('{' . $tablename . '}'), '`');
+
+            
+            global $_db;
+
+            
+            $tables = $_db->MetaTables('TABLES');
+
+            
+            return (boolean)(is_array($tables) && in_array($tablename, $tables));
+        }
+
+        
+        $type = ($type == 'VIEWS') ? 'VIEW' : 'BASE TABLE';
+        $tablename = trim(Jojo::prefixTables('{' . $tablename . '}'), '`');
+        return isset($tables[$tablename]) && $tables[$tablename] == $type;
+    }
+
+    
+    static function fieldExists($tablename, $fieldname)
+    {
+        
+        $tablename = trim(Jojo::prefixTables('{' . $tablename . '}'), '`');
+        $columns = Jojo::adodb()->MetaColumnNames($tablename, true);
+
+        
+        return in_array($fieldname, $columns);
+    }
+
+    
+    static function clean($unclean)
+    {
+        Jojo::_connectToDB();
+
+        
+        $quoted = Jojo::adodb()->qstr($unclean, get_magic_quotes_runtime());
+
+        
+        $clean = ($quoted[0] == "'") ? substr($quoted, 1, -1) : $quoted;
+        
+        return $clean;
+    }
+
+    
+    static function cleanInt($unclean_string)
+    {
+        $clean_string = Jojo::clean($unclean_string);
+        if ($clean_string == '') $clean_string = 0;
+        return $clean_string;
+    }
+
+    
+    static function timer($starttime='')
+    {
+        list($usec, $sec) = explode(' ', microtime());
+        $time = ((float)$usec + (float)$sec);
+        if ($starttime == '') {
+            return $time;
+        } else {
+            return $time - $starttime;
+        }
+    }
+
+    
+    static function ctrlF5() {
+        if (!isset($_SERVER['HTTP_PRAGMA'])) return false;
+        if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE'])) return false;
+        if (isset($_SERVER['HTTP_IF_NONE_MATCH'])) return false;
+        return true;
+    }
+
+    
+    static function getFileExtension($file)
+    {
+        return strtolower(pathinfo($file, PATHINFO_EXTENSION));
+    }
+
+    
+    static function publicCache($filename, $data=false, $modified=false)
+    {
+        $extensions = array('jpg', 'jpeg', 'gif', 'png', 'js', 'css');
+        $extension = Jojo::getFileExtension($filename);
+        if (!in_array($extension, $extensions)) {
+            return false;
+        }
+        $publiccachefile = _CACHEDIR.'/public/'.md5($filename).'.'.$extension;
+        Jojo::RecursiveMkdir(_CACHEDIR.'/public/'); 
+        if (!$data) {
+            return $publiccachefile; 
+        }
+        file_put_contents($publiccachefile, $data);
+        if (is_int($modified)) {
+            touch($publiccachefile, $modified);
+        }
+        
+    }
+
+    
+    static function clearPublicCache($extensions=false)
+    {
+        $cache = scandir(_CACHEDIR.'/public/');
+        if (is_array($cache)) {
+            foreach ($cache as $filename) {
+                if (preg_match('/^[0-9a-f]{32}\\.[0-9a-z]{2,4}$/im', $filename)) {
+                    unlink(_CACHEDIR.'/public/'.$filename);
+                }
+            }
+        }
+    }
+
+    
+    static function getMimeType($filename) {
+        $extension = Jojo::getFileExtension($filename);
+
+        $mime = array(
+            '' => 'application/octet-stream',
+            '323' => 'text/h323',
+            'acx' => 'application/internet-property-stream',
+            'ai' => 'application/postscript',
+            'aif' => 'audio/x-aiff',
+            'aifc' => 'audio/x-aiff',
+            'aiff' => 'audio/x-aiff',
+            'asf' => 'video/x-ms-asf',
+            'asr' => 'video/x-ms-asf',
+            'asx' => 'video/x-ms-asf',
+            'au' => 'audio/basic',
+            'avi' => 'video/x-msvideo',
+            'axs' => 'application/olescript',
+            'bas' => 'text/plain',
+            'bcpio' => 'application/x-bcpio',
+            'bin' => 'application/octet-stream',
+            'bmp' => 'image/bmp',
+            'c' => 'text/plain',
+            'cat' => 'application/vnd.ms-pkiseccat',
+            'cdf' => 'application/x-cdf',
+            'cer' => 'application/x-x509-ca-cert',
+            'class' => 'application/octet-stream',
+            'clp' => 'application/x-msclip',
+            'cmx' => 'image/x-cmx',
+            'cod' => 'image/cis-cod',
+            'cpio' => 'application/x-cpio',
+            'crd' => 'application/x-mscardfile',
+            'crl' => 'application/pkix-crl',
+            'crt' => 'application/x-x509-ca-cert',
+            'csh' => 'application/x-csh',
+            'css' => 'text/css',
+            'dcr' => 'application/x-director',
+            'der' => 'application/x-x509-ca-cert',
+            'dir' => 'application/x-director',
+            'dll' => 'application/x-msdownload',
+            'dms' => 'application/octet-stream',
+            'doc' => 'application/msword',
+            'dot' => 'application/msword',
+            'dvi' => 'application/x-dvi',
+            'dxr' => 'application/x-director',
+            'eps' => 'application/postscript',
+            'etx' => 'text/x-setext',
+            'evy' => 'application/envoy',
+            'exe' => 'application/octet-stream',
+            'fif' => 'application/fractals',
+            'flv' => 'video/x-flv',
+            'flr' => 'x-world/x-vrml',
+            'gif' => 'image/gif',
+            'gtar' => 'application/x-gtar',
+            'gz' => 'application/x-gzip',
+            'h' => 'text/plain',
+            'hdf' => 'application/x-hdf',
+            'hlp' => 'application/winhlp',
+            'hqx' => 'application/mac-binhex40',
+            'hta' => 'application/hta',
+            'htc' => 'text/x-component',
+            'htm' => 'text/html',
+            'html' => 'text/html',
+            'htt' => 'text/webviewhtml',
+            'ico' => 'image/x-icon',
+            'ief' => 'image/ief',
+            'iii' => 'application/x-iphone',
+            'ins' => 'application/x-internet-signup',
+            'isp' => 'application/x-internet-signup',
+            'jfif' => 'image/pipeg',
+            'jpe' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'jpg' => 'image/jpeg',
+            'js' => 'application/x-javascript',
+            'latex' => 'application/x-latex',
+            'lha' => 'application/octet-stream',
+            'lsf' => 'video/x-la-asf',
+            'lsx' => 'video/x-la-asf',
+            'lzh' => 'application/octet-stream',
+            'm13' => 'application/x-msmediaview',
+            'm14' => 'application/x-msmediaview',
+            'm3u' => 'audio/x-mpegurl',
+            'man' => 'application/x-troff-man',
+            'mdb' => 'application/x-msaccess',
+            'me' => 'application/x-troff-me',
+            'mht' => 'message/rfc822',
+            'mhtml' => 'message/rfc822',
+            'mid' => 'audio/mid',
+            'mny' => 'application/x-msmoney',
+            'mov' => 'video/quicktime',
+            'movie' => 'video/x-sgi-movie',
+            'mp2' => 'video/mpeg',
+            'mp3' => 'audio/mpeg',
+            'mpa' => 'video/mpeg',
+            'mpe' => 'video/mpeg',
+            'mpeg' => 'video/mpeg',
+            'mpg' => 'video/mpeg',
+            'mpp' => 'application/vnd.ms-project',
+            'mpv2' => 'video/mpeg',
+            'ms' => 'application/x-troff-ms',
+            'mvb' => 'application/x-msmediaview',
+            'nws' => 'message/rfc822',
+            'oda' => 'application/oda',
+            'p10' => 'application/pkcs10',
+            'p12' => 'application/x-pkcs12',
+            'p7b' => 'application/x-pkcs7-certificates',
+            'p7c' => 'application/x-pkcs7-mime',
+            'p7m' => 'application/x-pkcs7-mime',
+            'p7r' => 'application/x-pkcs7-certreqresp',
+            'p7s' => 'application/x-pkcs7-signature',
+            'pbm' => 'image/x-portable-bitmap',
+            'pdf' => 'application/pdf',
+            'pfx' => 'application/x-pkcs12',
+            'pgm' => 'image/x-portable-graymap',
+            'pko' => 'application/ynd.ms-pkipko',
+            'pma' => 'application/x-perfmon',
+            'pmc' => 'application/x-perfmon',
+            'pml' => 'application/x-perfmon',
+            'pmr' => 'application/x-perfmon',
+            'pmw' => 'application/x-perfmon',
+            'png' => 'image/png',
+            'pnm' => 'image/x-portable-anymap',
+            'pot' => 'application/vnd.ms-powerpoint',
+            'ppm' => 'image/x-portable-pixmap',
+            'pps' => 'application/vnd.ms-powerpoint',
+            'ppt' => 'application/vnd.ms-powerpoint',
+            'prf' => 'application/pics-rules',
+            'ps' => 'application/postscript',
+            'pub' => 'application/x-mspublisher',
+            'qt' => 'video/quicktime',
+            'ra' => 'audio/x-pn-realaudio',
+            'ram' => 'audio/x-pn-realaudio',
+            'ras' => 'image/x-cmu-raster',
+            'rgb' => 'image/x-rgb',
+            'rmi' => 'audio/mid',
+            'roff' => 'application/x-troff',
+            'rtf' => 'application/rtf',
+            'rtx' => 'text/richtext',
+            'scd' => 'application/x-msschedule',
+            'sct' => 'text/scriptlet',
+            'setpay' => 'application/set-payment-initiation',
+            'setreg' => 'application/set-registration-initiation',
+            'sh' => 'application/x-sh',
+            'shar' => 'application/x-shar',
+            'sit' => 'application/x-stuffit',
+            'snd' => 'audio/basic',
+            'spc' => 'application/x-pkcs7-certificates',
+            'spl' => 'application/futuresplash',
+            'src' => 'application/x-wais-source',
+            'sst' => 'application/vnd.ms-pkicertstore',
+            'stl' => 'application/vnd.ms-pkistl',
+            'stm' => 'text/html',
+            'svg' => 'image/svg+xml',
+            'sv4cpio' => 'application/x-sv4cpio',
+            'sv4crc' => 'application/x-sv4crc',
+            'swf' => 'application/x-shockwave-flash',
+            't' => 'application/x-troff',
+            'tar' => 'application/x-tar',
+            'tcl' => 'application/x-tcl',
+            'tex' => 'application/x-tex',
+            'texi' => 'application/x-texinfo',
+            'texinfo' => 'application/x-texinfo',
+            'tgz' => 'application/x-compressed',
+            'tif' => 'image/tiff',
+            'tiff' => 'image/tiff',
+            'tr' => 'application/x-troff',
+            'trm' => 'application/x-msterminal',
+            'tsv' => 'text/tab-separated-values',
+            'ttf' => 'application/x-font-ttf',
+            'txt' => 'text/plain',
+            'uls' => 'text/iuls',
+            'ustar' => 'application/x-ustar',
+            'vcf' => 'text/x-vcard',
+            'vrml' => 'x-world/x-vrml',
+            'wav' => 'audio/x-wav',
+            'wcm' => 'application/vnd.ms-works',
+            'wdb' => 'application/vnd.ms-works',
+            'wks' => 'application/vnd.ms-works',
+            'wmf' => 'application/x-msmetafile',
+            'woff' => 'application/x-font-woff',
+            'wps' => 'application/vnd.ms-works',
+            'wri' => 'application/x-mswrite',
+            'wrl' => 'x-world/x-vrml',
+            'wrz' => 'x-world/x-vrml',
+            'wsdl'=> 'text/xml',
+            'xaf' => 'x-world/x-vrml',
+            'xbm' => 'image/x-xbitmap',
+            'xla' => 'application/vnd.ms-excel',
+            'xlc' => 'application/vnd.ms-excel',
+            'xlm' => 'application/vnd.ms-excel',
+            'xls' => 'application/vnd.ms-excel',
+            'xlt' => 'application/vnd.ms-excel',
+            'xlw' => 'application/vnd.ms-excel',
+            'xml' => 'text/xml',
+            'xof' => 'x-world/x-vrml',
+            'xpm' => 'image/x-xpixmap',
+            'xwd' => 'image/x-xwindowdump',
+            'z' => 'application/x-compress',
+            'zip' => 'application/zip'
+        );
+        if (isset($mime[$extension])) {
+            return $mime[$extension];
+        }
+        
+        if (file_exists($filename)) {
+            $finfo = new finfo(FILEINFO_MIME);
+            $type = $finfo->file($filename);
+            if ($type) {
+                return $type;
+            }
+        }
+        return '';
+    }
+
+    static function getMySQLType($table, $field) {
+        $data = Jojo::selectQuery('SHOW COLUMNS FROM {' . $table . '}');
+        foreach ($data as $row) {
+            if ($row["Field"] == $field) return $row["Type"];
+        }
+        return false;
+    }
+
+    
+    static function emailFooter() {
+        $referer                            = isset($_SESSION['referer']) ? $_SESSION['referer'] : 'direct visitor';
+        $searchphrase                       = isset($_SESSION['referer_searchphrase']) ? $_SESSION['referer_searchphrase'] : '';
+        $footer                             = "\r\n\r\n______________________________________\r\n";
+        $footer                            .= "This message was sent from the ".Jojo::getOption('sitetitle')." website.\r\n";
+        $footer                            .= "Referer: ".$referer."\r\n";
+        if (!empty($searchphrase)) $footer .= "Search Phrase: ".$searchphrase."\r\n";
+        $footer                            .= "Browser: ".Jojo::getbrowser()."\r\n";
+        
+
+        
+        $footer = Jojo::applyFilter('email_footer', $footer);
+
+        return $footer;
+    }
+
+    
+    static function recursiveMkdir($path = false) {
+        if (!$path) {
+            return false;
+        }
+        $res = -1;
+        if (!file_exists($path)) {
+            $res = Jojo::RecursiveMkdir(dirname($path));
+            if (!file_exists($path)) {
+                $res = mkdir($path, 777);
+            }
+        }
+        return $res;
+    }
+
+    
+    static function urlPrefix($link2secure=false)
+    {
+        global $issecure;
+        if (!isset($issecure)) {$issecure = false;}
+
+        if ($link2secure && $issecure) {
+            return '';
+        } else if ($link2secure && !$issecure) {
+            return _SECUREURL."/";
+        } else if (!$link2secure && $issecure) {
+            return _SITEURL."/";
+        } else if (!$link2secure && !$issecure) {
+            return '';
+        }
+    }
+
+    
+    static function yes2true($text)
+    {
+        return (strtolower($text) == 'yes');
+    }
+
+    
+    static function ta2array($text, $trimwhitespace=true)
+    {
+        $text = preg_split("/[\r\n]+/", $text);
+        if ($trimwhitespace) {
+            $text = array_map('trim', $text);
+        }
+        
+        $text = array_filter($text, 'strlen');
+        return $text;
+    }
+
+    
+    
+    static function ta2kv($text, $delim="=")
+    {
+        $delim = preg_quote($delim, '/');
+        $text = preg_replace("/([\r\n]+)\\s+([\r\n]+)/", "$1", trim($text));
+        preg_match_all("/([^\r\n".$delim."]+)".$delim."?([^\r\n$]+)?/", $text, $matches);
+        return array_combine(
+            array_map('trim', $matches[1]),
+            array_map('trim', $matches[2])
+        );
+    }
+
+    
+    static function csv2array($text, $trimwhitespace=true)
+    {
+        $text = explode(",", $text);
+        if ($trimwhitespace) {
+            $text = array_map('trim', $text);
+        }
+        
+        $text = array_filter($text, 'strlen');
+        return $text;
+    }
+
+    
+    static function rewrite($table, $id, $name='index', $suffix='s', $allowurlprefix='', $pagenumber=1)
+    {
+        global $thelanguage;
+        
+        $name = strtolower($name);
+
+        
+        if (extension_loaded('mbstring') && mb_detect_encoding($name)!='UTF-8') $name = utf8_encode($name);
+
+        
+        $matches = array( '"', '!', '
+                          '=',  '\'', ',', '(', ')', '?', '.', '!',
+                          ',','[',']','{','}',':',';','`','~','|');
+        $name = str_replace($matches, '', $name);
+
+        
+        $matches = array( '+', '/', ' - ', ' ', ', ',   '&',  '@', ':', '--');
+        $replace = array( '-', '-',   '-', '-', '-',  'and', 'at', '-', '-' );
+        $name = str_replace($matches, $replace, $name);
+
+        
+        $name = str_replace('--','-',$name);
+        $name = trim($name, '-'); 
+         $name = urlencode($name);
+       $pagecode = $pagenumber <= 1 ? '' : 'p'.$pagenumber;
+        if ($table.$suffix == 'pages') {
+            return $id . $pagecode . '/' . $name . '/'; 
+        } else {
+            return $table . $suffix . '/' . $id . $pagecode . '/' . $name . '/'; 
+        }
+    }
+
+    
+    static function cleanURL($url)
+    {
+        
+        $url = strtolower($url);
+
+        
+        if (extension_loaded('mbstring') && mb_detect_encoding($url)!='UTF-8') $url = utf8_encode($url);
+
+        
+        $matches = array( '"', '!', '
+        $url = str_replace($matches, '', $url);
+
+        
+        $matches = array( '/', ' - ', ' ', ', ',   '&',  '@', ':', '--' );
+        $replace = array( '-',   '-', '-',  '-', 'and', 'at', '-', '-'  );
+        $url = str_replace($matches, $replace, $url);
+
+        
+        $url = str_replace('--','-',$url);
+        $url = trim($url,'-');
+
+       
+        $url = urlencode($url);
+
+        return $url;
+    }
+
+    
+    static function fileExists($file)
+    {
+        if (!is_file($file))     return false;
+        if (!file_exists($file)) return false;
+        return true;
+    }
+
+    
+    static function roundBytes($bytes, $decimals = 1, $decimalcutoff=false)
+    {
+        $sizes = array('TB' => 1099511627776, 'GB' => 1073741824, 'MB' => 1048576, 'KB' => 1024, 'B' => 1);
+        foreach ($sizes as $unit => $b) {
+            if ($bytes >= $b) {
+                $num = number_format($bytes/$b, $decimals);
+                if ($decimalcutoff && ($num > $decimalcutoff)) $num = number_format($bytes/$b, max($decimals-1, 0));
+                return $num.$unit;
+            }
+        }
+        return $bytes . 'B';
+    }
+
+    
+    static function either($var1, $var2 = '', $var3 = '', $var4 = '', $var5 = '', $var6 = '', $var7 = '', $var8 = '')
+    {
+        if (($var1 != '') && ($var1 != '0')) return $var1;
+        if (($var2 != '') && ($var2 != '0')) return $var2;
+        if (($var3 != '') && ($var3 != '0')) return $var3;
+        if (($var4 != '') && ($var4 != '0')) return $var4;
+        if (($var5 != '') && ($var5 != '0')) return $var5;
+        if (($var6 != '') && ($var6 != '0')) return $var6;
+        if (($var7 != '') && ($var7 != '0')) return $var7;
+        if (($var8 != '') && ($var8 != '0')) return $var8;
+        return '';
+    }
+
+    
+    static function onlyIf($var, $string)
+    {
+        if (($var != '') and ($var != '0')) return $string;
+    }
+
+    static function cssAddAssets($css) {
+        $css = preg_replace_callback('%url\\([\'"]?\\.\\./(.*?)[\'"]?\\)%', array('Jojo', '_Callback_CssAddAssets'), $css);
+        return $css;
+    }
+
+    static function _Callback_CssAddAssets($matches) {
+        global $nextasset;
+
+        static $ASSETS;
+        static $n;
+
+        
+        if (is_null($ASSETS)) {
+            $ASSETS = array();
+            $rows = Jojo::selectQuery("SELECT * FROM {option} WHERE op_name = 'assetdomains'");
+            if (empty($rows[0]['op_value'])) return 'url(../'.$matches[1].')';
+
+            $lines = explode("\n", $rows[0]['op_value']);
+
+            foreach($lines as $line) {
+                if (trim($line)) {
+                    $ASSETS[] = trim($line);
+                }
+            }
+            $n = count($ASSETS) - 1;
+        }
+
+        
+        if (!$n > 0) {
+            return 'url(../'.$matches[1].')';
+        }
+
+        
+        
+        $nextasset = Jojo::semiRand(0, $n, $matches[1]);
+        return 'url(' . $ASSETS[$nextasset] . '/' . $matches[1] . ')';
+    }
+
+    
+    static function mergeCSS($target, $files=false)
+    {
+        static $list;
+        if (!isset($list)) $list = array();
+        if (!isset($list[$target])) $list[$target] = array();
+        if ($files === false) return $list[$target]; 
+        
+        if (!is_array($files)) {
+            $list[$target][] = $files;
+        } else {
+            $list[$target] = array_merge($list[$target], $files);
+        }
+        return true;
+    }
+
+    
+    static function getOption($name, $default = null, $forceclean = false)
+    {
+        
+        $_options = Jojo::getOptions($forceclean);
+
+        
+        if (isset($_options[$name])) {
+            $value = $_options[$name];
+        } else {
+            
+            $value = $default;
+        }
+        
+        $value = Jojo::applyFilter('get_option', $value, array($name, $default));
+
+        return $value;
+    }
+
+    
+    static function setOption($name, $value)
+    {
+        $data = Jojo::selectQuery("SELECT * FROM {option} WHERE op_name = ?", $name);
+        if (count($data)) {
+            Jojo::updateQuery("UPDATE {option} SET op_value=? WHERE op_name=?", array($value, $name));
+            return true;
+        }
+        return false;
+    }
+
+    
+    static function getOptions($forceclean = false)
+    {
+        static $_options;
+
+        
+        if (!is_array($_options) || $forceclean) {
+            $_options = array();
+            $rows = Jojo::selectQuery("SELECT `op_name`, `op_value` FROM {option}");
+            foreach ($rows as $row) {
+                $_options[$row['op_name']] = $row['op_value'];
+            }
+        }
+
+        return $_options;
+    }
+
+    
+    static function removeOption($name)
+    {
+        $data = Jojo::selectQuery("SELECT * FROM {option} WHERE op_name = ?", $name);
+        if (count($data)) {
+            Jojo::deleteQuery("DELETE FROM {option} WHERE op_name = ?", $name);
+            return true;
+        }
+        return false;
+    }
+
+    
+    static function addContentVar($options)
+    {
+        global $_contentvars;
+        if (!is_array($_contentvars)) {
+            $_contentvars = array();
+        }
+        
+        if (!is_array($options)) return '';
+
+        if (!isset($options['name'])) return '';
+        if (!isset($options['format'])) return '';
+        if (!is_array($options['vars'])) $options['vars'] = array();
+        if (!isset($options['description'])) $options['description'] = '';
+        if (!isset($options['icon'])) $options['icon'] = 'images/cms/icons/brick.png';
+
+        $options['jtagformat'] = $options['format'];
+
+        
+        foreach ($options['vars'] as $k => $v) {
+            if (!isset($options['vars'][$k]['name'])) $options['vars'][$k]['name'] = '';
+            if (!isset($options['vars'][$k]['description'])) $options['vars'][$k]['description'] = '';
+            $display = !empty($options['vars'][$k]['description']) ? $options['vars'][$k]['description'] : $options['vars'][$k]['name'];
+            $options['jtagformat'] = str_replace('['.$k.']', '@'.$display.'@', $options['jtagformat']);
+        }
+
+        if (!isset($_contentvars[$options['name']])) {
+            $_contentvars[$options['name']] = array();
+        }
+        $_contentvars[$options['name']] = array(
+                               'name'=>$options['name'],
+                               'format'=>$options['format'],
+                               'jtagformat'=>$options['jtagformat'],
+                               'vars'=>$options['vars'],
+                               'description'=>$options['description'],
+                               'icon'=>$options['icon']
+                               );
+    }
+
+    static function getContentVars()
+    {
+        global $_contentvars;
+        if (!is_array($_contentvars)) {
+            $_contentvars = array();
+        }
+        return $_contentvars;
+    }
+
+    
+    static function addFilter($tag, $functionname, $classname, $priority = 10)
+    {
+        global $_filters;
+
+        if (!is_array($_filters)) {
+            $_filters = array();
+        }
+
+        if (!isset($_filters[$tag])) {
+            $_filters[$tag] = array();
+        }
+
+        if (!isset($_filters[$tag][$priority])) {
+            $_filters[$tag][$priority] = array();
+        }
+
+        $_filters[$tag][$priority][serialize(array($classname, $functionname))] = array($classname, $functionname);
+    }
+
+    
+    static function removeFilter($tag, $functionname, $classname, $priority = 10)
+    {
+        global $_filters;
+
+        if (isset($_filters[$tag][$priority][serialize(array($classname, $functionname))])) {
+            unset($_filters[$tag][$priority][serialize(array($classname, $functionname))]);
+            return true;
+        }
+        return false;
+    }
+
+    
+    static function applyFilter($tag, $data, $optionalArgs = null)
+    {
+        global $_filters;
+
+        if (!isset($_filters[$tag])) {
+            return $data;
+        }
+
+        $args = func_get_args();
+        $tag = array_shift($args);
+        ksort($_filters[$tag]);
+
+        foreach($_filters[$tag] as $priority => $phooks) {
+            foreach($phooks as $hook) {
+                $classname = $hook[0];
+                $functionname = $hook[1];
+                if (!class_exists($classname)) {
+                    $classname = 'Jojo_Plugin_' . $hook[0];
+
+                    
+                    if (!class_exists($classname)) {
+                        
+                        $pluginfile = $hook[0] . '.php';
+                        foreach (Jojo::listPlugins($pluginfile) as $pluginfile) include($pluginfile);
+                    }
+                }
+
+                
+                if (!is_callable(array($classname, $functionname))) {
+                      
+                        continue 1;
+                }
+
+                $args[0] = call_user_func_array(array($classname, $functionname), $args);
+            }
+        }
+        return $args[0];
+    }
+
+    
+    static function addHook($tag, $functionname, $classname = null, $priority = 10)
+    {
+        global $_hooks;
+
+        if (!is_array($_hooks)) {
+            $_hooks = array();
+        }
+
+        if (!isset($_hooks[$tag])) {
+            $_hooks[$tag] = array();
+        }
+
+        if (!isset($_hooks[$tag][$priority])) {
+            $_hooks[$tag][$priority] = array();
+        }
+
+        if ($classname) {
+            $_hooks[$tag][$priority][serialize(array($classname, $functionname))] = array($classname, $functionname);
+        } else {
+            $_hooks[$tag][$priority][] = $functionname;
+        }
+    }
+
+    
+    static function removeHook($tag, $functionname, $classname, $priority = 10)
+    {
+        global $_hooks;
+
+        if (isset($_hooks[$tag][$priority][serialize(array($classname, $functionname))])) {
+            unset($_hooks[$tag][$priority][serialize(array($classname, $functionname))]);
+            return true;
+        }
+        return false;
+    }
+
+    
+    static function runHook($tag, $optionalArgs = array())
+    {
+        global $_hooks;
+
+        if (!isset($_hooks[$tag])) {
+            return;
+        }
+
+        $result = '';
+        ksort($_hooks[$tag]);
+        foreach($_hooks[$tag] as $priority => $phooks) {
+            foreach($phooks as $hook) {
+                $classname = $hook[0];
+                $functionname = $hook[1];
+
+                if (!class_exists($classname)) {
+                    $classname = 'Jojo_Plugin_' . $hook[0];
+
+                    
+                    if (!class_exists($classname)) {
+                        
+                        $pluginfile = $hook[0] . '.php';
+                        foreach (Jojo::listPlugins($pluginfile) as $pluginfile) include($pluginfile);
+                    }
+                }
+
+                
+                if (!is_callable(array($classname, $functionname))) {
+                      
+                        continue 1;
+                }
+
+                $result = call_user_func_array(array($classname, $functionname), $optionalArgs);
+                $optionalArgs = $result ? $result : $optionalArgs;
+            }
+        }
+
+        return $optionalArgs;
+    }
+
+    
+    static function runSmartyHook($params, $smarty)
+    {
+        global $_hooks;
+
+        if (empty($params['hook'])) {
+            $smarty->trigger_error("assign: missing 'hook' parameter");
+            return;
+        }
+        $tag = $params['hook'];
+
+        if (!isset($_hooks[$tag])) {
+            return '';
+        }
+
+        $result = '';
+        ksort($_hooks[$tag]);
+        foreach($_hooks[$tag] as $priority => $phooks) {
+            foreach($phooks as $hook) {
+                if (!is_array($hook)) {
+                    $result .= $hook();
+                    continue;
+                }
+                $classname = $hook[0];
+                $functionname = $hook[1];
+
+                if (!class_exists($classname)) {
+                    $classname = 'Jojo_Plugin_' . $hook[0];
+
+                    
+                    if (!class_exists($classname)) {
+                        
+                        $pluginfile = $hook[0] . '.php';
+                        foreach (Jojo::listPlugins($pluginfile) as $pluginfile) include($pluginfile);
+                    }
+                }
+
+                
+                if (!is_callable(array($classname, $functionname))) {
+                      
+                        continue 1;
+                }
+
+                $result .= call_user_func(array($classname, $functionname));
+            }
+        }
+
+        return $result;
+    }
+
+    
+    static function runSmartyAssetHook($params, $smarty)
+    {
+
+		$filepath = false;
+
+        if (empty($params['file'])) {
+        	if (is_array($params) && count($params)) {
+        		$filepath = current($params);
+        	}
+        } else {
+        	$filepath = $params['file'];
+        }
+
+        $result = $filepath;
+
+        if (_DEBUG) {
+        	return $result.'?r='.rand(1000,10000);
+        }
+
+
+        $cachepath = false;
+        if (file_exists(_CACHEDIR.'/'.$filepath)) {
+        	$cachepath = _CACHEDIR.'/'.$filepath;
+        } else {
+        	
+        	$ext = pathinfo($filepath, PATHINFO_EXTENSION);
+        	if ($ext == 'css') {
+        		$filepath = preg_replace('%^css/%', '', $filepath);
+        	}
+        	$publiccachepath = _CACHEDIR.'/public/'.md5($filepath).'.'.$ext;
+
+		    if (file_exists($publiccachepath)) {
+		    	$cachepath = $publiccachepath;
+		    }
+        }
+
+        if ($cachepath) {
+		    $mtime = filemtime($cachepath);
+		    $maxcachelength = max(_CONTENTCACHETIME, 28800); 
+		    if (time() < $mtime + $maxcachelength) {
+		    	$result .= "?v=$mtime";
+		    }
+        }
+
+        return $result;
+    }
+
+    
+    static function smarty_getSecure($tpl_name, &$smarty)
+    {
+        return true;
+    }
+
+    
+    static function smarty_getTrusted($tpl_name, &$smarty)
+    {
+    }
+
+    
+    static function smarty_getTemplate($tpl_name, &$tpl_source, &$smarty)
+    {
+        static $_cache;
+
+        if (isset($_cache[$tpl_name])) {
+            $tpl_source = $_cache[$tpl_name];
+            return true;
+        }
+
+        $res = Jojo::listThemes('templates/' . $tpl_name);
+        if (count($res)) {
+            $file = array_pop($res);
+            $tpl_source = file_get_contents($file);
+            $_cache[$tpl_name] = $tpl_source;
+            return true;
+        }
+
+        $res = Jojo::listPlugins('templates/' . $tpl_name, 'all', false);
+        if (count($res)) {
+            $file = array_pop($res);
+            $tpl_source = file_get_contents($file);
+            $_cache[$tpl_name] = $tpl_source;
+            return true;
+        }
+
+        if (file_exists($tpl_name)) {
+            $tpl_source = file_get_contents($tpl_name);
+            $_cache[$tpl_name] = $tpl_source;
+            return true;
+        }
+
+        return false;
+    }
+
+    
+    static function smarty_getTimestamp($tpl_name, &$tpl_timestamp, &$smarty)
+    {
+        static $_cache;
+        if (isset($_cache[$tpl_name])) {
+            $tpl_timestamp = $_cache[$tpl_name];
+            return true;
+        }
+
+        $res = Jojo::listThemes('templates/' . $tpl_name);
+        if (count($res)) {
+            $file = array_pop($res);
+            $tpl_timestamp = filemtime($file);
+            $_cache[$tpl_name] = $tpl_timestamp;
+            return true;
+        }
+
+        $res = Jojo::listPlugins('templates/' . $tpl_name);
+        if (count($res)) {
+            $file = array_pop($res);
+            $tpl_timestamp = filemtime($file);
+            $_cache[$tpl_name] = $tpl_timestamp;
+            return true;
+        }
+
+        if (file_exists($tpl_name)) {
+            $tpl_timestamp = filemtime($tpl_name);
+            $_cache[$tpl_name] = $tpl_timestamp;
+            return true;
+        }
+
+        return false;
+    }
+
+    
+    static function parsepage($uri, $getall=false) {
+        global $_uriPatterns;
+
+        if ($getall) $allmatches = array();
+
+        
+        $uriParts = explode('?', $uri);
+        if(isset($uriParts[1])) {
+            $uri = trim($uriParts[0], '/');
+            parse_str($uriParts[1], $vars);
+            $_GET = array_merge($_GET, $vars);
+            $_REQUEST = array_merge($_REQUEST, $vars);
+        }
+        $uri = trim($uri, '/');
+
+        
+        $f = ltrim(_SITEFOLDER, 'https:
+        $f = ltrim(_SITEFOLDER, 'http:
+        $temp = explode('/', $f);
+        if (count($temp) > 1) {
+            array_shift($temp);
+            $basefolder = implode('/', $temp);
+        } else {
+            $basefolder = '';
+        }
+        $uri = preg_replace('%^'.$basefolder.'/(.*)$%', '$1', $uri);
+
+        
+        $mldata = Jojo::getMultiLanguageData();
+        $section = $mldata['default'];
+
+        
+        $uriParts = explode('/', $uri);
+        $uriPrefix = $uriParts[0];
+
+        if (isset($mldata['roots'][$uriPrefix])) {
+            
+            $uri = (string)substr($uri, strlen($uriPrefix));
+            $uri = trim($uri, '/');
+            $section = $uriPrefix;
+        } elseif ($l = array_search($uriPrefix, $mldata['longcodes'])) {
+            
+            $uri = (string)substr($uri, strlen($uriPrefix));
+            $uri = trim($uri, '/');
+            $section = $l;
+        }
+
+        if (trim($uri) == '') {
+            
+            if ($getall) {
+                $allmatches[] = $mldata['homes'][$section];
+            } else {
+                return $mldata['homes'][$section];
+            }
+        }
+
+        
+        foreach ($_uriPatterns as $uriPattern) {
+            
+            if ($uriPattern['custom']) {
+                if (!class_exists($uriPattern['class']) || !method_exists($uriPattern['class'], $uriPattern['custom'])) {
+                    continue;
+                }
+                $res = call_user_func(array($uriPattern['class'], $uriPattern['custom']), $uri);
+                if ($res === false) {
+                    
+                    continue;
+                } elseif ($res === true) {
+                    
+                    $values = array($uriPattern['class']);
+                    
+                    $uri_pieces = explode('/', $uri);
+                    $uri_heirachy_list = array();
+                    foreach ($uri_pieces as $slug) {
+                        $values[] = implode('/', $uri_pieces);
+                        $placeholders[] = '?';
+                        array_pop($uri_pieces);
+                    }
+                    $placeholders = implode(', ', $placeholders);
+
+                    $res = Jojo::selectQuery('SELECT pageid, pg_url FROM {page} WHERE pg_link = ? AND pg_url IN ('.$placeholders.') ORDER BY LENGTH(pg_url) DESC', $values);
+
+                    if (isset($res[0]['pageid']) && count($res) == 1 ) {
+                        if ($getall) {
+                            $allmatches[] =  $res[0]['pageid'];
+                        } else {
+                            return  $res[0]['pageid'];
+                        }
+                    } elseif (isset($res[0]['pageid'])) {
+                       $root = $mldata['roots'][$section];
+                        foreach ($res as $k=>$r){
+                            
+                            if ($root != Jojo::getSectionRoot($r['pageid']) ) {
+                                unset($res[$k]);
+                                array_push($res, $r);
+                            }
+                        }
+                        preg_match('
+                        $pageid ='';
+                        foreach ($res as $r){
+                            if ($r['pg_url'] == $matches[1]) {
+                                $pageid = $r['pageid'];
+                                break;
+                            }
+                        }
+                        $page1 = array_shift($res);
+                        $pageid = !$pageid ? $page1['pageid'] : $pageid;
+                        if ($getall) {
+                            $allmatches[] = $pageid;
+                        } else {
+                            return $pageid;
+                        }
+                    }
+                } else {
+                    
+                    if ($getall) {
+                        $allmatches[] = $res;
+                    } else {
+                        return $res;
+                    }
+
+                }
+                continue;
+            }
+
+            
+            $pattern = $uriPattern['pattern'];
+            $parts = array();
+            $iMax = strlen($pattern);
+            $open = 0; $current = '';
+            for ($i = 0; $i < $iMax; $i++) {
+                if ($pattern[$i] == '[') {
+                    if ($open == 0 && strlen($current)) {
+                        $parts[] = $current;
+                        $current = '';
+                    }
+                    $open++;
+                    $current .= $pattern[$i];
+                } elseif ($pattern[$i] == ']') {
+                    $open--;
+                    $current .= $pattern[$i];
+                    if ($open == 0) {
+                        $parts[] = $current;
+                        $current = '';
+                    }
+                } else {
+                    $current .= $pattern[$i];
+                }
+            }
+            if ($current) {
+                $parts[] = $current;
+            }
+
+            $regex = '';
+            $names = array();
+            foreach($parts as $part) {
+                if (preg_match('
+                    $names[] = $matches[1];
+                    
+                    $part = '(' . str_replace(
+                            array('integer', 'string',      'phrase'),
+                            array('[0-9]+',  '[a-z0-9-_]+', '[0-9a-z-_\s]+' ),
+                             $matches[2]) . ')';
+                } elseif (preg_match('
+                    $names[] = '';
+                    $part = '(' . str_replace(
+                            array('integer', 'string',      'phrase'),
+                            array('[0-9]+',  '[a-z0-9-_]+', '[0-9a-z-_\s]+' ),
+                             $matches[1]) . ')';
+                }
+
+                $regex .= $part ;
+            }
+            $regex = '
+
+            if (!preg_match($regex, $uri, $matches)) {
+                
+                continue;
+            }
+
+            
+            array_shift($matches);
+            foreach ($names as $id => $name) {
+                if (!$name) {
+                    continue;
+                }
+                $_GET[$name] = isset($matches[$id]) ? $matches[$id] : '';
+            }
+
+            
+            $query = 'SELECT pageid, pg_url FROM {page} WHERE pg_link = ?';
+            $values = array($uriPattern['class']);
+            $res = Jojo::selectQuery($query, $values);
+            if (isset($res[0]['pageid']) && count($res) == 1 ) {
+                if ($getall) {
+                    $allmatches[] =  $res[0]['pageid'];
+                } else {
+                    return $res[0]['pageid'];
+                }
+            } else {
+               $root = $mldata['roots'][$section];
+                foreach ($res as $k=>$r){
+                    
+                    if ($root != Jojo::getSectionRoot($r['pageid']) ) {
+                        unset($res[$k]);
+                        array_push($res, $r);
+                    }
+                }
+                preg_match('
+                $pageid ='';
+                foreach ($res as $r){
+                    if ($r['pg_url'] == $matches[1]) {
+                        $pageid = $r['pageid'];
+                        break;
+                    }
+                }
+                $page1 = array_shift($res);
+                $pageid = !$pageid ? $page1['pageid'] : $pageid;
+                if ($getall) {
+                    $allmatches[] = $pageid;
+                } else {
+                    return $pageid;
+                }
+            }
+        }
+
+        
+        preg_match_all('%^([0-9]+)/([^/]+)/?$%', $uri, $matches);
+        if (isset($matches[1][0])) {
+            if ($getall) {
+                $allmatches[] = $matches[1][0];
+            } else {
+                return $matches[1][0];
+            }
+        }
+
+        
+        $query = 'SELECT pageid FROM {page} WHERE pg_url = ? ORDER BY pageid DESC';
+        
+        $uri = Jojo::getAdminUriReverse($uri);
+        $values = array($uri);
+        $res = Jojo::selectQuery($query, $values);
+        $root = isset($mldata['roots'][$section]) ? $mldata['roots'][$section] : 0;
+        foreach ($res as $k=>$r){
+            
+            if ($root != Jojo::getSectionRoot($r['pageid']) ) {
+                unset($res[$k]);
+                array_push($res, $r);
+            }
+        }
+        $page1 = array_shift($res);
+        if (isset($page1['pageid'])) {
+            if ($getall) {
+                $allmatches[] = $page1['pageid'];
+            } else {
+                return $page1['pageid'];
+            }
+        }
+
+        
+        $uriParts = explode('/', $uri);
+        $lastPart = $uriParts[count($uriParts) - 1];
+        if (preg_match('%^([0-9]+)$%', $lastPart)) {
+            $uri = substr($uri, 0, strlen($uri) - strlen($lastPart) - 1);
+            $values[0] = $uri;
+            $res = Jojo::selectQuery($query, $values);
+            if (isset($res[0]['pageid'])) {
+                if ($getall) {
+                    $allmatches[] = $res[0]['pageid'];
+                } else {
+                    return $res[0]['pageid'];
+                }
+            }
+        }
+        if ($getall) {
+            if (!count($allmatches)) $allmatches[] = false;
+            return $allmatches;
+        } else {
+            return false;
+        }
+
+    }
+
+    
+    static function getAdminUri($uri)
+    {
+        if (_ADMIN == 'admin')
+            return $uri;
+
+        if ($uri == 'admin') {
+            $uri = _ADMIN;
+        } else {
+            $uri = preg_replace('%(admin/)(.*)%', _ADMIN.'/$2', $uri);
+        }
+
+        return $uri;
+    }
+
+    static function getAdminUriReverse($uri)
+    {
+        if (_ADMIN == 'admin')
+            return $uri;
+
+        if ($uri == _ADMIN) {
+            $uri = 'admin';
+        } else {
+            $uri = preg_replace('%('._ADMIN.'/)(.*)%', 'admin/$2', $uri);
+        }
+
+        return $uri;
+    }
+
+    
+    static function randomString($length = 16, $characters = null)
+    {
+        if (is_null($characters)) {
+            $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        }
+
+        $res = '';
+        $cMax = strlen($characters) - 1;
+        while (strlen($res) < $length) {
+            $res .= $characters[mt_rand(0, $cMax)];
+        }
+        return $res;
+    }
+
+    
+    static function strToTimeUK($normaldate)
+    {
+        if (preg_match('/[0-9]+\/[0-9]+\/[0-9]+/', $normaldate)) {
+            $split = explode('/', $normaldate);
+            $usdate = $split[1] . "/" . $split[0] . "/" . $split[2];
+        } else {
+            $usdate = $normaldate;
+        }
+        if (empty($usdate)) {return false;}
+        if (($timestamp = strtotime($usdate)) === -1) {
+            return false; 
+        } else {
+            return $timestamp;
+        }
+    }
+
+    
+    static function mysql2date($mysqldate, $format='short')
+    {
+        if (($mysqldate == 'NULL') || ($mysqldate == NULL) || ($mysqldate == '0000-00-00') || empty($mysqldate) || ($mysqldate == '0') || ($mysqldate == '')) {
+            return '';
+        }
+        $timestamp = Jojo::strToTimeUK($mysqldate);
+
+        if (!$timestamp) {
+            return '';
+        } else {
+            return Jojo::formatTimestamp($timestamp, $format);
+        }
+    }
+
+    
+    static function formatTimestamp($timestamp, $format='short')
+    {
+        if (!$timestamp) {
+            return "";
+        } else {
+            if ($format == 'rss') {
+                
+                return date('D, d M Y H:i:s O', $timestamp);
+            } elseif ($format == 'short') {
+                
+                return date('d/m/Y', $timestamp);
+            } elseif ($format == 'medium') {
+                return date('j M y', $timestamp);
+            } elseif ($format == 'long') {
+                return date('j F Y', $timestamp);
+            } elseif ($format == 'vlong') {
+                return date('D, j F Y', $timestamp);
+            } elseif ($format == 'array') {
+                $d = strtotime($mysql);
+                return getdate($d);
+            } elseif ($format == 'friendly') { 
+                if (date('d/m/Y', strtotime('+0 day')) == date('d/m/Y', $timestamp)) {
+                    $d = 'today, ' . date("j M y", $timestamp);
+                } else if (date("d/m/Y", strtotime('+1 day')) == date('d/m/Y', $timestamp)) {
+                    $d = 'tomorrow, ' . date('j M y', $timestamp);
+                } else if (date('d/m/Y', strtotime('-1 day')) == date('d/m/Y', $timestamp)) {
+                    $d = "yesterday, ". date('j M y', $timestamp);
+                } else {
+                    $d = date('j M y', $timestamp);
+                }
+                return $d;
+            }
+        }
+    }
+
+    
+    static function iExplode($Delimiter, $String, $Limit = '')
+    {
+        $Explode = array();
+        $LastIni = 0;
+        $Count   = 1;
+
+        if (is_numeric($Limit) == false)
+            $Limit = '';
+
+        while ( false !== ( $Ini = stripos($String, $Delimiter, $LastIni) ) && ($Count < $Limit || $Limit == ''))
+            {
+            $Explode[] = substr($String, $LastIni, $Ini-$LastIni);
+            $LastIni = $Ini+strlen($Delimiter);
+            $Count++;
+            }
+
+        $Explode[] = substr($String, $LastIni);
+        return $Explode;
+    }
+
+    
+    static function redirect($url, $type=301)
+    {
+        
+        
+        if ($type == 301) header("HTTP/1.1 301 Moved Permanently");
+        header("Location: $url");
+        
+        exit();
+    }
+
+    
+    public static function redirectBack($location=false)
+    {
+        if (!empty($location)) Jojo::redirect($location);
+
+        $redirect = Jojo::getFormData('redirect', false);
+
+        
+        if (!$redirect) {
+            
+            if (trim($_SERVER['HTTP_REFERER'], '/') == trim(_SITEURL.'/'._SITEURI, '/')) {
+                $redirect = '';
+            
+            } elseif (preg_match('%^'.str_replace('.', '\\.', _SITEURL).'/(.*)$%im', $_SERVER['HTTP_REFERER'])) {
+                $redirect = preg_replace('%^'.str_replace('.', '\\.', _SITEURL).'/(.*)$%im', '$1', $_SERVER['HTTP_REFERER']);
+            
+            } else {
+                $redirect = '';
+            }
+        }
+
+        Jojo::redirect(_SITEURL.'/'.$redirect);
+    }
+
+    
+    static function checkUrlFormat($url)
+    {
+        return preg_match('
+    }
+
+    
+    static function checkEmailFormat($email)
+    {
+      
+      
+        return filter_var($email, FILTER_VALIDATE_EMAIL);
+    }
+
+    
+    static function getIp()
+    {
+        if ( (getenv('HTTP_X_FORWARDED_FOR') != '') && (strtolower(getenv('HTTP_X_FORWARDED_FOR')) != 'unknown')) {
+            $iparray = explode(',', getenv('HTTP_X_FORWARDED_FOR'));
+            return $iparray[0];
+        } elseif (getenv('REMOTE_ADDR') != '') {
+            return getenv('REMOTE_ADDR');
+        } else {
+            return false;
+        }
+    }
+
+    
+    static function getBrowser()
+    {
+        static $_browser;
+
+        if (isset($_browser)) return $_browser;
+
+        $version = '';
+        $nav = '';
+        $browsers = 'mozilla msie gecko firefox konqueror safari netscape navigator opera mosaic lynx amaya omniweb snoopy chrome';
+        $browsers = explode(' ', $browsers);
+
+        $nua = isset($_SERVER['HTTP_USER_AGENT']) ? strToLower( $_SERVER['HTTP_USER_AGENT']) : '';
+
+        $l = strlen($nua);
+        $x = count($browsers);
+        for ($i=0; $i<$x; $i++) {
+            $browser = $browsers[$i];
+            $n = stristr($nua, $browser);
+            if (strlen($n) > 0) {
+                $version = '';
+                $nav = $browser;
+                $j = strpos($nua, $nav) + $n + strlen($nav) + 1;
+                for (; $j<=$l; $j++){
+                    $s = substr($nua, $j, 1);
+                    if (is_numeric($version.$s)) {
+                        $version .= $s;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        if ($nav == 'msie') $nav = 'internet explorer';
+        $_browser = ucwords($nav . ' ' . $version);
+        return $_browser;
+    }
+
+    
+    static function getMetaKeywords($content,$maxLength=30)
+    {
+        
+        $noise = array(
+                      'to',
+                      'a',
+                      'about',
+                      'after',
+                      'all',
+                      'am',
+                      'an',
+                      'and',
+                      'any',
+                      'are',
+                      'as',
+                      'at',
+                      'be',
+                      'but',
+                      'by',
+                      'can',
+                      'do',
+                      'does',
+                      'for',
+                      'from',
+                      'has',
+                      'have',
+                      'he',
+                      'her',
+                      'here',
+                      'him',
+                      'his',
+                      'how',
+                      'if',
+                      'in',
+                      'is',
+                      'it',
+                      'me',
+                      'my',
+                      'no',
+                      'not',
+                      'of',
+                      'on',
+                      'or',
+                      'she',
+                      'so',
+                      'that',
+                      'the',
+                      'their',
+                      'then',
+                      'there',
+                      'this',
+                      'was',
+                      'we',
+                      'what',
+                      'whats',
+                      'when',
+                      'which',
+                      'will',
+                      'with',
+                      'would',
+                      'you',
+                      'your',
+                      'well',
+                      'into',
+                      'also',
+                      'now',
+                      'its',
+                      'get',
+                      'need',
+                      'worth',
+                      'up',
+                      'down',
+                      'see',
+                      'over'
+                      );
+
+        
+        $content = strtolower(substr($content, 0, 500));
+
+        
+        $search = array ('@<script[^>]*?'.'>.*?</script>@si', 
+                     '@<[\/\!]*?[^<>]*?'.'>@si',              
+                     '@([\r\n])[\s]+@',                       
+                     '@&(quot|
+                     '@&(amp|
+                     '@&(lt|
+                     '@&(gt|
+                     '@&(nbsp|
+                     '@&(iexcl|
+                     '@&(cent|
+                     '@&(pound|
+                     '@&(copy|
+                     '@&
+
+        $replace = array ('',
+                     '',
+                     '\1',
+                     '"',
+                     '&',
+                     '<',
+                     '>',
+                     ' ',
+                     chr(161),
+                     chr(162),
+                     chr(163),
+                     chr(169),
+                     'chr(\1)');
+
+        $content = preg_replace($search, $replace, $content);
+
+        
+        $remove = array("\r", "\n", ' ');
+        $content = str_replace($remove, ' ', $content);
+
+        
+        $content = preg_replace ('/[^[:space:]a-zA-Z0-9*_-]/', '', $content);
+
+        
+        $keywords = array();
+
+        $contentArray = explode(' ',$content,($maxLength*5)); 
+
+        for ($i=0;$i<count($contentArray);$i++) {
+            if (preg_match('/^\\d+$/si', $contentArray[$i])) unset($contentArray[$i]);
+        }
+
+        $i = 0;
+        $n = count($contentArray);
+        while ((count($keywords) < $maxLength) && ($i < $n)) {
+            
+            if (isset($contentArray[$i]) && !in_array($contentArray[$i], $noise) && !in_array($contentArray[$i], $keywords)) {
+                $keywords[]=$contentArray[$i];
+            }
+            $i++;
+        }
+
+        
+        return implode(' ',$keywords);
+    }
+    
+    static function clearCache($full = false) {
+        Jojo::deleteQuery("DELETE FROM {contentcache}");
+        if ($full) {
+            if (Jojo::fileExists(_CACHEDIR . '/api.txt')) {
+                unlink(_CACHEDIR.'/api.txt');
+            }
+            if (Jojo::fileExists(_CACHEDIR . '/listPlugins.txt')) {
+                unlink(_CACHEDIR.'/listPlugins.txt');
+            }
+            if (Jojo::fileExists(_CACHEDIR . '/listThemes.txt')) {
+                unlink(_CACHEDIR.'/listThemes.txt');
+            }
+            $files = scandir(_CACHEDIR . '/smarty/templates_c');
+            foreach ($files as $file) {
+                if (preg_match('/^%%.*%%.*\\.tpl\\.php$/i', $file)) {
+                    unlink(_CACHEDIR . '/smarty/templates_c/' . $file);
+                }
+            }
+
+        }
+        return true;
+    }
+
+    static function html2text($html)
+    {
+        return Text_Filter::filter($html, 'html2text');
+    }
+
+    
+    static function isLocalServer($domain=false)
+    {
+        if (!$domain) $domain = _PROTOCOL.$_SERVER['HTTP_HOST'];
+        $localservers = Jojo::getOption('dev_domains');
+        if (empty($localservers)) return false;
+
+        $localservers = explode("\n", $localservers);
+        foreach ($localservers as $localserver) {
+            $localserver = trim($localserver);
+            if ($domain == $localserver) return true;
+        }
+        return false;
+    }
+
+    static function simpleMail($toname, $toaddress, $subject, $message, $fromname=_FROMNAME, $fromaddress=_FROMADDRESS, $htmlmessage=false, $senderaddress=false)
+    {
+        
+        $badStrings = array("Content-Type:",
+                         "MIME-Version:",
+                         "Content-Transfer-Encoding:",
+                         "bcc:",
+                         "cc:",
+                         "%0A");
+
+        foreach($badStrings as $v){
+            if ( (strpos($fromname, $v) !== false) || (strpos($fromname, $v) !== false) ){
+                header('location: http:
+                exit;
+            }
+            if ( (strpos($fromaddress, $v) !== false) || (strpos($fromaddress, $v) !== false) ){
+                header('location: http:
+                exit;
+            }
+        }
+
+        
+        if (!class_exists('Jojo_Eventlog')) require_once(_BASEDIR.'/plugins/jojo_core/classes/Jojo/Eventlog.php');
+        $log             = new Jojo_Eventlog();
+        $log->code       = 'Sendmail';
+        $log->importance = 'normal';
+        $log->shortdesc  = 'To:'.$toaddress.' - '.$subject;
+        $log->desc       = "To: $toname <$toaddress>\nFrom: $fromname <$fromaddress>\nSubject: $subject\nMessage:\n$message";
+        $log->savetodb();
+        unset($log);
+
+        $smtp = Jojo::getOption('smtp_mail_enabled', 'no');
+        if ($smtp == 'yes') {
+            $host = Jojo::getOption('smtp_mail_host', 'http:
+            $port = Jojo::getOption('smtp_mail_port', 25);
+            $user = Jojo::getOption('smtp_mail_user', '');
+            $pass = Jojo::getOption('smtp_mail_pass', '');
+
+            foreach (Jojo::listPlugins('external/mimemail/htmlMimeMail.php') as $pluginfile) {
+                break;
+            }
+            $mail = new htmlMimeMail();
+            if (!$htmlmessage) {
+            	$mail->setText($message);
+            } else {
+            	$mail->setHtml($htmlmessage, $message);
+            }
+            if (!empty($user)) {
+                $mail->setSMTPParams($host, $port, _SITEURL, true, $user, $pass);
+            } else {
+                $mail->setSMTPParams($host, $port, _SITEURL);
+            }
+            $mail->setFrom('"'.'=?UTF-8?B?'.base64_encode($fromname).'?='.'" <'.$fromaddress.'>');
+            $mail->setSubject('=?UTF-8?B?'.base64_encode($subject).'?=');
+            $mail->setTextCharset('UTF-8');
+
+            $result = $mail->send(array($toaddress), 'smtp');
+            return $result;
+        } else {
+            
+            $mime_boundary = 'Multipart_Boundary_x'.md5(time()).'x';
+
+            $headers  = "MIME-Version: 1.0\n";
+            $headers .= $htmlmessage ? "Content-Type: multipart/alternative; boundary=\"$mime_boundary\"\r\n" : "Content-Type: text/plain;charset=\"UTF-8\"\n";
+            $headers .= "Content-Transfer-Encoding: 7bit\r\n";
+            $headers .= "X-Priority: 3\n";
+            $headers .= "X-MSMail-Priority: Normal\n";
+            $headers .= "X-Mailer: php\n";
+            $headers .= $senderaddress ? "From: " . $senderaddress . "\n" : "From: \"" . "=?UTF-8?B?".base64_encode($fromname)."?=" . "\" <" . $fromaddress . ">\n";
+            $headers .= $senderaddress ? "Reply-To: \"" . "=?UTF-8?B?".base64_encode($fromname)."?=" . "\" <" . $fromaddress . ">\n" : '';
+            $additional="-f$fromaddress";
+            $to = (strpos($toname, '@') || empty($toname)) ? $toaddress : $toname . ' <' . $toaddress. '>';
+            if ($htmlmessage) {
+                $body = '';
+                
+                $body.= "--$mime_boundary\n";
+                $body.= "Content-Type: text/plain; charset=\"charset=us-ascii\"\n";
+                $body.= "Content-Transfer-Encoding: 7bit\n\n";
+                $body.= $message;
+                $body.= "\n\n";
+
+                
+                $body.= "--$mime_boundary\n";
+                $body.= "Content-Type: text/html; charset=\"UTF-8\"\n";
+                $body.= "Content-Transfer-Encoding: 7bit\n\n";
+                $body.= $htmlmessage;
+                $body.= "\n\n";
+
+                
+                $body.= "--$mime_boundary--\n"; 
+                $message = $body;
+            }
+            return mail($to, '=?UTF-8?B?'.base64_encode($subject).'?=', $message, $headers, $additional);
+        }
+    }
+
+    
+    
+    
+    
+    static function usingSSLConnection()
+    {
+        return ((isset($_SERVER['HTTPS']) &&
+            ($_SERVER['HTTPS'] == 'on')) ||
+        getenv('SSL_PROTOCOL_VERSION'));
+    }
+
+    
+    static public function scanDirectory($dir = './', $sort = 0)
+    {
+        $files = array();
+        if (!file_exists($dir)) return false;
+        $dir_open = @ opendir($dir);
+        if (!$dir_open) return false;
+
+        while (($dir_content = readdir($dir_open)) !== false) {
+            if ( ($dir_content != '.') && ($dir_content != '..') && ($dir_content != '.svn') ) {$files[] = $dir_content;}
+        }
+        if ($sort == 1) rsort($files, SORT_STRING);
+        else sort($files, SORT_STRING);
+
+        return $files;
+    }
+
+    
+    
+    public static function relativeDate($timestamp, $showtime=true) {
+        if ( is_null($timestamp) || ($timestamp == 0) ) {return '';}
+        if (date('d/m/Y',strtotime('+0 day')) == date('d/m/Y',$timestamp)) {
+            $d = $showtime ? 'Today, '.date("h:ia",$timestamp) : 'Today';
+        } else if (date("d/m/Y",strtotime("+1 day")) == date("d/m/Y",$timestamp)) {
+            $d = $showtime ? "Tomorrow, ".date("h:ia",$timestamp) : 'Tomorrow';
+        } else if (date("d/m/Y",strtotime("-1 day")) == date("d/m/Y",$timestamp)) {
+            $d = $showtime ? "Yesterday, ".date("h:ia",$timestamp) : 'Yesterday';
+        } else if (date("Y",strtotime("+0 day")) == date("Y",$timestamp)) { 
+            $d = "".date("jS F",$timestamp); 
+        } else {
+            $d = date("j M Y",$timestamp);
+        }
+        return $d;
+        
+    }
+
+    
+    public static function autoload($classname)
+    {
+        if (strpos(strtolower($classname), 'jojo_') === 0) {
+            $parts = explode(' ', ucwords(str_replace('_', ' ', $classname)));
+            array_shift($parts);
+
+            
+            $filename =  'classes/Jojo/' . implode('/', $parts) . '.php';
+            $pluginFiles = Jojo::listThemes($filename);
+            foreach($pluginFiles as $file) {
+                if (class_exists($classname)) {
+                    return;
+                }
+            }
+
+            
+            $pluginFiles = Jojo::listPlugins($filename);
+            foreach($pluginFiles as $file) {
+                if (class_exists($classname)) {
+                    return;
+                }
+            }
+
+            
+            $filename = _BASEPLUGINDIR . '/jojo_core/' . $filename;
+            if (file_exists($filename)) {
+                if (class_exists($classname)) {
+                    return;
+                }
+            }
+        }
+
+        if (strpos(strtolower($classname), 'jojo_plugin_') === 0) {
+            
+            $filename = str_replace('jojo_plugin_', '',  strtolower($classname)) . '.php';
+
+            
+            $pluginFiles = Jojo::listThemes($filename);
+            foreach($pluginFiles as $file) {
+                if (class_exists($classname)) {
+                    return;
+                }
+            }
+
+            
+            $pluginFiles = Jojo::listPlugins($filename);
+            foreach($pluginFiles as $file) {
+                if (class_exists($classname)) {
+                    return;
+                }
+            }
+            return;
+        }
+
+        
+        $filename = 'classes/'.str_replace('_', '/', $classname).'.php';
+        $pluginFiles = Jojo::listThemes($filename);
+        foreach($pluginFiles as $file) {
+            if (class_exists($classname)) {
+                return;
+            }
+        }
+        
+        $pluginFiles = Jojo::listPlugins($filename);
+        foreach($pluginFiles as $file) {
+            if (class_exists($classname)) {
+                return;
+            }
+        }
+
+        $custom = array(
+            'text_filter' => _BASEPLUGINDIR . '/jojo_core/external/Horde/Filter.php',
+            'browser'     => _BASEPLUGINDIR . '/jojo_core/external/Horde/Browser.php',
+            'string'      => _BASEPLUGINDIR . '/jojo_core/external/Horde/String.php',
+            'util'        => _BASEPLUGINDIR . '/jojo_core/external/Horde/Util.php',
+            'phpcaptcha'  => _BASEPLUGINDIR . '/jojo_core/external/php-captcha/php-captcha.inc.php',
+            'htmlmimemail'=> _BASEPLUGINDIR . '/jojo_core/external/mimemail/htmlMimeMail.php',
+            'hktree'      => _BASEPLUGINDIR . '/jojo_core/external/hktree/hktree.class.php',
+            'bbconverter' => _BASEPLUGINDIR . '/jojo_core/external/bbconverter/bbconverter.class.php',
+            );
+
+        if (isset($custom[strtolower($classname)])) {
+            if (class_exists($classname)) {
+                return;
+            }
+        }
+    }
+
+    
+    public static function errorHandler($errno, $errstr, $errfile = null, $errline = null)
+    {
+        
+        if (strpos($errfile, 'smarty')) {
+            return;
+        }
+
+        if (!defined('_DEBUG') || !_DEBUG) {
+            set_error_handler(array('Jojo', 'errorHandler'), E_ALL);
+        }
+
+        if (!_DEBUG) {
+            
+            $message = "Error No: $errno\nDescription: $errstr\nFile: $errfile\nLine: $errline\n";
+
+            
+            if (!class_exists('Jojo_Eventlog')) require_once(_BASEDIR.'/plugins/jojo_core/classes/Jojo/Eventlog.php');
+            $log = new Jojo_Eventlog();
+            $log->code = 'PHP Error';
+            $log->importance = 'high';
+            $log->shortdesc = !empty($errfile) ? $errfile.' "'.$errstr.'" line '.$errline : $errstr;
+            $log->desc = $message;
+            $log->savetodb();
+            unset($log);
+        }
+
+        
+        return !_DEBUG;
+    }
+
+    
+    public static function noFormInjection()
+    {
+        
+        if(!isset($_SERVER['HTTP_USER_AGENT'])){
+             die("Forbidden - You are not authorized to view this page");
+             exit;
+        }
+
+        
+        if(!$_SERVER['REQUEST_METHOD'] == "POST"){
+             die("Forbidden - You are not authorized to view this page");
+             exit;
+        }
+
+        
+
+        
+        $badStrings = array("Content-Type:",
+                             "MIME-Version:",
+                             "Content-Transfer-Encoding:",
+                             "X-Mailer",
+                             "bcc:",
+                             "cc:",
+                             "%0A");
+
+        
+        foreach($_POST as $k => $v3){
+        
+            foreach((array)$v3 as $v) {
+                foreach($badStrings as $v2){
+                    if(strpos($v, $v2) !== false){
+                        header('location: http:
+                        exit;
+                    }
+                }
+            }
+        }
+
+        
+        unset($k, $v, $v2, $v3, $badStrings, $authHosts, $fromArray, $wwwUsed);
+    }
+
+    public static function getFormData($var, $default = null)
+    {
+        return Util::getFormData($var, $default);
+    }
+
+    public static function getGet($var, $default = null)
+    {
+        return Util::getGet($var, $default);
+    }
+
+    public static function getPost($var, $default = null)
+    {
+        return Util::getPost($var, $default);
+    }
+
+    public static function bb2Html($bbcode, $options=array())
+    {
+        $bb = new bbconverter;
+        $bb->setBbCode($bbcode);
+        if (isset($options['nofollow']) && $options['nofollow']) $bb->nofollow = true;
+        $html = $bb->convert('bbcode2html');
+        return $html;
+    }
+
+    public static function markdown2Html($markdown)
+    {
+        return Markdown($markdown);
+    }
+
+    
+    public static function obfuscateEmail($address, $includemailto = true) {
+        return bbConverter::obfuscateEmail($address, $includemailto);
+    }
+
+    public static function gzip()
+    {
+        static $_gzipped;
+
+        
+        if (isset($_gzipped) || in_array('ob_gzhandler', ob_list_handlers())) {
+            
+            return false;
+        }
+
+        $PREFER_DEFLATE = false; 
+        $AE = isset($_SERVER['HTTP_ACCEPT_ENCODING']) ? $_SERVER['HTTP_ACCEPT_ENCODING'] : (isset($_SERVER['HTTP_TE']) ? $_SERVER['HTTP_TE'] : '');
+        $support_gzip    = !(strpos($AE, 'gzip')    === false) && function_exists('gzencode');
+        $support_deflate = !(strpos($AE, 'deflate') === false) && function_exists('gzdeflate');
+        $support_deflate = ($support_gzip && $support_deflate) ? $PREFER_DEFLATE : $support_deflate;
+
+        if ($support_deflate) {
+            function compress_output_deflate($output) {
+                $output = gzdeflate($output, 9);
+                header('Content-Encoding: deflate');
+                header('Content-Length: ' . strlen($output));
+                return $output;
+            }
+            ob_start('compress_output_deflate');
+            $_gzipped = true;
+            return true;
+        } elseif ($support_gzip) {
+            function compress_output_gzip($output) {
+                $output = gzencode($output);
+                header('Content-Encoding: gzip');
+                header('Content-Length: ' . strlen($output));
+                return $output;
+            }
+            ob_start('compress_output_gzip');
+            $_gzipped = true;
+            return true;
+        } else {
+            ob_start();
+        }
+        return false;
+    }
+
+    static function makePassword($length=8)
+    {
+        $consts='bcdgklmnprstvwz';
+        $vowels='aeiou';
+        $digits = '1234567890';
+
+        
+        $character = array();
+        $i = 0;
+        while ($i < $length) {
+            mt_srand((double)microtime() * 1000000);
+            $character[$i++] = substr($consts, mt_rand(0, strlen($consts)-1), 1);
+            $character[$i++] = substr($vowels, mt_rand(0, strlen($vowels)-1), 1);
+            if (mt_rand(0, 10) > 6) {
+                $character[$i++] = substr($digits, mt_rand(0, strlen($digits)-1), 1);
+            }
+        }
+
+        
+        $password = '';
+        for ($i = 0; $i < $length; $i++) {
+            $password .= $character[$i];
+        }
+
+        return $password;
+    }
+
+    function makeLogin($first, $last)
+    {
+        $first = strtolower($first);
+        $last = strtolower($last);
+        
+        $logins = array();
+        $logins[] = $first; 
+        $logins[] = $first.$last; 
+        $logins[] = $first.$last[0]; 
+        $logins[] = $first[0].$last; 
+        $logins[] = $first.'.'.$last[0]; 
+        $logins[] = $first[0].'.'.$last; 
+        $logins[] = $first.'.'.$last; 
+
+        foreach ($logins as $login) {
+            $user = Jojo::selectRow("SELECT userid FROM {user} WHERE us_login=? AND us_login !=''", $login);
+            if (empty($user['userid'])) {
+                return $login;
+            }
+        }
+        
+        for ($i=1; $i<100; $i++) { 
+            foreach ($logins as $login) {
+                $user = Jojo::selectRow("SELECT userid FROM {user} WHERE us_login=?", $login.$i);
+                if (empty($user['userid'])) {
+                    return $login.$i;
+                }
+            }
+        }
+        return false;
+    }
+
+    
+    static function getMultiLanguageData()
+    {
+        
+        
+        
+        static $mldata;
+
+        if (!is_array($mldata)) {
+            $mldata = array(
+                            'roots' => array(),
+                            'homes' => array(),
+                            'longcodes' => array(),
+                            'languagelist' => array()
+                            );
+            
+            $res = Jojo::selectAssoc("SELECT lc_root as pageid, lc_code as languageid, lc_root as root, lc_home as home, lc_longcode as longcode, lc_name as name, lc_defaultlang, lc.* FROM {lang_country} lc WHERE active=1 ORDER BY displayorder");
+            $default = !isset($res[0]['default']) ? Jojo::getOption('multilanguage-default') : '';
+            foreach ($res as $k=>$r) {
+                $mldata['roots'][$r['languageid']] = $r['root'];
+                $mldata['homes'][$r['languageid']] = $r['home'];
+                $mldata['longcodes'][$r['languageid']] = (!empty($r['longcode'])) ? $r['longcode'] : $r['languageid'];
+                $mldata['names'][$r['languageid']] = !empty($r['name']) ? $r['name'] : $r['longcode'];
+                $mldata['languages'][$r['languageid']] = !empty($r['lc_defaultlang']) ? $r['lc_defaultlang'] : 'en';
+                if (isset($r['default']) && $r['default']) $default = $r['languageid'];
+                if ($r['active']){
+                    $res[$k]['url'] = $r['languageid']!=$default ? $r['languageid'] . '/' : '';
+                } else {
+                    unset($res[$k]);
+                }
+            }
+            $mldata['default'] = $default;
+            $mldata['sectiondata'] = $res;
+        }
+        return $mldata;
+    }
+
+    static function getPageUrlPrefix($pageid) {
+        $thisprefix = '';
+        $default=true;
+        $thisroot = Jojo::getSectionRoot($pageid);
+        $mldata = self::getMultiLanguageData();
+        if (!isset($mldata['sectiondata'][$thisroot])) return '';
+        $thisprefix = !$mldata['sectiondata'][$thisroot]['default'] ? $mldata['sectiondata'][$thisroot]['lc_code'] . '/' : '';
+        return $thisprefix;
+    }
+
+    static function getSectionRoot($pageid) {
+        $thispagetree = Jojo::getSelectedPages($pageid);
+        $thisroot = $thispagetree ? $thispagetree[0] : 0;
+        return $thisroot;
+    }
+
+    static function isSectionPage($pageid, $sectionroot=0) {
+        $thisroot = Jojo::getSectionRoot($pageid);
+        if ($thisroot==$sectionroot) return true;
+        return false;
+    }
+
+    static function getMultiLanguageString ($language, $long = false, $defReturnStr = '') {
+        $defaultLanguage = Jojo::getOption('multilanguage-default');
+        if (!$long) {
+            $languageHeader = ($defaultLanguage==$language) ? $defReturnStr : $language . '/';
+        } else {
+            
+            $mldata = Jojo::getMultiLanguageData();
+            $languageHeader = ($defaultLanguage==$language) ? $defReturnStr : $mldata['longcodes'][$language] . '/';
+        }
+        return $languageHeader;
+    }
+
+    static function getPageHtmlLanguage() {
+        global $page, $sectiondata;
+        $languagedata = array();
+        
+        if ($page->page['pg_htmllang']) {
+            $pagehtmllang = $page->page['pg_htmllang'];
+        
+        } else if ($sectiondata) {
+            $pagehtmllang = $sectiondata['lc_defaultlang'];
+        } else {
+            $pagehtmllang = 'en';
+        }
+        $languagedata = Jojo::selectRow("SELECT * FROM {language} WHERE languageid = ?", array($pagehtmllang));
+        $languagedata['longlanguage']  = ($languagedata && $languagedata['name']) ? $languagedata['name'] : $pagehtmllang;
+        $languagedata['charset'] = ($languagedata['charset']) ? $languagedata['charset'] : 'utf-8';
+        $languagedata['ISOcode'] = isset($languagedata['ISOcode']) ? $languagedata['ISOcode'] : 'en_GB';
+        $languagedata['direction'] = ($languagedata['direction']) ? $languagedata['direction'] : 'ltr';
+        return $languagedata;
+    }
+
+    static function getNav($root, $subnavLevels, $field = 'mainnav')
+    {
+        global $_USERGROUPS, $selectedPages;
+
+        
+            global $page;
+            $mldata = Jojo::getMultiLanguageData();
+            $home = isset($mldata['sectiondata'][$root]) ? $mldata['sectiondata'][$root]['home'] : 1;
+            $roots = array_keys($mldata['sectiondata']);
+            $multisection = (boolean)(count($roots)>1);
+
+        
+        static $_cached;
+        if (!isset($_cached[$field])) {
+            $now    = time();
+            
+            
+            if ($field == 'mainnav' && $multisection && Jojo::fieldExists ( 'page', 'pg_mainnavalways' )) {
+                $query = sprintf("SELECT * FROM {page}
+                             WHERE (pg_%s = 'yes' or pg_mainnavalways = 'yes')
+                             ORDER BY pg_order", $field);
+            } else {
+                $query = sprintf("SELECT * FROM {page}
+                             WHERE pg_%s = 'yes'
+                             ORDER BY pg_order", $field);
+            }
+            $_cached[$field] = array();
+            $result = Jojo::selectQuery($query);
+            
+            $result = Jojo_Plugin_Core::cleanItems($result, 'nav');
+            foreach ($result as $k => $row) {
+                $r = $row['pg_parent'];
+                if (!isset($_cached[$field][$r])) {
+                    $_cached[$field][$r] = array();
+                }
+                $_cached[$field][$r][] = $row;
+                if ($field=='mainnav' && $multisection && isset($row['pg_mainnavalways']) && $row['pg_mainnavalways']=='yes' && $r!=$root && (in_array($r, $mldata['roots']) || $r==1)) {
+                    $_cached[$field][$root][] = $row;
+                }
+            }
+        }
+        $nav = isset($_cached[$field][$root]) ? $_cached[$field][$root] : array();
+
+        foreach ($nav as $id => &$n) {
+            
+            $n['url'] = ($n['pg_ssl'] == 'yes' ? _SECUREURL : _SITEURL ) . '/' . Jojo::getPageUrlPrefix($n['pageid']);
+            if ($n['pageid'] != $home && !in_array($n['pageid'], $roots)) {
+                
+                $n['url'] .= ($n['pg_url'] ? $n['pg_url'] : $n['pageid'] . '/' . Jojo::cleanURL($n['pg_title'])) . '/';
+            }
+            
+            $n['title'] = htmlspecialchars(($n['pg_desc'] ? $n['pg_desc'] : ($n['pg_seotitle'] ? $n['pg_seotitle'] : $n['pg_title'])), ENT_COMPAT, 'UTF-8', false);
+            $n['label'] = htmlspecialchars(($n['pg_menutitle'] ? $n['pg_menutitle'] : $n['pg_title']), ENT_COMPAT, 'UTF-8', false);
+            
+            $n['selected'] = (boolean)($selectedPages && in_array($n['pageid'], $selectedPages));
+            if ($subnavLevels) {
+                
+                $n['subnav'] = Jojo::getNav($n['pageid'], $subnavLevels - 1, $field);
+                $plugin = $n['pg_link'];
+                 if ($plugin && class_exists($plugin) && method_exists($plugin, 'getNavItems')) {
+                    $pluginsubnav = call_user_func($plugin . '::getNavItems', $n['pageid'], $n['selected']);
+                    $n['subnav'] = array_merge($pluginsubnav, $n['subnav']);
+                }
+            }
+        }
+        return $nav;
+    }
+
+    
+    static function getSelectedPages($pageid, $root=0) {
+        if (!$pageid) {
+            return array();
+        }
+        $mldata = Jojo::getMultiLanguageData();
+
+        
+        static $_pageParent;
+        if (!is_array($_pageParent)) {
+           $query = "SELECT pageid, pg_parent
+                       FROM {page}";
+           $_pageParent = Jojo::selectAssoc($query);
+        }
+
+        
+        $selectedPages = array($pageid);
+        $depth = 0;
+
+        while ( !in_array($selectedPages[0], $mldata['roots']) && ($selectedPages[0] != 0) && ($depth < 10)) {
+           
+           if (!isset($_pageParent[$selectedPages[0]])) {
+               return $selectedPages;
+           }
+           $pg_parent = $_pageParent[$selectedPages[0]];
+
+           
+           array_unshift($selectedPages, $pg_parent);
+           $depth ++;
+        }
+        return $selectedPages;
+    }
+
+    
+    static function noCache($set=false)
+    {
+        static $nocache;
+        if ($set) {
+            $nocache = true;
+        } elseif (!isset($nocache)) {
+            $nocache = false;
+        }
+        return $nocache;
+    }
+
+    static function getFeed($items, $fields)
+    {
+        $pagetitle = $fields['pagetitle'];
+        $pageurl = $fields['pageurl'];
+        $titlefield = $fields['title'];
+        $authorfield = isset($fields['author']) ?  $fields['author'] : '';
+        $bodyfield = $fields['body'];
+        $urlfield = $fields['url'];
+        $datefield = $fields['date'];
+        $datetype = $fields['datetype']; 
+        $categoryfield = isset($fields['category']) ?  $fields['category'] : '';
+        $options = isset($fields['options']) ? $fields['options'] : array();
+        $snip =  $options ? $options['snip'] : (Jojo::getOption('rss_full_description') == 'yes' ? 'full' : Jojo::getOption('rss_truncate', 800)); 
+        $image =  isset($fields['image']) && $options['imagesize'] ? $fields['image'] : '';
+        $sourcelink = (boolean)(Jojo::getOption('rss_source_link') == 'yes'); 
+        $site = mb_convert_encoding(_SITETITLE, 'HTML-ENTITIES', 'UTF-8');
+        $pagetitle = mb_convert_encoding($pagetitle, 'HTML-ENTITIES', 'UTF-8');
+        $description = mb_convert_encoding(Jojo::getOption('rss_sitedesc', Jojo::getOption('sitetitle')), 'HTML-ENTITIES', 'UTF-8');
+        $rss  = '<?xml version="1.0" ?>' . "\n";
+        $rss .= '<rss version="2.0">' . "\n";
+        $rss .= "<channel>\n";
+        $rss .= '<title>' . $site . ': ' . $pagetitle . "</title>\n";
+        $rss .= '<description>' . $description . "</description>\n";
+        $rss .= "<link>" . $pageurl . "</link>\n";
+        $rss .= "<copyright>" . htmlentities(_SITETITLE) . " " . date('Y', strtotime('now')) . "</copyright>\n";
+
+        foreach ($items as &$i) {
+            $i['body'] = Jojo::relative2absolute($i[$bodyfield], _SITEURL);
+            
+            if ($snip =='full') {
+                $i['body'] = str_ireplace('[[snip]]','',$i['body']);
+            } else {
+                $irr = Jojo::iExplode('[[snip]]', $i['body']);
+                if (count($irr) === 1 && is_numeric($snip)) {
+                    $i['body'] = substr($mbody=wordwrap($i['body'], $snip, '$$'), 0, strpos($mbody,'$$')) . ' ...';
+                } else {
+                    $i['body'] = $irr[0];
+                }
+                $i['body'] = preg_replace('/\[\[.*?\]\]/', '',  $i['body']);
+            }
+            $source = _SITEURL . "/" . $i['url'];
+            $i['body'] = mb_convert_encoding($i['body'], 'HTML-ENTITIES', 'UTF-8');
+            $i['title'] = mb_convert_encoding($i[$titlefield], 'HTML-ENTITIES', 'UTF-8');
+            $i['author'] = $authorfield ? mb_convert_encoding($i[$authorfield], 'HTML-ENTITIES', 'UTF-8') : '';
+            $i['date'] = $datetype=='mysql' ? Jojo::mysql2date($i[$datefield], 'rss') :  Jojo::formatTimestamp($i[$datefield], 'rss');
+            $i['category'] = $categoryfield ? mb_convert_encoding($i[$categoryfield], 'HTML-ENTITIES', 'UTF-8') : '';
+            if ($image) {
+                $i['imageurl'] = isset($i['image']) && $i['image'] ?  _SITEURL . "/images/" . ( isset($options['imagesize']) ? $options['imagesize'] : 'default') . "/" . $i['image'] : '';
+                $i['imagedata'] = $i['imageurl'] ?  getimagesize(_DOWNLOADDIR . '/' . urldecode($i['image'])) : '';
+                $i['imagedata']['size'] = $i['imagedata'] ?  filesize(_DOWNLOADDIR . '/' . urldecode($i['image'])) : '';
+            }
+            if ($sourcelink) $i['body'] .= '<p>Source: <a href="' . $source . '">' . $i['title'] . '</a></p>';
+            $rss .= "<item>\n";
+            $rss .= "<title>" . Jojo::xmlEscape($i['title']) . "</title>\n";
+            $rss .= "<description>" . Jojo::xmlEscape($i['body']) . "</description>\n";
+            $rss .= $i['author'] ? "<author>" . Jojo::xmlEscape($i['author']) . "</author>\n" : '';
+            $rss .= $i['category'] ? "<category>" . Jojo::xmlEscape($i['category']) . "</category>\n" : '';
+            if ($image) {
+                $rss .= $i['imageurl'] && $i['imagedata'] ? '<enclosure url="' . $i['imageurl'] . '" length="' . $i['imagedata']['size'] . '" type="' . ( isset($i['imagedata']['mime']) ? $i['imagedata']['mime'] : 'image/jpeg' ) . '" />' . "\n" : '';
+            }
+            $rss .= "<link>". $source . "</link>\n";
+            $rss .= '<source url="'. $pageurl . '">' . $pagetitle . "</source>\n";
+            $rss .= "<pubDate>" . $i['date'] . "</pubDate>\n";
+            $rss .= "</item>\n";
+        }
+        $rss .= "</channel>\n";
+        $rss .= "</rss>\n";
+
+        header('Content-type: application/rss+xml');
+        
+        exit;
+    }
+
+    static function xmlEscape($data, $specialchars=false) {
+        $xmldata  = preg_replace_callback('/&([a-zA-Z][a-zA-Z0-9]+);/', 'Jojo::convertEntity4XML', $data);
+        $xmldata = !$specialchars ?  str_replace('<', '&lt;', str_replace('>', '&gt;', str_replace('"', '&quot;', str_replace('&', '&amp;', $xmldata)))) : str_replace('&amp;
+        return $xmldata;
+
+    }
+
+    
+    static function convertEntity4XML($matches) {
+      static $table = array('quot'    => '&
+                            'amp'      => '&
+                            'lt'       => '&
+                            'gt'       => '&
+                            'OElig'    => '&
+                            'oelig'    => '&
+                            'Scaron'   => '&
+                            'scaron'   => '&
+                            'Yuml'     => '&
+                            'circ'     => '&
+                            'tilde'    => '&
+                            'ensp'     => '&
+                            'emsp'     => '&
+                            'thinsp'   => '&
+                            'zwnj'     => '&
+                            'zwj'      => '&
+                            'lrm'      => '&
+                            'rlm'      => '&
+                            'ndash'    => '&
+                            'mdash'    => '&
+                            'lsquo'    => '&
+                            'rsquo'    => '&
+                            'sbquo'    => '&
+                            'ldquo'    => '&
+                            'rdquo'    => '&
+                            'bdquo'    => '&
+                            'dagger'   => '&
+                            'Dagger'   => '&
+                            'permil'   => '&
+                            'lsaquo'   => '&
+                            'rsaquo'   => '&
+                            'euro'     => '&
+                            'fnof'     => '&
+                            'Alpha'    => '&
+                            'Beta'     => '&
+                            'Gamma'    => '&
+                            'Delta'    => '&
+                            'Epsilon'  => '&
+                            'Zeta'     => '&
+                            'Eta'      => '&
+                            'Theta'    => '&
+                            'Iota'     => '&
+                            'Kappa'    => '&
+                            'Lambda'   => '&
+                            'Mu'       => '&
+                            'Nu'       => '&
+                            'Xi'       => '&
+                            'Omicron'  => '&
+                            'Pi'       => '&
+                            'Rho'      => '&
+                            'Sigma'    => '&
+                            'Tau'      => '&
+                            'Upsilon'  => '&
+                            'Phi'      => '&
+                            'Chi'      => '&
+                            'Psi'      => '&
+                            'Omega'    => '&
+                            'alpha'    => '&
+                            'beta'     => '&
+                            'gamma'    => '&
+                            'delta'    => '&
+                            'epsilon'  => '&
+                            'zeta'     => '&
+                            'eta'      => '&
+                            'theta'    => '&
+                            'iota'     => '&
+                            'kappa'    => '&
+                            'lambda'   => '&
+                            'mu'       => '&
+                            'nu'       => '&
+                            'xi'       => '&
+                            'omicron'  => '&
+                            'pi'       => '&
+                            'rho'      => '&
+                            'sigmaf'   => '&
+                            'sigma'    => '&
+                            'tau'      => '&
+                            'upsilon'  => '&
+                            'phi'      => '&
+                            'chi'      => '&
+                            'psi'      => '&
+                            'omega'    => '&
+                            'thetasym' => '&
+                            'upsih'    => '&
+                            'piv'      => '&
+                            'bull'     => '&
+                            'hellip'   => '&
+                            'prime'    => '&
+                            'Prime'    => '&
+                            'oline'    => '&
+                            'frasl'    => '&
+                            'weierp'   => '&
+                            'image'    => '&
+                            'real'     => '&
+                            'trade'    => '&
+                            'alefsym'  => '&
+                            'larr'     => '&
+                            'uarr'     => '&
+                            'rarr'     => '&
+                            'darr'     => '&
+                            'harr'     => '&
+                            'crarr'    => '&
+                            'lArr'     => '&
+                            'uArr'     => '&
+                            'rArr'     => '&
+                            'dArr'     => '&
+                            'hArr'     => '&
+                            'forall'   => '&
+                            'part'     => '&
+                            'exist'    => '&
+                            'empty'    => '&
+                            'nabla'    => '&
+                            'isin'     => '&
+                            'notin'    => '&
+                            'ni'       => '&
+                            'prod'     => '&
+                            'sum'      => '&
+                            'minus'    => '&
+                            'lowast'   => '&
+                            'radic'    => '&
+                            'prop'     => '&
+                            'infin'    => '&
+                            'ang'      => '&
+                            'and'      => '&
+                            'or'       => '&
+                            'cap'      => '&
+                            'cup'      => '&
+                            'int'      => '&
+                            'there4'   => '&
+                            'sim'      => '&
+                            'cong'     => '&
+                            'asymp'    => '&
+                            'ne'       => '&
+                            'equiv'    => '&
+                            'le'       => '&
+                            'ge'       => '&
+                            'sub'      => '&
+                            'sup'      => '&
+                            'nsub'     => '&
+                            'sube'     => '&
+                            'supe'     => '&
+                            'oplus'    => '&
+                            'otimes'   => '&
+                            'perp'     => '&
+                            'sdot'     => '&
+                            'lceil'    => '&
+                            'rceil'    => '&
+                            'lfloor'   => '&
+                            'rfloor'   => '&
+                            'lang'     => '&
+                            'rang'     => '&
+                            'loz'      => '&
+                            'spades'   => '&
+                            'clubs'    => '&
+                            'hearts'   => '&
+                            'diams'    => '&
+                            'nbsp'     => '&
+                            'iexcl'    => '&
+                            'cent'     => '&
+                            'pound'    => '&
+                            'curren'   => '&
+                            'yen'      => '&
+                            'brvbar'   => '&
+                            'sect'     => '&
+                            'uml'      => '&
+                            'copy'     => '&
+                            'ordf'     => '&
+                            'laquo'    => '&
+                            'not'      => '&
+                            'shy'      => '&
+                            'reg'      => '&
+                            'macr'     => '&
+                            'deg'      => '&
+                            'plusmn'   => '&
+                            'sup2'     => '&
+                            'sup3'     => '&
+                            'acute'    => '&
+                            'micro'    => '&
+                            'para'     => '&
+                            'middot'   => '&
+                            'cedil'    => '&
+                            'sup1'     => '&
+                            'ordm'     => '&
+                            'raquo'    => '&
+                            'frac14'   => '&
+                            'frac12'   => '&
+                            'frac34'   => '&
+                            'iquest'   => '&
+                            'Agrave'   => '&
+                            'Aacute'   => '&
+                            'Acirc'    => '&
+                            'Atilde'   => '&
+                            'Auml'     => '&
+                            'Aring'    => '&
+                            'AElig'    => '&
+                            'Ccedil'   => '&
+                            'Egrave'   => '&
+                            'Eacute'   => '&
+                            'Ecirc'    => '&
+                            'Euml'     => '&
+                            'Igrave'   => '&
+                            'Iacute'   => '&
+                            'Icirc'    => '&
+                            'Iuml'     => '&
+                            'ETH'      => '&
+                            'Ntilde'   => '&
+                            'Ograve'   => '&
+                            'Oacute'   => '&
+                            'Ocirc'    => '&
+                            'Otilde'   => '&
+                            'Ouml'     => '&
+                            'times'    => '&
+                            'Oslash'   => '&
+                            'Ugrave'   => '&
+                            'Uacute'   => '&
+                            'Ucirc'    => '&
+                            'Uuml'     => '&
+                            'Yacute'   => '&
+                            'THORN'    => '&
+                            'szlig'    => '&
+                            'agrave'   => '&
+                            'aacute'   => '&
+                            'acirc'    => '&
+                            'atilde'   => '&
+                            'auml'     => '&
+                            'aring'    => '&
+                            'aelig'    => '&
+                            'ccedil'   => '&
+                            'egrave'   => '&
+                            'eacute'   => '&
+                            'ecirc'    => '&
+                            'euml'     => '&
+                            'igrave'   => '&
+                            'iacute'   => '&
+                            'icirc'    => '&
+                            'iuml'     => '&
+                            'eth'      => '&
+                            'ntilde'   => '&
+                            'ograve'   => '&
+                            'oacute'   => '&
+                            'ocirc'    => '&
+                            'otilde'   => '&
+                            'ouml'     => '&
+                            'divide'   => '&
+                            'oslash'   => '&
+                            'ugrave'   => '&
+                            'uacute'   => '&
+                            'ucirc'    => '&
+                            'uuml'     => '&
+                            'yacute'   => '&
+                            'thorn'    => '&
+                            'yuml'     => '&
+
+                            );
+      
+      return isset($table[$matches[1]]) ? $table[$matches[1]] : '';
+    }
+
+    static function inlineStyle($html, $css=array()) {
+        foreach ($css as $style) {
+            $html = str_replace('<' . $style['tag'], '<' . $style['tag'] . ' style="' . $style['style'] . '"', $html);
+        }
+        return $html;
+    }
+
+    
+    static function setMobile($is_mobile)
+    {
+        $is_mobile_str = ($is_mobile) ? '1' : '0';
+        setcookie("jojo_mobile", $is_mobile_str, time() + 31536000, '/' . _SITEFOLDER);
+        $_SESSION['jojo_mobile'] = $is_mobile; 
+        self::isMobile(true); 
+        return true;
+    }
+
+    
+    static function isMobile($flush = false)
+    {
+        
+        static $is_mobile;
+        if (isset($is_mobile) && !$flush) return $is_mobile;
+
+        
+        $mobile_site = Jojo::getOption('mobile_site', 'no');
+        if (($mobile_site == 'no')) {
+            $is_mobile = false;
+            return $is_mobile;
+        }
+
+        
+        if (isset($_SESSION['jojo_mobile'])) {
+            $is_mobile = $_SESSION['jojo_mobile'];
+            return $is_mobile;
+        }
+
+        
+        if (isset($_COOKIE['jojo_mobile'])) {
+            $is_mobile = ($_COOKIE['jojo_mobile'] == '1') ? true : false;
+            $_SESSION['jojo_mobile'] = $is_mobile;
+            return $is_mobile;
+        }
+
+        
+        $useragent = (isset($_SERVER['HTTP_USER_AGENT'])) ? $_SERVER['HTTP_USER_AGENT'] : '';
+
+        
+        if(strstr($useragent,'ipad') !== false) {
+            $is_mobile = false;
+            return $is_mobile;
+        }
+
+        
+        /* TODO: http:
+        $is_mobile = (preg_match('/android.+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|symbian|treo|up\.(browser|link)|vodafone|wap|windows (ce|phone)|xda|xiino/i',$useragent)||preg_match('/1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|e\-|e\/|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(di|rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|xda(\-|2|g)|yas\-|your|zeto|zte\-/i',substr($useragent,0,4)));
+        return $is_mobile;
+    }
+}

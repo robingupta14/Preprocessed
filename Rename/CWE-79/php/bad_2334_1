@@ -1,0 +1,139 @@
+<?php
+
+
+
+
+
+$var_0 = PMA_Response::getInstance();
+$var_1   = $var_0->getHeader();
+$var_3  = $var_1->getScripts();
+$var_3->addFile('makegrid.js');
+$var_3->addFile('sql.js');
+$var_3->addFile('jqplot/jquery.jqplot.js');
+$var_3->addFile('jqplot/plugins/jqplot.canvasTextRenderer.js');
+$var_3->addFile('jqplot/plugins/jqplot.canvasAxisLabelRenderer.js');
+$var_3->addFile('jqplot/plugins/jqplot.dateAxisRenderer.js');
+$var_3->addFile('jqplot/plugins/jqplot.highlighter.js');
+$var_3->addFile('jqplot/plugins/jqplot.cursor.js');
+$var_3->addFile('canvg/canvg.js');
+$var_3->addFile('jquery/jquery-ui-timepicker-addon.js');
+$var_3->addFile('tbl_zoom_plot_jqplot.js');
+
+$var_6 = new class_0($var_7, $var_8, "zoom");
+
+
+
+if (isset($_REQUEST['get_data_row']) && $_REQUEST['get_data_row'] == true) {
+    $var_9 = array();
+    $var_10 = 'SELECT * FROM `' . $_REQUEST['db'] . '`.`'
+        . $_REQUEST['table'] . '` WHERE ' .  $_REQUEST['where_clause'];
+    $var_11 = $GLOBALS['dbi']->query(
+        $var_10 . ";", null, var_13::var_14
+    );
+    $var_15 = $GLOBALS['dbi']->getFieldsMeta($var_11);
+    while ($var_17 = $GLOBALS['dbi']->fetchAssoc($var_11)) {
+        
+        $var_19 = 0;
+        foreach ($var_17 as $var_20 => $var_21) {
+            if ($var_15[$var_19]->var_22 == 'bit') {
+                $var_17[$var_20] = PMA_Util::printableBitValue(
+                    $var_21, $var_15[$var_19]->var_23
+                );
+            }
+            $var_19++;
+        }
+        $var_9['row_info'] = $var_17;
+    }
+    PMA_Response::getInstance()->addJSON($var_9);
+    var_25;
+}
+
+
+
+if (isset($_REQUEST['change_tbl_info']) && $_REQUEST['change_tbl_info'] == true) {
+    $var_0 = PMA_Response::getInstance();
+    $var_26 = $_REQUEST['field'];
+    if ($var_26 == 'pma_null') {
+        $var_0->addJSON('field_type', '');
+        $var_0->addJSON('field_collation', '');
+        $var_0->addJSON('field_operators', '');
+        $var_0->addJSON('field_value', '');
+        var_25;
+    }
+    $var_27 = array_search($var_26, $var_6->getColumnNames());
+    $var_29 = $var_6->getColumnProperties($_REQUEST['it'], $var_27);
+    $var_0->addJSON('field_type', $var_29['type']);
+    $var_0->addJSON('field_collation', $var_29['collation']);
+    $var_0->addJSON('field_operators', $var_29['func']);
+    $var_0->addJSON('field_value', $var_29['value']);
+    var_25;
+}
+
+
+$var_31 .= '&amp;goto=tbl_select.php&amp;back=tbl_select.php';
+
+
+
+if (! isset($var_32)) {
+    $var_32 = $GLOBALS['cfg']['DefaultTabTable'];
+}
+
+$var_33   = $var_32 . '?' . PMA_URL_getCommon($var_7, $var_8);
+
+
+if ( !isset($_POST['zoom_submit']) || $_POST['dataLabel'] == '') {
+    $var_34 = PMA_getDisplayField($var_7, $var_8);
+} else {
+    $var_34 = $_POST['dataLabel'];
+}
+
+
+$var_0->addHTML($var_6->getSecondaryTabs());
+$var_0->addHTML($var_6->getSelectionForm($var_32, $var_34));
+
+
+if (isset($_POST['zoom_submit'])
+    && $_POST['criteriaColumnNames'][0] != 'pma_null'
+    && $_POST['criteriaColumnNames'][1] != 'pma_null'
+    && $_POST['criteriaColumnNames'][0] != $_POST['criteriaColumnNames'][1]
+) {
+    
+    $var_38 = $var_6->buildSqlQuery();
+    $var_38 .= ' LIMIT ' . $_POST['maxPlotLimit'];
+
+    
+    $var_11 = $GLOBALS['dbi']->query(
+        $var_38 . ";", null, var_13::var_14
+    );
+    $var_15 = $GLOBALS['dbi']->getFieldsMeta($var_11);
+    while ($var_17 = $GLOBALS['dbi']->fetchAssoc($var_11)) {
+        
+        
+        $var_40 = array();
+        foreach ($var_17 as $var_21) {
+            $var_40[] = $var_21;
+        }
+        
+        $var_41 = PMA_Util::getUniqueCondition(
+            $var_11, count($var_6->getColumnNames()), $var_15, $var_40,
+            true
+        );
+        
+        $var_17['where_clause'] = $var_41[0];
+
+        $var_42 = array(
+            $_POST['criteriaColumnNames'][0] =>
+                $var_17[$_POST['criteriaColumnNames'][0]],
+            $_POST['criteriaColumnNames'][1] =>
+                $var_17[$_POST['criteriaColumnNames'][1]],
+            'where_clause' => $var_41[0]
+        );
+        $var_42[$var_34] = ($var_34) ? $var_17[$var_34] : '';
+        $var_44[] = $var_42;
+    }
+    unset($var_42);
+
+    
+    $var_0->addHTML($var_6->getZoomResultsForm($var_32, $var_44));
+}
+?>

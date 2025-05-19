@@ -1,0 +1,832 @@
+<?php
+
+
+if (!defined('ABSPATH')) {
+    var_0;
+}
+
+define('WP_SIMPLE_DL_MONITOR_VERSION', '3.5.4');
+define('WP_SIMPLE_DL_MONITOR_DIR_NAME', dirname(plugin_basename(var_1)));
+define('WP_SIMPLE_DL_MONITOR_URL', plugins_url('', var_1));
+define('WP_SIMPLE_DL_MONITOR_PATH', plugin_dir_path(var_1));
+define('WP_SIMPLE_DL_MONITOR_SITE_HOME_URL', home_url());
+define('WP_SDM_LOG_FILE', var_2 . 'sdm-debug-log.txt');
+
+global $var_3;
+$var_3 = '1.2';
+
+
+
+
+register_activation_hook(var_1, 'sdm_install_db_table');
+
+function fn_0() {
+
+    global $var_4;
+    global $var_3;
+    $var_5 = $var_4->var_6 . 'sdm_downloads';
+
+    $var_7 = 'CREATE TABLE ' . $var_5 . ' (
+			  id mediumint(9) NOT NULL AUTO_INCREMENT,
+			  post_id mediumint(9) NOT NULL,
+			  post_title mediumtext NOT NULL,
+			  file_url mediumtext NOT NULL,
+			  visitor_ip mediumtext NOT NULL,
+			  date_time datetime DEFAULT "0000-00-00 00:00:00" NOT NULL,
+			  visitor_country mediumtext NOT NULL,
+			  visitor_name mediumtext NOT NULL,
+			  UNIQUE KEY id (id)
+		);';
+
+    dbDelta($var_7);
+
+    update_option('sdm_db_version', $var_3);
+
+    
+    sdm_register_post_type();
+
+    
+    flush_rewrite_rules();
+}
+
+
+add_action('plugins_loaded', 'sdm_plugins_loaded_tasks');
+
+function fn_1() {
+    
+    load_plugin_textdomain('simple-download-monitor', false, dirname(plugin_basename(var_1)) . '/langs/');
+
+    
+    fn_6();
+}
+
+
+add_action('init', 'sdm_init_time_tasks');
+add_action('admin_init', 'sdm_admin_init_time_tasks');
+
+function fn_2() {
+    
+    handle_sdm_download_via_direct_post();
+    if (is_admin()) {
+	
+	wp_register_script('sdm_google_charts', 'https:
+	wp_register_style('var_8', var_9 . '/css/jquery.ui.min.css', array(), null, 'all');
+    }
+}
+
+function fn_3() {
+    
+    add_action('wp_ajax_sdm_reset_log', 'sdm_reset_log_handler');
+    add_action('wp_ajax_sdm_delete_data', 'sdm_delete_data_handler');
+
+    if (is_admin()) {
+	if (user_can(wp_get_current_user(), 'administrator')) {
+	    
+	    if (isset($_GET['sdm-action'])) {
+		if ($_GET['sdm-action'] === 'view_log') {
+		    $var_10 = fopen(var_11, 'rb');
+		    header('Content-Type: text/plain');
+		    fpassthru($var_10);
+		    var_12;
+		}
+	    }
+	}
+    }
+}
+
+function fn_4() {
+    SDM_Debug::reset_log();
+    
+    wp_die();
+}
+
+function fn_5() {
+    if (!check_ajax_referer('sdm_delete_data', 'nonce', false)) {
+	
+	wp_die(0);
+    }
+    global $var_4;
+    
+    $var_13 = $var_4->get_results('SELECT id FROM ' . $var_4->var_6 . 'posts WHERE post_type="sdm_downloads"', var_15);
+    if (!is_null($var_13)) {
+	foreach ($var_13 as $var_16) {
+	    wp_delete_post($var_16['id'], true);
+	}
+    }
+    
+    delete_option('sdm_downloads_options');
+    delete_option('sdm_db_version');
+    
+    unregister_post_type('sdm_downloads');
+    unregister_taxonomy('sdm_categories');
+    unregister_taxonomy('sdm_tags');
+    
+    $var_4->query("DROP TABLE " . $var_4->var_6 . "sdm_downloads");
+    
+    deactivate_plugins(plugin_basename(var_1));
+    
+    flush_rewrite_rules(false);
+    
+    wp_die();
+}
+
+
+
+function fn_6() {
+    if (is_admin()) {
+	global $var_3;
+	$var_18 = get_option('sdm_db_version');
+	if ($var_18 != $var_3) {
+	    fn_0();
+	}
+    }
+}
+
+
+add_filter('plugin_action_links', 'sdm_settings_link', 10, 2);
+
+function fn_7($var_19, $var_20) {
+    static $var_21;
+    if (!$var_21)
+	$var_21 = plugin_basename(var_1);
+    if ($var_20 == $var_21) {
+	$var_22 = '<a href="edit.php?post_type=sdm_downloads&page=sdm-settings" title="SDM Settings Page">' . __("Settings", 'simple-download-monitor') . '</a>';
+	array_unshift($var_19, $var_22);
+    }
+    return $var_19;
+}
+
+
+class class_0 {
+
+    public function fn_8() {
+
+	add_action('init', 'sdm_register_post_type');  
+	add_action('init', 'sdm_create_taxonomies');  
+	add_action('init', 'sdm_register_shortcodes'); 
+	add_action('wp_enqueue_scripts', array($var_24, 'sdm_frontend_scripts'));  
+
+	if (is_admin()) {
+	    add_action('admin_menu', array($var_24, 'sdm_create_menu_pages'));  
+	    add_action('add_meta_boxes', array($var_24, 'sdm_create_upload_metabox'));  
+
+	    add_action('save_post', array($var_24, 'sdm_save_description_meta_data'));  
+	    add_action('save_post', array($var_24, 'sdm_save_upload_meta_data'));  
+	    add_action('save_post', array($var_24, 'sdm_save_dispatch_meta_data'));  
+	    add_action('save_post', array($var_24, 'sdm_save_thumbnail_meta_data'));  
+	    add_action('save_post', array($var_24, 'sdm_save_statistics_meta_data'));  
+	    add_action('save_post', array($var_24, 'sdm_save_other_details_meta_data'));  
+
+	    add_action('admin_enqueue_scripts', array($var_24, 'sdm_admin_scripts'));  
+	    add_action('admin_print_styles', array($var_24, 'sdm_admin_styles'));  
+
+	    add_action('admin_init', array($var_24, 'sdm_register_options'));  
+	    
+	}
+    }
+
+    public function fn_9() {
+
+	global $var_25, $var_16;
+
+	if (is_admin() && $var_25->var_26 == 'sdm_downloads' && $var_25->var_27 == 'post') {
+
+	    
+	    wp_enqueue_script('media-upload');
+	    wp_enqueue_script('thickbox');
+	    wp_register_script('sdm-upload', var_9 . '/js/sdm_admin_scripts.js', array('jquery', 'media-upload', 'thickbox'), var_28);
+	    wp_enqueue_script('sdm-upload');
+
+	    
+	    ?>
+	    <script type="text/javascript">
+	        var sdm_del_thumb_postid = '<?php  ?>';
+	    </script>
+	    <?php
+	    
+	    $var_29 = array(
+		'select_file' => __('Select File', 'simple-download-monitor'),
+		'select_thumbnail' => __('Select Thumbnail', 'simple-download-monitor'),
+		'insert' => __('Insert', 'simple-download-monitor'),
+		'image_removed' => __('Image Successfully Removed', 'simple-download-monitor'),
+		'ajax_error' => __('Error with AJAX', 'simple-download-monitor')
+	    );
+	    wp_localize_script('sdm-upload', 'sdm_translations', $var_29);
+	}
+
+	
+	?>
+	<script type="text/javascript">
+	    var sdm_admin_ajax_url = {sdm_admin_ajax_url: '<?php  ?>'};
+	    var sdm_plugin_url = '<?php  ?>';
+	    var tinymce_langs = {
+		select_download_item: '<?php _e('Please select a Download Item:', 'simple-download-monitor') ?>',
+		download_title: '<?php _e('Download Title', 'simple-download-monitor') ?>',
+		open_new_window: '<?php _e('Open New Window', 'simple-download-monitor') ?>',
+		button_color: '<?php _e('Button Color', 'simple-download-monitor'); ?>',
+		insert_shortcode: '<?php _e('Insert SDM Shortcode', 'simple-download-monitor') ?>'
+	    };
+	    var sdm_button_colors = <?php  ?>;
+	</script>
+	<?php
+    }
+
+    public function fn_10() {
+	
+	wp_enqueue_style('sdm-styles', var_9 . '/css/sdm_wp_styles.css');
+	wp_register_script('sdm-scripts', var_9 . '/js/sdm_wp_scripts.js', array('jquery'));
+	wp_enqueue_script('sdm-scripts');
+
+	
+	wp_localize_script('sdm-scripts', 'sdm_ajax_script', array('ajaxurl' => admin_url('admin-ajax.php')));
+    }
+
+    public function fn_11() {
+
+	wp_enqueue_style('thickbox');  
+	wp_enqueue_style('sdm_admin_styles', var_9 . '/css/sdm_admin_styles.css', array(), var_28);  
+    }
+
+    public function fn_12() {
+	sdm_handle_admin_menu();
+    }
+
+    public function fn_13() {
+
+	
+	add_meta_box('sdm_description_meta_box', __('Description', 'simple-download-monitor'), array($var_24, 'display_sdm_description_meta_box'), 'sdm_downloads', 'normal', 'default');
+	add_meta_box('sdm_upload_meta_box', __('Downloadable File (Visitors will download this item)', 'simple-download-monitor'), array($var_24, 'display_sdm_upload_meta_box'), 'sdm_downloads', 'normal', 'default');
+	add_meta_box('sdm_dispatch_meta_box', __('PHP Dispatch or Redirect', 'simple-download-monitor'), array($var_24, 'display_sdm_dispatch_meta_box'), 'sdm_downloads', 'normal', 'default');
+	add_meta_box('sdm_thumbnail_meta_box', __('File Thumbnail (Optional)', 'simple-download-monitor'), array($var_24, 'display_sdm_thumbnail_meta_box'), 'sdm_downloads', 'normal', 'default');
+	add_meta_box('sdm_stats_meta_box', __('Statistics', 'simple-download-monitor'), array($var_24, 'display_sdm_stats_meta_box'), 'sdm_downloads', 'normal', 'default');
+	add_meta_box('sdm_other_details_meta_box', __('Other Details (Optional)', 'simple-download-monitor'), array($var_24, 'display_sdm_other_details_meta_box'), 'sdm_downloads', 'normal', 'default');
+	add_meta_box('sdm_shortcode_meta_box', __('Shortcodes', 'simple-download-monitor'), array($var_24, 'display_sdm_shortcode_meta_box'), 'sdm_downloads', 'normal', 'default');
+    }
+
+    public function fn_14($var_16) {  
+	_e('Add a description for this download item.', 'simple-download-monitor');
+	
+
+	$var_30 = get_post_meta($var_16->var_31, 'sdm_description', true);
+	$var_32 = array('textarea_name' => 'sdm_description');
+	wp_editor($var_30, "sdm_description_editor_content", $var_32);
+
+	wp_nonce_field('sdm_description_box_nonce', 'sdm_description_box_nonce_check');
+    }
+
+    public function fn_15($var_16) {  
+	$var_33 = get_post_meta($var_16->var_31, 'sdm_upload', true);
+	$var_34 = isset($var_33) ? $var_33 : '';
+
+	_e('Manually enter a valid URL of the file in the text box below, or click "Select File" button to upload (or choose) the downloadable file.', 'simple-download-monitor');
+	
+
+	
+	
+
+	
+	
+
+	
+	_e('Steps to upload a file or choose one from your media library:', 'simple-download-monitor');
+	
+	
+	
+	
+	
+
+	wp_nonce_field('sdm_upload_box_nonce', 'sdm_upload_box_nonce_check');
+    }
+
+    public function fn_16($var_16) {
+	$var_35 = get_post_meta($var_16->var_31, 'sdm_item_dispatch', true);
+
+	if ($var_35 === '') {
+	    
+	    $var_36 = get_current_screen();
+
+	    if ($var_36->var_37 === 'add') {
+		
+		$var_38 = get_option('sdm_downloads_options');
+		$var_35 = isset($var_38['general_default_dispatch_value']) && $var_38['general_default_dispatch_value'];
+	    }
+	}
+
+	
+	
+
+	wp_nonce_field('sdm_dispatch_box_nonce', 'sdm_dispatch_box_nonce_check');
+    }
+
+    public function fn_17($var_16) {  
+	$var_39 = get_post_meta($var_16->var_31, 'sdm_upload_thumbnail', true);
+	$var_34 = isset($var_39) ? $var_39 : '';
+	_e('Manually enter a valid URL, or click "Select Image" to upload (or choose) the file thumbnail image.', 'simple-download-monitor');
+	?>
+	<br /><br />
+	<input id="sdm_upload_thumbnail" type="text" size="100" name="sdm_upload_thumbnail" value="<?php  ?>" placeholder="http:
+	<br /><br />
+	<input id="upload_thumbnail_button" type="button" class="button-primary" value="<?php _e('Select Image', 'simple-download-monitor'); ?>" />
+	<input id="remove_thumbnail_button" type="button" class="button" value="<?php _e('Remove Image', 'simple-download-monitor'); ?>" />
+	<br /><br />
+
+	<span id="sdm_admin_thumb_preview">
+	    <?php
+	    if (!empty($var_34)) {
+		?><img id="sdm_thumbnail_image" src="<?php  ?>" style="max-width:200px;" />
+		<?php
+	    }
+	    ?>
+	</span>
+
+	<?php
+	
+	_e('This thumbnail image will be used to create a fancy file download box if you want to use it.', 'simple-download-monitor');
+	
+
+	wp_nonce_field('sdm_thumbnail_box_nonce', 'sdm_thumbnail_box_nonce_check');
+    }
+
+    public function fn_18($var_16) {  
+	$var_40 = get_post_meta($var_16->var_31, 'sdm_count_offset', true);
+	$var_41 = isset($var_40) && $var_40 != '' ? $var_40 : '0';
+
+	
+	$var_42 = get_post_meta($var_16->var_31, 'sdm_item_no_log', true);
+	$var_43 = isset($var_42) && $var_42 === 'on' ? 'checked="checked"' : '';
+
+	_e('These are the statistics for this download item.', 'simple-download-monitor');
+	
+
+	global $var_4;
+	$var_4->get_results($var_4->prepare('SELECT * FROM ' . $var_4->var_6 . 'sdm_downloads WHERE post_id=%s', $var_16->var_31));
+
+	
+	_e('Number of Downloads:', 'simple-download-monitor');
+	
+	
+
+	
+	_e('Offset Count: ', 'simple-download-monitor');
+	
+	
+	 var_45 var_46 var_47 var_48 var_49 var_50 var_45 var_47 visitors (var_51 var_52 var_47 var_48 var_53 var_54).', 'var_55-var_48-var_56') . '</p>';
+	
+
+	
+	
+	
+	"></span>';
+	_e('Disable download logging for this item.', 'simple-download-monitor');
+	
+
+	wp_nonce_field('sdm_count_offset_nonce', 'sdm_count_offset_nonce_check');
+    }
+
+    public function display_sdm_other_details_meta_box($var_16) { 
+	$var_57 = get_post_meta($var_16->var_31, 'sdm_item_file_size', true);
+	$var_57 = isset($var_57) ? $var_57 : '';
+
+	$var_58 = get_post_meta($var_16->var_31, 'sdm_item_version', true);
+	$var_58 = isset($var_58) ? $var_58 : '';
+
+	
+	_e('File Size: ', 'simple-download-monitor');
+	
+	
+	
+	
+
+	
+	_e('Version: ', 'simple-download-monitor');
+	
+	
+	
+	
+
+	wp_nonce_field('sdm_other_details_nonce', 'sdm_other_details_nonce_check');
+    }
+
+    public function display_sdm_shortcode_meta_box($var_16) {  
+	_e('The following shortcode can be used on posts or pages to embed a download now button for this file. You can also use the shortcode inserter (in the post editor) to add this shortcode to a post or page.', 'simple-download-monitor');
+	
+	$var_59 = '[sdm_download id="' . $var_16->var_31 . '" fancy="0"]';
+	' readonly='var_60' var_41='" . $var_59 . "' size='40'>";
+	
+
+	_e('The following shortcode can be used to show a download counter for this item.', 'simple-download-monitor');
+	
+	$var_59 = '[sdm_download_counter id="' . $var_16->var_31 . '"]';
+	' readonly='var_60' var_41='" . $var_59 . "' size='40'>";
+
+	
+	
+	if (!isset($_POST['sdm_description_box_nonce_check']) || !wp_verify_nonce($_POST['sdm_description_box_nonce_check'], 'sdm_description_box_nonce'))
+	    return;
+
+	if (isset($_POST['sdm_description'])) {
+	    update_post_meta($var_61, 'sdm_description', $_POST['sdm_description']);
+	}
+    }
+
+    public function fn_19($var_61) {  
+	if (defined('DOING_AUTOSAVE') && var_62)
+	    return;
+	if (!isset($_POST['sdm_upload_box_nonce_check']) || !wp_verify_nonce($_POST['sdm_upload_box_nonce_check'], 'sdm_upload_box_nonce'))
+	    return;
+
+	if (isset($_POST['sdm_upload'])) {
+	    update_post_meta($var_61, 'sdm_upload', sanitize_text_field($_POST['sdm_upload']));
+	}
+    }
+
+    public function fn_20($var_61) { 
+	if (defined('DOING_AUTOSAVE') && var_62) {
+	    return;
+	}
+	if (!isset($_POST['sdm_dispatch_box_nonce_check']) || !wp_verify_nonce($_POST['sdm_dispatch_box_nonce_check'], 'sdm_dispatch_box_nonce')) {
+	    return;
+	}
+	
+	$var_41 = filter_input(var_63, 'sdm_item_dispatch', var_64);
+	update_post_meta($var_61, 'sdm_item_dispatch', $var_41);
+    }
+
+    public function fn_21($var_61) {  
+	if (defined('DOING_AUTOSAVE') && var_62)
+	    return;
+	if (!isset($_POST['sdm_thumbnail_box_nonce_check']) || !wp_verify_nonce($_POST['sdm_thumbnail_box_nonce_check'], 'sdm_thumbnail_box_nonce'))
+	    return;
+
+	if (isset($_POST['sdm_upload_thumbnail'])) {
+	    update_post_meta($var_61, 'sdm_upload_thumbnail', sanitize_text_field($_POST['sdm_upload_thumbnail']));
+	}
+    }
+
+    public function fn_22($var_61) {  
+	if (defined('DOING_AUTOSAVE') && var_62)
+	    return;
+	if (!isset($_POST['sdm_count_offset_nonce_check']) || !wp_verify_nonce($_POST['sdm_count_offset_nonce_check'], 'sdm_count_offset_nonce'))
+	    return;
+
+	if (isset($_POST['sdm_count_offset']) && is_numeric($_POST['sdm_count_offset'])) {
+
+	    update_post_meta($var_61, 'sdm_count_offset', $_POST['sdm_count_offset']);
+	}
+
+	
+	if (isset($_POST['sdm_item_no_log'])) {
+	    update_post_meta($var_61, 'sdm_item_no_log', $_POST['sdm_item_no_log']);
+	} else {
+	    delete_post_meta($var_61, 'sdm_item_no_log');
+	}
+    }
+
+    public function fn_23($var_61) {  
+	if (defined('DOING_AUTOSAVE') && var_62) {
+	    return;
+	}
+	if (!isset($_POST['sdm_other_details_nonce_check']) || !wp_verify_nonce($_POST['sdm_other_details_nonce_check'], 'sdm_other_details_nonce')) {
+	    return;
+	}
+
+	if (isset($_POST['sdm_item_file_size'])) {
+	    update_post_meta($var_61, 'sdm_item_file_size', sanitize_text_field($_POST['sdm_item_file_size']));
+	}
+
+	if (isset($_POST['sdm_item_version'])) {
+	    update_post_meta($var_61, 'sdm_item_version', sanitize_text_field($_POST['sdm_item_version']));
+	}
+    }
+
+    public function fn_24($var_37, $var_16) {
+
+	
+	if ($var_16->var_26 == 'sdm_downloads') {
+	    unset($var_37['view']);
+	}
+
+	return $var_37;
+    }
+
+    public function fn_25() {
+
+	
+	register_setting('sdm_downloads_options', 'sdm_downloads_options');
+
+	
+	add_settings_section('general_options', __('General Options', 'simple-download-monitor'), array($var_24, 'general_options_cb'), 'general_options_section');
+	add_settings_section('admin_options', __('Admin Options', 'simple-download-monitor'), array($var_24, 'admin_options_cb'), 'admin_options_section');
+	add_settings_section('sdm_colors', __('Colors', 'simple-download-monitor'), array($var_24, 'sdm_colors_cb'), 'sdm_colors_section');
+	add_settings_section('sdm_debug', __('Debug', 'simple-download-monitor'), array($var_24, 'sdm_debug_cb'), 'sdm_debug_section');
+	add_settings_section('sdm_deldata', __('Delete Plugin Data', 'simple-download-monitor'), array($var_24, 'sdm_deldata_cb'), 'sdm_deldata_section');
+
+	
+	add_settings_field('general_hide_donwload_count', __('Hide Download Count', 'simple-download-monitor'), array($var_24, 'hide_download_count_cb'), 'general_options_section', 'general_options');
+	add_settings_field('general_default_dispatch_value', __('PHP Dispatching', 'simple-download-monitor'), array($var_24, 'general_default_dispatch_value_cb'), 'general_options_section', 'general_options');
+	add_settings_field('only_logged_in_can_download', __('Only Allow Logged-in Users to Download', 'simple-download-monitor'), array($var_24, 'general_only_logged_in_can_download_cb'), 'general_options_section', 'general_options');
+	add_settings_field('general_login_page_url', __('Login Page URL', 'simple-download-monitor'), array($var_24, 'general_login_page_url_cb'), 'general_options_section', 'general_options');
+
+	add_settings_field('admin_tinymce_button', __('Remove Tinymce Button', 'simple-download-monitor'), array($var_24, 'admin_tinymce_button_cb'), 'admin_options_section', 'admin_options');
+	add_settings_field('admin_log_unique', __('Log Unique IP', 'simple-download-monitor'), array($var_24, 'admin_log_unique'), 'admin_options_section', 'admin_options');
+	add_settings_field('admin_dont_log_bots', __('Do Not Count Downloads from Bots', 'simple-download-monitor'), array($var_24, 'admin_dont_log_bots'), 'admin_options_section', 'admin_options');
+	add_settings_field('admin_no_logs', __('Disable Download Logs', 'simple-download-monitor'), array($var_24, 'admin_no_logs_cb'), 'admin_options_section', 'admin_options');
+
+	add_settings_field('download_button_color', __('Download Button Color', 'simple-download-monitor'), array($var_24, 'download_button_color_cb'), 'sdm_colors_section', 'sdm_colors');
+
+	add_settings_field('enable_debug', __('Enable Debug', 'simple-download-monitor'), array($var_24, 'enable_debug_cb'), 'sdm_debug_section', 'sdm_debug');
+    }
+
+    public function fn_26() {
+	
+	_e('General options settings', 'simple-download-monitor');
+    }
+
+    public function fn_27() {
+	
+	_e('Admin options settings', 'simple-download-monitor');
+    }
+
+    public function fn_28() {
+	
+	_e('Front End colors settings', 'simple-download-monitor');
+    }
+
+    public function fn_29() {
+	
+	_e('Debug settings', 'simple-download-monitor');
+    }
+
+    public function fn_30() {
+	
+	_e('You can delete all the data related to this plugin from database using the button below. Useful when you\'re uninstalling the plugin and don\'t want any leftovers remaining.', 'simple-download-monitor');
+	
+	">' . __('Delete all data and deactivate plugin', 'simple-download-monitor') . '</button></p>';
+    }
+
+    public function hide_download_count_cb() {
+	$var_38 = get_option('sdm_downloads_options');
+	
+	
+    }
+
+    public function general_default_dispatch_value_cb() {
+	$var_38 = get_option('sdm_downloads_options');
+	$var_41 = isset($var_38['var_65']) && $var_38['var_65'];
+	
+	
+    }
+
+    public function general_only_logged_in_can_download_cb() {
+	$var_38 = get_option('sdm_downloads_options');
+	$var_41 = isset($var_38['var_66']) && $var_38['var_66'];
+	
+	
+    }
+
+    public function general_login_page_url_cb() {
+	$var_38 = get_option('sdm_downloads_options');
+	$var_41 = isset($var_38['var_67']) ? $var_38['var_67'] : '';
+	
+	
+    }
+
+    public function admin_tinymce_button_cb() {
+	$var_38 = get_option('sdm_downloads_options');
+	
+	
+    }
+
+    public function admin_log_unique() {
+	$var_38 = get_option('sdm_downloads_options');
+	
+	
+    }
+
+    public function admin_dont_log_bots() {
+	$var_38 = get_option('sdm_downloads_options');
+	
+	
+    }
+
+    public function admin_no_logs_cb() {
+	$var_38 = get_option('sdm_downloads_options');
+	
+	
+    }
+
+    public function download_button_color_cb() {
+	$var_38 = get_option('sdm_downloads_options');
+	
+	$var_68 = isset($var_38['var_69']) ? $var_38['var_69'] : null;
+	$var_70 = sdm_get_download_button_colors();
+
+	
+	foreach ($var_70 as $var_71 => $var_72) {
+	    
+	}
+	
+	esc_html_e('Adjusts the color of the "var_73 var_74" var_75.', 'var_55-var_48-var_56');
+    }
+
+    public function fn_31() {
+	$var_38 = get_option('sdm_downloads_options');
+	
+	
+    }
+
+}
+
+
+
+$var_23 = new class_0();
+
+
+add_action('wp_ajax_nopriv_sdm_tiny_get_post_ids', 'sdm_tiny_get_post_ids_ajax_call');
+add_action('wp_ajax_sdm_tiny_get_post_ids', 'sdm_tiny_get_post_ids_ajax_call');
+
+function fn_32() {
+
+    $var_13 = get_posts(array(
+	'post_type' => 'sdm_downloads',
+	'numberposts' => -1,
+	    )
+    );
+    foreach ($var_13 as $var_76) {
+	$var_79[] = array('post_id' => $var_76->var_31, 'post_title' => $var_76->var_77);
+    }
+
+    $var_78 = json_encode(array('success' => true, 'test' => $var_79));
+
+    header('Content-Type: application/json');
+    
+    var_0;
+}
+
+
+
+add_action('wp_ajax_sdm_remove_thumbnail_image', 'sdm_remove_thumbnail_image_ajax_call'); 
+
+function fn_33() {
+    if (!current_user_can('edit_posts')) {
+	
+	wp_die(__('Permission denied!', 'simple-download-monitor'));
+	var_0;
+    }
+
+
+    $var_61 = $_POST['post_id_del'];
+    $var_80 = metadata_exists('post', $var_61, 'sdm_upload_thumbnail');
+    if ($var_80) {
+	$var_81 = delete_post_meta($var_61, 'sdm_upload_thumbnail');
+	if ($var_81) {
+	    $var_78 = json_encode(array('success' => true));
+	}
+    } else {
+	
+	$var_78 = json_encode(array('not_exists' => true));
+    }
+
+    header('Content-Type: application/json');
+    
+    var_0;
+}
+
+
+add_action('wp_ajax_nopriv_sdm_pop_cats', 'sdm_pop_cats_ajax_call');
+add_action('wp_ajax_sdm_pop_cats', 'sdm_pop_cats_ajax_call');
+
+function fn_34() {
+
+    $var_82 = $_POST['cat_slug'];  
+    $var_83 = $_POST['parent_id'];  
+
+    $var_13 = get_posts(array(
+	'post_type' => 'sdm_downloads',
+	'numberposts' => -1,
+	'tax_query' => array(
+	    array(
+		'taxonomy' => 'sdm_categories',
+		'field' => 'slug',
+		'terms' => $var_82,
+		'include_children' => 0
+	    )
+	),
+	'orderby' => 'title',
+	'order' => 'ASC')
+    );
+
+    $var_84 = array();
+
+
+    foreach ($var_13 as $var_16) {
+	
+	$var_84[] = array('id' => $var_16->var_31, 'permalink' => get_permalink($var_16->var_31), 'title' => $var_16->var_77);
+    }
+
+
+    $var_78 = json_encode(array('final_array' => $var_84));
+    header('Content-Type: application/json');
+    
+    var_0;
+}
+
+
+add_filter('manage_edit-sdm_downloads_columns', 'sdm_create_columns'); 
+add_filter('manage_edit-sdm_downloads_sortable_columns', 'sdm_downloads_sortable'); 
+add_action('manage_sdm_downloads_posts_custom_column', 'sdm_downloads_columns_content', 10, 2); 
+
+function fn_35($var_85) {
+
+    unset($var_85['title']);
+    unset($var_85['taxonomy-sdm_tags']);
+    unset($var_85['taxonomy-sdm_categories']);
+    unset($var_85['date']);
+
+    $var_85['sdm_downloads_thumbnail'] = __('Image', 'simple-download-monitor');
+    $var_85['title'] = __('Title', 'simple-download-monitor');
+    $var_85['sdm_downloads_id'] = __('ID', 'simple-download-monitor');
+    $var_85['sdm_downloads_file'] = __('File', 'simple-download-monitor');
+    $var_85['taxonomy-sdm_categories'] = __('Categories', 'simple-download-monitor');
+    $var_85['taxonomy-sdm_tags'] = __('Tags', 'simple-download-monitor');
+    $var_85['sdm_downloads_count'] = __('Downloads', 'simple-download-monitor');
+    $var_85['date'] = __('Date Posted', 'simple-download-monitor');
+    return $var_85;
+}
+
+function fn_36($var_85) {
+
+    $var_85['sdm_downloads_id'] = 'sdm_downloads_id';
+    $var_85['sdm_downloads_file'] = 'sdm_downloads_file';
+    $var_85['sdm_downloads_count'] = 'sdm_downloads_count';
+    $var_85['taxonomy-sdm_categories'] = 'taxonomy-sdm_categories';
+    $var_85['taxonomy-sdm_tags'] = 'taxonomy-sdm_tags';
+    return $var_85;
+}
+
+function var_86($var_87, $var_88) {
+
+    if ($var_87 == 'sdm_downloads_thumbnail') {
+	$var_39 = get_post_meta($var_88, 'sdm_upload_thumbnail', true);
+	
+	if ($var_39) {
+	    var_89:50var_90;" /></p>';
+	}
+    }
+    if ($var_87 == 'sdm_downloads_id') {
+	
+    }
+    if ($var_87 == 'sdm_downloads_file') {
+	$var_91 = get_post_meta($var_88, 'sdm_upload', true);
+	$var_20 = isset($var_91) ? $var_91 : '--';
+	
+    }
+    if ($var_87 == 'sdm_downloads_count') {
+	global $var_4;
+	$var_4->var_14($var_4->var_44('SELECT * FROM ' . $var_4->var_6 . 'sdm_downloads WHERE post_id=%s', $var_88));
+	
+    }
+}
+
+
+add_action('admin_head', 'sdm_admin_column_width'); 
+
+function sdm_admin_column_width() {
+
+    
+     overflow:hidden }';
+     overflow:hidden }';
+     overflow:hidden }';
+     overflow:hidden }';
+    
+}
+
+
+
+
+$var_92 = get_option('sdm_downloads_options');
+$var_93 = isset($var_92['var_94']);
+if ($var_93 != true) {
+
+
+    add_action('init', 'sdm_downloads_tinymce_button');
+
+    function sdm_downloads_tinymce_button() {
+
+	add_filter('mce_external_plugins', 'sdm_downloads_add_button');
+	add_filter('mce_buttons', 'sdm_downloads_register_button');
+    }
+
+    function sdm_downloads_add_button($var_95) {
+
+	$var_95['var_96'] = WP_SIMPLE_DL_MONITOR_URL . '/tinymce/sdm_editor_plugin.js';
+	return $var_95;
+    }
+
+    function sdm_downloads_register_button($var_97) {
+
+	$var_97[] = 'sdm_downloads';
+	return $var_97;
+    }
+
+}

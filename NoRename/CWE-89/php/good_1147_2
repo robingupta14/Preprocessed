@@ -1,0 +1,452 @@
+<?php
+
+
+
+
+
+	if (permission_exists('call_broadcast_edit')) {
+		
+	}
+	else {
+		
+		exit;
+	}
+
+
+	$language = new text;
+	$text = $language->get();
+
+
+	if (is_uuid($_REQUEST["id"])) {
+		$action = "update";
+		$call_broadcast_uuid = $_REQUEST["id"];
+	}
+	else {
+		$action = "add";
+	}
+
+
+	function upload_file($sql, $broadcast_phone_numbers) {
+		$upload_csv = $sql = '';
+		if (isset($_FILES['broadcast_phone_numbers_file']) && !empty($_FILES['broadcast_phone_numbers_file']) && $_FILES['broadcast_phone_numbers_file']['size'] > 0) {
+			$filename=$_FILES["broadcast_phone_numbers_file"]["tmp_name"];
+			$file_extension = array('application/octet-stream','application/vnd.ms-excel','text/plain','text/csv','text/tsv');
+			if (in_array($_FILES['broadcast_phone_numbers_file']['type'],$file_extension)) {											
+					$file = fopen($filename, "r");
+					$count = 0;
+					while (($getData = fgetcsv($file, 0, "\n")) !== FALSE)
+					{
+						$count++;
+						if ($count == 1) { continue; }
+						$getData = preg_split('/[ ,|]/', $getData[0], null, PREG_SPLIT_NO_EMPTY);						
+						$separator = $getData[0];
+						$separator .= (isset($getData[1]) && $getData[1] != '')? '|'.$getData[1] : '';
+						$separator .= (isset($getData[2]) && $getData[2] != '')? ','.$getData[2] : '';
+						$separator .= '\n';
+						$upload_csv .= $separator;
+					}
+				 fclose($file);  		
+			}
+			else {					  
+				return array('code'=>false,'sql'=>'');
+			}	
+		}				
+		if (!empty($broadcast_phone_numbers) && !empty($upload_csv)) { 					
+			$sql .= "E'"; 
+			$sql .= $broadcast_phone_numbers.'\n'.$upload_csv;
+			$sql .= "',";
+		}
+		elseif (empty($broadcast_phone_numbers) && !empty($upload_csv)) {
+			$sql .= "E'$upload_csv', ";
+		}
+		else {
+			$sql .= "E'$broadcast_phone_numbers', ";
+		}
+		return array('code'=>true,'sql'=> $sql);
+	}
+
+
+	if (count($_POST)>0) {
+		$broadcast_name = $_POST["broadcast_name"];
+		$broadcast_description = $_POST["broadcast_description"];
+		$broadcast_timeout = $_POST["broadcast_timeout"];
+		$broadcast_concurrent_limit = $_POST["broadcast_concurrent_limit"];
+		
+		$broadcast_caller_id_name = $_POST["broadcast_caller_id_name"];
+		$broadcast_caller_id_number = $_POST["broadcast_caller_id_number"];
+		$broadcast_destination_type = $_POST["broadcast_destination_type"];
+		$broadcast_phone_numbers = $_POST["broadcast_phone_numbers"];
+		$broadcast_avmd = $_POST["broadcast_avmd"];
+		$broadcast_destination_data = $_POST["broadcast_destination_data"];
+
+		if (if_group("superadmin")){
+			$broadcast_accountcode = $_POST["broadcast_accountcode"])
+		}
+		else if (if_group("admin") && file_exists($_SERVER["PROJECT_ROOT"]."/app/billing/app_config.php")){
+			$sql = "select count(*) ";
+			$sql .= "from v_billings ";
+			$sql .= "where domain_uuid = :domain_uuid ";
+			$sql .= "and type_value = :type_value ";
+			$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+			$parameters['type_value'] = $_POST['accountcode'];
+			$database = new database;
+			$num_rows = $database->select($sql, $parameters, 'column');
+			$broadcast_accountcode = $num_rows > 0 ? $_POST["broadcast_accountcode"] : $_SESSION['domain_name'];
+			unset($sql, $parameters, $num_rows);
+		}
+		else{
+			$broadcast_accountcode = $_SESSION['domain_name'];
+		}
+	}
+
+if (count($_POST) > 0 && strlen($_POST["persistformvar"]) == 0) {
+
+	$msg = '';
+	if ($action == "update") {
+		$call_broadcast_uuid = $_POST["call_broadcast_uuid"];
+	}
+
+	
+		if (strlen($broadcast_name) == 0) { $msg .= "".$text['confirm-name']."<br>\n"; }
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		if (strlen($msg) > 0 && strlen($_POST["persistformvar"]) == 0) {
+			
+			
+			
+			
+			persistformvar($_POST);
+			
+			return;
+		}
+
+	
+	if ($_POST["persistformvar"] != "true") {
+
+		
+			if ($action == "add" && permission_exists('call_broadcast_add')) {
+				
+					$call_broadcast_uuid = uuid();
+					$array['call_broadcasts'][0]['call_broadcast_uuid'] = $call_broadcast_uuid;
+
+				
+					message::add($text['confirm-add']);
+
+				
+					$error_return_url = "call_broadcast_edit.php";
+			}
+
+		
+			if ($action == "update" && permission_exists('call_broadcast_edit')) {
+				
+					$array['call_broadcasts'][0]['call_broadcast_uuid'] = $call_broadcast_uuid;
+
+				
+					message::add($text['confirm-update']);
+
+				
+					$error_return_url = "call_broadcast_edit.php?id=".$_GET['id'];
+			}
+
+		
+			if (is_array($array) && @sizeof($array) != 0) {
+
+				
+					$file_res = upload_file($sql, $broadcast_phone_numbers);
+					if ($file_res['code'] != true) {
+						$_SESSION["message_mood"] = "negative";
+						$_SESSION["message"] = $text['file-error'];
+						header("Location: ".$error_return_url);
+						exit;
+					}
+					$broadcast_phone_numbers = $file_res['sql'];
+
+				
+					$array['call_broadcasts'][0]['domain_uuid'] = $domain_uuid;
+					$array['call_broadcasts'][0]['broadcast_name'] = $broadcast_name;
+					$array['call_broadcasts'][0]['broadcast_description'] = $broadcast_description;
+					$array['call_broadcasts'][0]['broadcast_timeout'] = strlen($broadcast_timeout) != 0 ? $broadcast_timeout : null;
+					$array['call_broadcasts'][0]['broadcast_concurrent_limit'] = strlen($broadcast_concurrent_limit) != 0 ? $broadcast_concurrent_limit : null;
+					
+					$array['call_broadcasts'][0]['broadcast_caller_id_name'] = $broadcast_caller_id_name;
+					$array['call_broadcasts'][0]['broadcast_caller_id_number'] = $broadcast_caller_id_number;
+					$array['call_broadcasts'][0]['broadcast_destination_type'] = $broadcast_destination_type;
+					$array['call_broadcasts'][0]['broadcast_phone_numbers'] = $broadcast_phone_numbers;
+					$array['call_broadcasts'][0]['broadcast_avmd'] = $broadcast_avmd;
+					$array['call_broadcasts'][0]['broadcast_destination_data'] = $broadcast_destination_data;
+					$array['call_broadcasts'][0]['broadcast_accountcode'] = $broadcast_accountcode;
+
+				
+					$database = new database;
+					$database->app_name = 'call_broadcast';
+					$database->app_uuid = 'efc11f6b-ed73-9955-4d4d-3a1bed75a056';
+					$database->save($array);
+					unset($array);
+
+				
+					header("Location: call_broadcast.php");
+					exit;
+
+			}
+
+	}
+}
+
+
+	if (count($_GET)>0 && $_POST["persistformvar"] != "true") {
+		$call_broadcast_uuid = $_GET["id"];
+		$sql = "select * from v_call_broadcasts ";
+		$sql .= "where domain_uuid = :domain_uuid ";
+		$sql .= "and call_broadcast_uuid = :call_broadcast_uuid ";
+		$parameters['domain_uuid'] = $domain_uuid;
+		$parameters['call_broadcast_uuid'] = $call_broadcast_uuid;
+		$database = new database;
+		$row = $database->select($sql, $parameters, 'row');
+		if (is_array($row) && @sizeof($row) != 0) {
+			$broadcast_name = $row["broadcast_name"];
+			$broadcast_description = $row["broadcast_description"];
+			$broadcast_timeout = $row["broadcast_timeout"];
+			$broadcast_concurrent_limit = $row["broadcast_concurrent_limit"];
+			
+			$broadcast_caller_id_name = $row["broadcast_caller_id_name"];
+			$broadcast_caller_id_number = $row["broadcast_caller_id_number"];
+			$broadcast_destination_type = $row["broadcast_destination_type"];
+			$broadcast_phone_numbers = $row["broadcast_phone_numbers"];
+			$broadcast_avmd = $row["broadcast_avmd"];
+			$broadcast_destination_data = $row["broadcast_destination_data"];
+			$broadcast_accountcode = $row["broadcast_accountcode"];
+		}
+		unset($sql, $parameters, $row);
+	}
+
+
+
+
+	
+	
+
+	
+	
+	
+	
+	if ($action == "update") {
+		
+		
+		
+	}
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	if (if_group("superadmin")){
+		
+		
+		
+		
+		
+		if ($action == "add"){ $accountcode=$_SESSION['domain_name']; }
+		
+		
+		
+		
+		
+	}
+	else if (if_group("admin") &&  file_exists($_SERVER["PROJECT_ROOT"]."/app/billing/app_config.php")){
+		
+		
+		
+		
+		
+		
+		$sql = "select type_value ";
+		$sql .= "from v_billings ";
+		$sql .= "where domain_uuid = :domain_uuid ";
+		$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+		$database = new database;
+		$result = $database->select($sql, $parameters, 'all');
+		if (is_array($result) && @sizeof($result) != 0) {
+			foreach ($result as &$row) {
+				$selected = '';
+				if (($action == "add") && ($row['type_value'] == $_SESSION['domain_name'])){
+					$selected='selected="selected"';
+				}
+				elseif ($row['type_value'] == $accountcode){
+					$selected='selected="selected"';
+				}
+				
+			}
+		}
+		unset($sql, $parameters, $result, $row);
+		
+		
+		
+		
+		
+	}
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+
+	
+	
+	'>OR </span> ";
+	
+	\"><a href='sample.csv' download>Sample File <i class='glyphicon glyphicon-download-alt'></i></a>";
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+
+
+
+?>

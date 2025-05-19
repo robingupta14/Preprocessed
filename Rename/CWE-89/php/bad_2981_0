@@ -1,0 +1,256 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (!defined('PHPWG_ROOT_PATH'))
+{
+  die('Hacking attempt!');
+}
+
+
+
+
+
+check_status(var_0);
+
+trigger_notify('loc_begin_element_set_unit');
+
+
+
+
+
+if (isset($_POST['submit']))
+{
+  $var_1 = explode(',', $_POST['element_ids']);
+
+  $var_2 = array();
+
+  $var_3 = '
+SELECT id, date_creation
+  FROM '.var_4.'
+  WHERE id IN ('.implode(',', $var_1).')
+;';
+  $var_5 = pwg_query($var_3);
+
+  while ($var_6 = pwg_db_fetch_assoc($var_5))
+  {
+    $var_7 = array();
+
+    $var_7['id'] = $var_6['id'];
+    $var_7['name'] = $_POST['name-'.$var_6['id']];
+    $var_7['author'] = $_POST['author-'.$var_6['id']];
+    $var_7['level'] = $_POST['level-'.$var_6['id']];
+
+    if ($conf['allow_html_descriptions'])
+    {
+      $var_7['comment'] = @$_POST['description-'.$var_6['id']];
+    }
+    else
+    {
+      $var_7['comment'] = strip_tags(@$_POST['description-'.$var_6['id']]);
+    }
+
+    if (!empty($_POST['date_creation-'.$var_6['id']]))
+    {
+      $var_7['date_creation'] = $_POST['date_creation-'.$var_6['id']];
+    }
+    else
+    {
+      $var_7['date_creation'] = null;
+    }
+
+    $var_2[] = $var_7;
+
+    
+    $var_8 = array();
+    if (!empty($_POST[ 'tags-'.$var_6['id'] ]))
+    {
+      $var_8 = get_tag_ids($_POST[ 'tags-'.$var_6['id'] ]);
+    }
+    set_tags($var_8, $var_6['id']);
+  }
+
+  mass_updates(
+    var_4,
+    array(
+      'primary' => array('id'),
+      'update' => array('name','author','level','comment','date_creation')
+      ),
+    $var_2
+    );
+
+  $page['infos'][] = l10n('Photo informations updated');
+  invalidate_user_cache();
+}
+
+
+
+
+
+$var_9->set_filenames(
+  array('batch_manager_unit' => 'batch_manager_unit.tpl'));
+
+$var_11 = var_12.'admin.php';
+
+$var_9->assign(
+  array(
+    'U_ELEMENTS_PAGE' => $var_11.get_query_string_diff(array('display','start')),
+    'F_ACTION' => $var_11.get_query_string_diff(array()),
+    'level_options' => get_privacy_level_options(),
+    )
+  );
+
+
+
+
+
+
+if (!empty($_GET['display']))
+{
+  $page['nb_images'] = intval($_GET['display']);
+}
+elseif (in_array($conf['batch_manager_images_per_page_unit'], array(5, 10, 50)))
+{
+  $page['nb_images'] = $conf['batch_manager_images_per_page_unit'];
+}
+else
+{
+  $page['nb_images'] = 5;
+}
+
+
+
+if (count($page['cat_elements_id']) > 0)
+{
+  $var_14 = create_navigation_bar(
+    $var_11.get_query_string_diff(array('start')),
+    count($page['cat_elements_id']),
+    $page['start'],
+    $page['nb_images']
+    );
+  $var_9->assign(array('navbar' => $var_14));
+
+  $var_15 = array();
+
+  $var_16 = false;
+  if (isset($_SESSION['bulk_manager_filter']['category'])
+      and !isset($_SESSION['bulk_manager_filter']['category_recursive']))
+  {
+    $var_16 = true;
+  }
+
+  if (isset($_SESSION['bulk_manager_filter']['prefilter'])
+      and 'duplicates' == $_SESSION['bulk_manager_filter']['prefilter'])
+  {
+    $conf['order_by'] = ' ORDER BY file, id';
+  }
+
+
+  $var_3 = '
+SELECT *
+  FROM '.var_4;
+
+  if ($var_16)
+  {
+    $var_17 = get_cat_info($_SESSION['bulk_manager_filter']['category']);
+
+    $conf['order_by'] = $conf['order_by_inside_category'];
+    if (!empty($var_17['image_order']))
+    {
+      $conf['order_by'] = ' ORDER BY '.$var_17['image_order'];
+    }
+
+    $var_3.= '
+    JOIN '.var_18.' ON id = image_id';
+  }
+
+  $var_3.= '
+  WHERE id IN ('.implode(',', $page['cat_elements_id']).')';
+
+  if ($var_16)
+  {
+    $var_3.= '
+    AND category_id = '.$_SESSION['bulk_manager_filter']['category'];
+  }
+
+  $var_3.= '
+  '.$conf['order_by'].'
+  LIMIT '.$page['nb_images'].' OFFSET '.$page['start'].'
+;';
+  $var_5 = pwg_query($var_3);
+
+  while ($var_6 = pwg_db_fetch_assoc($var_5))
+  {
+    $var_15[] = $var_6['id'];
+
+    $var_19 = new class_0($var_6);
+
+    $var_3 = '
+SELECT
+    id,
+    name
+  FROM '.var_20.' AS it
+    JOIN '.var_21.' AS t ON t.id = it.tag_id
+  WHERE image_id = '.$var_6['id'].'
+;';
+    $var_22 = get_taglist($var_3);
+
+    $var_23 = render_element_name($var_6);
+    if ($var_23 != get_name_from_file($var_6['file']))
+    {
+      $var_23.= ' ('.$var_6['file'].')';
+    }
+
+    $var_9->append(
+      'elements', array_merge($var_6,
+      array(
+        'ID' => $var_6['id'],
+        'TN_SRC' => DerivativeImage::url(var_25, $var_19),
+        'FILE_SRC' => DerivativeImage::url(var_26, $var_19),
+        'LEGEND' => $var_23,
+        'U_EDIT' => get_root_url().'admin.php?page=photo-'.$var_6['id'],
+        'NAME' => htmlspecialchars(@$var_6['name']),
+        'AUTHOR' => htmlspecialchars(@$var_6['author']),
+        'LEVEL' => !empty($var_6['level'])?$var_6['level']:'0',
+        'DESCRIPTION' => htmlspecialchars(@$var_6['comment']),
+        'DATE_CREATION' => $var_6['date_creation'],
+        'TAGS' => $var_22,
+        )
+      ));
+  }
+
+  $var_9->assign(array(
+    'ELEMENT_IDS' => implode(',', $var_15),
+    'CACHE_KEYS' => get_admin_client_cache_keys(array('tags')),
+    ));
+}
+
+trigger_notify('loc_end_element_set_unit');
+
+
+
+
+
+$var_9->assign_var_from_handle('ADMIN_CONTENT', 'batch_manager_unit');
+?>

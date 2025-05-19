@@ -1,0 +1,706 @@
+
+
+
+
+
+
+
+
+int imap_expand_path(char *path, size_t len)
+{
+  struct ImapMbox mx;
+  struct ImapData *idata = NULL;
+  struct Url url;
+  char fixedpath[LONG_STRING];
+  int rc;
+
+  if (imap_parse_path(path, &mx) < 0)
+    return -1;
+
+  idata = imap_conn_find(&mx.account, MUTT_IMAP_CONN_NONEW);
+  mutt_account_tourl(&mx.account, &url);
+  imap_fix_path(idata, mx.mbox, fixedpath, sizeof(fixedpath));
+  url.path = fixedpath;
+
+  rc = url_tostring(&url, path, len, U_DECODE_PASSWD);
+  FREE(&mx.mbox);
+
+  return rc;
+}
+
+void imap_get_parent(char *output, const char *mbox, size_t olen, char delim)
+{
+  int n;
+
+
+  if (mbox != output)
+    mutt_str_strfcpy(output, mbox, olen);
+
+  n = mutt_str_strlen(output);
+
+  for (n--; n >= 0 && output[n] != delim; n--)
+    ;
+
+
+
+
+  if (n > 0)
+  {
+
+    output[n] = '\0';
+  }
+  else
+  {
+    output[0] = (n == 0) ? delim : '\0';
+  }
+}
+
+void imap_get_parent_path(char *output, const char *path, size_t olen)
+{
+  struct ImapMbox mx;
+  struct ImapData *idata = NULL;
+  char mbox[LONG_STRING] = "";
+
+  if (imap_parse_path(path, &mx) < 0)
+  {
+    mutt_str_strfcpy(output, path, olen);
+    return;
+  }
+
+  idata = imap_conn_find(&mx.account, MUTT_IMAP_CONN_NONEW);
+  if (!idata)
+  {
+    mutt_str_strfcpy(output, path, olen);
+    return;
+  }
+
+
+  imap_fix_path(idata, mx.mbox, mbox, sizeof(mbox));
+
+
+  imap_get_parent(mbox, mbox, sizeof(mbox), idata->delim);
+
+
+  imap_qualify_path(output, olen, &mx, mbox);
+  FREE(&mx.mbox);
+}
+
+void imap_clean_path(char *path, size_t plen)
+{
+  struct ImapMbox mx;
+  struct ImapData *idata = NULL;
+  char mbox[LONG_STRING] = "";
+
+  if (imap_parse_path(path, &mx) < 0)
+    return;
+
+  idata = imap_conn_find(&mx.account, MUTT_IMAP_CONN_NONEW);
+  if (!idata)
+    return;
+
+
+  imap_fix_path(idata, mx.mbox, mbox, sizeof(mbox));
+
+
+  imap_qualify_path(path, plen, &mx, mbox);
+}
+
+int imap_parse_path(const char *path, struct ImapMbox *mx)
+{
+  static unsigned short ImapPort = 0;
+  static unsigned short ImapsPort = 0;
+  struct servent *service = NULL;
+  struct Url url;
+  char *c = NULL;
+
+  if (!ImapPort)
+  {
+    service = getservbyname("imap", "tcp");
+    if (service)
+      ImapPort = ntohs(service->s_port);
+    else
+      ImapPort = IMAP_PORT;
+    mutt_debug(3, "Using default IMAP port %d\n", ImapPort);
+  }
+  if (!ImapsPort)
+  {
+    service = getservbyname("imaps", "tcp");
+    if (service)
+      ImapsPort = ntohs(service->s_port);
+    else
+      ImapsPort = IMAP_SSL_PORT;
+    mutt_debug(3, "Using default IMAPS port %d\n", ImapsPort);
+  }
+
+
+  memset(&mx->account, 0, sizeof(mx->account));
+  mx->account.port = ImapPort;
+  mx->account.type = MUTT_ACCT_TYPE_IMAP;
+
+  c = mutt_str_strdup(path);
+  url_parse(&url, c);
+  if (url.scheme == U_IMAP || url.scheme == U_IMAPS)
+  {
+    if (mutt_account_fromurl(&mx->account, &url) < 0 || !*mx->account.host)
+    {
+      url_free(&url);
+      FREE(&c);
+      return -1;
+    }
+
+    mx->mbox = mutt_str_strdup(url.path);
+
+    if (url.scheme == U_IMAPS)
+      mx->account.flags |= MUTT_ACCT_SSL;
+
+    url_free(&url);
+    FREE(&c);
+  }
+
+  else
+  {
+    url_free(&url);
+    FREE(&c);
+    char tmp[128];
+    if (sscanf(path, "{%127[^}]}", tmp) != 1)
+      return -1;
+
+    c = strchr(path, '}');
+    if (!c)
+      return -1;
+    else
+    {
+
+      mx->mbox = mutt_str_strdup(c + 1);
+    }
+
+    c = strrchr(tmp, '@');
+    if (c)
+    {
+      *c = '\0';
+      mutt_str_strfcpy(mx->account.user, tmp, sizeof(mx->account.user));
+      mutt_str_strfcpy(tmp, c + 1, sizeof(tmp));
+      mx->account.flags |= MUTT_ACCT_USER;
+    }
+
+    const int n = sscanf(tmp, "%127[^:/]%127s", mx->account.host, tmp);
+    if (n < 1)
+    {
+      mutt_debug(1, "NULL host in %s\n", path);
+      FREE(&mx->mbox);
+      return -1;
+    }
+
+    if (n > 1)
+    {
+      if (sscanf(tmp, ":%hu%127s", &(mx->account.port), tmp) >= 1)
+        mx->account.flags |= MUTT_ACCT_PORT;
+      if (sscanf(tmp, "/%s", tmp) == 1)
+      {
+        if (mutt_str_strncmp(tmp, "ssl", 3) == 0)
+          mx->account.flags |= MUTT_ACCT_SSL;
+        else
+        {
+          mutt_debug(1, "Unknown connection type in %s\n", path);
+          FREE(&mx->mbox);
+          return -1;
+        }
+      }
+    }
+  }
+
+  if ((mx->account.flags & MUTT_ACCT_SSL) && !(mx->account.flags & MUTT_ACCT_PORT))
+    mx->account.port = ImapsPort;
+
+  return 0;
+}
+
+int imap_mxcmp(const char *mx1, const char *mx2)
+{
+  char *b1 = NULL;
+  char *b2 = NULL;
+  int rc;
+
+  if (!mx1 || !*mx1)
+    mx1 = "INBOX";
+  if (!mx2 || !*mx2)
+    mx2 = "INBOX";
+  if ((mutt_str_strcasecmp(mx1, "INBOX") == 0) &&
+      (mutt_str_strcasecmp(mx2, "INBOX") == 0))
+  {
+    return 0;
+  }
+
+  b1 = mutt_mem_malloc(strlen(mx1) + 1);
+  b2 = mutt_mem_malloc(strlen(mx2) + 1);
+
+  imap_fix_path(NULL, mx1, b1, strlen(mx1) + 1);
+  imap_fix_path(NULL, mx2, b2, strlen(mx2) + 1);
+
+  rc = mutt_str_strcmp(b1, b2);
+  FREE(&b1);
+  FREE(&b2);
+
+  return rc;
+}
+
+
+
+
+
+
+
+void imap_pretty_mailbox(char *path)
+{
+  struct ImapMbox home, target;
+  struct Url url;
+  char *delim = NULL;
+  int tlen;
+  int hlen = 0;
+  bool home_match = false;
+
+  if (imap_parse_path(path, &target) < 0)
+    return;
+
+  tlen = mutt_str_strlen(target.mbox);
+
+  if (mx_is_imap(Folder) && !imap_parse_path(Folder, &home))
+  {
+    hlen = mutt_str_strlen(home.mbox);
+    if (tlen && mutt_account_match(&home.account, &target.account) &&
+        (mutt_str_strncmp(home.mbox, target.mbox, hlen) == 0))
+    {
+      if (hlen == 0)
+        home_match = true;
+      else if (ImapDelimChars)
+      {
+        for (delim = ImapDelimChars; *delim != '\0'; delim++)
+          if (target.mbox[hlen] == *delim)
+            home_match = true;
+      }
+    }
+    FREE(&home.mbox);
+  }
+
+
+  if (home_match)
+  {
+    *path++ = '=';
+
+    if (hlen == 0)
+      hlen = -1;
+    memcpy(path, target.mbox + hlen + 1, tlen - hlen - 1);
+    path[tlen - hlen - 1] = '\0';
+  }
+  else
+  {
+    mutt_account_tourl(&target.account, &url);
+    url.path = target.mbox;
+
+
+
+    url_tostring(&url, path, 1024, 0);
+  }
+
+  FREE(&target.mbox);
+}
+
+
+
+
+
+
+
+int imap_continue(const char *msg, const char *resp)
+{
+  imap_error(msg, resp);
+  return mutt_yesorno(_("Continue?"), 0);
+}
+
+
+
+
+
+
+void imap_error(const char *where, const char *msg)
+{
+  mutt_error("%s [%s]\n", where, msg);
+}
+
+
+
+
+
+
+struct ImapData *imap_new_idata(void)
+{
+  struct ImapData *idata = mutt_mem_calloc(1, sizeof(struct ImapData));
+
+  idata->cmdbuf = mutt_buffer_new();
+  idata->cmdslots = ImapPipelineDepth + 2;
+  idata->cmds = mutt_mem_calloc(idata->cmdslots, sizeof(*idata->cmds));
+
+  STAILQ_INIT(&idata->flags);
+  STAILQ_INIT(&idata->mboxcache);
+
+  return idata;
+}
+
+
+
+
+
+void imap_free_idata(struct ImapData **idata)
+{
+  if (!idata)
+    return;
+
+  FREE(&(*idata)->capstr);
+  mutt_list_free(&(*idata)->flags);
+  imap_mboxcache_free(*idata);
+  mutt_buffer_free(&(*idata)->cmdbuf);
+  FREE(&(*idata)->buf);
+  mutt_bcache_close(&(*idata)->bcache);
+  FREE(&(*idata)->cmds);
+  FREE(idata);
+}
+
+char *imap_fix_path(struct ImapData *idata, const char *mailbox, char *path, size_t plen)
+{
+  int i = 0;
+  char delim = '\0';
+
+  if (idata)
+    delim = idata->delim;
+
+  while (mailbox && *mailbox && i < plen - 1)
+  {
+    if ((ImapDelimChars && strchr(ImapDelimChars, *mailbox)) || (delim && *mailbox == delim))
+    {
+
+      if (!idata)
+        delim = *mailbox;
+
+      while (*mailbox && ((ImapDelimChars && strchr(ImapDelimChars, *mailbox)) ||
+                          (delim && *mailbox == delim)))
+      {
+        mailbox++;
+      }
+      path[i] = delim;
+    }
+    else
+    {
+      path[i] = *mailbox;
+      mailbox++;
+    }
+    i++;
+  }
+  if (i && path[--i] != delim)
+    i++;
+  path[i] = '\0';
+
+  return path;
+}
+
+void imap_cachepath(struct ImapData *idata, const char *mailbox, char *dest, size_t dlen)
+{
+  char *s = NULL;
+  const char *p = mailbox;
+
+  for (s = dest; p && *p && dlen; dlen--)
+  {
+    if (*p == idata->delim)
+    {
+      *s = '/';
+
+      if (*(p + 1) >= '0' && *(p + 1) <= '9')
+      {
+        if (--dlen)
+          *++s = '_';
+      }
+    }
+    else
+      *s = *p;
+    p++;
+    s++;
+  }
+  *s = '\0';
+}
+
+int imap_get_literal_count(const char *buf, unsigned int *bytes)
+{
+  char *pc = NULL;
+  char *pn = NULL;
+
+  if (!buf || !(pc = strchr(buf, '{')))
+    return -1;
+
+  pc++;
+  pn = pc;
+  while (isdigit((unsigned char) *pc))
+    pc++;
+  *pc = '\0';
+  if (mutt_str_atoui(pn, bytes) < 0)
+    return -1;
+
+  return 0;
+}
+
+char *imap_get_qualifier(char *buf)
+{
+  char *s = buf;
+
+
+  s = imap_next_word(s);
+
+  s = imap_next_word(s);
+
+  return s;
+}
+
+
+
+
+
+
+char *imap_next_word(char *s)
+{
+  int quoted = 0;
+
+  while (*s)
+  {
+    if (*s == '\\')
+    {
+      s++;
+      if (*s)
+        s++;
+      continue;
+    }
+    if (*s == '\"')
+      quoted = quoted ? 0 : 1;
+    if (!quoted && ISSPACE(*s))
+      break;
+    s++;
+  }
+
+  SKIPWS(s);
+  return s;
+}
+
+void imap_qualify_path(char *dest, size_t len, struct ImapMbox *mx, char *path)
+{
+  struct Url url;
+
+  mutt_account_tourl(&mx->account, &url);
+  url.path = path;
+
+  url_tostring(&url, dest, len, 0);
+}
+
+void imap_quote_string(char *dest, size_t dlen, const char *src, bool quote_backtick)
+{
+  const char *quote = "`\"\\";
+  if (!quote_backtick)
+    quote++;
+
+  char *pt = dest;
+  const char *s = src;
+
+  *pt++ = '"';
+
+  dlen -= 2;
+
+  for (; *s && dlen; s++)
+  {
+    if (strchr(quote, *s))
+    {
+      dlen -= 2;
+      if (dlen == 0)
+        break;
+      *pt++ = '\\';
+      *pt++ = *s;
+    }
+    else
+    {
+      *pt++ = *s;
+      dlen--;
+    }
+  }
+  *pt++ = '"';
+  *pt = '\0';
+}
+
+
+
+
+
+void imap_unquote_string(char *s)
+{
+  char *d = s;
+
+  if (*s == '\"')
+    s++;
+  else
+    return;
+
+  while (*s)
+  {
+    if (*s == '\"')
+    {
+      *d = '\0';
+      return;
+    }
+    if (*s == '\\')
+    {
+      s++;
+    }
+    if (*s)
+    {
+      *d = *s;
+      d++;
+      s++;
+    }
+  }
+  *d = '\0';
+}
+
+void imap_munge_mbox_name(struct ImapData *idata, char *dest, size_t dlen, const char *src)
+{
+  char *buf = mutt_str_strdup(src);
+  imap_utf_encode(idata, &buf);
+
+  imap_quote_string(dest, dlen, buf, false);
+
+  FREE(&buf);
+}
+
+void imap_unmunge_mbox_name(struct ImapData *idata, char *s)
+{
+  imap_unquote_string(s);
+
+  char *buf = mutt_str_strdup(s);
+  if (buf)
+  {
+    imap_utf_decode(idata, &buf);
+    strncpy(s, buf, strlen(s));
+  }
+
+  FREE(&buf);
+}
+
+
+
+
+void imap_keepalive(void)
+{
+  struct Connection *conn = NULL;
+  struct ImapData *idata = NULL;
+  time_t now = time(NULL);
+
+  TAILQ_FOREACH(conn, mutt_socket_head(), entries)
+  {
+    if (conn->account.type == MUTT_ACCT_TYPE_IMAP)
+    {
+      idata = conn->data;
+      if (idata->state >= IMAP_AUTHENTICATED && now >= idata->lastread + ImapKeepalive)
+      {
+        imap_check(idata, 1);
+      }
+    }
+  }
+}
+
+
+
+
+
+
+int imap_wait_keepalive(pid_t pid)
+{
+  struct sigaction oldalrm;
+  struct sigaction act;
+  sigset_t oldmask;
+  int rc;
+
+  bool imap_passive = ImapPassive;
+
+  ImapPassive = true;
+  OptKeepQuiet = true;
+
+  sigprocmask(SIG_SETMASK, NULL, &oldmask);
+
+  sigemptyset(&act.sa_mask);
+  act.sa_handler = mutt_sig_empty_handler;
+
+
+
+  act.sa_flags = 0;
+
+
+  sigaction(SIGALRM, &act, &oldalrm);
+
+  alarm(ImapKeepalive);
+  while (waitpid(pid, &rc, 0) < 0 && errno == EINTR)
+  {
+    alarm(0);
+    imap_keepalive();
+    alarm(ImapKeepalive);
+  }
+
+  alarm(0);
+
+  sigaction(SIGALRM, &oldalrm, NULL);
+  sigprocmask(SIG_SETMASK, &oldmask, NULL);
+
+  OptKeepQuiet = false;
+  if (!imap_passive)
+    ImapPassive = false;
+
+  return rc;
+}
+
+
+
+
+
+void imap_allow_reopen(struct Context *ctx)
+{
+  struct ImapData *idata = NULL;
+  if (!ctx || !ctx->data || ctx->magic != MUTT_IMAP)
+    return;
+
+  idata = ctx->data;
+  if (idata->ctx == ctx)
+    idata->reopen |= IMAP_REOPEN_ALLOW;
+}
+
+
+
+
+
+void imap_disallow_reopen(struct Context *ctx)
+{
+  struct ImapData *idata = NULL;
+  if (!ctx || !ctx->data || ctx->magic != MUTT_IMAP)
+    return;
+
+  idata = ctx->data;
+  if (idata->ctx == ctx)
+    idata->reopen &= ~IMAP_REOPEN_ALLOW;
+}
+
+
+
+
+
+
+
+int imap_account_match(const struct Account *a1, const struct Account *a2)
+{
+  struct ImapData *a1_idata = imap_conn_find(a1, MUTT_IMAP_CONN_NONEW);
+  struct ImapData *a2_idata = imap_conn_find(a2, MUTT_IMAP_CONN_NONEW);
+  const struct Account *a1_canon = a1_idata == NULL ? a1 : &a1_idata->conn->account;
+  const struct Account *a2_canon = a2_idata == NULL ? a2 : &a2_idata->conn->account;
+
+  return mutt_account_match(a1_canon, a2_canon);
+}

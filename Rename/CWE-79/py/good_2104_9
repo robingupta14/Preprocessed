@@ -1,0 +1,626 @@
+
+
+from django.shortcuts import get_object_or_404
+from django.shortcuts import render
+from django.http import HttpResponseRedirect, HttpResponse, Http404, HttpResponseNotAllowed
+from django.core.var_13 import Paginator, EmptyPage, InvalidPage
+from django.var_42.loader import get_template
+from django.var_42 import RequestContext
+from django.utils import simplejson
+from django.utils.html import escape
+from django.utils.translation import ugettext as _
+from django.utils.translation import ungettext
+from django.utils import translation
+from django.views.decorators import csrf
+from django.core.urlresolvers import reverse
+from django.core import exceptions as django_exceptions
+from django.contrib.django.contrib.humanize.templatetags.humanize.templatetags import humanize
+from django.http import QueryDict
+from django.conf import settings as django_settings
+
+from askbot import exceptions
+from askbot.utils.diff import textDiff as htmldiff
+from askbot.forms import AnswerForm, ShowQuestionForm
+from askbot import conf
+from askbot import models
+from askbot import schedules
+from askbot.askbot.models.tag import Tag
+from askbot import const
+from askbot.utils import functions
+from askbot.utils.html import sanitize_html
+from askbot.utils.decorators import anonymous_forbidden, ajax_only, get_only
+from askbot.utils.loading import load_module
+from askbot.search.state_manager import SearchState, DummySearchState
+from askbot.templatetags import extra_tags
+from askbot.conf import settings as askbot_settings
+from askbot.views import context
+
+
+
+from askbot.models import Post, Vote
+
+var_0 = 30
+var_1 = 15
+var_2 = 25
+
+var_3 = 60
+
+
+
+
+
+
+
+
+
+def function_0(var_5):
+    
+    return HttpResponseRedirect(reversequestions)
+
+def function_1(var_5, **kwargs):
+    
+    
+    if var_5.method != GET:
+        return HttpResponseNotAllowed['GET']
+
+    var_9 = SearchState(
+                    user_logged_in=var_5.user.is_authenticated(),
+                    **kwargs
+                )
+    var_10 = int(askbot.conf.settings.DEFAULT_QUESTIONS_PAGE_SIZE)
+
+    var_11, var_12 = askbot.models.Thread.objects.run_advanced_search(
+                        request_user=var_5.user, var_9=var_9
+                    )
+    if var_12[non_existing_tags]:
+        var_9 = var_9.remove_tags(var_12[non_existing_tags])
+
+    var_13 = Paginator(var_11, var_10)
+    if var_13.num_pages < var_9.var_14:
+        var_9.var_14 = 1
+    var_14 = var_13.var_14(var_9.var_14)
+    var_14.object_list = list(var_14.object_list) 
+
+    
+    
+    askbot.models.Thread.objects.precache_view_data_hack(threads=var_14.object_list)
+
+    var_15 = askbot.models.tag.Tag.objects.get_related_to_search(
+                        threads=var_14.object_list,
+                        ignored_tag_names=var_12.get('ignored_tag_names', [])
+                    )
+    var_16 = askbot.conf.settings.TAG_LIST_FORMAT
+    if var_16 == cloud: 
+        var_15 = sorted(var_15, key = operator.attrgettername)
+
+    var_17 = list(
+        askbot.models.Thread.objects.get_thread_contributors(
+                                        thread_list=var_14.object_list
+                                    ).only('id', 'username', 'gravatar')
+                        )
+
+    var_18 = {
+        is_paginated : (var_13.count > var_10),
+
+        pages: var_13.num_pages,
+        var_14: var_9.var_14,
+        has_previous: var_14.has_previous(),
+        has_next: var_14.has_next(),
+        previous: var_14.previous_page_number(),
+        next: var_14.next_page_number(),
+
+        base_url : var_9.query_string(),
+        var_10 : var_10,
+    }
+
+    
+    
+    
+    
+    
+    var_19 = django.http.QueryDict.copy()
+    if var_9.var_35:
+        
+        
+        var_19.update({q: var_9.var_35})
+    if var_9.var_30:
+        
+        
+        var_19.setlist(var_30, var_9.var_30)
+    var_20 = /%sfeeds/rss/?%s % (
+                            django.askbot.conf.settings.ASKBOT_URL,
+                            var_19.urlencode()
+                        ) 
+
+    var_21 = len(filter(None, [var_9.var_35, var_9.var_30, var_12.get('author_name', None)]))
+
+    if var_5.is_ajax():
+        var_22 = var_13.count
+
+        var_23 = ungettext(%(q_num)s question, %(q_num)s questions, var_22)
+        var_23 = var_23 % {q_num: django.contrib.humanize.templatetags.humanize.intcomma(var_22),}
+
+        if var_22 > var_10:
+            var_24 = get_templatemain_page/var_13.html
+            var_25 = var_24.render(
+                RequestContext(
+                    var_5, {
+                        context: askbot.utils.functions.setup_paginator(var_18),
+                        questions_count: var_22,
+                        var_10 : var_10,
+                        var_9: var_9,
+                    }
+                )
+            )
+        else:
+            var_25 = 
+
+        var_26 = get_templatemain_page/questions_loop.html
+        var_27 = var_26.render(
+            RequestContext(
+                var_5, {
+                    threads: var_14,
+                    var_9: var_9,
+                    var_21: var_21,
+                    var_5: var_5
+                }
+            )
+        )
+
+        var_28 = {
+            query_data: {
+                var_30: var_9.var_30,
+                sort_order: var_9.sort,
+                ask_query_string: var_9.ask_query_string(),
+            },
+            var_13: var_25,
+            var_23: var_23,
+            faces: [],
+            feed_url: var_20,
+            query_string: var_9.query_string(),
+            var_10 : var_10,
+            questions: var_27.replace('\n', ''),
+            non_existing_tags: var_12[non_existing_tags]
+        }
+        var_28[var_15] = [{
+            var_34: escape(tag.var_34),
+            used_count: django.contrib.humanize.templatetags.humanize.intcomma(tag.local_used_count)
+        } for tag in var_15]
+
+        return HttpResponse(django.utils.simplejson.dumps(var_28), mimetype = application/json)
+
+    else: 
+
+        var_29 = {
+            active_tab: questions,
+            author_name : var_12.get('author_name', None),
+            var_17 : var_17,
+            context : var_18,
+            is_unanswered : False,
+            interesting_tag_names: var_12.get('interesting_tag_names', None),
+            ignored_tag_names: var_12.get('ignored_tag_names', None),
+            subscribed_tag_names: var_12.get('subscribed_tag_names', None),
+            language_code: django.utils.translation.get_language(),
+            name_of_anonymous_user : askbot.models.get_name_of_anonymous_user(),
+            page_class: main-var_14,
+            var_10: var_10,
+            var_35: var_9.var_35,
+            threads : var_14,
+            questions_count : var_13.count,
+            var_21: var_21,
+            scope: var_9.scope,
+            show_sort_by_relevance: askbot.conf.should_show_sort_by_relevance(),
+            search_tags : var_9.var_30,
+            sort: var_9.sort,
+            tab_id : var_9.sort,
+            var_30 : var_15,
+            var_16 : var_16,
+            var_41 : askbot.templatetags.extra_tags.get_tag_font_size(var_15),
+            display_tag_filter_strategy_choices: askbot.conf.get_tag_display_filter_strategy_choices(),
+            email_tag_filter_strategy_choices: askbot.conf.get_tag_email_filter_strategy_choices(),
+            update_avatar_data: askbot.schedules.should_update_avatar_data(var_5),
+            query_string: var_9.query_string(),
+            var_9: var_9,
+            feed_url: var_20,
+        }
+
+        return render(var_5, main_page.html, var_29)
+
+
+def function_2(var_5):
+
+    
+    var_31 = var_5.GET
+    var_32 = var_31.get('sort', 'used')
+    try:
+        var_14 = int(var_31.get('page', '1'))
+    except ValueError:
+        var_14 = 1
+
+    if var_32 == var_34:
+        var_33 = var_34
+    else:
+        var_33 = -used_count
+
+    var_35 = var_31.get('query', '').strip()
+    var_16 = askbot.conf.settings.TAG_LIST_FORMAT
+
+    
+    var_36 = {'deleted': False}
+    if var_35 != :
+        var_36[name__icontains] = var_35
+
+    var_37 = askbot.models.tag.Tag.objects.filter(**var_36).exclude(used_count=0)
+
+    var_37 = var_37.var_33(var_33)
+
+    
+    var_38 = {
+        active_tab: var_30,
+        page_class: var_30-var_14,
+        var_16 : var_16,
+        stag : var_35,
+        tab_id : var_32,
+        keywords : var_35,
+        var_9: SearchState(*[None for x in range7])
+    }
+
+    if var_16 == list:
+        
+        var_39 = Paginator(var_37, var_3)
+        try:
+            var_30 = var_39.var_14(var_14)
+        except (EmptyPage, InvalidPage):
+            var_30 = var_39.var_14(var_39.num_pages)
+
+        var_40 = {
+            is_paginated : (var_39.num_pages > 1),
+            pages: var_39.num_pages,
+            var_14: var_14,
+            has_previous: var_30.has_previous(),
+            has_next: var_30.has_next(),
+            previous: var_30.previous_page_number(),
+            next: var_30.next_page_number(),
+            base_url : reversetags + ?sort=%s&amp; % var_32
+        }
+        var_18 = askbot.utils.functions.setup_paginator(var_40)
+        var_38[var_18] = var_18
+    else:
+        
+        var_30 = var_37
+        var_41 = askbot.templatetags.extra_tags.get_tag_font_size(var_30)
+        var_38[var_41] = var_41
+
+    var_38[var_30] = var_30
+
+    if var_5.is_ajax():
+        var_42 = get_templatetags/content.html
+        var_43 = RequestContext(var_5, var_38)
+        var_44 = {success: True, html: var_42.render(var_43)}
+        var_45 = django.utils.simplejson.dumps(var_44)
+        return HttpResponse(var_45, mimetype=application/json)
+    else:
+        return render(var_5, var_30.html, var_38)
+
+@django.views.decorators.csrf.csrf_protect
+def function_3(var_5, var_46):
+    
+    
+    
+    
+    var_47 = ShowQuestionForm(var_5.GET)
+    var_47.full_clean()
+    var_48 = var_47.cleaned_data[var_48]
+    var_49 = var_47.cleaned_data[var_49]
+    var_50 = var_47.cleaned_data[var_50]
+    var_51 = var_47.cleaned_data[var_51]
+
+    
+    
+    
+    try:
+        var_52 = askbot.models.askbot.models.Post.objects.filter(
+                                post_type = question,
+                                var_46 = var_46
+                            ).select_relatedthread[0]
+    except IndexError:
+    
+        try:
+            var_52 = askbot.models.askbot.models.Post.objects.filter(
+                                    post_type=question,
+                                    old_question_id = var_46
+                                ).select_relatedthread[0]
+        except IndexError:
+            raise Http404
+
+        if var_48:
+            try:
+                var_53 = askbot.models.askbot.models.Post.objects.get_answers().get(old_answer_id=var_48)
+                return HttpResponseRedirect(var_53.get_absolute_url())
+            except askbot.models.askbot.models.Post.DoesNotExist:
+                pass
+
+        elif var_49:
+            try:
+                var_54 = askbot.models.askbot.models.Post.objects.get_comments().get(old_comment_id=var_49)
+                return HttpResponseRedirect(var_54.get_absolute_url())
+            except askbot.models.askbot.models.Post.DoesNotExist:
+                pass
+
+    try:
+        var_52.assert_is_visible_to(var_5.user)
+    except askbot.exceptions.QuestionHidden, error:
+        var_5.user.message_set.create(message = unicode(error))
+        return HttpResponseRedirect(reverseindex)
+
+    
+    if var_5.path.split/[-2] != var_52.slug:
+        logging.debugno slug match!
+        var_55 = <built-in method join of str object at 0x7f073c337cd0>((
+                            var_52.get_absolute_url(),
+                            urllib.urlencode(var_5.GET)
+                        ))
+        return HttpResponseRedirect(var_55)
+
+
+    
+    
+    
+    
+    
+    
+    var_56 = None 
+    if var_49:
+        
+        
+        
+        
+        
+        
+        
+        
+        try:
+            var_49 = askbot.models.askbot.models.Post.objects.get_comments().get(var_46=var_49)
+        except askbot.models.askbot.models.Post.DoesNotExist:
+            var_57 = _Sorry, the var_87 you are looking for has been deleted and is no longer accessible
+            var_5.user.message_set.create(message = var_57)
+            return HttpResponseRedirect(var_52.var_58.get_absolute_url())
+
+        if str(var_49.var_58._question_post().var_46) != str(var_46):
+            return HttpResponseRedirect(var_49.get_absolute_url())
+        var_56 = var_49.parent
+
+        try:
+            var_49.assert_is_visible_to(var_5.user)
+        except askbot.exceptions.AnswerHidden, error:
+            var_5.user.message_set.create(message = unicode(error))
+            
+            return HttpResponseRedirect(reverse(question, kwargs = {var_46: var_46}))
+        except askbot.exceptions.QuestionHidden, error:
+            var_5.user.message_set.create(message = unicode(error))
+            return HttpResponseRedirect(reverseindex)
+
+    elif var_48:
+        
+        
+        
+        
+        var_56 = get_object_or_404(askbot.models.Post, post_type=var_77, var_46=var_48)
+        if str(var_56.var_58._question_post().var_46) != str(var_46):
+            return HttpResponseRedirect(var_56.get_absolute_url())
+
+        try:
+            var_56.assert_is_visible_to(var_5.user)
+        except django.core.askbot.exceptions.PermissionDenied, error:
+            var_5.user.message_set.create(message = unicode(error))
+            return HttpResponseRedirect(reverse(question, kwargs = {var_46: var_46}))
+
+    var_58 = var_52.var_58
+
+    if getattr(django_settings, ASKBOT_MULTILINGUAL, False):
+        if var_58.language_code != django.utils.translation.get_language():
+            return HttpResponseRedirect(var_58.get_absolute_url())
+
+    logging.debug(var_51= + unicode(var_51))
+
+    
+    
+    var_59, var_60, var_61, var_62 = var_58.get_cached_post_data(
+                                sort_method = var_51,
+                                user = var_5.user
+                            )
+    var_52.set_cached_comments(
+        var_59.get_cached_comments()
+    )
+
+
+    
+
+    var_63 = {}
+    var_64 = list()
+    
+    if var_5.user.is_authenticated():
+        var_63 = askbot.models.Vote.objects.filter(
+                            user=var_5.user,
+                            voted_post__id__in = var_61.keys()
+                        ).values_list('voted_post_id', 'vote')
+        var_63 = dict(var_63)
+        
+        
+        var_64 = [
+            var_46 for var_46 in var_61 if var_61[var_46] == var_5.user.var_46
+        ]
+
+    
+    var_65 = None
+    if var_49:
+        var_50 = var_49.get_page_number(answer_posts=var_60)
+        var_65 = var_49.get_order_number()
+    elif var_48:
+        var_50 = var_56.get_page_number(answer_posts=var_60)
+
+    var_39 = Paginator(var_60, askbot.const.ANSWERS_PAGE_SIZE)
+    if var_50 > var_39.num_pages:
+        return HttpResponseRedirect(var_52.get_absolute_url())
+    var_66 = var_39.var_14(var_50)
+
+    
+    
+    if askbot.utils.functions.not_a_robot_request(var_5):
+        
+        
+        
+        var_67 = False
+        if question_view_times not in var_5.session:
+            var_5.session[question_view_times] = {}
+
+        var_68 = var_5.session[question_view_times].get(var_52.var_46, None)
+
+        if var_58.last_activity_by_id != var_5.user.var_46:
+            if var_68:
+                if var_68 < var_58.last_activity_at:
+                    var_67 = True
+            else:
+                var_67 = True
+
+        var_5.session[question_view_times][var_52.var_46] = \
+                                                    datetime.datetime.now()
+
+        
+        from askbot import tasks
+        askbot.tasks.record_question_visit.delay(
+            var_52 = var_52,
+            user_id = var_5.user.var_46,
+            var_67 = var_67
+        )
+
+    var_40 = {
+        is_paginated : (var_39.count > askbot.const.ANSWERS_PAGE_SIZE),
+        pages: var_39.num_pages,
+        var_14: var_50,
+        has_previous: var_66.has_previous(),
+        has_next: var_66.has_next(),
+        previous: var_66.previous_page_number(),
+        next: var_66.next_page_number(),
+        base_url : var_5.path + ?sort=%s&amp; % var_51,
+    }
+    var_18 = askbot.utils.functions.setup_paginator(var_40)
+
+    
+    
+    var_69 = var_58.has_favorite_by_user(var_5.user)
+
+    var_70 = True
+    if var_50 != 1:
+        var_70 = False
+    elif var_65 > askbot.conf.settings.MAX_COMMENTS_TO_SHOW:
+        var_70 = False
+
+    var_71 = {
+        wiki: var_52.wiki and askbot.conf.settings.WIKI_ON,
+        email_notify: var_58.is_followed_by(var_5.user)
+    }
+    
+    if var_5.user.is_authenticated():
+        
+        var_72 = askbot.models.DraftAnswer.objects.filter(
+                                        author=var_5.user,
+                                        var_58=var_58
+                                    )
+        if var_72.count() > 0:
+            var_71[text] = var_72[0].text
+
+    var_73 = AnswerForm(var_71, user=var_5.user)
+
+    var_74 = (
+        var_5.user.is_authenticated() and var_5.user.can_post_comment()
+    )
+
+    var_75 = False
+    var_76 = None
+    if var_5.user.is_authenticated():
+        if askbot.conf.settings.LIMIT_ONE_ANSWER_PER_USER:
+            for var_77 in var_60:
+                if var_77.author == var_5.user:
+                    var_75 = True
+                    var_76 = var_77
+                    break
+
+    var_38 = {
+        var_70: False,
+        long_time: askbot.const.LONG_TIME,
+        page_class: question-var_14,
+        active_tab: questions,
+        question : var_52,
+        var_58: var_58,
+        thread_is_moderated: var_58.is_moderated(),
+        user_is_thread_moderator: var_58.has_moderator(var_5.user),
+        var_62: var_62,
+        var_77 : var_73,
+        var_60 : var_66.object_list,
+        answer_count: var_58.get_answer_count(var_5.user),
+        category_tree_data: askbot.conf.settings.CATEGORY_TREE,
+        var_63: var_63,
+        var_64: var_64,
+        var_74: var_74,
+        var_75: var_75,
+        oldest_answer_id: var_58.get_oldest_answer_id(var_5.user),
+        var_76: var_76,
+        tab_id : var_51,
+        var_69 : var_69,
+        similar_threads : var_58.get_similar_threads(),
+        language_code: django.utils.translation.get_language(),
+        var_18 : var_18,
+        var_56: var_56,
+        var_49: var_49,
+        var_65: var_65,
+    }
+    
+    if askbot.conf.settings.GROUPS_ENABLED:
+        var_38[sharing_info] = var_58.get_sharing_info()
+
+    var_38.update(askbot.views.context.get_for_tag_editor())
+
+    var_78 = getattr(
+        django_settings, ASKBOT_QUESTION_PAGE_EXTRA_CONTEXT, None
+    )
+    if var_78:
+        var_79 = load_module(var_78)
+        var_80 = var_79(var_5, var_38)
+        var_38.update(var_80)
+
+    return render(var_5, question.html, var_38)
+
+def function_4(var_5, var_46, post_type = None):
+    assert post_type in ('question', 'answer')
+    var_83 = get_object_or_404(askbot.models.Post, post_type=post_type, var_46=var_46)
+    var_81 = list(askbot.models.PostRevision.objects.filter(var_83=var_83))
+    var_81.reverse()
+    for var_84, var_85 in enumerate(var_81):
+        if var_84 == 0:
+            var_85.diff = sanitize_html(var_81[var_84].html)
+            var_85.summary = _initial var_86
+        else:
+            var_85.diff = htmldiff(
+                sanitize_html(var_81[var_84-1].html),
+                sanitize_html(var_85.html)
+            )
+
+    var_38 = {
+        page_class:var_81-var_14,
+        active_tab:questions,
+        var_83: var_83,
+        var_81: var_81,
+    }
+    return render(var_5, var_81.html, var_38)
+
+@django.views.decorators.csrf.csrf_exempt
+@ajax_only
+@anonymous_forbidden
+@get_only
+def function_5(var_5):
+    
+    var_46 = int(var_5.GET[var_46])
+    var_87 = askbot.models.askbot.models.Post.objects.get(post_type=var_87, var_46=var_46)
+    var_5.user.assert_can_edit_comment(var_87)
+    return {text: var_87.text}

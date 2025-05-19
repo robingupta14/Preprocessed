@@ -1,0 +1,117 @@
+<?php
+
+class HTMLText extends Text {
+	
+	public static $escape_type = 'xml';
+	
+	
+	function LimitCharacters($limit = 20, $add = "...") {
+		$value = trim(strip_tags($this->value));
+		return (strlen($value) > $limit) ? substr($value, 0, $limit) . $add : $value;
+	}
+
+	static $casting = array(
+		"AbsoluteLinks" => "HTMLText",
+		"BigSummary" => "HTMLText",
+		"ContextSummary" => "HTMLText",
+		"FirstParagraph" => "HTMLText",
+		"FirstSentence" => "HTMLText",
+		"LimitCharacters" => "HTMLText",
+		"LimitSentences" => "HTMLText",
+		"Lower" => "HTMLText",
+		"LowerCase" => "HTMLText",
+		"Summary" => "HTMLText",
+		"Upper" => "HTMLText",
+		"UpperCase" => "HTMLText",
+		'EscapeXML' => 'HTMLText',
+		'LimitWordCount' => 'HTMLText',
+		'LimitWordCountXML' => 'HTMLText',
+		'NoHTML' => 'Text',
+	);
+
+	
+	public function Summary($maxWords = 50, $flex = 15, $add = '...') {
+		$str = false;
+
+		
+		if (class_exists('SimpleXMLElement')) {
+			$doc = new DOMDocument();
+			
+			
+			set_error_handler(create_function('$no, $str', 'throw new Exception("HTML Parse Error: ".$str);'), E_ALL);
+			
+			$value = str_replace('&nbsp;', ' ', $this->value);
+			try { $res = $doc->loadHTML('<meta content="text/html; charset=utf-8" http-equiv="Content-type"/>' . $value); }
+			catch (Exception $e) {}
+			restore_error_handler();
+			
+			if ($res) {
+				$xml = simplexml_import_dom($doc);
+				$res = $xml->xpath('
+				if (!empty($res)) $str = strip_tags($res[0]->asXML());
+			}
+		}
+		
+		
+		if (!$str) {
+			
+			if (preg_match('{<p(\s[^<>]*)?>(.*[A-Za-z]+.*)</p>}', $this->value, $matches)) $str = $matches[2];
+			
+			else $str = $this->value;
+			
+			
+			$str = preg_replace('{</?[a-zA-Z]+[^<>]*>}', '', $str); 
+			$str = preg_replace('{</|<|>}', '', $str); 
+		}
+		
+		
+		$words = preg_split('/\s+/', $str);
+		if ($maxWords == -1 || count($words) <= $maxWords) return implode(' ', $words);
+
+		
+		for ($i = $maxWords; $i >= $maxWords - $flex && $i >= 0; $i--) {
+			if (preg_match('/\.$/', $words[$i]) && !preg_match('/(Dr|Mr|Mrs|Ms|Miss|Sr|Jr|No)\.$/i', $words[$i])) {
+				return implode(' ', array_slice($words, 0, $i+1));
+			}
+		}
+		
+		
+		return implode(' ', array_slice($words, 0, $maxWords)) . $add;
+	}
+	
+	
+	function FirstSentence() {
+		
+		$paragraph = $this->Summary(-1);
+		
+		
+		$words = preg_split('/\s+/', $paragraph);
+		foreach ($words as $i => $word) {
+			if (preg_match('/\.$/', $word) && !preg_match('/(Dr|Mr|Mrs|Ms|Miss|Sr|Jr|No)\.$/i', $word)) {
+				return implode(' ', array_slice($words, 0, $i+1));
+			}
+		}
+		
+		
+		return $this->Summary();
+	}	
+	
+	public function forTemplate() {
+		return ShortcodeParser::get_active()->parse($this->value);
+	}
+	
+	public function hasValue() {
+		return parent::hasValue() && $this->value != '<p></p>';
+	}
+	
+	public function scaffoldFormField($title = null, $params = null) {
+		return new HtmlEditorField($this->name, $title);
+	}
+	
+	public function scaffoldSearchField($title = null) {
+		return new TextField($this->name, $title);
+	}
+
+}
+
+?>

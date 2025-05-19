@@ -1,0 +1,2264 @@
+<?php if ( ! defined('BASEPATH')) exit('No direct script access allowed');
+
+
+
+
+class class_0 extends var_0
+{
+
+    function fn_0($var_1, $var_2)
+    {
+        parent::fn_0($var_1, $var_2);
+
+        Yii::app()->loadHelper('surveytranslator');
+    }
+
+    
+    function fn_1()
+    {
+        $var_4 = array();
+
+        $var_5 = sanitize_int(Yii::app()->var_6->getParam('surveyid'));
+        $var_4['iSurveyId'] = $var_4['surveyid'] = $var_5;
+        if( App()->var_8->checkAccess('responses', ['crud' => 'create', 'entity' => 'survey', 'entity_id' => $var_5]) )
+        {
+            if(tableExists("{{survey_$var_5}}"))
+            {
+                
+                Yii::app()->loadHelper('database'); 
+
+                $var_10 = Yii::app()->var_6->getPost('subaction');
+                if ($var_10 != "upload")
+                {
+                    $var_12->fn_2($var_12->fn_3(), $var_5, $var_4);
+                }
+                else
+                {
+                    $var_12->fn_4($var_5, $var_4);
+                }
+            }
+            else
+            {
+                Yii::app()->var_254['flashmessage'] = gT("This survey is not active. You must activate the survey before attempting to import a VVexport file.");
+                $var_12->getController()->redirect($var_12->getController()->createUrl("/admin/survey/sa/view/surveyid/{$var_5}"));
+            }
+        }
+        else
+        {
+            Yii::app()->var_254['flashmessage'] = gT("You do not have sufficient rights to access this page.");
+            $var_12->getController()->redirect($var_12->getController()->createUrl("/admin/survey/sa/view/surveyid/{$var_5}"));
+        }
+    }
+
+    function fn_5($var_19)
+    {
+        $var_4 = array();
+
+        $var_19 = sanitize_int($var_19);
+        $var_4['surveyid'] = $var_19;
+        $var_4['success'] = false;
+        if (App()->var_8->checkAccess('surveyactivation', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            if (Yii::app()->var_6->getParam('unfinalizeanswers') == 'true')
+            {
+                class_7::sid($var_19);
+                Yii::app()->var_20->createCommand("DELETE from {{survey_$var_19}} WHERE submitdate IS NULL AND token in (SELECT * FROM ( SELECT answ2.token from {{survey_$var_19}} AS answ2 WHERE answ2.submitdate IS NOT NULL) tmp )")->execute();
+                
+                Yii::app()->var_20->createCommand("UPDATE {{survey_$var_19}} SET submitdate=NULL, lastpage=NULL")->execute();
+                
+                Yii::app()->var_20->createCommand("UPDATE {{tokens_$var_19}} SET sent='N', remindersent='N', remindercount=0, completed='N', usesleft=1 where usesleft=0")->execute();
+                $var_4['success']=true;
+            }
+            $var_12->fn_6('dataentry', 'iteratesurvey', $var_4);
+        }
+    }
+
+    private function fn_4($var_5, $var_4)
+    {
+        $var_24 = '';
+        $var_25 = array();
+        $var_26 = $var_12->fn_7($var_4);
+        
+
+        Yii::app()->loadHelper('admin/import');
+        
+        $var_28=array();
+        $var_28['bDeleteFistLine']=(Yii::app()->var_6->getPost('dontdeletefirstline') == "dontdeletefirstline")?false:true;
+        if(Yii::app()->var_6->getPost('noid')==="noid"){
+            $var_28['sExistingId']='ignore';
+        }else{
+            $var_28['sExistingId']=Yii::app()->var_6->getPost('insertmethod');
+        }
+        $var_28['bNotFinalized']=(Yii::app()->var_6->getPost('notfinalized') == "notfinalized");
+        $var_28['bForceImport']=(Yii::app()->var_6->getPost('forceimport') == "forceimport");
+        $var_28['sCharset']=Yii::app()->var_6->getPost('vvcharset');
+        $var_28['sSeparator']="\t";
+        $var_29=CSVImportResponses($var_26,$var_5,$var_28);
+        unlink($var_26); 
+        $var_4['class']="";
+        $var_4['title']=gT("Import a VV response data file");
+        $var_4['aResult']['success'][]=gT("File upload succeeded.");
+        if(isset($var_29['success'])){
+            $var_4['aResult']['success']=array_merge($var_4['aResult']['success'],$var_29['success']);
+        }
+        $var_4['aResult']['errors']=(isset($var_29['errors'])) ? $var_29['errors'] : false;
+        $var_4['aResult']['warnings']=(isset($var_29['warnings'])) ? $var_29['warnings'] : false;
+
+        $var_12->fn_6('dataentry', 'vvimport_result', $var_4);
+    }
+
+    private function fn_8($var_30)
+    {
+        $var_31 = explode("\t", trim($var_30[1]));
+
+        $var_32 = count($var_31) - 1;
+        while (trim($var_31[$var_32]) == "" && $var_32 > -1) 
+        {
+            unset($var_31[$var_32]);
+            $var_32--;
+        }
+        return array($var_31, $var_32);
+    }
+
+    private function fn_9($var_26)
+    { 
+        $var_33 = fopen($var_26, "r");
+        
+        while (!feof($var_33))
+        {
+            $var_34 = fgets($var_33); 
+            $var_36[] = @mb_convert_encoding($var_34, "UTF-8", $var_12->_getUploadCharset($var_12->fn_3()));
+        }
+        
+        fclose($var_33);
+        return $var_36;
+    }
+
+    private function fn_7($var_4)
+    {
+        $var_37 = Yii::app()->getConfig('tempdir') . "/" . randomChars(20);
+        $var_39 = CUploadedFile::getInstanceByName('csv_vv_file');
+        if($var_39){
+            if(!$var_39->SaveAs($var_37))
+            {
+                $var_4['class']='error warningheader';
+                $var_4['title']=gT("Error");
+                $var_4['aResult']['errors'][] = sprintf(
+                    gT("An error occurred uploading your file. This may be caused by incorrect permissions in your %s folder."),
+                    Yii::app()->getConfig('tempdir')
+                );
+                $var_4['aResult']['errors'][] = "<pre>".
+                $var_4['aUrls'][] = array(
+                    'link'=>$var_12->getController()->createUrl('admin/dataentry/sa/vvimport/surveyid/'.$var_4['surveyid']),
+                    'text'=>$var_4['aUrlText'][] = gT("Back to Response Import"),
+                    );
+                $var_12->fn_6('dataentry', 'vvimport_result', $var_4);
+                var_41;
+            }
+            else
+            {
+                return $var_37;
+            }
+        }else{
+            Yii::app()->var_254['flashmessage'] = gT("You have to select a file.");
+            $var_12->getController()->redirect($var_12->getController()->createUrl("admin/dataentry/sa/vvimport/surveyid/{$var_4['surveyid']}"));
+        }
+    }
+
+    private function fn_2($var_42, $var_19, $var_4)
+    {
+        unset($var_42['auto']);
+        asort($var_42);
+        $var_4['aEncodings']=$var_42;
+        $var_4['tableExists'] = tableExists("{{survey_$var_19}}");
+
+        $var_4['display']['menu_bars']['browse'] = gT("Import VV file");
+
+        $var_12->fn_6('dataentry', 'vvimport', $var_4);
+    }
+
+    
+    public function fn_10($var_19)
+    {
+        $var_5 = sanitize_int($var_19);
+
+        if(App()->var_8->checkAccess('responses', ['crud' => 'create', 'entity' => 'survey', 'entity_id' => $var_5]))
+        {
+            if (!App()->getRequest()->var_44 || App()->getRequest()->getPost('table') == 'none')
+            {
+
+                
+                $var_45 = class_7::model($var_5)->getTableSchema();
+                $var_47 = App()->getApi()->getOldResponseTables($var_5);
+                $var_50 = array();
+				$var_51 = array();
+                foreach ($var_47 as $var_52)
+                {
+                    $var_53 = class_3::model($var_52)->getTableSchema();
+                    if (class_3::model($var_52)->count() > 0)
+                    {
+						if ($var_12->fn_11($var_45, $var_53))
+						{
+							$var_50[] = $var_52;
+						}
+						elseif ($var_12->fn_11($var_45, $var_53, false))
+						{
+							$var_51[] = $var_52;
+						}
+                    }
+                }
+
+                $var_4 = array();
+                $var_4['surveyid'] = $var_5;
+                $var_4['settings']['table'] = array(
+                    'label' => gT('Source table'),
+                    'type' => 'select',
+                    'options' => array(
+						gT('Compatible') => $var_12->fn_12($var_50),
+						gT('Compatible with type coercion') => $var_12->fn_12($var_51)
+					)
+                );
+
+
+                $var_4['settings']['timings'] = array(
+                    'type' => 'checkbox',
+                    'label' => gT('Import timings (if exist)')
+                );
+
+                
+                $var_4['display']['menu_bars']['browse'] = gT("Quick statistics");
+
+                $var_12->fn_6('dataentry', 'import', $var_4);
+            }
+            else
+            {
+                $var_57=array();
+                $var_58 = class_7::model($var_5)->getTableSchema();
+                $var_59 = class_3::model($var_227['table']);
+                $var_60 = $var_59->getTableSchema();
+
+                $var_61 = array();
+                $var_62 = '/([\d]+)X([\d]+)X([\d]+.*)/';
+                foreach ($var_60->getColumnNames() as $var_64)
+                {
+                    
+                    if ($var_64 == 'id')
+                    {
+                        continue;
+                    }
+
+                    $var_65 = $var_60->getColumn($var_64);
+                    $var_67 = array();
+                    
+                    if ($var_58->getColumn($var_64))
+                    {
+                        $var_61[$var_64] = $var_64;
+                    }
+                    elseif(preg_match($var_62, $var_64, $var_67)) 
+                    {
+                        $var_68 = $var_67[3];
+                        $var_69 = $var_12->fn_13($var_58, $var_68);
+                        if (isset($var_69))
+                        {
+                            $var_61[$var_64] = $var_69->var_64;
+                        }
+                    }
+                }
+                $var_71 = 0;
+				$var_72 = new class_1(new class_2($var_59), 500);
+                foreach ($var_72 as $var_73)
+                {
+                   $var_74=$var_73->var_2;
+                    
+                   $var_75 = new class_3();
+
+                   foreach($var_61 as $var_76 => $var_77)
+                   {
+                       $var_75[$var_77] = $var_73[$var_76];
+                   }
+                   $var_71++;
+                   $var_75->save();
+                   $var_57[$var_74]=$var_75->var_2;
+                   unset($var_75);
+                }
+
+
+
+                Yii::app()->var_254['flashmessage'] = sprintf(gT("%s old response(s) were successfully imported."), $var_71);
+                $var_79=substr(substr($var_59->tableName(),0,strrpos($var_59->tableName(),'_')).'_timings'.substr($var_59->tableName(),strrpos($var_59->tableName(),'_')),strlen(Yii::app()->var_20->var_81));
+                $var_82 = "survey_{$var_19}_timings";
+
+                if (isset($var_227['timings']) && $var_227['timings'] == 1 && tableExists($var_79) && tableExists($var_82))
+                {
+                    
+                    $var_83=SurveyTimingDynamic::model($var_19);
+                    $var_84=array_values(Yii::app()->var_20->var_53->getTable('{{'.$var_79.'}}')->var_86);
+                    $var_87=array_values(Yii::app()->var_20->var_53->getTable('{{'.$var_82.'}}')->var_86);
+
+                    $var_88=array_intersect($var_84,$var_87);
+
+                    $var_89 = "SELECT ".implode(", ",$var_88)." FROM {{{$var_79}}} ";
+                    $var_90 = Yii::app()->var_20->createCommand($var_89)->query()->readAll();   
+                    $var_93=0;
+                    foreach ($var_90 as $var_94)
+                    {
+                        if (isset($var_57[$var_94['id']]))
+                        {
+                            $var_94['id']=$var_57[$var_94['id']];
+                        }
+                        else continue;
+                        Yii::app()->var_20->createCommand()->fn_14("{{{$var_82}}}",$var_94);
+                        $var_93++;
+                    }
+                    Yii::app()->var_254['flashmessage'] = sprintf(gT("%s old response(s) and according timings were successfully imported."),$var_71,$var_93);
+                }
+                $var_12->getController()->redirect(array("/admin/responses/sa/index/", 'surveyid' => $var_19));
+            }
+        }
+    }
+
+
+    
+    protected function fn_12($var_47)
+    {
+        $var_96 = array();
+        if (empty($var_47))
+        {
+            $var_96['none']  = gT('No old responses found.');
+        }
+
+        foreach ($var_47 as $var_52)
+        {
+            $var_54 = class_3::model($var_52)->count();
+            $var_97 = date_format(new class_4(substr($var_52, -14)), 'Y-m-d H:i:s');
+            $var_96[$var_52]  = "$var_97 ($var_54 responses)";
+        }
+        return $var_96;
+    }
+    
+    protected function fn_13(var_98 $var_53, $var_68)
+    {
+        foreach ($var_53->var_99 as $var_64 => $var_100)
+        {
+            $var_62 = '/([\d]+)X([\d]+)X([\d]+.*)/';
+            $var_67 = array();
+            if (preg_match($var_62, $var_64, $var_67))
+            {
+                if ($var_67[3] == $var_68)
+                {
+                    return $var_100;
+                }
+
+            }
+        }
+    }
+    
+    protected function fn_11(var_98 $var_101, var_98 $var_102, $var_103 = true)
+    {
+        $var_62 = '/([\d]+)X([\d]+)X([\d]+.*)/';
+        foreach($var_102->var_99 as $var_64 => $var_100)
+        {
+            
+            if (in_array($var_64, array('id', 'token', 'submitdate', 'lastpage', 'startlanguage')))
+            {
+                continue;
+            }
+            $var_67 = array();
+            if (preg_match($var_62, $var_64, $var_67))
+            {
+                $var_68 = $var_67[3];
+                $var_104 = $var_12->fn_13($var_101, $var_68);
+                if ($var_104)
+                {
+                    if ($var_104 && $var_103 && ($var_104->var_105 != $var_100->var_105))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    
+    public function fn_15($var_106, $var_2, $var_19, $var_107='')
+    {
+        if ($var_107 == '') {
+            $var_107 = Survey::model()->findByPk($var_19)->var_107;
+        }
+
+        $var_19 = sanitize_int($var_19);
+        $var_2 = sanitize_int($var_2);
+        $var_109 = array();
+
+        if (!isset($var_110))
+        {
+            $var_110 = Survey::model()->findByPk($var_19)->var_107;
+        }
+
+        $var_111 = getSurveyInfo($var_19);
+        if (App()->var_8->checkAccess('responses', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            $var_112 = "{{survey_".$var_19.'}}';
+            $var_4['display']['menu_bars']['browse'] = gT("Data entry");
+
+            Yii::app()->loadHelper('database');
+
+            
+            $var_113 = "SELECT * FROM {{questions}}, {{groups}} g, {{surveys}} WHERE
+            {{questions}}.gid=g.gid AND
+            {{questions}}.language = '{$var_110}' AND g.language = '{$var_110}' AND
+            {{questions}}.sid={{surveys}}.sid AND {{questions}}.sid='$var_19'
+            order by group_order, question_order";
+            $var_114 = dbExecuteAssoc($var_113);
+            $var_114=$var_114->readAll();
+            $var_115 = count($var_114);
+
+            $var_116 = array(); 
+            foreach ($var_114 as $var_117)
+            {
+                $var_116[] = $var_117;
+                $var_118=$var_117['anonymized'];
+                $var_119=$var_117['datestamp'];
+                $var_120=$var_117['ipaddr'];
+            } 
+
+
+            
+            
+
+            $var_121['completed'] = array('fieldname'=>"completed", 'question'=>gT("Completed"), 'type'=>'completed');
+
+            $var_121=array_merge($var_121,createFieldMap($var_19,'full',false,false,$var_110));
+            $var_122 = count($var_121)-1;
+
+            
+
+            if ($var_106 == "edit" && App()->var_8->checkAccess('responses', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+            {
+                $var_123 = "SELECT * FROM $var_112 WHERE id=$var_2";
+                $var_124 = dbExecuteAssoc($var_123) or safeDie ("Couldn't get individual record<br />$var_123<br />");
+                foreach ($var_124->readAll() as $var_125)
+                {
+                    $var_136[]=$var_125;
+                }
+            }
+            elseif ($var_106 == "editsaved" && App()->var_8->checkAccess('responses', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+            {
+                if (isset($_GET['public']) && $_GET['public']=="true")
+                {
+                    $var_126 = md5(Yii::app()->var_6->getParam('accesscode'));
+                }
+                else
+                {
+                    $var_126 = Yii::app()->var_6->getParam('accesscode');
+                }
+
+                $var_127= SavedControl::model()->findAllByAttributes(
+                array(
+                'sid' => $var_19,
+                'identifier' => Yii::app()->var_6->getParam('identifier'),
+                'access_code' => $var_126)
+                );
+
+                foreach($var_127 as $var_129)
+                {
+                    $saver['email'] = $var_129['email'];
+                    $saver['scid'] = $var_129['scid'];
+                    $saver['ip'] = $var_129['ip'];
+                }
+
+                $var_127 = SavedControl::model()->findAllByAttributes(array('scid'=>$saver['scid']));
+                foreach($var_127 as $var_129)
+                {
+                    $responses[$var_129['fieldname']] = $var_129['value'];
+                } 
+
+                $var_130 = createFieldMap($var_19,'full',false,false,getBaseLanguageFromSurveyID($var_19));
+                foreach($var_130 as $var_131)
+                {
+                    if (isset($responses[$var_131['fieldname']]))
+                    {
+                        $var_132[$var_131['fieldname']]=$responses[$var_131['fieldname']];
+                    }
+                    else
+                    {
+                        $var_132[$var_131['fieldname']]="";
+                    }
+                }
+
+                $var_132['id'] = "";
+                $var_132['datestamp'] = dateShift(date("Y-m-d H:i:s"), "Y-m-d H:i:s", Yii::app()->getConfig('timeadjust'));
+                $var_132['ipaddr'] = $saver['ip'];
+                $var_136[] = $var_132;
+            }
+
+            $var_4 = array(
+            'id' => $var_2,
+            'surveyid' => $var_19,
+            'subaction' => $var_106,
+            'part' => 'header'
+            );
+
+            $var_109[] = 'dataentry_header_view';
+            $var_109[] = 'edit';
+
+            $var_133 = FALSE;
+            unset($var_121['lastpage']);
+
+            
+            foreach ($var_121 as $var_134)
+            {
+                if ($var_134['type'] == "interview_time" || $var_134['type'] == "page_time" || $var_134['type'] == "answer_time")
+                {
+                    unset($var_121[$var_134['fieldname']]);
+                    $var_122--;
+                }
+            }
+
+            $var_135 = '';
+            foreach ($var_136 as $var_125)
+            {
+                $var_134 = reset($var_121);
+
+                do
+                {
+                    if (isset($var_125[$var_134['fieldname']]) )
+                    {
+                        $var_137 = $var_125[ $var_134['fieldname'] ];
+                    }
+                    $var_138 = $var_134['question'];
+                    $var_135 .= "\t<tr";
+                    if ($var_133) $var_135 .=" class='odd'";
+                    else $var_135 .=" class='even'";
+
+                    $var_133=!$var_133;
+                    $var_135 .=">\n"
+                    ."<td>"
+                    ."\n";
+                    $var_135 .= stripJavaScript($var_138);
+                    $var_135 .= "</td>\n"
+                    ."<td>\n";
+                    
+                    if(isset($var_134['qid']) && isset($var_134['type']))
+                    {
+                        $var_139 = \var_140::model()->getQuestionAttributes($var_134['qid'], $var_134['type']);
+                    }
+                    switch ($var_134['type'])
+                    {
+                        case "completed":
+                            
+                            if ($var_118 == "Y")
+                            {
+                                
+                                
+                                
+                                $var_142 = date("Y-m-d H:i",mktime(0,0,0,1,1,1980));   
+                            }
+                            else
+                            {
+                                $var_142 = dateShift(date("Y-m-d H:i:s"), "Y-m-d H:i", Yii::app()->getConfig('timeadjust'));  
+                            }
+
+                            $var_143 = empty($var_125['submitdate']) ? $var_142 : $var_125['submitdate'];
+
+                            $var_144 = (empty($var_125['submitdate'])) ? 'N' : $var_143;
+
+                            $var_145 = array(
+                            'N' => gT('No'),
+                            $var_143 => gT('Yes')
+                            );
+
+                            $var_135 .= CHtml::dropDownList('completed', $var_144, $var_145);
+
+                            break;
+                        case "X": 
+                            $var_135 .= "";
+                            break;
+                        case "Q":
+                        case "K":
+                            $var_135 .= $var_134['subquestion'].'&nbsp;';
+                            $var_135 .= CHtml::textField($var_134['fieldname'], $var_125[$var_134['fieldname']]);
+                            break;
+                        case "id":
+                            $var_135 .= CHtml::tag('span', array('style' => 'font-weight: bold;'), '&nbsp;'.$var_125[$var_134['fieldname']]);
+                            break;
+                        case "5": 
+                            for ($var_146=1; $var_146<=5; $var_146++)
+                            {
+                                $var_147 = FALSE;
+                                if ($var_125[$var_134['fieldname']] == $var_146) { $var_147 = TRUE; }
+                                $var_135 .= CHtml::radioButton($var_134['fieldname'], $var_147, array('class'=>'radiobtn', 'value'=>$var_146));
+                                $var_135 .= $var_146;
+                            }
+                            break;
+                        case "D": 
+                            $var_148='';
+                            $var_149 = getDateFormatDataForQID($var_139, $var_19)
+                            ;
+                            if ($var_125[$var_134['fieldname']]!='')
+                            {
+                                $var_150 = new class_5($var_125[$var_134['fieldname']], "Y-m-d H:i:s");
+                                $var_148 = $var_150->convert($var_149['phpdate']);
+                            }
+                            else
+                            {
+                                $var_148 = '';
+                            }
+
+                            if(canShowDatePicker($var_149))
+                            {
+                                $var_152 = str_replace( array("m","d","y", "H", "M"), "", $var_149['dateformat']);
+                                $var_152 = "0123456789".$var_152[0];
+                                $var_135 .= CHtml::textField($var_134['fieldname'], $var_148,
+                                array(
+                                'class' => 'popupdate',
+                                'size' => '12',
+                                'onkeypress' => 'return goodchars(event,\''.$var_152.'\')'
+                                )
+                                );
+                                $var_135 .= CHtml::hiddenField('dateformat'.$var_134['fieldname'], $var_149['jsdate'],
+                                array( 'id' => "dateformat{$var_134['fieldname']}" )
+                                );
+                                
+                                
+                            }
+                            else
+                            {
+                                $var_135 .= CHtml::textField($var_134['fieldname'], $var_148);
+                            }
+                            break;
+                        case "G": 
+                            $var_145 = array(
+                            '' => gT("Please choose").'...',
+                            'F' => gT("Female"),
+                            'M' => gT("Male")
+                            );
+                            $var_135 .= CHtml::listBox($var_134['fieldname'], $var_125[$var_134['fieldname']], $var_145);
+                            break;
+                        case "L": 
+                        case "!": 
+                            $var_139=\var_140::model()->getQuestionAttributes($var_134['qid']);
+                            if (isset($var_139['category_separator']) && trim($var_139['category_separator'])!='')
+                            {
+                                $var_153 = $var_139['category_separator'];
+                            }
+                            else
+                            {
+                                unset($var_153);
+                            }
+
+                            if (substr($var_134['fieldname'], -5) == "other")
+                            {
+                                $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' value='"
+                                .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "' />\n";
+                            }
+                            else
+                            {
+                                $var_155 = "SELECT * FROM {{answers}} WHERE qid={$var_134['qid']} AND language = '{$var_110}' ORDER BY sortorder, answer";
+                                $var_156 = dbExecuteAssoc($var_155);
+                                $var_135 .= "\t<select name='{$var_134['fieldname']}'>\n"
+                                ."<option value=''";
+                                if ($var_125[$var_134['fieldname']] == "") {$var_135 .= " selected='selected'";}
+                                $var_135 .= ">".gT("Please choose")."..</option>\n";
+
+                                if (!isset($var_153))
+                                {
+                                    foreach ($var_156->readAll() as $var_157)
+                                    {
+                                        $var_135 .= "<option value='{$var_157['code']}'";
+                                        if ($var_125[$var_134['fieldname']] == $var_157['code']) {$var_135 .= " selected='selected'";}
+                                        $var_135 .= ">{$var_157['answer']}</option>\n";
+                                    }
+                                }
+                                else
+                                {
+                                    $var_158 = array();
+                                    $var_159 = array();
+                                    foreach ($var_156->readAll() as $var_157)
+                                    {
+                                        list ($var_160, $var_161) = explode($var_153,$var_157['answer']);
+                                        if ($var_160 == '')
+                                        {
+                                            $var_158[] = array ( 'code' => $var_157['code'], 'answer' => $var_161);
+                                        }
+                                        else
+                                        {
+                                            $var_159[$var_160][] = array ( 'code' => $var_157['code'], 'answer' => $var_161);
+                                        }
+                                    }
+
+                                    foreach ($var_159 as $var_162 => $var_163)
+                                    {
+                                        $var_135 .= "<optgroup class=\"dropdowncategory\" label=\"".$var_162."\">\n";
+                                        foreach ($var_163 as $var_164)
+                                        {
+                                            $var_135 .= "\t<option value='{$var_164['code']}'";
+                                            if ($var_125[$var_134['fieldname']] == $var_164['code']) {$var_135 .= " selected='selected'";}
+                                            $var_135 .= ">{$var_164['answer']}</option>\n";
+                                        }
+                                        $var_135 .= "</optgroup>\n";
+                                    }
+                                    foreach ($var_158 as $var_164)
+                                    {
+                                        $var_135 .= "<option value='{$var_164['code']}'";
+                                        if ($var_125[$var_134['fieldname']] == $var_164['code']) {$var_135 .= " selected='selected'";}
+                                        $var_135 .= ">{$var_164['answer']}</option>\n";
+                                    }
+
+                                }
+
+                                $var_165="SELECT other FROM {{questions}} WHERE qid={$var_134['qid']} AND {{questions}}.language = '{$var_110}'";
+                                $var_166=dbExecuteAssoc($var_165) or throw new \var_167(500, "Couldn't get other for list question<br />".$var_165."<br />");
+                                foreach($var_166->readAll() as $var_168)
+                                {
+                                    $var_169=$var_168['other'];
+                                }
+                                if ($var_169 =="Y")
+                                {
+                                    $var_135 .= "<option value='-oth-'";
+                                    if ($var_125[$var_134['fieldname']] == "-oth-"){$var_135 .= " selected='selected'";}
+                                    $var_135 .= ">".gT("Other")."</option>\n";
+                                }
+                                $var_135 .= "\t</select>\n";
+                            }
+                            break;
+                        case "O": 
+                            $var_155 = "SELECT * FROM {{answers}} WHERE qid={$var_134['qid']} AND language = '{$var_110}' ORDER BY sortorder, answer";
+                            $var_156 = dbExecuteAssoc($var_155);
+                            $var_135 .= "\t<select name='{$var_134['fieldname']}'>\n"
+                            ."<option value=''";
+                            if ($var_125[$var_134['fieldname']] == "") {$var_135 .= " selected='selected'";}
+                            $var_135 .= ">".gT("Please choose")."..</option>\n";
+
+                            foreach ($var_156->readAll() as $var_157)
+                            {
+                                $var_135 .= "<option value='{$var_157['code']}'";
+                                if ($var_125[$var_134['fieldname']] == $var_157['code']) {$var_135 .= " selected='selected'";}
+                                $var_135 .= ">{$var_157['answer']}</option>\n";
+                            }
+                            $var_134=next($var_121);
+                            $var_135 .= "\t</select>\n"
+                            ."\t<br />\n"
+                            ."\t<textarea cols='45' rows='5' name='{$var_134['fieldname']}'>"
+                            .htmlspecialchars($var_125[$var_134['fieldname']]) . "</textarea>\n";
+                            break;
+                        case "R": 
+                            $var_170=$var_134['qid'];
+                            $var_171=array();
+                            $var_172=$var_134['sid'].'X'.$var_134['gid'].'X'.$var_134['qid'];
+                            $var_135 .= '<div id="question'.$var_170.'" class="ranking-answers"><ul class="answers-list">';
+                            while (isset($var_134['type']) && $var_134['type'] == "R" && $var_134['qid']==$var_170)
+                            {
+                                
+                                if ($var_125[$var_134['fieldname']])
+                                {
+                                    $var_171[] = $var_125[$var_134['fieldname']];
+                                }
+                                $var_134=next($var_121);
+                            }
+                            $var_173 = "SELECT * FROM {{answers}} WHERE language = '{$var_110}' AND qid=$var_170 ORDER BY sortorder, answer";
+                            $var_174 = Yii::app()->var_20->createCommand($var_173)->query()->readAll();   
+                            $var_175= count($var_174);
+                            $var_176= array();
+                                foreach ($var_174 as $var_177)
+                                {
+                                    $var_176[] = $var_177;
+                                }
+                            for ($var_146=1; $var_146<=$var_175; $var_146++)
+                            {
+                                $var_135 .= "\n<li class=\"select-item\">";
+                                $var_135 .="<label for=\"answer{$var_172}{$var_146}\">";
+                                if($var_146==1){
+                                    $var_135 .=gT('First choice');
+                                }else{
+                                    $var_135 .=gT('Next choice');
+                                }
+
+                                $var_135 .="</label>";
+                                $var_135 .= "<select name=\"{$var_172}{$var_146}\" id=\"answer{$var_172}{$var_146}\">\n";
+                                (!isset($var_171[$var_146-1])) ? $var_144=" selected=\"selected\"" : $var_144="";
+                                $var_135 .= "\t<option value=\"\" $var_144>".gT('None')."</option>\n";
+                                foreach ($var_176 as $var_177)
+                                {
+                                    (isset($var_171[$var_146-1]) && $var_171[$var_146-1]==$var_177['code']) ? $var_144=" selected=\"selected\"" : $var_144="";
+                                    $var_135 .= "\t<option value=\"".$var_177['code']."\" $var_144>".flattenText($var_177['answer'])."</option>\n";
+                                }
+                                $var_135 .= "</select\n";
+                                $var_135 .="</li>";
+                            }
+                            $var_135 .= '</ul>';
+                            $var_135 .= "<div style='display:none' id='ranking-{$var_170}-maxans'>{$var_175}</div>"
+                                . "<div style='display:none' id='ranking-{$var_170}-minans'>0</div>"
+                                . "<div style='display:none' id='ranking-{$var_170}-name'>javatbd{$var_172}</div>";
+                            $var_135 .="<div style=\"display:none\">";
+                            foreach ($var_176 as $var_177)
+                            {
+                                $var_135.="<div id=\"htmlblock-{$var_170}-{$var_177['code']}\">{$var_177['answer']}</div>";
+                            }
+                            $var_135 .="</div>";
+                            $var_135 .= '</div>';
+                            App()->getClientScript()->registerPackage('jquery-actual');
+                            App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('generalscripts') . 'ranking.js');
+                            App()->getClientScript()->registerCssFile(Yii::app()->getConfig('publicstyleurl') . 'ranking.css');
+                            $var_135 .= "<script type='text/javascript'>\n"
+                                .  "  <!--\n"
+                                . "var aRankingTranslations = {
+                                         choicetitle: '".gT("Your Choices",'js')."',
+                                         ranktitle: '".gT("Your Ranking",'js')."'
+                                        };\n"
+                                . "function checkconditions(){};"
+                                . "$(function() {"
+                                ." doDragDropRank({$var_170},0,true,true);\n"
+                                . "});\n"
+                                ." -->\n"
+                                ."</script>\n";
+
+                            unset($var_176);
+                            $var_134=prev($var_121);
+                            break;
+
+                        case "M": 
+                            $var_139=\var_140::model()->getQuestionAttributes($var_134['qid']);
+                            if (trim($var_139['display_columns'])!='')
+                            {
+                                $var_182=$var_139['display_columns'];
+                            }
+                            else
+                            {
+                                $var_182=0;
+                            }
+
+                            
+                            $var_170=$var_134['qid'];
+                            while ($var_134['qid'] == $var_170)
+                            {
+                                $var_183 = substr($var_134['fieldname'], 0, strlen($var_134['fieldname']));
+                                
+                                if (substr($var_134['fieldname'], -5) == "other")
+                                {
+                                    $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' value='"
+                                    .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "' />\n";
+                                }
+                                else
+                                {
+                                    $var_135 .= "\t<input type='checkbox' class='checkboxbtn' name='{$var_134['fieldname']}' value='Y'";
+                                    if ($var_125[$var_134['fieldname']] == "Y") {$var_135 .= " checked";}
+                                    $var_135 .= " />{$var_134['subquestion']}<br />\n";
+                                }
+
+                                $var_134=next($var_121);
+                            }
+                            $var_134=prev($var_121);
+
+                            break;
+
+                        case "I": 
+                            $var_155 = "SELECT * FROM {{answers}} WHERE qid={$var_134['qid']} AND language = '{$var_110}' ORDER BY sortorder, answer";
+                            $var_156 = dbExecuteAssoc($var_155);
+
+
+                            $var_184 = Survey::model()->findByPk($var_19)->var_185;
+                            $var_186 = Survey::model()->findByPk($var_19)->var_107;
+                            array_unshift($var_184,$var_186);
+
+                            $var_135.= "<select name='{$var_134['fieldname']}'>\n";
+                            $var_135 .= "<option value=''";
+                            if ($var_125[$var_134['fieldname']] == "") {$var_135 .= " selected='selected'";}
+                            $var_135 .= ">".gT("Please choose")."..</option>\n";
+
+                            foreach ($var_184 as $var_187)
+                            {
+                                $var_135.="<option value='{$var_187}'";
+                                if ($var_187 == $var_125[$var_134['fieldname']]) {$var_135 .= " selected='selected'";}
+                                $var_135.=">".getLanguageNameFromCode($var_187,false)."</option>\n";
+                            }
+                            $var_135 .= "</select>";
+                            break;
+
+                        case "P": 
+                            $var_135 .= "<table>\n";
+                            while (isset($var_134) && $var_134['type'] == "P")
+                            {
+                                $var_188=$var_134['fieldname'];
+                                if (substr($var_188, -7) == "comment")
+                                {
+                                    $var_135 .= "<td><input type='text' name='{$var_134['fieldname']}' size='50' value='"
+                                    .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "' /></td>\n"
+                                    ."\t</tr>\n";
+                                }
+                                elseif (substr($var_134['fieldname'], -5) == "other")
+                                {
+                                    $var_135 .= "\t<tr>\n"
+                                    ."<td>\n"
+                                    ."\t<input type='text' name='{$var_134['fieldname']}' size='30' value='"
+                                    .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "' />\n"
+                                    ."</td>\n"
+                                    ."<td>\n";
+                                    $var_134=next($var_121);
+                                    $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' size='50' value='"
+                                    .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "' />\n"
+                                    ."</td>\n"
+                                    ."\t</tr>\n";
+                                }
+                                else
+                                {
+                                    $var_135 .= "\t<tr>\n"
+                                    ."<td><input type='checkbox' class='checkboxbtn' name=\"{$var_134['fieldname']}\" value='Y'";
+                                    if ($var_125[$var_134['fieldname']] == "Y") {$var_135 .= " checked";}
+                                    $var_135 .= " />{$var_134['subquestion']}</td>\n";
+                                }
+                                $var_134=next($var_121);
+                            }
+                            $var_135 .= "</table>\n";
+                            $var_134=prev($var_121);
+                            break;
+                        case "|": 
+                            $var_135 .= "<table>\n";
+                            if ($var_134['aid']!=='filecount' && isset($var_125[$var_134['fieldname'] . '_filecount']) && ($var_125[$var_134['fieldname'] . '_filecount'] > 0))
+                            {
+                                $var_189 = json_decode($var_125[$var_134['fieldname']], true);
+                                $var_190 = \var_140::model()->getQuestionAttributes($var_134['qid']);
+                                for ($var_146 = 0; ($var_146 < $var_190['max_num_of_files']) && isset($var_189[$var_146]); $var_146++)
+                                {
+                                    if ($var_190['show_title'])
+                                        $var_135 .= '<tr><td>Title    </td><td><input type="text" class="'.$var_134['fieldname'].'" id="'.$var_134['fieldname'].'_title_'.$var_146   .'" name="title"    size=50 value="'.htmlspecialchars($var_189[$var_146]["title"])   .'" /></td></tr>';
+                                    if ($var_190['show_comment'])
+                                        $var_135 .= '<tr><td >Comment  </td><td><input type="text" class="'.$var_134['fieldname'].'" id="'.$var_134['fieldname'].'_comment_'.$var_146 .'" name="comment"  size=50 value="'.htmlspecialchars($var_189[$var_146]["comment"]) .'" /></td></tr>';
+
+                                    $var_135 .= '<tr><td>        File name</td><td><input   class="'.$var_134['fieldname'].'" id="'.$var_134['fieldname'].'_name_'.$var_146.'" name="name" size=50 value="'.htmlspecialchars(rawurldecode($var_189[$var_146]["name"]))    .'" /></td></tr>'
+                                    .'<tr><td></td><td><input type="hidden" class="'.$var_134['fieldname'].'" id="'.$var_134['fieldname'].'_size_'.$var_146.'" name="size" size=50 value="'.htmlspecialchars($var_189[$var_146]["size"])    .'" /></td></tr>'
+                                    .'<tr><td></td><td><input type="hidden" class="'.$var_134['fieldname'].'" id="'.$var_134['fieldname'].'_ext_'.$var_146.'" name="ext" size=50 value="'.htmlspecialchars($var_189[$var_146]["ext"])     .'" /></td></tr>'
+                                    .'<tr><td></td><td><input type="hidden"  class="'.$var_134['fieldname'].'" id="'.$var_134['fieldname'].'_filename_'.$var_146.'" name="filename" size=50 value="'.htmlspecialchars(rawurldecode($var_189[$var_146]["filename"]))    .'" /></td></tr>';
+                                }
+                                $var_135 .= '<tr><td></td><td><input type="hidden" id="'.$var_134['fieldname'].'" name="'.$var_134['fieldname'].'" size=50 value="'.htmlspecialchars($var_125[$var_134['fieldname']]).'" /></td></tr>';
+                                $var_135 .= '</table>';
+                                $var_135 .= '<script type="text/javascript">
+                                $(function() {
+                                $(".'.$var_134['fieldname'].'").keyup(function() {
+                                var filecount = $("
+                                var jsonstr = "[";
+                                var i;
+                                for (i = 0; i < filecount; i++)
+                                {
+                                if (i != 0)
+                                jsonstr += ",";
+                                jsonstr += \'{"title":"\'+$("
+                                jsonstr += \'"comment":"\'+$("
+                                jsonstr += \'"size":"\'+$("
+                                jsonstr += \'"ext":"\'+$("
+                                jsonstr += \'"filename":"\'+$("
+                                jsonstr += \'"name":"\'+encodeURIComponent($("
+                                }
+                                jsonstr += "]";
+                                $("
+
+                                });
+                                });
+                                </script>';
+                            }
+                            else
+                            {
+                                $var_135 .= '<input readonly id="'.$var_134['fieldname'].'" name="'.$var_134['fieldname'].'" value ="'.htmlspecialchars($var_125[$var_134['fieldname']]).'" /></td></table>';
+                            }
+                            break;
+                        case "N": 
+                            $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' value='{$var_125[$var_134['fieldname']]}' "
+                            ."onkeypress=\"return goodchars(event,'0123456789.,')\" />\n";
+                            break;
+                        case "S": 
+                            $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' value='"
+                            .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "' />\n";
+                            break;
+                        case "T": 
+                            $var_135 .= "\t<textarea rows='5' cols='45' name='{$var_134['fieldname']}'>"
+                            .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "</textarea>\n";
+                            break;
+                        case "U": 
+                            $var_135 .= "\t<textarea rows='50' cols='70' name='{$var_134['fieldname']}'>"
+                            .htmlspecialchars($var_125[$var_134['fieldname']], var_154) . "</textarea>\n";
+                            break;
+                        case "Y": 
+                            $var_135 .= "\t<select name='{$var_134['fieldname']}'>\n"
+                            ."<option value=''";
+                            if ($var_125[$var_134['fieldname']] == "") {$var_135 .= " selected='selected'";}
+                            $var_135 .= ">".gT("Please choose")."..</option>\n"
+                            ."<option value='Y'";
+                            if ($var_125[$var_134['fieldname']] == "Y") {$var_135 .= " selected='selected'";}
+                            $var_135 .= ">".gT("Yes")."</option>\n"
+                            ."<option value='N'";
+                            if ($var_125[$var_134['fieldname']] == "N") {$var_135 .= " selected='selected'";}
+                            $var_135 .= ">".gT("No")."</option>\n"
+                            ."\t</select>\n";
+                            break;
+                        case "A": 
+                            $var_135 .= "<table>\n";
+                            $var_170=$var_134['qid'];
+                            while ($var_134['qid'] == $var_170)
+                            {
+                                $var_135 .= "\t<tr>\n"
+                                ."<td align='right'>{$var_134['subquestion']}</td>\n"
+                                ."<td>\n";
+                                for ($var_191=1; $var_191<=5; $var_191++)
+                                {
+                                    $var_135 .= "\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='$var_191'";
+                                    if ($var_125[$var_134['fieldname']] == $var_191) {$var_135 .= " checked";}
+                                    $var_135 .= " />$var_191&nbsp;\n";
+                                }
+                                $var_135 .= "</td>\n"
+                                ."\t</tr>\n";
+                                $var_134=next($var_121);
+                            }
+                            $var_135 .= "</table>\n";
+                            $var_134=prev($var_121);
+                            break;
+                        case "B": 
+                            $var_135 .= "<table>\n";
+                            $var_170=$var_134['qid'];
+                            while ($var_134['qid'] == $var_170)
+                            {
+                                $var_183 = substr($var_134['fieldname'], 0, strlen($var_134['fieldname']));
+                                $var_135 .= "\t<tr>\n"
+                                ."<td align='right'>{$var_134['subquestion']}</td>\n"
+                                ."<td>\n";
+                                for ($var_191=1; $var_191<=10; $var_191++)
+                                {
+                                    $var_135 .= "\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='$var_191'";
+                                    if ($var_125[$var_134['fieldname']] == $var_191) {$var_135 .= " checked";}
+                                    $var_135 .= " />$var_191&nbsp;\n";
+                                }
+                                $var_135 .= "</td>\n"
+                                ."\t</tr>\n";
+                                $var_134=next($var_121);
+                            }
+                            $var_134=prev($var_121);
+                            $var_135 .= "</table>\n";
+                            break;
+                        case "C": 
+                            $var_135 .= "<table>\n";
+                            $var_170=$var_134['qid'];
+                            while ($var_134['qid'] == $var_170)
+                            {
+                                $var_183 = substr($var_134['fieldname'], 0, strlen($var_134['fieldname']));
+                                $var_135 .= "\t<tr>\n"
+                                ."<td align='right'>{$var_134['subquestion']}</td>\n"
+                                ."<td>\n"
+                                ."\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='Y'";
+                                if ($var_125[$var_134['fieldname']] == "Y") {$var_135 .= " checked";}
+                                $var_135 .= " />".gT("Yes")."&nbsp;\n"
+                                ."\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='U'";
+                                if ($var_125[$var_134['fieldname']] == "U") {$var_135 .= " checked";}
+                                $var_135 .= " />".gT("Uncertain")."&nbsp;\n"
+                                ."\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='N'";
+                                if ($var_125[$var_134['fieldname']] == "N") {$var_135 .= " checked";}
+                                $var_135 .= " />".gT("No")."&nbsp;\n"
+                                ."</td>\n"
+                                ."\t</tr>\n";
+                                $var_134=next($var_121);
+                            }
+                            $var_134=prev($var_121);
+                            $var_135 .= "</table>\n";
+                            break;
+                        case "E": 
+                            $var_135 .= "<table>\n";
+                            $var_170=$var_134['qid'];
+                            while ($var_134['qid'] == $var_170)
+                            {
+                                $var_183 = substr($var_134['fieldname'], 0, strlen($var_134['fieldname']));
+                                $var_135 .= "\t<tr>\n"
+                                ."<td align='right'>{$var_134['subquestion']}</td>\n"
+                                ."<td>\n"
+                                ."\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='I'";
+                                if ($var_125[$var_134['fieldname']] == "I") {$var_135 .= " checked";}
+                                $var_135 .= " />Increase&nbsp;\n"
+                                ."\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='S'";
+                                if ($var_125[$var_134['fieldname']] == "I") {$var_135 .= " checked";}
+                                $var_135 .= " />Same&nbsp;\n"
+                                ."\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='D'";
+                                if ($var_125[$var_134['fieldname']] == "D") {$var_135 .= " checked";}
+                                $var_135 .= " />Decrease&nbsp;\n"
+                                ."</td>\n"
+                                ."\t</tr>\n";
+                                $var_134=next($var_121);
+                            }
+                            $var_134=prev($var_121);
+                            $var_135 .= "</table>\n";
+                            break;
+                        case "F": 
+                        case "H":
+                        case "1":
+                            $var_135 .= "<table>\n";
+                            $var_170=$var_134['qid'];
+                            while (isset($var_134['qid']) && $var_134['qid'] == $var_170)
+                            {
+                                $var_183 = substr($var_134['fieldname'], 0, strlen($var_134['fieldname']));
+                                $var_135 .= "\t<tr>\n"
+                                ."<td>{$var_134['subquestion']}";
+                                if (isset($var_134['scale']))
+                                {
+                                    $var_135 .= " (".$var_134['scale'].')';
+                                }
+                                $var_135 .="</td>\n";
+                                $var_192=0;
+                                if (isset($var_134['scale_id'])) $var_192=$var_134['scale_id'];
+                                $var_193 = "SELECT * FROM {{answers}} WHERE qid='{$var_134['qid']}' and scale_id={$var_192} and language='$var_110' order by sortorder, answer";
+                                $var_194 = dbExecuteAssoc($var_193);
+                                $var_135 .= "<td>\n";
+                                foreach ($var_194->readAll() as $var_195)
+                                {
+                                    $var_135 .= "\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value='{$var_195['code']}'";
+                                    if ($var_125[$var_134['fieldname']] == $var_195['code']) {$var_135 .= " checked";}
+                                    $var_135 .= " />".$var_195['answer']."&nbsp;\n";
+                                }
+                                
+                                $var_135 .= "\t<input type='radio' class='radiobtn' name='{$var_134['fieldname']}' value=''";
+                                if ($var_125[$var_134['fieldname']] == '') {$var_135 .= " checked";}
+                                $var_135 .= " />".gT("No answer")."&nbsp;\n";
+
+                                $var_135 .= "</td>\n"
+                                ."\t</tr>\n";
+                                $var_134=next($var_121);
+                            }
+                            $var_134=prev($var_121);
+                            $var_135 .= "</table>\n";
+                            break;
+                        case ":": 
+                            $var_139=\var_140::model()->getQuestionAttributes($var_134['qid']);
+                            if (trim($var_139['multiflexible_max'])!='' && trim($var_139['multiflexible_min']) ==''){
+                                $var_196=$var_139['multiflexible_max'];
+                                $var_197=1;
+                            }
+                            if (trim($var_139['multiflexible_min'])!='' && trim($var_139['multiflexible_max']) ==''){
+                                $var_197=$var_139['multiflexible_min'];
+                                $var_196=$var_139['multiflexible_min'] + 10;
+                            }
+                            if (trim($var_139['multiflexible_min'])=='' && trim($var_139['multiflexible_max']) ==''){
+                                $var_197=1;
+                                $var_196=10;
+                            }
+                            if (trim($var_139['multiflexible_min']) !='' && trim($var_139['multiflexible_max']) !=''){
+                                if($var_139['multiflexible_min'] < $var_139['multiflexible_max']){
+                                    $var_197=$var_139['multiflexible_min'];
+                                    $var_196=$var_139['multiflexible_max'];
+                                }
+                            }
+
+
+                            if (trim($var_139['multiflexible_step'])!='') {
+                                $var_198=$var_139['multiflexible_step'];
+                            } else {
+                                $var_198=1;
+                            }
+                            if ($var_139['multiflexible_checkbox']!=0) {
+                                $var_197=0;
+                                $var_196=1;
+                                $var_198=1;
+                            }
+                            $var_135 .= "<table>\n";
+                            $var_170=$var_134['qid'];
+                            while (isset($var_134['qid']) && $var_134['qid'] == $var_170)
+                            {
+                                $var_183 = substr($var_134['fieldname'], 0, strlen($var_134['fieldname']));
+                                $var_135 .= "\t<tr>\n"
+                                . "<td>{$var_134['subquestion1']}:{$var_134['subquestion2']}</td>\n";
+                                $var_135 .= "<td>\n";
+                                if ($var_139['input_boxes']!=0) {
+                                    $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' value='";
+                                    if (!empty($var_125[$var_134['fieldname']])) {$var_135 .= $var_125[$var_134['fieldname']];}
+                                    $var_135 .= "' size=4 />";
+                                } else {
+                                    $var_135 .= "\t<select name='{$var_134['fieldname']}'>\n";
+                                    $var_135 .= "<option value=''>...</option>\n";
+                                    for($var_199=$var_197;$var_199<=$var_196;$var_199+=$var_198)
+                                    {
+                                        $var_135 .= "<option value='$var_199'";
+                                        if($var_125[$var_134['fieldname']] == $var_199) {$var_135 .= " selected";}
+                                        $var_135 .= ">$var_199</option>\n";
+                                    }
+                                }
+
+                                $var_135 .= "</td>\n"
+                                ."\t</tr>\n";
+                                $var_134=next($var_121);
+                            }
+                            $var_134=prev($var_121);
+                            $var_135 .= "</table>\n";
+                            break;
+                        case ";": 
+                            $var_135 .= "<table>\n";
+                            $var_170=$var_134['qid'];
+                            while (isset($var_134['qid']) && $var_134['qid'] == $var_170)
+                            {
+                                $var_183 = substr($var_134['fieldname'], 0, strlen($var_134['fieldname']));
+                                $var_135 .= "\t<tr>\n"
+                                . "<td>{$var_134['subquestion1']}:{$var_134['subquestion2']}</td>\n";
+                                $var_135 .= "<td>\n";
+                                $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' value='";
+                                if(!empty($var_125[$var_134['fieldname']])) {$var_135 .= $var_125[$var_134['fieldname']];}
+                                $var_135 .= "' /></td>\n"
+                                ."\t</tr>\n";
+                                $var_134=next($var_121);
+                            }
+                            $var_134=prev($var_121);
+                            $var_135 .= "</table>\n";
+                            break;
+                        default: 
+                            $var_135 .= "\t<input type='text' name='{$var_134['fieldname']}' value='"
+                            .$var_125[$var_134['fieldname']] . "' />\n";
+                            break;
+                    }
+
+                    $var_135 .= "        </td>
+                    </tr>\n";
+                } while ($var_134=next($var_121));
+            }
+            $var_135 .= "</table>\n"
+            ."<p>\n";
+
+            $var_4['sDataEntryLanguage'] = $var_110;
+
+            if (!App()->var_8->checkAccess('responses', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+            { 
+                $var_135 .= "<p><input type='button' value='".gT("Save")."' disabled='disabled'/></p>\n";
+            }
+            elseif ($var_106 == "edit" && App()->var_8->checkAccess('responses', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+            {
+                $var_4['part'] = 'edit';
+                $var_135 .= $var_12->getController()->renderPartial('/admin/dataentry/edit', $var_4, TRUE);
+            }
+            elseif ($var_106 == "editsaved" && App()->var_8->checkAccess('responses', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+            {
+                $var_4['part'] = 'editsaved';
+                $var_135 .= $var_12->getController()->renderPartial('/admin/dataentry/edit', $var_4, TRUE);
+            }
+
+            $var_135 .= "</form>\n";
+
+            $var_109['output'] = $var_135;
+            $var_12->fn_6('dataentry', $var_109, $var_4);
+        }
+    }
+
+    
+    public function fn_16()
+    {
+        if (isset($_REQUEST['surveyid']) && !empty($_REQUEST['surveyid']))
+        {
+            $var_19 = $_REQUEST['surveyid'];
+        }
+        if (!empty($_REQUEST['sid'])) $var_19 = (int)$_REQUEST['sid'];
+
+        $var_19 = sanitize_int($var_19);
+        $var_2 = $_REQUEST['id'];
+
+        $var_4 = array(
+        'surveyid' => $var_19,
+        'id' => $var_2
+        );
+
+        if (App()->var_8->checkAccess('responses', ['crud' => 'read', 'entity' => 'survey', 'entity_id' => $var_19]) && App()->var_8->checkAccess('responses', ['crud' => 'delete', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            $var_112 = "{{survey_".$var_19.'}}';
+            $var_4['thissurvey'] = getSurveyInfo($var_19);
+
+            $var_201 = "DELETE FROM $var_112 WHERE id=$var_2";
+            Yii::app()->loadHelper('database');
+            $var_202 = dbExecuteAssoc($var_201) or safeDie ("Couldn't delete record $var_2<br />\n");
+
+            $var_12->fn_6('dataentry', 'delete', $var_4);
+        }
+    }
+
+    
+    public function fn_17()
+    {
+        $var_4=array();
+        $var_106 = Yii::app()->var_6->getPost('subaction');
+        if (isset($_REQUEST['surveyid'])) $var_19 = $_REQUEST['surveyid'];
+        if (!empty($_REQUEST['sid'])) $var_19 = (int)$_REQUEST['sid'];
+        $var_19 = sanitize_int($var_19);
+        $var_2 = Yii::app()->var_6->getPost('id');
+        $var_187 = Yii::app()->var_6->getPost('lang');
+
+        if ($var_106 == "update"  && App()->var_8->checkAccess('responses', ['crud' => 'update', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+
+            $var_186 = Survey::model()->findByPk($var_19)->var_107;
+            Yii::app()->loadHelper("database");
+            $var_112 = "{{survey_".$var_19.'}}';
+
+            $var_135 = "<div class='header ui-widget-header'>".gT("Data entry")."</div>\n";
+
+            $var_130 = createFieldMap($var_19,'full',false,false,getBaseLanguageFromSurveyID($var_19));
+
+            
+            foreach ($var_130 as $var_134)
+            {
+                if ($var_134['type'] == "interview_time" || $var_134['type'] == "page_time" || $var_134['type'] == "answer_time")
+                {
+                    unset($var_130[$var_134['fieldname']]);
+                }
+            }
+
+            $var_203 = getSurveyInfo($var_19);
+            $var_204 = "UPDATE $var_112 SET \n";
+
+            foreach ($var_130 as $var_205)
+            {
+                $var_206=$var_205['fieldname'];
+                if ($var_206=='id') continue;
+                if (isset($var_227[$var_206]))
+                {
+                    $var_207=$var_227[$var_206];
+                }
+                else
+                {
+                    $var_207="";
+                }
+                if ($var_205['type'] == 'lastpage')
+                {
+                    $var_207=0;
+                }
+                elseif ($var_205['type'] == 'D')
+                {
+                    if ($var_207 == "")
+                    {
+                        $var_204 .= dbQuoteID($var_206)." = NULL, \n";
+                    }
+                    else
+                    {
+                        $var_139 = \var_140::model()->getQuestionAttributes($var_205['qid'], $var_205['type']);
+                        $var_149 = getDateFormatDataForQID($var_139, $var_203);
+
+                        $var_12->getController()->loadLibrary('Date_Time_Converter');
+                        $var_150 = new class_6($var_207,$var_149['phpdate']) ;
+                        
+
+                        
+                        $var_204 .= dbQuoteID($var_206)." = '{$var_150->convert("Y-m-d H:i:s")}', \n";
+                    }
+                }
+                elseif (($var_205['type'] == 'N' || $var_205['type'] == 'K') && $var_207 == "")
+                {
+                    $var_204 .= dbQuoteID($var_206)." = NULL, \n";
+                }
+                elseif ($var_205['type'] == '|' && strpos($var_205['fieldname'], '_filecount') && $var_207 == "")
+                {
+                    $var_204 .= dbQuoteID($var_206)." = NULL, \n";
+                }
+                elseif ($var_205['type'] == 'submitdate')
+                {
+                    if (isset($var_227['completed']) && ($var_227['completed']== "N"))
+                    {
+                        $var_204 .= dbQuoteID($var_206)." = NULL, \n";
+                    }
+                    elseif (isset($var_227['completed']) && $var_207=="")
+                    {
+                        $var_204 .= dbQuoteID($var_206)." = " . App()->var_20->quoteValue($var_227['completed']) . ", \n";
+                    }
+                    else
+                    {
+                        $var_204 .= dbQuoteID($var_206)." = " . App()->var_20->quoteValue($var_207) . ", \n";
+                    }
+                }
+                else
+                {
+                    $var_204 .= dbQuoteID($var_206)." = " . App()->var_20->quoteValue($var_207) . ", \n";
+                }
+            }
+            $var_204 = substr($var_204, 0, -3);
+            $var_204 .= " WHERE id=$var_2";
+
+            $var_210 = dbExecuteAssoc($var_204) or throw new \var_167(500, "Update failed:<br />\n<br />$var_204");
+
+            $var_211 = $var_12->getController()->createUrl('/admin/responses/sa/view/surveyid/'.$var_19.'/id/'.$var_2);
+            $var_212 = $var_12->getController()->createUrl('/admin/responses/sa/index/surveyid/'.$var_19);
+            $var_135 .= "<div class='messagebox ui-corner-all'><div class='successheader'>".gT("Success")."</div>\n"
+            .gT("Record has been updated.")."<br /><br />\n"
+            ."<input type='submit' value='".gT("View This Record")."' onclick=\"window.open('$var_211', '_top')\" /><br /><br />\n"
+            ."<input type='submit' value='".gT("Browse responses")."' onclick=\"window.open('$var_212', '_top')\" />\n"
+            ."</div>\n";
+
+            $var_109['output'] = $var_135;
+            $var_12->fn_6('dataentry', $var_109, $var_4);
+        }
+    }
+
+    
+    public function fn_14()
+    {
+
+        $var_106 = Yii::app()->var_6->getPost('subaction');
+        $var_19 = Yii::app()->var_6->getPost('sid');
+        $var_187 = isset($var_227['lang']) ? Yii::app()->var_6->getPost('lang') : NULL;
+
+        $var_4 = array(
+        'surveyid' => $var_19,
+        'lang' => $var_187
+        );
+
+        if (App()->var_8->checkAccess('responses', ['crud' => 'create', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+            if ($var_106 == "insert" && App()->var_8->checkAccess('responses', ['crud' => 'create', 'entity' => 'survey', 'entity_id' => $var_19]))
+            {
+                $var_112 = "{{survey_{$var_19}}}";
+                $var_203 = getSurveyInfo($var_19);
+                $var_213 = "";
+
+                Yii::app()->loadHelper("database");
+                $var_109['display']['menu_bars']['browse'] = gT("Data entry");
+
+                $var_135 = '';
+                $var_214 = array();
+                $var_215 = '';
+
+                $var_216 = ''; 
+                $var_217 = '';
+
+                if (isset($var_227['token']))
+                {
+                    $var_218 = "";
+                    $var_219 = "SELECT completed from {{tokens_{$var_19}}} WHERE token=".App()->var_20->quoteValue($var_227['token']);
+                    $var_220 = dbExecuteAssoc($var_219);
+                    $var_220 = $var_220->readAll();
+                    $var_221 = count($var_220);
+                    foreach ($var_220 as $var_222)
+                    {
+                        $var_218 = $var_222['completed'];
+                    }
+
+                    if ($var_221 < 1)
+                    { 
+                        $var_216 = 'UnknownToken';
+                    }
+                    elseif ($var_203['anonymized'] == "Y")
+                    { 
+                        if ($var_218 != "" && $var_218 != "N")
+                        { 
+                            $var_216='PrivacyProtected';
+                        }
+                    }
+                    else
+                    { 
+                        $var_223 = "SELECT id,startlanguage FROM $var_112 WHERE token=".App()->var_20->quoteValue($var_227['token']);
+                        $var_224 = dbExecuteAssoc($var_223);
+                        foreach ($var_224->readAll() as $var_225)
+                        {
+                            if ($var_218 != "N") { $var_216=$var_225['id']; }
+                            $var_217=$var_225['startlanguage'];
+                        }
+                    }
+                }
+
+                
+                if (tableExists('{{tokens_'.$var_203['sid'].'}}') && (!$var_227['token']))
+                {
+                    $var_213 = CHtml::tag('div', array('class'=>'warningheader'), gT("Error"));
+                    $var_213 .= CHtml::tag('p', array(), gT("This is a closed-access survey, so you must supply a valid token.  Please contact the administrator for assistance."));
+                }
+                elseif (tableExists('{{tokens_'.$var_203['sid'].'}}') && $var_216 == 'UnknownToken')
+                {
+                    $var_213 = CHtml::tag('div', array('class'=>'warningheader'), gT("Error"));
+                    $var_213 .= CHtml::tag('p', array(), gT("The token you have provided is not valid or has already been used."));
+                }
+                elseif (tableExists('{{tokens_'.$var_203['sid'].'}}') && $var_216 != '')
+                {
+                    $var_213 = CHtml::tag('div', array('class'=>'warningheader'), gT("Error"));
+                    $var_213 .= CHtml::tag('p', array(), gT("There is already a recorded answer for this token"));
+
+                    if ($var_216 != 'PrivacyProtected')
+                    {
+                        $var_213 .= "<br /><br />".gT("Follow the following link to update it").":\n";
+                        $var_213 .= CHtml::link("[id:$var_216]",
+                        $var_12->getController()->createUrl('/admin/dataentry/sa/editdata/subaction/edit/id/'.$var_216.'/surveyid/'.$var_19.'/lang/'.$var_217),
+                        array('title' => gT("Edit this entry")));
+                        $var_213 .= "<br/><br/>";
+                    }
+                    else
+                    {
+                        $var_213 .= "<br /><br />".gT("This surveys uses anonymized responses, so you can't update your response.")."\n";
+                    }
+                }
+                else
+                {
+                    $var_226 = 0;
+
+                    if (isset($var_227['save']) && $var_227['save'] == "on")
+                    {
+                        $var_4['save'] = TRUE;
+
+                        $saver['identifier']=$var_227['save_identifier'];
+                        $saver['language']=$var_227['save_language'];
+                        $saver['password']=$var_227['save_password'];
+                        $saver['passwordconfirm']=$var_227['save_confirmpassword'];
+                        $saver['email']=$var_227['save_email'];
+                        if (!returnGlobal('redo'))
+                        {
+                            $var_126 = md5($saver['password']);
+                        }
+                        else
+                        {
+                            $var_126=$saver['password'];
+                        }
+                        $var_213="";
+                        if (!$saver['identifier']) { $var_213 .= gT("Error").": ".gT("You must supply a name for this saved session.");}
+                        if (!$saver['password']) { $var_213 .= gT("Error").": ".gT("You must supply a password for this saved session.");}
+                        if ($saver['password'] != $saver['passwordconfirm']) { $var_213 .= gT("Error").": ".gT("Your passwords do not match.");}
+
+                        $var_4['errormsg'] = $var_213;
+
+                        if ($var_213)
+                        {
+                            foreach ($var_227 as $var_228=>$var_229)
+                            {
+                                if (substr($var_228, 0, 4) != "save" && $var_228 != "action" && $var_228 !="sid" && $var_228 != "datestamp" && $var_228 !="ipaddr")
+                                {
+                                    $var_215 .= CHtml::hiddenField($var_228, $var_229);
+                                    
+                                }
+                            }
+                        }
+                    }
+
+                    
+                    $var_186 = Survey::model()->findByPk($var_19)->var_107;
+                    $var_130 = createFieldMap($var_19,'full',false,false,getBaseLanguageFromSurveyID($var_19));
+                    $var_230 = array();
+
+                    $var_227['startlanguage'] = $var_186;
+                    if ($var_203['datestamp'] == "Y") { $var_227['startdate'] = $var_227['datestamp']; }
+                    if (isset($var_227['closerecord']))
+                    {
+                        if ($var_203['datestamp'] == "Y")
+                        {
+                            $var_227['submitdate'] = dateShift(date("Y-m-d H:i:s"), "Y-m-d H:i:s", Yii::app()->getConfig('timeadjust'));
+                        }
+                        else
+                        {
+                            $var_227['submitdate'] = date("Y-m-d H:i:s",mktime(0,0,0,1,1,1980));
+                        }
+                    }
+
+                    foreach ($var_130 as $var_205)
+                    {
+                        $var_206 = $var_205['fieldname'];
+                        if (isset($var_227[$var_206]))
+                        {
+                            if ($var_227[$var_206] == "" && ($var_205['type'] == 'D' || $var_205['type'] == 'N' || $var_205['type'] == 'K'))
+                            { 
+                                
+                            }
+                            else if ($var_205['type'] == '|')
+                                {
+                                    if (!strpos($var_205['fieldname'], "_filecount"))
+                                    {
+                                        $var_231 = $var_227[$var_206];
+                                        $var_232 = json_decode(stripslashes($var_231));
+                                        $var_233 = 0;
+
+                                        for ($var_146 = 0; $var_233 < count($var_232); $var_146++)
+                                        {
+                                            if ($_FILES[$var_206."_file_".$var_146]['error'] != 4)
+                                            {
+                                                $var_234 = Yii::app()->getConfig('uploaddir')."/surveys/". $var_203['sid'] ."/files/".randomChars(20);
+                                                $var_235 = 0.001 * $_FILES[$var_206."_file_".$var_146]['size'];
+                                                $var_64 = rawurlencode($_FILES[$var_206."_file_".$var_146]['name']);
+
+                                                if (move_uploaded_file($_FILES[$var_206."_file_".$var_146]['tmp_name'], $var_234))
+                                                {
+                                                    $var_232[$var_233]->var_236 = basename($var_234);
+                                                    $var_232[$var_233]->var_64 = $var_64;
+                                                    $var_232[$var_233]->var_235 = $var_235;
+                                                    $var_237 = pathinfo($_FILES[$var_206."_file_".$var_146]['name']);
+                                                    $var_232[$var_233]->var_238 = $var_237['extension'];
+                                                    $var_233++;
+                                                }
+                                        }
+                                    }
+
+                                    $var_230[$var_206] = ls_json_encode($var_232);
+
+                                }
+                                else
+                                {
+                                    $var_230[$var_206] = count($var_232);
+                                }
+                            }
+                            elseif ($var_205['type'] == 'D')
+                            {
+                                Yii::app()->loadLibrary('Date_Time_Converter');
+                                $var_139 = \var_140::model()->getQuestionAttributes($var_205['qid'], $var_205['type']);
+                                $var_149 = getDateFormatDataForQID($var_139, $var_203);
+                                $var_150 = new class_5($var_227[$var_206],$var_149['phpdate']);
+                                $var_230[$var_206] = $var_150->convert("Y-m-d H:i:s");
+                            }
+                            else
+                            {
+                                $var_230[$var_206] = $var_227[$var_206];
+                            }
+                        }
+                    }
+
+                    class_7::sid($var_19);
+                    $var_239 = new class_7;
+                    foreach($var_230 as $var_100 => $var_240)
+                    {
+                        $var_239->$var_100 = $var_240;
+                    }
+                    $var_239->save();
+                    $var_226 = $var_239->getPrimaryKey();
+                    if (isset($var_227['closerecord']) && isset($var_227['token']) && $var_227['token'] != '') 
+                    {
+                        
+                        if (isset($var_227['closedate']))
+                        { $var_242 = $var_227['closedate']; }
+                        else
+                        { $var_242 = dateShift(date("Y-m-d H:i:s"), "Y-m-d", $var_243); }
+
+                        
+                        $var_244 = "SELECT usesleft FROM {{tokens_}}$var_19 WHERE token=".App()->var_20->quoteValue($var_227['token']);
+                        $var_245 = dbExecuteAssoc($var_244);
+                        $var_246 = $var_245->readAll(); 
+                        if (isset($var_246)) { $var_247 = $var_246[0]['usesleft']; }
+
+                        
+                        $var_248 = "UPDATE {{tokens_$var_19}}\n";
+                        if (isTokenCompletedDatestamped($var_203))
+                        {
+                            if (isset($var_247) && $var_247<=1)
+                            {
+                                $var_248 .= "SET usesleft=usesleft-1, completed=".dbQuoteAll($var_242);
+                            }
+                            else
+                            {
+                                $var_248 .= "SET usesleft=usesleft-1\n";
+                            }
+                        }
+                        else
+                        {
+                            if (isset($var_247) && $var_247<=1)
+                            {
+                                $var_248 .= "SET usesleft=usesleft-1, completed='Y'\n";
+                            }
+                            else
+                            {
+                                $var_248 .= "SET usesleft=usesleft-1\n";
+                            }
+                        }
+                        $var_248 .= "WHERE token=".App()->var_20->quoteValue($var_227['token']);
+                        $var_249 = dbExecuteAssoc($var_248); 
+
+                        
+                        $var_250 = "UPDATE {{survey_$var_19}} SET submitdate='".$var_242."' WHERE id={$var_226}\n";
+                        $var_251 = dbExecuteAssoc($var_250) or safeDie ("Couldn't set submitdate response in survey table!<br />\n$var_250<br />\n");
+                        $var_226 = getLastInsertID("{{survey_$var_19}}");
+                    }
+                    if (isset($var_227['save']) && $var_227['save'] == "on")
+                    {
+                        $var_252 = $var_226;
+                        $var_253=Yii::app()->var_254;
+                        
+
+
+                        $var_255 = '{{saved_control}}';
+
+                        $var_99 = array("sid", "srid", "identifier", "access_code", "email", "ip",
+                        "refurl", 'saved_thisstep', "status", "saved_date");
+                        $var_256 = array("'".$var_19."'", "'".$var_252."'", "'".$saver['identifier']."'", "'".$var_126."'", "'".$saver['email']."'", "'".$var_253['ip_address']."'",
+                        "'".getenv("HTTP_REFERER")."'", 0, "'"."S"."'", "'".dateShift(date("Y-m-d H:i:s"), "Y-m-d H:i:s", "'".Yii::app()->getConfig('timeadjust'))."'");
+
+                        $var_257 = "INSERT INTO $var_255
+                        (".implode(',',$var_99).")
+                        VALUES
+                        (".implode(',',$var_256).")";
+
+                        
+                        if (dbExecuteAssoc($var_257))
+                        {
+                            $var_258 =  getLastInsertID('{{saved_control}}');
+
+                            $var_214[] = CHtml::tag('font', array('class'=>'successtitle'), gT("Your survey responses have been saved successfully.  You will be sent a confirmation e-mail. Please make sure to save your password, since we will not be able to retrieve it for you."));
+                            
+
+                            $var_259 = "{{tokens_$var_19}}";
+                            if (tableExists($var_259)) 
+                            {
+                                $var_260 = "SELECT * FROM {$var_259}";
+                                $var_261 = dbExecuteAssoc($var_260);
+                                
+
+                                $var_99 = array("firstname", "lastname", "email", "token",
+                                "language", "sent", "completed");
+                                $var_256 = array("'".$saver['identifier']."'", "'".$saver['identifier']."'", "'".$saver['email']."'", "'".$var_126."'",
+                                "'".randomChars(15)."'", "'".$saver['language']."'", "'"."N"."'");
+
+                                $var_257 = "INSERT INTO $var_262
+                                (".implode(',',$var_99).")
+                                VALUES
+                                (".implode(',',$var_256).")";
+                                dbExecuteAssoc($var_257);
+                                $var_214[] = CHtml::tag('font', array('class'=>'successtitle'), gT("A token entry for the saved survey has been created too."));
+                                
+                            }
+                            if ($saver['email'])
+                            {
+                                
+                                if (validateEmailAddress($saver['email']) && !returnGlobal('redo'))
+                                {
+                                    $var_263 = gT("Saved Survey Details");
+                                    $var_264 = gT("Thank you for saving your survey in progress.  The following details can be used to return to this survey and continue where you left off.  Please keep this e-mail for your reference - we cannot retrieve the password for you.");
+                                    $var_264 .= "\n\n".$var_203['name']."\n\n";
+                                    $var_264 .= gT("Name").": ".$saver['identifier']."\n";
+                                    $var_264 .= gT("Password").": ".$saver['password']."\n\n";
+                                    $var_264 .= gT("Reload your survey by clicking on the following link (or pasting it into your browser):")."\n";
+                                    $var_264 .= Yii::app()->getController()->createAbsoluteUrl("/survey/index/sid/{$var_266}/loadall/reload/scid/{$var_258}/loadname/".rawurlencode ($saver['identifier'])."/loadpass/".rawurlencode ($saver['password'])."/lang/".rawurlencode($saver['language']));
+                                    if (isset($tokendata['token'])) { $var_264 .= "/token/".rawurlencode($tokendata['token']); }
+
+                                    $var_267 = $var_203['adminemail'];
+
+                                    if (SendEmailMessage($var_264, $var_263, $saver['email'], $var_267, $var_268, false, getBounceEmail($var_19)))
+                                    {
+                                        $var_269="Y";
+                                        $var_214[] = CHtml::tag('font', array('class'=>'successtitle'), gT("An email has been sent with details about your saved survey"));
+                                    }
+                                }
+                            }
+
+                        }
+                        else
+                        {
+                            throw new \var_167(500, "Unable to insert record into saved_control table.<br /><br />");
+                        }
+
+                    }
+                    $var_4['thisid'] = $var_226;
+                }
+
+                $var_4['errormsg'] = $var_213;
+
+                $var_4['dataentrymsgs'] = $var_214;
+
+                $var_12->fn_6('dataentry', 'insert', $var_4);
+            }
+
+        }
+    }
+
+    
+    public function fn_18($var_19, $var_187=NULL)
+    {
+        $var_19 = sanitize_int($var_19);
+        $var_187 = isset($_GET['lang']) ? $_GET['lang'] : NULL;
+        if(isset($var_187)) $var_187=sanitize_languagecode($var_187);
+        $var_109 = array();
+
+        if (App()->var_8->checkAccess('responses', ['crud' => 'create', 'entity' => 'survey', 'entity_id' => $var_19]))
+        {
+
+
+            $var_110 = Survey::model()->findByPk($var_19)->var_107;
+            $var_111=getSurveyInfo($var_19);
+
+            $var_184 = Survey::model()->findByPk($var_19)->var_185;
+            $var_186 = Survey::model()->findByPk($var_19)->var_107;
+            array_unshift($var_184,$var_186);
+
+            if(is_null($var_187) || !in_array($var_187,$var_184))
+            {
+                $var_110 = $var_186;
+                $var_270 = App()->var_107;
+            } else {
+                $var_110 = $var_187;
+            }
+
+            $var_271 = languageDropdown($var_19,$var_110);
+            $var_203=getSurveyInfo($var_19);
+
+            
+            LimeExpressionManager::StartSurvey($var_19, 'survey', NULL, false, var_272);
+            $var_273 = LimeExpressionManager::NavigateForwards();
+
+            $var_4['thissurvey'] = $var_203;
+            $var_4['langlistbox'] = $var_271;
+            $var_4['surveyid'] = $var_19;
+            $var_4['blang'] = $var_270;
+            $var_4['site_url'] = Yii::app()->var_274;
+
+            LimeExpressionManager::StartProcessingPage(true, Yii::app()->var_275);  
+
+            $var_109[] = 'caption_view';
+
+            Yii::app()->loadHelper('database');
+
+            
+            $var_276 = "SELECT * FROM {{groups}} WHERE sid=$var_19 AND language='{$var_110}' ORDER BY {{groups}}.group_order";
+            $var_277 = dbExecuteAssoc($var_276);
+            
+            $var_135 = '';
+
+            foreach ($var_277->readAll() as $var_278)
+            {
+                LimeExpressionManager::StartProcessingGroup($var_278['gid'], ($var_203['anonymized']!="N"),$var_19);
+
+                $var_279 = "SELECT * FROM {{questions}} WHERE sid=$var_19 AND parent_qid=0 AND gid={$var_278['gid']} AND language='{$var_110}'";
+                $var_280 = (array) dbExecuteAssoc($var_279)->readAll();
+                $var_135 .= "\t<tr>\n"
+                ."<td colspan='3' align='center'><strong>".flattenText($var_278['group_name'],true)."</strong></td>\n"
+                ."\t</tr>\n";
+                $var_281 = $var_278['gid'];
+
+                $var_135 .= "\t<tr class='data-entry-separator'><td colspan='3'></td></tr>\n";
+
+                
+                usort($var_280, 'groupOrderThenQuestionOrder');
+                $var_282 = 'odd';
+                foreach ($var_280 as $var_283)
+                {
+                    $var_284 = array();
+                    $var_139 = \var_140::model()->getQuestionAttributes($var_283['qid'], $var_283['type']);
+                    $var_284['qidattributes'] = $var_139;
+                    $var_285 = (isset($var_139['hidden']) ? $var_139['hidden'] : 0);
+                    
+                    
+
+                    
+
+                    $var_286 = LimeExpressionManager::GetQuestionStatus($var_283['qid']);
+                    $var_287 = trim($var_286['info']['relevance']);
+                    $var_288 = trim($var_286['relEqn']);
+                    $var_289 = trim($var_286['prettyValidTip']);
+                    $var_139=\var_140::model()->getQuestionAttributes($var_283['qid']);
+                    $var_290 = flattenText($var_12->fn_19($var_139, $var_110, $var_19));
+
+                    if (($var_287 != '' && $var_287 != '1') || ($var_289 != '') || ($var_290 != ''))
+                    {
+                        $var_292 = '';
+                        if ($var_282 == "even") {$var_282 = "odd";} else {$var_282 = "even";} 
+                        if ($var_287 != '' && $var_287 != '1') {
+                            $var_292 = "[".$var_270->gT("Only answer this if the following conditions are met:")."]<br />$var_288\n";
+                        }
+                        if ($var_292 != '' && $var_289 != '') {
+                            $var_292 .= '<br/>';
+                        }
+                        if ($var_289 != '') {
+                            $var_292 .= "[".$var_270->gT("The answer(s) must meet these validation criteria:")."]<br />$var_289\n";
+                        }
+                        if ($var_292 != '' && $var_290 != '') {
+                            $var_292 .= '<br/>';
+                        }
+                        if ($var_290 != '') {
+                            $var_292 .= "[".$var_270->gT("The answer(s) must meet these array_filter criteria:")."]<br />$var_290\n";
+                        }
+                        $var_284['explanation'] = "<tr class ='data-entry-explanation'><td class='data-entry-small-text' colspan='3' align='left'>$var_292</td></tr>\n";
+                    }
+
+                    
+
+                    
+                    if (!isset($var_282)) {$var_282 = "even";}
+                    if ($var_282 == "even") {$var_282 = "odd";}
+                    else {$var_282 = "even";}
+
+                    $var_68 = $var_283['qid'];
+                    $var_206 = "$var_19"."X"."$var_281"."X"."$var_68";
+
+                    $var_284['bgc'] = $var_282;
+                    $var_284['fieldname'] = $var_206;
+                    $var_284['deqrow'] = $var_283;
+                    $var_284['blang'] = $var_270;
+
+                    $var_284['thissurvey'] = $var_203;
+                    if ($var_283['help'])
+                    {
+                        $var_294 = addcslashes($var_283['help'], "\0..\37'\""); 
+                        $var_294 = htmlspecialchars($var_294, var_154); 
+                        $var_284['hh'] = $var_294;
+                        
+                    }
+                    switch($var_283['type'])
+                    {
+                        case "Q": 
+                        case "K":
+                            $var_295 = "SELECT question,title FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_110}' ORDER BY question_order";
+                            $var_296 = dbExecuteAssoc($var_295);
+                            $var_284['dearesult'] = $var_296->readAll();
+
+                            break;
+
+                        case "1": 
+                            $var_295 = "SELECT * FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_186}' ORDER BY question_order";
+                            $var_296 = dbExecuteAssoc($var_295);
+
+                            $var_284['dearesult'] = $var_296->readAll();
+
+                            $var_165="SELECT other FROM {{questions}} WHERE qid={$var_283['qid']} AND language='{$var_186}'";
+                            $var_166=dbExecuteAssoc($var_165) or throw new \var_167(500, "Couldn't get other for list question<br />".$var_165);
+                            foreach($var_166->readAll() as $var_168)
+                            {
+                                $var_284['fother']=$var_168['other'];
+                            }
+
+                            break;
+
+                        case "L": 
+                        case "!":
+                            
+                            if ($var_283['type']=='!' && trim($var_139['category_separator'])!='')
+                            {
+                                $var_153 = $var_139['category_separator'];
+                            }
+                            else
+                            {
+                                unset($var_153);
+                            }
+                            $var_297="";
+                            $var_295 = "SELECT * FROM {{answers}} WHERE qid={$var_283['qid']} AND language='{$var_110}' ORDER BY sortorder, answer";
+                            $var_296 = dbExecuteAssoc($var_295);
+                            
+                            $var_298='';
+                            if (!isset($var_153))
+                            {
+                                foreach ($var_296->readAll() as $var_299)
+                                {
+                                    $var_298 .= "<option value='{$var_299['code']}'";
+                                    
+                                    $var_298 .= ">{$var_299['answer']}</option>\n";
+                                }
+                            }
+                            else
+                            {
+                                $var_158 = array();
+                                $var_159 = array();
+
+                                foreach ($var_296->readAll() as $var_299)
+                                {
+                                    list ($var_160, $var_161) = explode($var_153,$var_299['answer']);
+                                    if ($var_160 == '')
+                                    {
+                                        $var_158[] = array ( 'code' => $var_299['code'], 'answer' => $var_161, 'default_value' => $var_299['assessment_value']);
+                                    }
+                                    else
+                                    {
+                                        $var_159[$var_160][] = array ( 'code' => $var_299['code'], 'answer' => $var_161, 'default_value' => $var_299['assessment_value']);
+                                    }
+                                }
+                                foreach ($var_159 as $var_162 => $var_163)
+                                {
+                                    $var_298 .= "<optgroup class=\"dropdowncategory\" label=\"".$var_162."\">\n";
+                                    foreach ($var_163 as $var_164)
+                                    {
+                                        $var_298 .= "\t<option value='{$var_164['code']}'";
+                                        
+                                        $var_298 .= ">{$var_164['answer']}</option>\n";
+                                    }
+                                    $var_298 .= "</optgroup>\n";
+                                }
+                                foreach ($var_158 as $var_164)
+                                {
+                                    $var_298 .= "\t<option value='{$var_164['code']}'";
+                                    
+                                    $var_298 .= ">{$var_164['answer']}</option>\n";
+                                }
+                            }
+
+                            $var_165="SELECT other FROM {{questions}} WHERE qid={$var_283['qid']} AND language='{$var_110}'";
+                            $var_166=dbExecuteAssoc($var_165) or throw new \var_167(500, "Couldn't get other for list question<br />");
+                            foreach($var_166->readAll() as $var_168)
+                            {
+                                $var_169=$var_168['other'];
+                            }
+
+                            $var_284['fother'] = $var_169;
+                            $var_284['defexists'] = $var_297;
+                            $var_284['datatemp'] = $var_298;
+
+                            break;
+                        case "O": 
+                            $var_297="";
+                            $var_295 = "SELECT * FROM {{answers}} WHERE qid={$var_283['qid']} AND language='{$var_110}' ORDER BY sortorder, answer";
+                            $var_296 = dbExecuteAssoc($var_295);
+                            
+                            $var_298='';
+                            foreach ($var_296->readAll() as $var_299)
+                            
+                            {
+                                $var_298 .= "<option value='{$var_299['code']}'";
+                                
+                                $var_298 .= ">{$var_299['answer']}</option>\n";
+
+                            }
+                            $var_284['datatemp'] = $var_298;
+                            $var_284['defexists'] = $var_297;
+
+                            break;
+                        case "R": 
+                            $var_170=$var_283['qid'];
+                            $var_173 = "SELECT * FROM {{answers}} WHERE qid=$var_170 AND language='{$var_110}' ORDER BY sortorder, answer";
+                            $var_174 = dbExecuteAssoc($var_173);
+                            $var_174 = $var_174->readAll();
+                            $var_175 = count($var_174);
+
+                            $var_284['thisqid'] = $var_170;
+                            $var_284['anscount'] = $var_175;
+                            $var_174 = Yii::app()->var_20->createCommand($var_173)->query()->readAll();   
+                            $var_175= count($var_174);
+                            $var_176= array();
+                                foreach ($var_174 as $var_177)
+                                {
+                                    $var_176[] = $var_177;
+                                }
+                            $var_284['answers']=$var_176;
+                            App()->getClientScript()->registerPackage('jquery-actual');
+                            App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('generalscripts') . 'ranking.js');
+                            App()->getClientScript()->registerCssFile(Yii::app()->getConfig('publicstyleurl') . 'ranking.css');
+                            unset($var_176);
+                            break;
+                        case "M": 
+                            if (trim($var_139['display_columns'])!='')
+                            {
+                                $var_182=$var_139['display_columns'];
+                            }
+                            else
+                            {
+                                $var_182=0;
+                            }
+                            $var_300 = "SELECT title, question FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_110}' ORDER BY question_order";
+                            $var_301 = dbExecuteAssoc($var_300);
+
+                            $var_284['mearesult'] = $var_301->readAll();
+                            $var_302 = count($var_284['mearesult']);
+                            $var_284['meacount'] = $var_302;
+                            $var_284['dcols'] = $var_182;
+
+                            break;
+                        case "I": 
+                            $var_184 = Survey::model()->findByPk($var_19)->var_185;
+                            $var_303 = Survey::model()->findByPk($var_19)->var_107;
+                            array_unshift($var_184,$var_303);
+                            $var_284['slangs'] = $var_184;
+
+                            break;
+                        case "P": 
+                            
+                            $var_300 = "SELECT * FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_110}' ORDER BY question_order, question";
+                            $var_301 = dbExecuteAssoc($var_300);
+
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                            break;
+                        case "|":
+                            
+                            $var_284['qidattributes'] = $var_139;
+
+                            $var_304 = $var_139['max_num_of_files'];
+                            $var_284['maxfiles'] = $var_304;
+
+                            break;
+                        case "A": 
+                            $var_300 = "SELECT title, question FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_110}' ORDER BY question_order";
+                            $var_301 = dbExecuteAssoc($var_300);
+
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                            break;
+                        case "B": 
+                            $var_300 = "SELECT title, question FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_110}' ORDER BY question_order";
+                            $var_301 = dbExecuteAssoc($var_300);
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                        case "C": 
+                            $var_300 = "SELECT title, question FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_110}' ORDER BY question_order";
+                            $var_301=dbExecuteAssoc($var_300);
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                            break;
+                        case "E": 
+                            $var_300 = "SELECT title, question FROM {{questions}} WHERE parent_qid={$var_283['qid']} AND language='{$var_110}' ORDER BY question_order";
+                            $var_301=dbExecuteAssoc($var_300) or safeDie ("Couldn't get answers, Type \"E\"<br />$var_300<br />");
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                            break;
+                        case ":": 
+                            
+                            $var_197=1;
+                            $var_196=10;
+                            if (trim($var_139['multiflexible_max'])!='' && trim($var_139['multiflexible_min']) =='') {
+                                $var_196=$var_139['multiflexible_max'];
+                                $var_197=1;
+                            }
+                            if (trim($var_139['multiflexible_min'])!='' && trim($var_139['multiflexible_max']) =='') {
+                                $var_197=$var_139['multiflexible_min'];
+                                $var_196=$var_139['multiflexible_min'] + 10;
+                            }
+                            if (trim($var_139['multiflexible_min']) !='' && trim($var_139['multiflexible_max']) !='') {
+                                if($var_139['multiflexible_min'] < $var_139['multiflexible_max']){
+                                    $var_197=$var_139['multiflexible_min'];
+                                    $var_196=$var_139['multiflexible_max'];
+                                }
+                            }
+
+                            if (trim($var_139['multiflexible_step'])!='') {
+                                $var_198=$var_139['multiflexible_step'];
+                            } else {
+                                $var_198=1;
+                            }
+                            if ($var_139['multiflexible_checkbox']!=0)
+                            {
+                                $var_197=0;
+                                $var_196=1;
+                                $var_198=1;
+                            }
+                            $var_284['minvalue'] = $var_197;
+                            $var_284['maxvalue'] = $var_196;
+                            $var_284['stepvalue'] = $var_198;
+
+                            $var_155 = "SELECT question, title FROM {{questions}} WHERE parent_qid={$var_283['qid']} and scale_id=1 and language='{$var_110}' ORDER BY question_order";
+                            $var_156=dbExecuteAssoc($var_155) or die ("Couldn't get labels, Type \":\"<br />$var_155<br />");
+                            $var_284['lresult'] = $var_156->readAll();
+
+                            $var_300 = "SELECT question, title FROM {{questions}} WHERE parent_qid={$var_283['qid']} and scale_id=0 and language='{$var_110}' ORDER BY question_order";
+                            $var_301=dbExecuteAssoc($var_300) or die ("Couldn't get answers, Type \":\"<br />$var_300<br />");
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                            break;
+                        case ";": 
+
+                            $var_155 = "SELECT * FROM {{questions}} WHERE scale_id=1 and parent_qid={$var_283['qid']} and language='{$var_110}' ORDER BY question_order";
+                            $var_156=dbExecuteAssoc($var_155) or die ("Couldn't get labels, Type \":\"<br />$var_155<br />");
+                            $var_284['lresult'] = $var_156->readAll();
+
+                            $var_300 = "SELECT * FROM {{questions}} WHERE scale_id=0 and parent_qid={$var_283['qid']} and language='{$var_110}' ORDER BY question_order";
+                            $var_301=dbExecuteAssoc($var_300) or die ("Couldn't get answers, Type \":\"<br />$var_300<br />");
+
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                            break;
+                        case "F": 
+                        case "H":
+                            $var_300 = "SELECT * FROM {{questions}} WHERE parent_qid={$var_283['qid']} and language='{$var_110}' ORDER BY question_order";
+                            $var_301=dbExecuteAssoc($var_300) or safeDie ("Couldn't get answers, Type \"E\"<br />$var_300<br />");
+
+                            $var_284['mearesult'] = $var_301->readAll();
+
+                            $var_193 = "SELECT * FROM {{answers}} WHERE qid={$var_283['qid']} and language='{$var_110}' ORDER BY sortorder, code";
+                            $var_194 = dbExecuteAssoc($var_193);
+                            $var_284['fresult'] = $var_194->readAll();
+                            break;
+                    }
+
+                    $var_284['sDataEntryLanguage'] = $var_110;
+                    $var_305 = $var_12->getController()->renderPartial("/admin/dataentry/content_view",$var_284,TRUE);
+                    $var_306 = LimeExpressionManager::ProcessString($var_305, $var_283['qid'], NULL, false, 1, 1);
+                    $var_135 .= $var_306;
+                }
+                LimeExpressionManager::FinishProcessingGroup();
+            }
+
+            LimeExpressionManager::FinishProcessingPage();
+            $var_135 .= LimeExpressionManager::GetRelevanceAndTailoringJavaScript();
+
+            $var_109['output'] = $var_135;
+
+            $var_4['thissurvey'] = $var_203;
+            $var_4['surveyid'] = $var_19;
+            $var_4['sDataEntryLanguage'] = $var_110;
+
+            if ($var_203['active'] == "Y" && $var_203['allowsave'] == "Y")
+            {
+                $var_184 = Survey::model()->findByPk($var_19)->var_185;
+                $var_303 = Survey::model()->findByPk($var_19)->var_107;
+                array_unshift($var_184,$var_303);
+                $var_4['slangs'] = $var_184;
+                $var_4['baselang'] = $var_186;
+            }
+
+            $var_109[] = 'active_html_view';
+
+            $var_12->fn_6('dataentry', $var_109, $var_4);
+        }
+    }
+
+    private function fn_3()
+    {
+        return aEncodingsArray();
+    }
+
+    private function fn_20($var_307, $var_308, $var_309, $var_25)
+    {
+        $var_310 = explode( "\t", str_replace("\n", "", $var_308), $var_309+1 );
+
+        
+        $var_310 = preg_replace('/^"(.*)"$/s','\1',$var_310);
+
+        
+        
+        $var_310= str_replace( array("{newline}", "{cr}", "{tab}", "{quote}", "{lbrace}"),
+        array("\n", "\r", "\t", "\"", "{"),
+        $var_310
+        );
+
+        
+        if (isset($var_25))
+        {
+            foreach ($var_25 as $var_311)
+            {
+                unset($var_310[$var_311]);
+            }
+        }
+
+        
+        while (count($var_307) > count($var_310))
+        {
+            $var_310[]="";
+        }
+
+        
+        while ( count($var_307) < count($var_310) &&
+        trim( $var_310[count($var_310)-1] ) == "" )
+        {
+            unset($var_310[count($var_310)-1]);
+        }
+
+        
+        
+        foreach ($var_310 as &$var_312)
+        {
+            if ($var_312=='{question_not_shown}') $var_312=null;
+        }
+
+        return $var_310;
+    }
+
+    
+    private function fn_19($var_139, $var_313, $var_19) {
+        $var_314 = "";
+        if(!empty($var_139['array_filter']))
+        {
+            $var_315 = Question::model()->findByAttributes(array('title' => $var_139['array_filter'], 'language' => $var_313, 'sid' => $var_19))->getAttribute('question');
+            $var_314 .= "\n<p class='extrahelp'>
+            ".sprintf(gT("Only answer this question for the items you selected in question %s ('%s')"),$var_139['array_filter'], flattenText(breakToNewline($var_315['question'])))."
+            </p>\n";
+        }
+        if(!empty($var_139['array_filter_exclude']))
+        {
+            $var_315 = Question::model()->findByAttributes(array('title' => $var_139['array_filter_exclude'], 'language' => $var_313, 'sid' => $var_19))->getAttribute('question');
+
+            $var_314 .= "\n    <p class='extrahelp'>
+            ".sprintf(gT("Only answer this question for the items you did not select in question %s ('%s')"),$var_139['array_filter_exclude'], breakToNewline($var_315['question']))."
+            </p>\n";
+        }
+        return $var_314;
+    }
+
+    
+    protected function fn_6($var_318 = 'dataentry', $var_109 = array(), $var_4 = array())
+    {
+        if (!isset($var_4['display']['menu_bars']['browse']))
+        {
+            $var_4['display']['menu_bars']['browse'] = gT("Data entry");
+        }
+        parent::fn_6($var_318, $var_109, $var_4);
+    }
+
+}
+
+

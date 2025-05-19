@@ -1,0 +1,407 @@
+<?php
+
+
+
+  $var_0 = $_GET['action'] ?? '';
+
+  $var_1->call('advert_manager', 'advertPreAction');
+
+  if (tep_not_null($var_0)) {
+    switch ($var_0) {
+      case 'import':
+      $var_3 = tep_db_query("select * from banners order by banners_id");
+      while ($var_4 = tep_db_fetch_array($var_3)) {
+        $var_5 = ['advert_title'       => $var_4['banners_title'],
+                           'advert_url'         => $var_4['banners_url'],
+                           'advert_image'       => $var_4['banners_image'],
+                           'advert_group'       => $var_4['banners_group'],
+                           'advert_html_text'   => $var_4['banners_html_text'],
+                           'date_added'         => $var_4['date_added'],
+                           'date_status_change' => $var_4['date_status_change'],
+                           'status'             => $var_4['status']];
+
+        tep_db_perform('advert', $var_5);
+      }
+
+      $var_1->call('advert_manager', 'advertActionImport');
+
+      $var_6->add_session(var_8, 'success');
+
+      tep_redirect(tep_href_link('advert_manager.php'));
+      break;
+
+      case 'setflag':
+        if ( ($_GET['flag'] == '0') || ($_GET['flag'] == '1') ) {
+          tep_db_query("update advert set status = '" . (int)$_GET['flag'] . "', date_status_change = now() where advert_id = '" . (int)$_GET['cID'] . "'");
+
+          $var_6->add_session(var_9, 'success');
+        }
+
+        $var_1->call('advert_manager', 'advertActionSetflag');
+
+        tep_redirect(tep_href_link('advert_manager.php', 'page=' . (int)$_GET['page'] . '&cID=' . (int)$_GET['cID']));
+        break;
+      case 'insert':
+      case 'update':
+        if (isset($var_45['advert_id'])) $var_10 = tep_db_prepare_input($var_45['advert_id']);
+        $var_11 = tep_db_prepare_input($var_45['advert_title']);
+        $var_12 = tep_db_prepare_input($var_45['advert_url']);
+        $var_13 = tep_db_prepare_input($var_45['advert_fragment']);
+
+        $var_14 = tep_db_prepare_input($var_45['new_advert_group']);
+        $var_15 = (empty($var_14)) ? tep_db_prepare_input($var_45['advert_group']) : $var_14;
+        $var_16 = tep_db_prepare_input($var_45['sort_order']);
+
+        $var_17 = tep_db_prepare_input($var_45['advert_html_text']);
+        $var_18 = tep_db_prepare_input($var_45['advert_image_local']);
+        $var_19 = tep_db_prepare_input($var_45['advert_image_target']);
+        $var_20 = '';
+
+        $var_21 = false;
+        if (empty($var_11)) {
+          $var_6->add(var_23, 'error');
+          $var_21 = true;
+        }
+
+        if (empty($var_15)) {
+          $var_6->add(var_24, 'error');
+          $var_21 = true;
+        }
+
+        $var_25 = new class_0('advert_image');
+        $var_25->parse();
+        
+        if (!empty($var_25->var_27)) {
+          $var_25->set_destination(var_29 . $var_19);
+          if ( $var_25->save() == false ) {
+            $var_21 = true;
+          }
+        }
+        else {
+          if ( empty($var_18) && empty($var_17) ) {
+            $var_6->add(var_31, 'error');
+            $var_21 = true;
+          }
+        }
+
+        if ($var_21 == false) {
+          $var_20 = (tep_not_null($var_18)) ? $var_18 : $var_19 . $var_25->var_27;
+          $var_5 = ['advert_title'     => $var_11,
+                             'advert_url'       => $var_12,
+                             'advert_fragment'  => $var_13,
+                             'advert_image'     => $var_20,
+                             'advert_group'     => $var_15,
+                             'sort_order'       => $var_16,
+                             'advert_html_text' => $var_17];
+
+          if ($var_0 == 'insert') {
+            $var_32 = ['date_added' => 'now()', 'status' => '1'];
+
+            $var_5 = array_merge($var_5, $var_32);
+
+            tep_db_perform('advert', $var_5);
+
+            $var_10 = tep_db_insert_id();
+
+            $var_6->add_session(var_33, 'success');
+          } elseif ($var_0 == 'update') {
+            tep_db_perform('advert', $var_5, 'update', "advert_id = '" . (int)$var_10 . "'");
+
+            $var_6->add_session(var_34, 'success');
+          }
+
+          $var_1->call('advert_manager', 'advertActionSave');
+
+          tep_redirect(tep_href_link('advert_manager.php', (isset($_GET['page']) ? 'page=' . (int)$_GET['page'] . '&' : '') . 'cID=' . $var_10));
+        } else {
+          $var_0 = 'new';
+        }
+        break;
+      case 'deleteconfirm':
+        $var_10 = tep_db_prepare_input($_GET['cID']);
+
+        if (isset($var_45['delete_image']) && ($var_45['delete_image'] == 'on')) {
+          $var_35 = tep_db_query("select advert_image from advert where advert_id = '" . (int)$var_10 . "'");
+          $var_36 = tep_db_fetch_array($var_35);
+
+          if (is_file(var_29 . $var_36['advert_image'])) {
+            if (tep_is_writable(var_29 . $var_36['advert_image'])) {
+              unlink(var_29 . $var_36['advert_image']);
+            } else {
+              $var_6->add_session(var_37, 'error');
+            }
+          } else {
+            $var_6->add_session(var_38, 'error');
+          }
+        }
+
+        tep_db_query("delete from advert where advert_id = '" . (int)$var_10 . "'");
+
+        $var_1->call('advert_manager', 'advertActionDelete');
+
+        $var_6->add_session(var_39, 'success');
+
+        tep_redirect(tep_href_link('advert_manager.php', 'page=' . (int)$_GET['page']));
+        break;
+    }
+  }
+
+  $var_1->call('advert_manager', 'advertPostAction');
+
+?>
+
+  <div class="row">
+    <div class="col">
+      <h1 class="display-4 mb-2"><?php  ?></h1>
+    </div>
+    <div class="col text-right align-self-center">
+      <?php
+      if (isset($_GET['action']) && ($_GET['action'] == 'new')) {
+        
+      } else {
+        
+      }
+      ?>
+    </div>
+  </div>
+
+<?php
+  if ($var_0 == 'new') {
+    $var_40 = 'insert';
+
+    $var_41 = ['advert_title' => '', 'advert_url' => '', 'advert_fragment' => '', 'advert_group' => '', 'advert_image' => '', 'sort_order' => '', 'advert_html_text' => ''];
+
+    $var_42 = new class_1($var_41);
+
+    if (isset($_GET['cID'])) {
+      $var_40 = 'update';
+
+      $var_44 = tep_db_prepare_input($_GET['cID']);
+
+      $var_35 = tep_db_query("select * from advert where advert_id = '" . (int)$var_44 . "'");
+      $var_36 = tep_db_fetch_array($var_35);
+
+      $var_42->objectInfo($var_36);
+    } elseif (tep_not_null($var_45)) {
+      $var_42->objectInfo($var_45);
+    }
+
+    $var_46 = [];
+    $var_47 = tep_db_query("select distinct advert_group from advert order by advert_group");
+    while ($var_48 = tep_db_fetch_array($var_47)) {
+      $var_46[] = ['id' => $var_48['advert_group'], 'text' => $var_48['advert_group']];
+    }
+
+     if ($var_40 == 'update') 
+    ?>
+
+      <div class="form-group row">
+        <label for="cTitle" class="col-form-label col-sm-3 text-left text-sm-right"><?php  ?></label>
+        <div class="col-sm-9">
+          <?php  ?>
+          <small id="TitleHelp" class="form-text text-muted"><?php  ?></small>
+        </div>
+      </div>
+
+      <div class="form-group row">
+        <label for="cUrl" class="col-form-label col-sm-3 text-left text-sm-right"><?php  ?></label>
+        <div class="col-sm-9">
+          <div class="row">
+            <div class="col">
+              <?php  ?>
+              <small id="URLHelp" class="form-text text-muted"><?php  ?></small>
+            </div>
+            <div class="col">
+              <?php  ?>
+              <small id="FragmentHelp" class="form-text text-muted"><?php  ?></small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group row">
+        <label for="cSort" class="col-form-label col-sm-3 text-left text-sm-right"><?php  ?></label>
+        <div class="col-sm-9">
+          <?php  ?>
+          <small id="SortHelp" class="form-text text-muted"><?php  ?></small>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="form-group row">
+        <label for="cGroup" class="col-form-label col-sm-3 text-left text-sm-right"><?php  ?></label>
+        <div class="col-sm-9">
+          <div class="row">
+            <div class="col">
+              <?php  ?>
+            </div>
+            <div class="col">
+              <?php  ?>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="form-group row">
+        <label for="cImage" class="col-form-label col-sm-3 text-left text-sm-right"><?php  ?></label>
+        <div class="col-sm-9">
+          <div class="row">
+            <div class="col">
+              <div class="custom-file mb-2">
+                <?php  ?>
+                <label class="custom-file-label" for="advert_image"></label>
+              </div>
+            </div>
+            <div class="col">
+              <?php  ?>
+            </div>
+            <div class="col">
+              <?php  ?>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="form-group row">
+        <label for="cText" class="col-form-label col-sm-3 text-left text-sm-right"><?php  ?></label>
+        <div class="col-sm-9"><?php  ?>
+        </div>
+      </div>
+
+      <div class="alert alert-info">
+        <?php  ?>
+      </div>
+
+      <?php
+      
+      ?>
+
+      <div class="buttonSet">
+        <?php  ?>
+      </div>
+
+    </form>
+    
+    <script>$(document).on('change', '
+<?php
+  } else {
+?>
+
+  <div class="row no-gutters">
+    <div class="col">
+      <div class="table-responsive">
+        <table class="table table-striped table-hover">
+          <thead class="thead-dark">
+            <tr>
+              <th><?php  ?></th>
+              <th class="text-right"><?php  ?></th>
+              <th class="text-right"><?php  ?></th>
+              <th class="text-right"><?php  ?></th>
+              <th class="text-right"><?php  ?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php
+            $var_49 = "select * from advert order by advert_group, sort_order, advert_title";
+            $var_50 = new class_2($_GET['page'], var_51, $var_49, $var_52);
+            $var_35 = tep_db_query($var_49);
+            while ($var_36 = tep_db_fetch_array($var_35)) {
+              if ((!isset($_GET['cID']) || (isset($_GET['cID']) && ($_GET['cID'] == $var_36['advert_id']))) && !isset($var_42) && (substr($var_0, 0, 3) != 'new')) {
+                $var_42 = new class_1($var_36);
+              }
+
+              if (isset($var_42) && is_object($var_42) && ($var_36['advert_id'] == $var_42->var_10)) {
+                
+              } else {
+                
+              }
+?>
+                <td><?php  ?></td>
+                <td class="text-right"><?php  ?></td>
+                <td class="text-right"><?php  ?></td>
+                <td class="text-right"><?php if ($var_36['status'] == '1') {  } else {  } ?></td>
+                <td class="text-right"><?php if (isset($var_42) && is_object($var_42) && ($var_36['advert_id'] == $var_42->var_10)) {  } else {  } ?></td>
+              </tr>
+              <?php
+            }
+            ?>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="row my-1">
+        <div class="col"><?php  ?></div>
+        <div class="col text-right mr-2"><?php  ?></div>
+      </div>
+
+      <?php
+      $var_53 = tep_db_query("SHOW TABLES LIKE 'banners'");
+      if ($var_52 == 0 && tep_db_num_rows($var_53)) {
+        
+          
+            
+              
+            
+            
+              
+            
+          
+        
+      }
+      ?>
+
+    </div>
+
+<?php
+  $var_54 = [];
+  $var_55 = [];
+  switch ($var_0) {
+    case 'delete':
+      $var_54[] = ['text' => $var_42->var_11];
+
+      $var_55 = ['form' => tep_draw_form('advert', 'advert_manager.php', 'page=' . (int)$_GET['page'] . '&cID=' . (int)$var_42->var_10 . '&action=deleteconfirm')];
+      $var_55[] = ['text' => var_56];
+      $var_55[] = ['class' => 'text-center text-uppercase font-weight-bold', 'text' => $var_42->var_11];
+      if ($var_42->var_25) $var_55[] = ['text' => tep_draw_checkbox_field('delete_image', 'on') . ' ' . var_57];
+      $var_55[] = ['align' => 'center', 'text' => tep_draw_bootstrap_button(var_58, 'fas fa-trash', null, 'primary', null, 'btn-danger xxx text-white mr-2') . tep_draw_bootstrap_button(var_59, 'fas fa-angle-left', tep_href_link('advert_manager.php', 'page=' . (int)$_GET['page'] . '&cID=' . (int)$_GET['cID']), null, null, 'btn-light')];
+      break;
+    default:
+     if (isset($var_42) && is_object($var_42)) {
+        $var_54[] = ['text' => $var_42->var_11];
+
+        $var_55[] = ['align' => 'center', 'text' => tep_draw_bootstrap_button(var_60, 'fas fa-cogs', tep_href_link('advert_manager.php', 'page=' . (int)$_GET['page'] . '&cID=' . $var_42->var_10 . '&action=new'), null, null, 'btn-warning mr-2') . tep_draw_bootstrap_button(var_58, 'fas fa-trash', tep_href_link('advert_manager.php', 'page=' . (int)$_GET['page'] . '&cID=' . $var_42->var_10 . '&action=delete'), null, null, 'btn-danger xxx text-white')];
+        $var_55[] = ['text' => sprintf(var_61, tep_date_short($var_42->var_62))];
+
+        if (tep_not_null($var_42->var_12)) {
+          if (filter_var($var_42->var_12, var_63)) {
+            $var_55[] = ['text' => sprintf(var_64, $var_42->var_12)];
+          } else {
+            $var_65 = $var_42->var_13 ?? null;
+            $var_55[] = ['text' => sprintf(var_66, tep_catalog_href_link($var_42->var_12, $var_65))];
+          }
+        }
+        
+        if (tep_not_null($var_42->var_25)) $var_55[] = ['text' => '<hr>' . tep_info_image($var_42->var_25, null)];
+        if (tep_not_null($var_42->var_17)) $var_55[] = ['text' => '<hr>' . $var_42->var_17];
+
+        if ($var_42->var_67) $var_55[] = ['text' => sprintf(var_68, tep_date_short($var_42->var_67))];
+      }
+      break;
+  }
+
+  if ( (tep_not_null($var_54)) && (tep_not_null($var_55)) ) {
+     
+      $var_69 = new class_3;
+      
+    
+  }
+
+  
+}
+
+?>

@@ -1,0 +1,656 @@
+<?php
+
+
+
+
+App::uses('ConnectionManager', 'Model');
+App::uses('Controller', 'Controller');
+App::uses('File', 'Utility');
+App::uses('RequestRearrangeTool', 'Tools');
+
+
+class class_0 extends var_0 {
+
+	public $var_1 = '';
+
+	public $var_2 = false;
+
+	public $var_3 = array('Utility');
+
+	private $var_4 = '23';
+	public $var_5 = '2.4.82';
+	public $var_6 = '5.6.5';
+	public $var_7 = '7.0.16';
+
+	
+	
+	public $var_8 = array(
+		'events' => array('csv', 'nids', 'hids', 'xml', 'restSearch', 'stix', 'updateGraph', 'downloadOpenIOCEvent'),
+		'attributes' => array('text', 'downloadAttachment', 'returnAttributes', 'restSearch', 'rpz', 'bro'),
+	);
+
+	public function fn_0($var_9 = false, $var_10 = null, $var_11 = null) {
+		parent::fn_0($var_9, $var_10, $var_11);
+
+		$var_12 = get_class($var_13);
+		$var_12 = str_replace('sController', '', $var_12);
+		$var_12 = str_replace('Controller', '', $var_12);
+		$var_13->var_1 = $var_12;
+	}
+
+	public $var_14 = array(
+			'Session',
+			'Auth' => array(
+				'authError' => 'Unauthorised access.',
+				'loginRedirect' => array('controller' => 'users', 'action' => 'routeafterlogin'),
+				'logoutRedirect' => array('controller' => 'users', 'action' => 'login', 'admin' => false),
+				'authenticate' => array(
+					'Form' => array(
+						'passwordHasher' => 'Blowfish',
+						'fields' => array(
+							'username' => 'email'
+						)
+					)
+				)
+			),
+			'Security',
+			'ACL',
+			'RestResponse'
+	);
+
+	private function fn_1($var_16, $var_17) {
+		if (isset($var_13->var_8[$var_16]) && in_array($var_17, $var_13->var_8[$var_16])) {
+			return true;
+		}
+		return false;
+	}
+
+	public function fn_2() {
+		
+		$var_18 = ConnectionManager::getDataSource('default')->var_19;
+		if (!isset($var_18['encoding'])) {
+			$var_20 = ConnectionManager::getDataSource('default');
+			$var_20->setConfig(array('encoding' => 'utf8'));
+			ConnectionManager::create('default', $var_20->var_19);
+		}
+		$var_22 = $var_18['datasource'];
+		if ($var_22 != 'Database/Mysql' && $var_22 != 'Database/Postgres') {
+			throw new class_1('datasource not supported: ' . $var_22);
+		}
+
+		$var_13->set('queryVersion', $var_13->var_4);
+		$var_13->loadModel('User');
+		$var_25 = $var_13->var_26->describeAuthFields();
+
+		
+		if (!Configure::read('Security.salt')) {
+			$var_13->loadModel('Server');
+			$var_13->var_28->serverSettingsSaveValue('Security.salt', $var_13->var_26->generateRandomPassword(32));
+		}
+		
+		if (!Configure::read('MISP.uuid')) {
+			$var_13->loadModel('Server');
+			$var_13->var_28->serverSettingsSaveValue('MISP.uuid', CakeText::uuid());
+		}
+		
+		$var_31 = Configure::read('ApacheSecureAuth.apacheEnv');
+		if (isset($var_44[$var_31])) {
+			$var_13->var_32->var_33 = 'ApacheSecureAuth';
+			$var_13->var_32->var_34 = array(
+				'Apache' => array(
+					
+					'fields' => array('username' => 'email', 'envvar' => $var_31),
+					'userFields' => $var_25
+				)
+			);
+		} else {
+			$var_13->var_32->var_34['Form']['userFields'] = $var_25;
+		}
+		$var_35 = $var_13->{$var_13->var_36}->checkMISPVersion();
+		$var_13->var_38 = implode('.', array_values($var_35));
+
+		$var_13->var_39->var_40 = 'blackHole';
+
+		
+		$var_41 = Configure::read('MISP.baseurl');
+		if (substr($var_41, -1) == '/') {
+			
+			$var_41 = rtrim($var_41, '/');
+			Configure::write('MISP.baseurl', $var_41);
+		}
+		$var_13->set('baseurl', h($var_41));
+
+		
+		
+		if (isset($var_44['HTTP_USER_AGENT'])) {
+			if (preg_match('/(?i)msie [2-8]/',$var_44['HTTP_USER_AGENT']) && !strpos($var_44['HTTP_USER_AGENT'], 'Opera')) throw new class_2('You are using an unsecure and outdated version of IE, please download Google Chrome, Mozilla Firefox or update to a newer version of IE. If you are running IE9 or newer and still receive this error message, please make sure that you are not running your browser in compatibility mode. If you still have issues accessing the site, get in touch with your administration team at ' . Configure::read('MISP.contact'));
+		}
+		$var_42 = false;
+		if (Configure::read('Plugin.CustomAuth_enable')) $var_42 = $var_13->fn_3($var_44);
+		if (!$var_42) {
+			
+			if ($var_13->fn_4() || $var_13->fn_5()) {
+				
+				if (array_key_exists('Security', $var_13->var_14))
+					$var_13->var_39->var_47 = false;
+				
+				if (!empty($var_44['HTTP_AUTHORIZATION'])) {
+					$var_48 = false;
+					$var_49 = explode(',', $var_44['HTTP_AUTHORIZATION']);
+					$var_50 = false;
+					foreach ($var_49 as $var_51) {
+						if (preg_match('/^[a-zA-Z0-9]{40}$/', trim($var_51))) {
+							$var_48 = true;
+							$var_52 = $var_13->fn_6(trim($var_51));
+							if ($var_52) {
+								$var_50['User'] = $var_13->fn_6(trim($var_51));
+							}
+						}
+					}
+					if ($var_48) {
+						if ($var_50) {
+							unset($var_50['User']['gpgkey']);
+							unset($var_50['User']['certif_public']);
+							
+							if (Configure::read('MISP.log_auth')) {
+								$var_13->var_54 = ClassRegistry::init('Log');
+								$var_13->var_54->create();
+								$var_56 = array(
+										'org' => $var_50['User']['Organisation']['name'],
+										'model' => 'User',
+										'model_id' => $var_50['User']['id'],
+										'email' => $var_50['User']['email'],
+										'action' => 'auth',
+										'title' => 'Successful authentication using API key',
+										'change' => 'HTTP method: ' . $var_44['REQUEST_METHOD'] . var_57 . 'Target: ' . $var_13->var_58,
+								);
+								$var_13->var_54->save($var_56);
+							}
+							$var_13->var_60->renew();
+							$var_13->var_60->write(var_63::$var_64, $var_50['User']);
+						} else {
+							
+							
+							$var_13->var_60->destroy();
+							$var_13->var_54 = ClassRegistry::init('Log');
+							$var_13->var_54->create();
+							$var_56 = array(
+									'org' => 'SYSTEM',
+									'model' => 'User',
+									'model_id' => 0,
+									'email' => 'SYSTEM',
+									'action' => 'auth_fail',
+									'title' => 'Failed authentication using API key (' . trim($var_51) . ')',
+									'change' => null,
+							);
+							$var_13->var_54->save($var_56);
+							throw new class_3('Authentication failed. Please make sure you pass the API key of an API enabled user along in the Authorization header.');
+						}
+						unset($var_50);
+					}
+				}
+				if ($var_13->var_32->user() == null) throw new class_3('Authentication failed. Please make sure you pass the API key of an API enabled user along in the Authorization header.');
+			} else if (!$var_13->var_60->read(var_63::$var_64)) {
+				
+				$var_67 = Configure::read('Security.auth');
+				if ($var_67) {
+					$var_13->var_32->var_34 = array_merge($var_67, $var_13->var_32->var_34);
+					if ($var_13->var_32->startup($var_13)) {
+						$var_50 = $var_13->var_32->user();
+						if ($var_50) {
+							
+							$var_13->var_60->renew();
+							$var_13->var_60->write(var_63::$var_64, $var_50);
+						}
+						unset($var_50);
+					}
+				}
+				unset($var_67);
+			}
+		}
+		$var_13->set('externalAuthUser', $var_42);
+		
+		
+		
+		$var_69 = parse_url($var_41, var_70);
+
+		
+		if ($var_69 == '/') {
+			$var_69 = '';
+		}
+
+		if ($var_13->var_32->user()) {
+			
+			$var_13->{$var_13->var_36}->runUpdates();
+			$var_50 = $var_13->var_32->user();
+			if (!isset($var_50['force_logout']) || $var_50['force_logout']) {
+				$var_13->loadModel('User');
+				$var_13->var_26->var_9 = $var_13->var_32->user('id');
+				$var_13->var_26->saveField('force_logout', false);
+			}
+			if ($var_13->var_32->user('disabled')) {
+				$var_13->var_54 = ClassRegistry::init('Log');
+				$var_13->var_54->create();
+				$var_56 = array(
+						'org' => $var_13->var_32->user('Organisation')['name'],
+						'model' => 'User',
+						'model_id' => $var_13->var_32->user('id'),
+						'email' => $var_13->var_32->user('email'),
+						'action' => 'auth_fail',
+						'title' => 'Login attempt by disabled user.',
+						'change' => null,
+				);
+				$var_13->var_54->save($var_56);
+				$var_13->var_32->logout();
+				if ($var_13->fn_4()) {
+					throw new class_3('Authentication failed. Your user account has been disabled.');
+				} else {
+					$var_13->var_60->setFlash('Your user account has been disabled.');
+					$var_13->redirect(array('controller' => 'users', 'action' => 'login', 'admin' => false));
+				}
+			}
+		} else {
+			if (!($var_13->params['controller'] === 'users' && $var_13->params['action'] === 'login')) $var_13->redirect(array('controller' => 'users', 'action' => 'login', 'admin' => false));
+		}
+
+		
+		if ($var_13->var_32->user() && !Configure::read('MISP.live')) {
+			$var_76 = $var_13->fn_7();
+			if (!$var_76['perm_site_admin']) {
+				$var_78 = Configure::read('MISP.maintenance_message');
+				if (empty($var_78)) {
+					$var_13->loadModel('Server');
+					$var_78 = $var_13->var_28->serverSettings['MISP']['maintenance_message']['value'];
+				}
+				if (strpos($var_78, '$email') && Configure::read('MISP.email')) {
+					$var_79 = Configure::read('MISP.email');
+					$var_78 = str_replace('$email', $var_79, $var_78);
+				}
+				$var_13->var_60->setFlash($var_78);
+				$var_13->var_32->logout();
+				throw new class_2($var_78);
+			} else {
+				$var_13->var_60->setFlash('Warning: MISP is currently disabled for all users. Enable it in Server Settings (Administration -> Server Settings -> MISP tab -> live)');
+			}
+		}
+
+		if ($var_13->var_60->check(var_63::$var_64)) {
+			if (!empty(Configure::read('MISP.terms_file')) && !$var_13->var_32->user('termsaccepted') && (!in_array($var_13->var_81->var_58, array($var_69.'/users/terms', $var_69.'/users/logout', $var_69.'/users/login', $var_69.'/users/downloadTerms')))) {
+				if ($var_13->fn_4()) throw new class_2('You have not accepted the terms of use yet, please log in via the web interface and accept them.');
+				$var_13->redirect(array('controller' => 'users', 'action' => 'terms', 'admin' => false));
+			} else if ($var_13->var_32->user('change_pw') && (!in_array($var_13->var_81->var_58, array($var_69.'/users/terms', $var_69.'/users/change_pw', $var_69.'/users/logout', $var_69.'/users/login')))) {
+				if ($var_13->fn_4()) throw new class_2('Your user account is expecting a password change, please log in via the web interface and change it before proceeding.');
+				$var_13->redirect(array('controller' => 'users', 'action' => 'change_pw', 'admin' => false));
+			} else if (!$var_13->fn_4() && !($var_13->params['controller'] == 'news' && $var_13->params['action'] == 'index') && (!in_array($var_13->var_81->var_58, array($var_69.'/users/terms', $var_69.'/users/change_pw', $var_69.'/users/logout', $var_69.'/users/login')))) {
+				$var_82 = $var_13->var_26->field('newsread', array('User.id' => $var_13->var_32->user('id')));
+				$var_13->loadModel('News');
+				$var_84 = $var_13->var_85->field('date_created', array(), 'date_created DESC');
+				if ($var_84 && $var_82 < $var_84) $var_13->redirect(array('controller' => 'news', 'action' => 'index', 'admin' => false));
+			}
+		}
+		unset($var_69);
+
+		
+		
+		
+		if ($var_13->var_32->user()) {
+			$var_35 = $var_13->{$var_13->var_36}->checkMISPVersion();
+			$var_13->var_86 = implode('.', array_values($var_35));
+			$var_13->set('mispVersion', implode('.', array($var_35['major'], $var_35['minor'], 0)));
+			$var_13->set('mispVersionFull', $var_13->var_86);
+			$var_76 = $var_13->fn_7();
+			$var_13->set('me', $var_13->var_32->user());
+			$var_13->set('isAdmin', $var_76['perm_admin']);
+			$var_13->set('isSiteAdmin', $var_76['perm_site_admin']);
+			$var_13->set('isAclAdd', $var_76['perm_add']);
+			$var_13->set('isAclModify', $var_76['perm_modify']);
+			$var_13->set('isAclModifyOrg', $var_76['perm_modify_org']);
+			$var_13->set('isAclPublish', $var_76['perm_publish']);
+			$var_13->set('isAclDelegate', $var_76['perm_delegate']);
+			$var_13->set('isAclSync', $var_76['perm_sync']);
+			$var_13->set('isAclAdmin', $var_76['perm_admin']);
+			$var_13->set('isAclAudit', $var_76['perm_audit']);
+			$var_13->set('isAclAuth', $var_76['perm_auth']);
+			$var_13->set('isAclRegexp', $var_76['perm_regexp_access']);
+			$var_13->set('isAclTagger', $var_76['perm_tagger']);
+			$var_13->set('isAclTagEditor', $var_76['perm_tag_editor']);
+			$var_13->set('isAclTemplate', $var_76['perm_template']);
+			$var_13->set('isAclSharingGroup', $var_76['perm_sharing_group']);
+			$var_13->set('isAclSighting', isset($var_76['perm_sighting']) ? $var_76['perm_sighting'] : false);
+			$var_13->var_87 = $var_76;
+		} else {
+			$var_13->set('me', false);
+		}
+		if ($var_13->fn_8()) {
+			if (Configure::read('Session.defaults') == 'database') {
+				$var_20 = ConnectionManager::getDataSource('default');
+				$var_89 = $var_20->query('SELECT COUNT(id) AS session_count FROM cake_sessions WHERE expires < ' . time() . ';');
+				if (isset($var_89[0][0]['session_count']) && $var_89[0][0]['session_count'] > 1000) {
+					$var_13->loadModel('Server');
+					$var_13->var_28->fn_9('cleanSessionTable');
+				}
+			}
+			if (Configure::read('site_admin_debug') && (Configure::read('debug') < 2)) {
+				Configure::write('debug', 1);
+			}
+		}
+
+		$var_13->var_2 = 'debugOff';
+		if (Configure::read('debug') > 1) $var_13->var_2 = 'debugOn';
+		$var_13->set('loggedInUserName', $var_13->fn_10($var_13->var_32->user('email')));
+		$var_13->set('debugMode', $var_13->var_2);
+		$var_93 = $var_13->{$var_13->var_36}->populateNotifications($var_13->var_32->user());
+		$var_13->set('notifications', $var_93);
+		$var_13->var_95->checkAccess($var_13->var_32->user(), Inflector::variable($var_13->var_81->params['controller']), $var_13->var_17);
+	}
+
+	public function fn_11($var_97='findMissingFunctionNames', $var_98 = false) {
+		$var_13->var_99 = false;
+		$var_13->var_100 = false;
+		$var_101 = array('printAllFunctionNames', 'findMissingFunctionNames', 'printRoleAccess');
+		if (!in_array($var_97, $var_101)) throw new class_2('Invalid function call.');
+		$var_13->set('data', $var_13->var_95->$var_97($var_98));
+		$var_13->set('flags', var_102 | var_103);
+		$var_13->var_104->type('json');
+		$var_13->render('/Servers/json/simple');
+	}
+
+	private function fn_10($var_79) {
+		$var_12 = explode('@', $var_79);
+		$var_12 = explode('.', $var_12[0]);
+		foreach ($var_12 as $var_107 => $var_108) $var_12[$var_107] = ucfirst($var_108);
+		$var_12 = implode(' ', $var_12);
+		return $var_12;
+	}
+
+	public function fn_12($var_105) {
+		if ($var_105 === 'csrf') throw new class_4(__d('cake_dev', $var_105));
+		throw new class_4(__d('cake_dev', 'The request has been black-holed'));
+	}
+
+	public $var_87 = null;
+
+	protected function fn_13($var_110=false) {
+		if ($var_110) return (json_decode($var_110) != NULL) ? true : false;
+		return $var_13->var_81->header('Accept') === 'application/json' || $var_13->var_112->prefers() === 'json';
+	}
+
+	protected function fn_4() {
+		$var_114 = $var_13->fn_1($var_13->var_81->params['controller'], $var_13->var_81->params['action']);
+		return (isset($var_13->var_112) && ($var_114 || $var_13->var_112->isXml() || $var_13->fn_13()));
+	}
+
+	protected function fn_5() {
+		foreach ($var_13->var_8 as $var_116 => $var_117) {
+			if ($var_13->params['controller'] == $var_116 && in_array($var_13->params['action'], $var_117)) return true;
+		}
+		return false;
+	}
+
+
+	protected function fn_14($var_118) {
+		$var_119 = Array();
+		foreach ($var_118 as $var_108)
+		$var_119[$var_108] = $var_108;
+		return $var_119;
+	}
+
+	
+	protected function fn_15() {
+		if ($var_13->var_87['perm_site_admin'] || $var_13->var_87['perm_admin']) {
+			return true;
+		}
+		return false;
+	}
+
+	
+	protected function fn_8() {
+		return $var_13->var_87['perm_site_admin'];
+	}
+
+	protected function fn_16() {
+		return $var_13->var_32->user('org_id');
+	}
+
+	
+	public function fn_17($var_17 = 'perm_sync') {
+		$var_13->loadModel('Role');
+		$var_13->var_120->var_121 = -1;
+		$var_76 = $var_13->var_120->findById($var_13->var_32->user('role_id'));
+		if ($var_76['Role'][$var_17]) return true;
+		return false;
+	}
+
+	
+	public function fn_7() {
+		$var_13->loadModel('Role');
+		$var_13->var_120->var_121 = -1;
+		$var_76 = $var_13->var_120->findById($var_13->var_32->user('role_id'));
+		return $var_76['Role'];
+	}
+
+	public function fn_6($var_123) {
+		$var_13->loadModel('User');
+		$var_50 = $var_13->var_26->getAuthUserByUuid($var_123);
+		if (empty($var_50)) return false;
+		if (!$var_50['Role']['perm_auth']) return false;
+		if ($var_50['Role']['perm_site_admin']) $var_50['siteadmin'] = true;
+		return $var_50;
+	}
+
+	public function fn_18($var_123) {
+		$var_13->loadModel('User');
+		$var_50 = $var_13->var_26->getAuthUserByExternalAuth($var_123);
+		if (empty($var_50)) return false;
+		if ($var_50['Role']['perm_site_admin']) $var_50['siteadmin'] = true;
+		return $var_50;
+	}
+
+	public function fn_19() {
+		if (!self::fn_8() || !$var_13->var_81->is('post')) throw new class_5();
+		
+		
+		$var_13->loadModel('Attribute');
+		$var_128 = $var_13->var_129->find('all', array(
+			'recursive' => -1,
+			'fields' => array('event_id', 'count(event_id) as attribute_count'),
+			'group' => array('Attribute.event_id'),
+			'order' => array('Attribute.event_id ASC'),
+		));
+		foreach ($var_128 as $var_131 => $var_132) {
+			$var_13->var_133->read(null, $var_132['Attribute']['event_id']);
+			$var_13->var_133->set('attribute_count', $var_132[0]['attribute_count']);
+			$var_13->var_133->save();
+		}
+		$var_13->var_60->setFlash(__('All done. attribute_count generated from scratch for ' . (isset($var_131) ? $var_131 : 'no') . ' events.'));
+		$var_13->redirect(array('controller' => 'pages', 'action' => 'display', 'administration'));
+	}
+
+	public function fn_20() {
+		if (!$var_13->fn_8() || !$var_13->var_81->is('post')) throw new class_2();
+		$var_13->loadModel('Attribute');
+		$var_134 = $var_13->var_129->find('all', array(
+			'fields' => array('Attribute.uuid', 'count(*) as occurance'),
+			'recursive' => -1,
+			'group' => array('Attribute.uuid HAVING COUNT(*) > 1'),
+		));
+		$var_135 = 0;
+		foreach ($var_134 as $var_136) {
+			$var_137 = $var_13->var_129->find('all', array(
+				'recursive' => -1,
+				'conditions' => array('uuid' => $var_136['Attribute']['uuid'])
+			));
+			foreach ($var_137 as $var_131 => $var_138) {
+				if ($var_131 > 0) {
+					$var_138['Attribute']['uuid'] = CakeText::uuid();
+					$var_13->var_129->save($var_138);
+					$var_135++;
+				}
+			}
+		}
+		$var_13->var_28->fn_9('makeAttributeUUIDsUnique');
+		$var_13->var_60->setFlash('Done. Assigned new UUIDs to ' . $var_135 . ' attribute(s).');
+		$var_13->redirect(array('controller' => 'pages', 'action' => 'display', 'administration'));
+	}
+
+	public function fn_21() {
+		if (!$var_13->fn_8() || !$var_13->var_81->is('post')) throw new class_2();
+		$var_13->loadModel('Event');
+		$var_134 = $var_13->var_133->find('all', array(
+				'fields' => array('Event.uuid', 'count(*) as occurance'),
+				'recursive' => -1,
+				'group' => array('Event.uuid HAVING COUNT(*) > 1'),
+		));
+		$var_135 = 0;
+
+		
+		if (Configure::read('MISP.enableEventBlacklisting') !== false) $var_13->var_139 = ClassRegistry::init('EventBlacklist');
+
+		foreach ($var_134 as $var_136) {
+			$var_128 = $var_13->var_133->find('all', array(
+					'recursive' => -1,
+					'conditions' => array('uuid' => $var_136['Event']['uuid'])
+			));
+			foreach ($var_128 as $var_131 => $var_132) {
+				if ($var_131 > 0) {
+					$var_140 = $var_132['Event']['uuid'];
+					$var_13->var_133->delete($var_132['Event']['id']);
+					$var_135++;
+					
+					
+					if (Configure::read('MISP.enableEventBlacklisting') !== false) {
+						$var_13->var_139->deleteAll(array('EventBlacklist.event_uuid' => $var_140));
+					}
+				}
+			}
+		}
+		$var_13->var_28->fn_9('makeEventUUIDsUnique');
+		$var_13->var_60->setFlash('Done. Removed ' . $var_135 . ' duplicate events.');
+		$var_13->redirect(array('controller' => 'pages', 'action' => 'display', 'administration'));
+	}
+
+	public function fn_9($var_143) {
+		if (!$var_13->fn_8() || !$var_13->var_81->is('post')) throw new class_2();
+		$var_13->loadModel('Server');
+		$var_13->var_28->fn_9($var_143);
+		$var_13->var_60->setFlash('Done.');
+		$var_13->redirect(array('controller' => 'pages', 'action' => 'display', 'administration'));
+	}
+
+	public function fn_22() {
+		if (!$var_13->fn_8() || !$var_13->var_81->is('post')) throw new class_2();
+		$var_13->loadModel('Server');
+		if (!Configure::read('MISP.background_jobs')) {
+			$var_13->var_28->fn_22($var_13->var_32->user('id'));
+			$var_13->var_60->setFlash('Done. For more details check the audit logs.');
+			$var_13->redirect(array('controller' => 'pages', 'action' => 'display', 'administration'));
+		} else {
+			$var_145 = ClassRegistry::init('Job');
+			$var_145->create();
+			$var_110 = array(
+					'worker' => 'default',
+					'job_type' => 'upgrade_24',
+					'job_input' => 'Old database',
+					'status' => 0,
+					'retries' => 0,
+					'org_id' => 0,
+					'message' => 'Job created.',
+			);
+			$var_145->save($var_110);
+			$var_146 = $var_145->var_9;
+			$var_147 = CakeResque::enqueue(
+					'default',
+					'AdminShell',
+					array('jobUpgrade24', $var_146, $var_13->var_32->user('id')),
+					true
+			);
+			$var_145->saveField('process_id', $var_147);
+			$var_13->var_60->setFlash(__('Job queued. You can view the progress if you navigate to the active jobs view (administration -> jobs).'));
+			$var_13->redirect(array('controller' => 'pages', 'action' => 'display', 'administration'));
+		}
+	}
+
+	private function fn_23($var_78) {
+		$var_13->set('debugMode', (Configure::read('debug') > 1) ? 'debugOn' : 'debugOff');
+		$var_13->set('me', array());
+		throw new class_3($var_78);
+	}
+
+	private function fn_3($var_149) {
+		$var_150 = false;
+		if (Configure::read('Plugin.CustomAuth_enable')) {
+			$var_111 = Configure::read('Plugin.CustomAuth_header') ? Configure::read('Plugin.CustomAuth_header') : 'Authorization';
+			$var_111 = strtoupper($var_111);
+			$var_151 = Configure::read('Plugin.CustomAuth_name') ? Configure::read('Plugin.CustomAuth_name') : 'External authentication';
+			$var_152 = Configure::read('Plugin.CustomAuth_use_header_namespace') ? (Configure::read('Plugin.CustomAuth_header_namespace') ? Configure::read('Plugin.CustomAuth_header_namespace') : 'HTTP_') : '';
+			if (isset($var_149[$var_152 . $var_111]) && !empty($var_149[$var_152 . $var_111])) {
+				if (Configure::read('Plugin.CustomAuth_only_allow_source') && Configure::read('Plugin.CustomAuth_only_allow_source') !== $var_149['REMOTE_ADDR']) {
+					$var_13->var_54 = ClassRegistry::init('Log');
+					$var_13->var_54->create();
+					$var_56 = array(
+							'org' => 'SYSTEM',
+							'model' => 'User',
+							'model_id' => 0,
+							'email' => 'SYSTEM',
+							'action' => 'auth_fail',
+							'title' => 'Failed authentication using external key (' . trim($var_149[$var_152 . $var_111]) . ') - the user has not arrived from the expected address. Instead the request came from: ' . $var_149['REMOTE_ADDR'],
+							'change' => null,
+					);
+					$var_13->var_54->save($var_56);
+					$var_13->fn_23($var_151 . ' authentication failed. Contact your MISP support for additional information at: ' . Configure::read('MISP.contact'));
+				}
+				$var_52 = $var_13->fn_18($var_149[$var_152 . $var_111]);
+				$var_50['User'] = $var_52;
+				if ($var_50['User']) {
+					unset($var_50['User']['gpgkey']);
+					unset($var_50['User']['certif_public']);
+					$var_13->var_60->renew();
+					$var_13->var_60->write(var_63::$var_64, $var_50['User']);
+					if (Configure::read('MISP.log_auth')) {
+						$var_13->var_54 = ClassRegistry::init('Log');
+						$var_13->var_54->create();
+						$var_56 = array(
+							'org' => $var_50['User']['Organisation']['name'],
+							'model' => 'User',
+							'model_id' => $var_50['User']['id'],
+							'email' => $var_50['User']['email'],
+							'action' => 'auth',
+							'title' => 'Successful authentication using ' . $var_151 . ' key',
+							'change' => 'HTTP method: ' . $var_44['REQUEST_METHOD'] . var_57 . 'Target: ' . $var_13->var_58,
+						);
+						$var_13->var_54->save($var_56);
+					}
+					$var_150 = true;
+				} else {
+					
+					
+					$var_13->var_54 = ClassRegistry::init('Log');
+					$var_13->var_54->create();
+					$var_56 = array(
+							'org' => 'SYSTEM',
+							'model' => 'User',
+							'model_id' => 0,
+							'email' => 'SYSTEM',
+							'action' => 'auth_fail',
+							'title' => 'Failed authentication using external key (' . trim($var_149[$var_152 . $var_111]) . ')',
+							'change' => null,
+					);
+					$var_13->var_54->save($var_56);
+					if (Configure::read('CustomAuth_required')) {
+						$var_13->var_60->destroy();
+						$var_13->fn_23($var_151 . ' authentication failed. Contact your MISP support for additional information at: ' . Configure::read('MISP.contact'));
+					}
+				}
+			}
+		}
+		return $var_150;
+	}
+
+	public function fn_24() {
+		if (!$var_13->fn_8() || !$var_13->var_81->is('post')) throw new class_2();
+		$var_13->loadModel('Server');
+		$var_13->var_28->cleanCacheFiles();
+		$var_13->var_60->setFlash('Caches cleared.');
+		$var_13->redirect(array('controller' => 'servers', 'action' => 'serverSettings', 'diagnostics'));
+	}
+}

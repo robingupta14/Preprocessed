@@ -1,0 +1,489 @@
+<?php
+
+abstract class Database extends Object {
+	
+	static $globalConn;
+	
+	
+	public static $supressOutput = false;
+	
+	
+	abstract function query($sql, $errorLevel = E_USER_ERROR);
+	
+	
+	abstract function getGeneratedID($table);
+	
+	
+	abstract function isActive();
+	
+	
+	abstract function createDatabase();
+	
+	
+	abstract function getConnect($parameters);
+	
+	
+	abstract function createTable($table, $fields = null, $indexes = null);
+	
+	
+	abstract function alterTable($table, $newFields = null, $newIndexes = null, $alteredFields = null, $alteredIndexes = null);
+	
+	
+	abstract function renameTable($oldTableName, $newTableName);
+	
+	
+	abstract function createField($table, $field, $spec);
+	
+	
+	abstract function renameField($tableName, $oldName, $newName);
+
+	
+	protected abstract function fieldList($table);
+	
+	
+	protected abstract function tableList();
+	
+	
+	abstract function addslashes($val);
+	
+	
+	protected $tableList;
+	
+	
+	protected $fieldList;
+	
+	
+	protected $indexList;
+	
+	
+	
+	protected $schemaUpdateTransaction;
+	
+	
+	function beginSchemaUpdate() {
+		$this->tableList = $this->tableList();
+		$this->indexList = null;
+		$this->fieldList = null;
+		$this->schemaUpdateTransaction = array();
+	}
+	
+	function endSchemaUpdate() {
+		foreach($this->schemaUpdateTransaction as $tableName => $changes) {
+			switch($changes['command']) {
+				case 'create':
+					$this->createTable($tableName, $changes['newFields'], $changes['newIndexes']);
+					break;
+				
+				case 'alter':
+					$this->alterTable($tableName, $changes['newFields'], $changes['newIndexes'],
+						$changes['alteredFields'], $changes['alteredIndexes']);
+					break;
+			}
+		}
+		$this->schemaUpdateTransaction = null;
+	}
+	
+	
+	
+	function transCreateTable($table) {
+		$this->schemaUpdateTransaction[$table] = array('command' => 'create', 'newFields' => array(), 'newIndexes' => array());
+	}
+	function transCreateField($table, $field, $schema) {
+		$this->transInitTable($table);
+		$this->schemaUpdateTransaction[$table]['newFields'][$field] = $schema;
+	}
+	function transCreateIndex($table, $index, $schema) {
+		$this->transInitTable($table);
+		$this->schemaUpdateTransaction[$table]['newIndexes'][$index] = $schema;
+	}
+	function transAlterField($table, $field, $schema) {
+		$this->transInitTable($table);
+		$this->schemaUpdateTransaction[$table]['alteredFields'][$field] = $schema;
+	}
+	function transAlterIndex($table, $index, $schema) {
+		$this->transInitTable($table);
+		$this->schemaUpdateTransaction[$table]['alteredIndexes'][$index] = $schema;
+	}
+	
+	
+	protected function transInitTable($table) {
+		if(!isset($this->schemaUpdateTransaction[$table])) {
+			$this->schemaUpdateTransaction[$table] = array(
+				'command' => 'alter',
+				'newFields' => array(),
+				'newIndexes' => array(),
+				'alteredFields' => array(),
+				'alteredIndexes' => array(),
+			);
+		}		
+	}
+	
+	
+	
+	function requireTable($table, $fieldSchema = null, $indexSchema = null) {
+		if(!isset($this->tableList[strtolower($table)])) {
+			$this->transCreateTable($table);
+			Database::alteration_message("Table $table: created","created");
+		} else {
+			$this->checkAndRepairTable($table);
+		}
+
+		$this->requireField($table, "ID", "int(11) not null auto_increment");
+
+		
+		if($fieldSchema) {
+			foreach($fieldSchema as $fieldName => $fieldSpec) {
+				$fieldObj = eval(ViewableData::castingObjectCreator($fieldSpec));
+				$fieldObj->setTable($table);
+				$fieldObj->requireField();
+			}
+		}	
+
+		
+		if($indexSchema) {
+			foreach($indexSchema as $indexName => $indexDetails) {
+				$this->requireIndex($table, $indexName, $indexDetails);
+			}
+		}
+	}
+
+	
+	function dontRequireTable($table) {
+		if(!isset($this->tableList)) $this->tableList = $this->tableList();
+		if(isset($this->tableList[strtolower($table)])) {
+			$suffix = '';
+			while(isset($this->tableList[strtolower("_obsolete_{$table}$suffix")])) {
+				$suffix = $suffix ? ($suffix+1) : 2;
+			}
+			$this->renameTable($table, "_obsolete_{$table}$suffix");
+			Database::alteration_message("Table $table: renamed to _obsolete_{$table}$suffix","obsolete");
+		}
+	}
+	
+	
+	function requireIndex($table, $index, $spec) {
+		$newTable = false;
+		
+		if($spec === true) {
+			$spec = "($index)";
+		}
+		$spec = ereg_replace(" *, *",",",$spec);
+
+		if(!isset($this->tableList[strtolower($table)])) $newTable = true;
+
+		if(!$newTable &&  !isset($this->indexList[$table])) {
+			$this->indexList[$table] = $this->indexList($table);
+		}
+		if($newTable || !isset($this->indexList[$table][$index])) {
+			$this->transCreateIndex($table, $index, $spec);
+			Database::alteration_message("Index $table.$index: created as $spec","created");
+		} else if($this->indexList[$table][$index] != $spec) {
+			$this->transAlterIndex($table, $index, $spec);
+			Database::alteration_message("Index $table.$index: changed to $spec <i style=\"color: 
+		}
+	}
+
+	
+	function requireField($table, $field, $spec) {
+		$newTable = false;
+		
+		Profiler::mark('requireField');
+		
+		
+		if(!$this->supportsCollations()) {
+			$spec = eregi_replace(' *character set [^ ]+( collate [^ ]+)?( |$)','\\2',$spec);
+		}
+		if(!isset($this->tableList[strtolower($table)])) $newTable = true;
+
+		if(!$newTable && !isset($this->fieldList[$table])) {
+			$this->fieldList[$table] = $this->fieldList($table);
+		}
+		
+		if($newTable || !isset($this->fieldList[$table][$field])) {
+			Profiler::mark('createField');
+			$this->transCreateField($table, $field, $spec);
+			Profiler::unmark('createField');
+			Database::alteration_message("Field $table.$field: created as $spec","created");
+		} else if($this->fieldList[$table][$field] != $spec) {
+			
+			
+			
+			if(substr($spec, 0, 4) == "enum") {
+				$new = substr($spec, 5);
+				$old = substr($this->fieldList[$table][$field], 5);
+				$new = substr($new, 0, strpos($new, ')'));
+				$old = substr($old, 0, strpos($old, ')'));
+				$new = str_replace("'", '', $new);
+				$old = str_replace("'", '', $old);
+				$new = explode(',', $new);
+				$old = explode(',', $old);
+				$holder = array();
+				foreach($old as $check) {
+					if(!in_array($check, $new)) {
+						$holder[] = $check;
+					}
+				}
+				if(count($holder)) {
+					$default = explode('default ', $spec);
+					$default = $default[1];
+					if($default == "'SiteTree'") $default = "'Page'";
+					$query = "UPDATE `$table` SET $field=$default WHERE $field IN (";
+					for($i=0;$i+1<count($holder);$i++) {
+						$query .= "'{$holder[$i]}', ";
+					}
+					$query .= "'{$holder[$i]}')";
+					DB::query($query);
+					$amount = DB::affectedRows();
+					Database::alteration_message("Changed $amount rows to default value of field $field (Value: $default)");
+				}
+			}
+			Profiler::mark('alterField');
+			$this->transAlterField($table, $field, $spec);
+			Profiler::unmark('alterField');
+			Database::alteration_message("Field $table.$field: changed to $spec <i style=\"color: 
+		}
+		Profiler::unmark('requireField');
+	}
+	
+	
+	function dontRequireField($table, $fieldName) {
+		$fieldList = $this->fieldList($table);
+		if(array_key_exists($fieldName, $fieldList)) {
+			$suffix = '';
+			while(isset($fieldList[strtolower("_obsolete_{$fieldName}$suffix")])) {
+				$suffix = $suffix ? ($suffix+1) : 2;
+			}
+			$this->renameField($table, $fieldName, "_obsolete_{$fieldName}$suffix");
+			Database::alteration_message("Field $table.$fieldName: renamed to $table._obsolete_{$fieldName}$suffix","obsolete");
+		}
+	}
+
+	
+	function manipulate($manipulation) {
+		foreach($manipulation as $table => $writeInfo) {
+			if(isset($writeInfo['fields']) && $writeInfo['fields']) {
+				$fieldList = array();
+				foreach($writeInfo['fields'] as $fieldName => $fieldVal) {
+					$fieldList[] = "`$fieldName` = $fieldVal";
+				}
+				$fieldList = implode(", ", $fieldList);
+				
+				if(!isset($writeInfo['where']) && isset($writeInfo['id'])) {
+					$writeInfo['where'] = "ID = $writeInfo[id]";
+				}
+				
+				switch($writeInfo['command']) {
+					case "update":
+						$sql = "update `$table` SET $fieldList where $writeInfo[where]";
+						$this->query($sql);
+
+						
+						if(!$this->affectedRows()) {
+							if(!isset($writeInfo['fields']['ID']) && isset($writeInfo['id'])) {
+								$fieldList .= ", ID = $writeInfo[id]";
+							}
+							$sql = "insert into `$table` SET $fieldList";
+							$this->query($sql, null);
+						}
+						break;
+
+					case "insert":
+						if(!isset($writeInfo['fields']['ID']) && isset($writeInfo['id'])) {
+							$fieldList .= ", ID = $writeInfo[id]";
+						}
+						$fieldList = Database::replace_with_null($fieldList);
+						$sql = "insert into `$table` SET $fieldList";
+						$this->query($sql);
+						break;
+
+					default:
+						$sql = null;
+						user_error("Database::manipulate() Can't recognise command '$writeInfo[command]'", E_USER_ERROR);
+				}
+			}
+		}
+	}
+	
+	
+	static function replace_with_null(&$array) {
+		$array = ereg_replace('= *\'\'', "= null", $array);
+		
+		if(is_array($array)) {
+			foreach($array as $key => $value) {
+				if(is_array($value)) {
+					array_walk($array, array(Database, 'replace_with_null'));
+				}
+			}
+		}
+		
+		return $array;
+	} 
+
+	
+	function databaseError($msg, $errorLevel = E_USER_ERROR) {
+		user_error($msg, $errorLevel);
+	}
+	
+	
+	function quiet() {
+		Database::$supressOutput = true;
+	}
+	
+	static function alteration_message($message,$type=""){
+			if(!Database::$supressOutput) {
+				$color = "";
+				switch ($type){
+					case "created":
+						$color = "green";
+						break;
+					case "obsolete":
+						$color = "red";
+						break;
+					case "error":
+						$color = "red";
+						break;
+					case "deleted":
+						$color = "red";
+						break;						
+					case "changed":
+						$color = "blue";
+						break;
+					case "repaired":
+						$color = "blue";
+						break;
+					default:
+						$color="";
+				}
+				
+			}
+	}
+	
+}
+
+
+abstract class Query extends Object implements Iterator {
+	
+	private $currentRecord = null;
+	
+	
+	private $rowNum = -1;
+
+	
+	public function column() {
+		$column = array();
+		foreach($this as $record) {
+			$column[] = reset($record);
+		}
+		return $column;
+	}
+
+	
+	public function keyedColumn() {
+		$column = array();
+		foreach($this as $record) {
+			$val = reset($record);
+			$column[$val] = $val;
+		}
+		return $column;
+	}
+
+	
+	public function map() {
+		$column = array();
+		foreach($this as $record) {
+			$key = reset($record);
+			$val = next($record);
+			$column[$key] = $val;
+		}
+		return $column;
+	}
+
+	
+	public function record() {
+		return $this->next();
+	}
+
+	
+	public function value() {
+		foreach($this as $record) {
+			return reset($record);
+		}
+	}
+
+	
+	public function table() {
+		$first = true;
+		$result = "<table>\n";
+		
+		foreach($this as $record) {
+			if($first) {
+				$result .= "<tr>";
+				foreach($record as $k => $v) {
+					$result .= "<th>" . Convert::raw2xml($k) . "</th> ";
+ 				}
+				$result .= "</tr> \n";
+			}
+
+			$result .= "<tr>";
+			foreach($record as $k => $v) {
+				$result .= "<td>" . Convert::raw2xml($v) . "</td> ";
+			}
+			$result .= "</tr> \n";
+			
+			$first = false;
+		}
+		
+		if($first) return "No records found";
+		return $result;
+	}
+	
+	
+	public function rewind() {
+		if($this->numRecords() > 0) {
+			return $this->seek(0);
+		}
+	}
+
+	
+	public function current() {
+		if(!$this->currentRecord) {
+			return $this->next();
+		} else {
+			return $this->currentRecord;
+		}
+	}
+
+	
+	public function first() {
+		$this->rewind();
+		return $this->current();
+	}
+
+	
+	public function key() {
+		return $this->rowNum;
+	}
+
+	
+	public function next() {
+		$this->currentRecord = $this->nextRecord();
+		$this->rowNum++;
+		return $this->currentRecord;
+	}
+
+	
+	public function valid() {
+	 	return $this->current() !== false;
+	}
+
+	
+	abstract function nextRecord();
+
+	
+	abstract function numRecords();
+
+	
+	abstract function seek($rowNum);
+}
+
+?>

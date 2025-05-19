@@ -1,0 +1,54 @@
+<?php
+
+
+
+
+
+
+
+
+trait HttpError {
+
+	
+	public function jsonError(Exception $exception) {
+		$message = $exception->getMessage();
+		$code = $this->getHttpStatusCode($exception);
+
+		return new JSONResponse(
+			[
+				'message' => $message . ' (' . $code . ')',
+				'success' => false
+			],
+			$code
+		);
+	}
+
+	
+	public function htmlError($urlGenerator, $appName, Exception $exception) {
+		$message = $exception->getMessage();
+		$code = $this->getHttpStatusCode($exception);
+		$url = $urlGenerator->linkToRoute(
+			$appName . '.page.error_page', ['code' => $code]
+		);
+
+		$response = new RedirectResponse($url);
+		$response->addCookie('galleryErrorMessage', $message);
+
+		return $response;
+	}
+
+	
+	public function getHttpStatusCode($exception) {
+		$code = OCP\AppFramework\Http::STATUS_INTERNAL_SERVER_ERROR;
+		if ($exception instanceof NotFoundServiceException
+			|| $exception instanceof NotFoundEnvException
+		) {
+			$code = OCP\AppFramework\Http::STATUS_NOT_FOUND;
+		}
+		if ($exception instanceof ForbiddenServiceException) {
+			$code = OCP\AppFramework\Http::STATUS_FORBIDDEN;
+		}
+
+		return $code;
+	}
+}

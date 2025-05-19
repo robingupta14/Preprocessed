@@ -1,0 +1,120 @@
+<?php
+
+
+
+
+class ImageExportPlugin extends ServerPlugin {
+
+	
+	protected $server;
+	
+	private $logger;
+
+	public function __construct(ILogger $logger) {
+		$this->logger = $logger;
+	}
+
+	
+	function initialize(Server $server) {
+
+		$this->server = $server;
+		$this->server->on('method:GET', [$this, 'httpGet'], 90);
+	}
+
+	
+	function httpGet(RequestInterface $request, ResponseInterface $response) {
+
+		$queryParams = $request->getQueryParameters();
+		
+		if (!array_key_exists('photo', $queryParams)) {
+			return true;
+		}
+
+		$path = $request->getPath();
+		$node = $this->server->tree->getNodeForPath($path);
+
+		if (!($node instanceof Card)) {
+			return true;
+		}
+
+		$this->server->transactionType = 'carddav-image-export';
+
+		
+		if ($aclPlugin = $this->server->getPlugin('acl')) {
+			
+			$aclPlugin->checkPrivileges($path, '{DAV:}read');
+		}
+
+		if ($result = $this->getPhoto($node)) {
+			$response->setHeader('Content-Type', $result['Content-Type']);
+			$response->setHeader('Content-Disposition', 'attachment');
+			$response->setStatus(200);
+
+			$response->setBody($result['body']);
+
+			
+			return false;
+		}
+		return true;
+	}
+
+	function getPhoto(Card $node) {
+		
+		
+		try {
+			$vObject = $this->readCard($node->get());
+			if (!$vObject->PHOTO) {
+				return false;
+			}
+
+			$photo = $vObject->PHOTO;
+			$type = $this->getType($photo);
+
+			$val = $photo->getValue();
+			if ($photo->getValueType() === 'URI') {
+				$parsed = \Sabre\URI\parse($val);
+				
+				if ($parsed['scheme'] !== 'data') {
+					return false;
+				}
+				if (substr_count($parsed['path'], ';') === 1) {
+					list($type,) = explode(';', $parsed['path']);
+				}
+				$val = file_get_contents($val);
+			}
+
+			if (!in_array($type, ['image/png', 'image/jpeg', 'image/gif'])) {
+				$type = 'application/octet-stream';
+			}
+
+			return [
+				'Content-Type' => $type,
+				'body' => $val
+			];
+		} catch(\Exception $ex) {
+			$this->logger->logException($ex);
+		}
+		return false;
+	}
+
+	private function readCard($cardData) {
+		return Sabre\VObject\Reader::read($cardData);
+	}
+
+	
+	private function getType($photo) {
+		$params = $photo->parameters();
+		if (isset($params['TYPE']) || isset($params['MEDIATYPE'])) {
+			
+			$typeParam = isset($params['TYPE']) ? $params['TYPE'] : $params['MEDIATYPE'];
+			$type = $typeParam->getValue();
+
+			if (strpos($type, 'image/') === 0) {
+				return $type;
+			} else {
+				return 'image/' . strtolower($type);
+			}
+		}
+		return 'application/octet-stream';
+	}
+}

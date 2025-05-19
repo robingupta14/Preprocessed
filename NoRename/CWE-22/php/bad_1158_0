@@ -1,0 +1,604 @@
+<?php
+
+
+
+
+
+	if (permission_exists('music_on_hold_view')) {
+		
+	}
+	else {
+		
+		exit;
+	}
+
+
+	$language = new text;
+	$text = $language->get();
+
+
+	ini_set('max_execution_time', 7200);
+
+
+	$sql = "select * from v_music_on_hold ";
+	$sql .= "where ( ";
+	$sql .= "domain_uuid = :domain_uuid ";
+	if (permission_exists('music_on_hold_domain')) {
+		$sql .= "or domain_uuid is null ";
+	}
+	$sql .= ") ";
+	$sql .= "order by domain_uuid desc, music_on_hold_name asc, music_on_hold_rate asc";
+	$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+	$database = new database;
+	$streams = $database->select($sql, $parameters, 'all');
+
+
+	if (
+		$_GET['action'] == "download"
+		&& is_uuid($_GET['id'])
+		&& is_array($streams)
+		&& @sizeof($streams) != 0
+		) {
+		
+			$stream_uuid = $_GET['id'];
+
+		
+			foreach($streams as $row) {
+				if ($stream_uuid == $row['music_on_hold_uuid']) {
+					$stream_domain_uuid = $row['domain_uuid'];
+					$stream_name = $row['music_on_hold_name'];
+					$stream_path = $row['music_on_hold_path'];
+					break;
+				}
+			}
+		
+		
+			$stream_path = str_replace('$${sounds_dir}', $_SESSION['switch']['sounds']['dir'], $stream_path);
+
+		
+			$stream_file = base64_decode($_GET['file']);
+			$stream_full_path = path_join($stream_path, $stream_file);
+
+		
+			session_cache_limiter('public');
+			if (file_exists($stream_full_path)) {
+				$fd = fopen($stream_full_path, "rb");
+				if ($_GET['t'] == "bin") {
+					header("Content-Type: application/force-download");
+					header("Content-Type: application/octet-stream");
+					header("Content-Type: application/download");
+					header("Content-Description: File Transfer");
+				}
+				else {
+					$stream_file_ext = pathinfo($stream_file, PATHINFO_EXTENSION);
+					switch ($stream_file_ext) {
+						case "wav" : header("Content-Type: audio/x-wav"); break;
+						case "mp3" : header("Content-Type: audio/mpeg"); break;
+						case "ogg" : header("Content-Type: audio/ogg"); break;
+					}
+				}
+				header('Content-Disposition: attachment; filename="'.$stream_file.'"');
+				header("Cache-Control: no-cache, must-revalidate"); 
+				header("Expires: Sat, 26 Jul 1997 05:00:00 GMT"); 
+				header("Content-Length: ".filesize($stream_full_path));
+				fpassthru($fd);
+			}
+			exit;
+	}
+
+
+	if (
+		$_POST['action'] == 'upload'
+		&& is_array($_FILES)
+		&& is_uploaded_file($_FILES['file']['tmp_name'])
+		&& is_array($streams)
+		&& @sizeof($streams) != 0
+		) {
+
+		
+			if ($_POST['name_new'] != '') {
+				
+					$action = 'add';
+				
+					$stream_name = $_POST['name_new'];
+				
+					$stream_rate = is_numeric($_POST['rate']) ? $_POST['rate'] : '';
+			}
+			else {
+				
+					$stream_uuid = $_POST['name'];
+				
+					foreach ($streams as $row) {
+						if ($stream_uuid == $row['music_on_hold_uuid']) {
+							
+								$action = 'update';
+							
+								$stream_domain_uuid = $row['domain_uuid'];
+								$stream_name = $row['music_on_hold_name'];
+								$stream_path = $row['music_on_hold_path'];
+								$stream_rate = $row['music_on_hold_rate'];
+								$stream_shuffle = $row['music_on_hold_shuffle'];
+								$stream_channels = $row['music_on_hold_channels'];
+								$stream_internal = $row['music_on_hold_interval'];
+								$stream_timer_name = $row['music_on_hold_timer_name'];
+								$stream_chime_list = $row['music_on_hold_chime_list'];
+								$stream_chime_freq = $row['music_on_hold_chime_freq'];
+								$stream_chime_max = $row['music_on_hold_chime_max'];
+								$stream_rate = $row['music_on_hold_rate'];
+							
+								break;
+						}
+					}
+			}
+
+		
+			$stream_file_name_temp = $_FILES['file']['tmp_name'];
+			$stream_file_name = $_FILES['file']['name'];
+			$stream_file_ext = strtolower(pathinfo($stream_file_name, PATHINFO_EXTENSION));
+
+		
+			$valid_file_type = ($stream_file_ext == 'wav' || $stream_file_ext == 'mp3' || $stream_file_ext == 'ogg') ? true : false;
+
+		
+			if (!$valid_file_type) {
+				message::add($text['message-unsupported_file_type']);
+			}
+			else {
+
+				
+					if ($action == "add") {
+
+						
+							$slashes = array("/", "\\");
+							$stream_name = str_replace($slashes, '', $stream_name);
+							$stream_name = str_replace(' ', '_', $stream_name);
+							$stream_file_name = str_replace($slashes, '', $stream_file_name);
+							$stream_file_name = str_replace(' ', '-', $stream_file_name);
+
+						
+							if ($stream_rate == '') {
+								$path_rate = '48000';
+								$stream_rate_auto = true;
+							}
+							else {
+								$path_rate = $stream_rate;
+								$stream_rate_auto = false;
+							}
+
+						
+							$stream_path = path_join($_SESSION['switch']['sounds']['dir'], 'music', $_SESSION['domain_name'],$stream_name, $path_rate);
+
+						
+							$stream_new_name = true;
+							foreach ($streams as $row) {
+								$alternate_path = str_replace('$${sounds_dir}', $_SESSION['switch']['sounds']['dir'], $row['music_on_hold_path']);
+								if ($stream_path == $row['music_on_hold_path']
+									|| $stream_path == $alternate_path) {
+									$stream_new_name = false;
+									break;
+								}
+							}
+
+						
+							$stream_path = str_replace('$${sounds_dir}', $_SESSION['switch']['sounds']['dir'], $stream_path);
+
+						
+							if ($stream_new_name) {
+								$stream_uuid = uuid();
+								$array['music_on_hold'][0]['music_on_hold_uuid'] = $stream_uuid;
+								$array['music_on_hold'][0]['domain_uuid'] = $domain_uuid;
+								$array['music_on_hold'][0]['music_on_hold_name'] = $stream_name;
+								$array['music_on_hold'][0]['music_on_hold_path'] = $stream_path;
+								$array['music_on_hold'][0]['music_on_hold_rate'] = strlen($stream_rate) != 0 ? $stream_rate : null;
+								$array['music_on_hold'][0]['music_on_hold_shuffle'] = 'false';
+								$array['music_on_hold'][0]['music_on_hold_channels'] = 1;
+								$array['music_on_hold'][0]['music_on_hold_interval'] = 20;
+								$array['music_on_hold'][0]['music_on_hold_timer_name'] = 'soft';
+								$array['music_on_hold'][0]['music_on_hold_chime_list'] = null;
+								$array['music_on_hold'][0]['music_on_hold_chime_freq'] = null;
+								$array['music_on_hold'][0]['music_on_hold_chime_max'] = null;
+
+								$p = new permissions;
+								$p->add('music_on_hold_add', 'temp');
+
+								$database = new database;
+								$database->app_name = 'music_on_hold';
+								$database->app_uuid = '1dafe0f8-c08a-289b-0312-15baf4f20f81';
+								$database->save($array);
+								unset($array);
+
+								$p->delete('music_on_hold_add', 'temp');
+							}
+					}
+
+				
+					if (!is_dir($stream_path)) {
+						event_socket_mkdir($stream_path);
+					}
+					if (is_dir($stream_path)) {
+						if (copy($stream_file_name_temp, $stream_path.'/'.$stream_file_name)) {
+							@unlink($stream_file_name_temp);
+						}
+					}
+
+				
+					message::add($text['message-upload_completed']);
+			}
+
+		
+			$music = new switch_music_on_hold;
+			$music->reload();
+
+		
+			header("Location: music_on_hold.php");
+			exit;
+	}
+
+
+	if (
+		$_GET['action'] == "delete"
+		&& is_uuid($_GET['id'])
+		&& is_array($streams)
+		&& @sizeof($streams) != 0
+		) {
+
+		
+			$stream_uuid = $_GET['id'];
+			$stream_file = base64_decode($_GET['file']);
+
+		
+			foreach($streams as $row) {
+				if ($stream_uuid == $row['music_on_hold_uuid']) {
+					$stream_domain_uuid = $row['domain_uuid'];
+					$stream_name = $row['music_on_hold_name'];
+					$stream_path = $row['music_on_hold_path'];
+					$stream_rate = $row['music_on_hold_rate'];
+					break;
+				}
+			}
+
+		
+			if (($stream_domain_uuid == '' && permission_exists('music_on_hold_domain')) ||
+				($stream_domain_uuid != '' && permission_exists('music_on_hold_delete'))) {
+
+				
+					if ($stream_file != '') {
+						@unlink(path_join($stream_path, $stream_file));
+					}
+				
+					else {
+						array_map('unlink', glob(path_join($stream_path, '*.wav')));
+						array_map('unlink', glob(path_join($stream_path, '*.mp3')));
+						array_map('unlink', glob(path_join($stream_path, '*.ogg')));
+					}
+				
+					$music = new switch_music_on_hold;
+					$music->reload();
+				
+					message::add($text['message-delete']);
+			}
+
+		
+			header("Location: music_on_hold.php");
+			exit;
+	}
+
+
+	$document['title'] = $text['title-music_on_hold'];
+
+	
+
+	
+	\n";
+	
+	\n";
+	
+	\n";
+	\n";
+	\n";
+	
+
+	
+	
+	\n";
+	\n";
+	\n";
+	\n";
+	\n";
+	
+	
+	\n";
+	\n";
+	\n";
+	\n";
+	\n";
+	\n";
+	
+	
+
+	
+	
+
+	
+	
+	
+	
+
+
+	if (permission_exists('music_on_hold_add')) {
+		
+		
+
+		
+		
+
+		
+		
+
+		'>\n";
+
+		
+		
+		
+		
+		
+		'>\n";
+		'>\n";
+
+		if (permission_exists('music_on_hold_domain')) {
+			
+			foreach ($streams as $row) {
+				if (strlen($row['domain_uuid']) == 0) {
+					if (strlen($row['music_on_hold_rate']) == 0) { $option_name = $row['music_on_hold_name']; }
+					if (strlen($row['music_on_hold_rate']) > 0) { $option_name = $row['music_on_hold_name'] .'/'.$row['music_on_hold_rate']; }
+					
+				}
+			}
+			
+		}
+		if (permission_exists('music_on_hold_domain')) {
+			
+		}
+		foreach ($streams as $row) {
+			if (strlen($row['domain_uuid']) > 0) {
+			if (strlen($row['music_on_hold_rate']) == 0) { $option_name = $row['music_on_hold_name']; }
+			if (strlen($row['music_on_hold_rate']) > 0) { $option_name = $row['music_on_hold_name'] .'/'.$row['music_on_hold_rate']; }
+				
+			}
+		}
+		if (permission_exists('music_on_hold_domain')) {
+			
+		}
+
+		
+
+		' onclick=\"name_mode('new');\"><span class='glyphicon glyphicon-plus'></span></button>";
+		 display: none;' type='text' name='name_new' id='name_new' maxlength='255' value=''>";
+		 margin-left: 3px;' onclick=\"name_mode('select');\"><span class='glyphicon glyphicon-list-alt'></span></button>";
+		
+		
+		
+
+		
+		'>\n";
+
+		
+		
+		
+		
+		
+		
+		'>\n";
+		
+		
+		
+		
+		
+		
+		
+		
+		
+
+		
+		'>\n";
+
+		
+		
+		
+		
+		
+		
+		' onchange=\"check_filetype(this);\">";
+		 overflow: hidden; white-space: nowrap;'>".$text['label-select_a_file']."</label>\n";
+		
+		
+		
+
+		
+
+		
+		
+
+		 margin-top: 6px;'>";
+		 document.getElementById('file_label').innerHTML = '".$text['label-select_a_file']."'; name_mode('select'); return true;\">\n";
+		
+		
+
+		
+	}
+
+
+	$c = 0;
+	$row_style["0"] = "row_style0";
+	$row_style["1"] = "row_style1";
+
+
+	$previous_name = '';
+
+
+	if (is_array($streams) && @sizeof($streams) != 0) {
+
+		
+			'>\n";
+
+		
+			foreach ($streams as $row) {
+
+				
+					$music_on_hold_name = $row['music_on_hold_name'];
+					$music_on_hold_rate = $row['music_on_hold_rate'];
+
+					$stream_rate = $row['music_on_hold_rate'];
+
+				
+					 height: 10px;'></div></td></tr>\n";
+
+				
+					if ($previous_name != $music_on_hold_name) {
+						 height: 20px;'></div></td></tr>\n";
+						
+						
+						if ($row['domain_uuid'] == null) { 
+							&nbsp;- ".$text['label-global']."\n";
+						}
+						
+						
+					}
+
+				
+					$auto_rate = (strlen($music_on_hold_rate) == 0) ? true : false;
+
+				
+					$stream_icons = array();
+					$i = 0;
+					if (permission_exists('music_on_hold_path')) {
+						$stream_icons[$i]['glyphicon'] = 'glyphicon-folder-open';
+						$stream_icons[$i]['title'] = $row['music_on_hold_name'];
+						$i++;
+					}
+					if ($row['music_on_hold_shuffle'] == 'true') {
+						$stream_icons[$i]['glyphicon'] = 'glyphicon-random';
+						$stream_icons[$i]['title'] = $text['label-shuffle'];
+						$i++;
+					}
+					if ($row['music_on_hold_chime_list'] != '') {
+						$stream_icons[$i]['glyphicon'] = 'glyphicon-bell';
+						$stream_icons[$i]['title'] = $text['label-chime_list'].': '.$row['music_on_hold_chime_list'];
+						$i++;
+					}
+					if ($row['music_on_hold_channels'] == '2') {
+						$stream_icons[$i]['glyphicon'] = 'glyphicon-headphones';
+						$stream_icons[$i]['title'] = $text['label-stereo'];
+						$stream_icons[$i]['margin'] = 6;
+						$i++;
+					}
+					if (is_array($stream_icons) && sizeof($stream_icons) > 0) {
+						foreach ($stream_icons as $stream_icon) {
+							$icons .= "<span class='glyphicon ".$stream_icon['glyphicon']." icon_glyphicon_body' title='".escape($stream_icon['title'])."' style='width: 12px; height: 12px; margin-left: ".(($stream_icon['margin'] != '') ? $stream_icon['margin'] : 8)."px; vertical-align: text-top; cursor: help;'></span>";
+						}
+					}
+
+				
+					if ($auto_rate) {
+						$stream_details = $text['option-default'].' '.$icons;
+					}
+					else {
+						$stream_details = ($music_on_hold_rate/1000).' kHz / '.$icons;
+					}
+			
+				
+					
+					
+					'>".$text['label-tools']."</th>\n";
+					 text-align: right; white-space: nowrap;'>".$text['label-file-size']."</th>\n";
+					 text-align: right;'>".$text['label-uploaded']."</th>\n";
+					
+					if (permission_exists('music_on_hold_edit')) {
+						
+					}
+					if (permission_exists('music_on_hold_delete')) {
+						
+					}
+					
+					
+					unset($stream_icons, $icons);
+
+				
+					if (permission_exists('music_on_hold_edit')) {
+						$tr_link = "href='music_on_hold_edit.php?id=".escape($row['music_on_hold_uuid'])."'";
+					}
+
+				
+					$stream_path = $row['music_on_hold_path'];
+					$stream_path = str_replace("\$\${sounds_dir}",$_SESSION['switch']['sounds']['dir'], $stream_path);
+
+				
+					if (file_exists($stream_path)) {
+						$stream_files = array_merge(glob($stream_path.'/*.wav'), glob($stream_path.'/*.mp3'), glob($stream_path.'/*.ogg'));
+						if (is_array($stream_files) && @sizeof($stream_files) != 0) {
+							foreach ($stream_files as $stream_file_path) {
+								$stream_file = pathinfo($stream_file_path, PATHINFO_BASENAME);
+								$stream_file_size = byte_convert(filesize($stream_file_path));
+								$stream_file_date = date("M d, Y H:i:s", filemtime($stream_file_path));
+								$stream_file_ext = pathinfo($stream_file, PATHINFO_EXTENSION);
+								switch ($stream_file_ext) {
+									case "wav" : $stream_file_type = "audio/wav"; break;
+									case "mp3" : $stream_file_type = "audio/mpeg"; break;
+									case "ogg" : $stream_file_type = "audio/ogg"; break;
+								}
+								$row_uuid = uuid();
+								'><td colspan='4' class='".$row_style[$c]." playback_progress_bar_background' style='padding: 0; border: none;'><span class='playback_progress_bar' id='recording_progress_".$row_uuid."'></span></td></tr>\n";
+								$tr_link = "href=\"javascript:recording_play('".$row_uuid."');\"";
+								
+								
+								
+								' preload='none' ontimeupdate=\"update_progress('".$row_uuid."')\" onended=\"recording_reset('".$row_uuid."');\" src='?action=download&id=".escape($row['music_on_hold_uuid'])."&file=".base64_encode($stream_file)."' type='".escape($stream_file_type)."'></audio>";
+								
+								
+								
+								 white-space: nowrap;'>".escape($stream_file_size)."</td>\n";
+								 white-space: nowrap;'>".escape($stream_file_date)."</td>\n";
+								
+								
+								if ( (!is_uuid($domain_uuid) && permission_exists('music_on_hold_domain')) || (is_uuid($domain_uuid) && permission_exists('music_on_hold_delete')) ) {
+									
+								}
+								
+								
+								$c = ($c) ? 0 : 1;
+							}
+						}
+					}
+
+				
+					$previous_name = $music_on_hold_name;
+
+				
+					$c = ($c) ? 0 : 1;
+			}
+			unset($streams, $row);
+
+		
+			
+
+	}
+
+	
+	
+	
+	
+	</td>\n";
+	
+	
+	";
+	
+	
+ 	
+	
+	
+	
+	
+
+
+
+?>

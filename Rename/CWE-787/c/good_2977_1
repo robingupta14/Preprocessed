@@ -1,0 +1,526 @@
+
+
+
+
+
+
+
+
+static const struct struct_50 var_67;
+
+int fn_2(struct struct_50 *tfm, const u8 *key,
+      unsigned int var_27)
+{
+ return -ENOSYS;
+}
+EXPORT_SYMBOL_GPL(shash_no_setkey);
+
+static int fn_5(struct struct_50 *tfm, const u8 *key,
+      unsigned int var_27)
+{
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+ unsigned long absize;
+ u8 *buffer, *alignbuffer;
+ int err;
+
+ absize = var_27 + (var_23 & ~(crypto_tfm_ctx_alignment() - 1));
+ buffer = kmalloc(absize, GFP_ATOMIC);
+ if (!buffer)
+  return -ENOMEM;
+
+ alignbuffer = (u8 *)ALIGN((unsigned long)buffer, var_23 + 1);
+ memcpy(alignbuffer, key, var_27);
+ err = shash->setkey(tfm, alignbuffer, var_27);
+ kzfree(buffer);
+ return err;
+}
+
+int fn_8(struct struct_50 *tfm, const u8 *key,
+   unsigned int var_27)
+{
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+
+ if ((unsigned long)key & var_23)
+  return shash_setkey_unaligned(tfm, key, var_27);
+
+ return shash->setkey(tfm, key, var_27);
+}
+EXPORT_SYMBOL_GPL(crypto_shash_setkey);
+
+static inline unsigned int fn_9(unsigned var_23,
+         unsigned long var_67)
+{
+ typedef u8 __aligned_largest u8_aligned;
+ return var_23 + (var_67 & ~(__alignof__(u8_aligned) - 1));
+}
+
+static int fn_12(struct struct_45 *desc, const u8 *data,
+      unsigned int var_23)
+{
+ struct struct_50 *tfm = desc->tfm;
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+ unsigned int var_15 = var_23 + 1 -
+         ((unsigned long)data & var_23);
+ u8 ubuf[shash_align_buffer_size(var_15, var_23)]
+  __aligned_largest;
+ u8 *buf = PTR_ALIGN(&ubuf[0], var_23 + 1);
+ int err;
+
+ if (var_15 > var_23)
+  var_15 = var_23;
+
+ memcpy(buf, data, var_15);
+ err = shash->update(desc, buf, var_15);
+ memset(buf, 0, var_15);
+
+ return err ?:
+        shash->update(desc, data + var_15, var_23 - var_15);
+}
+
+int fn_15(struct struct_45 *desc, const u8 *data,
+   unsigned int var_23)
+{
+ struct struct_50 *tfm = desc->tfm;
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+
+ if ((unsigned long)data & var_23)
+  return shash_update_unaligned(desc, data, var_23);
+
+ return shash->update(desc, data, var_23);
+}
+EXPORT_SYMBOL_GPL(crypto_shash_update);
+
+static int fn_16(struct struct_45 *desc, u8 *out)
+{
+ struct struct_50 *tfm = desc->tfm;
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned int var_18 = crypto_shash_digestsize(tfm);
+ u8 ubuf[shash_align_buffer_size(var_18, var_23)]
+  __aligned_largest;
+ u8 *buf = PTR_ALIGN(&ubuf[0], var_23 + 1);
+ int err;
+
+ err = shash->final(desc, buf);
+ if (err)
+  goto out;
+
+ memcpy(out, buf, var_18);
+
+out:
+ memset(buf, 0, var_18);
+ return err;
+}
+
+int fn_18(struct struct_45 *desc, u8 *out)
+{
+ struct struct_50 *tfm = desc->tfm;
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+
+ if ((unsigned long)out & var_23)
+  return shash_final_unaligned(desc, out);
+
+ return shash->final(desc, out);
+}
+EXPORT_SYMBOL_GPL(crypto_shash_final);
+
+static int fn_19(struct struct_45 *desc, const u8 *data,
+     unsigned int var_23, u8 *out)
+{
+ return crypto_shash_update(desc, data, var_23) ?:
+        crypto_shash_final(desc, out);
+}
+
+int fn_20(struct struct_45 *desc, const u8 *data,
+         unsigned int var_23, u8 *out)
+{
+ struct struct_50 *tfm = desc->tfm;
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+
+ if (((unsigned long)data | (unsigned long)out) & var_23)
+  return shash_finup_unaligned(desc, data, var_23, out);
+
+ return shash->finup(desc, data, var_23, out);
+}
+EXPORT_SYMBOL_GPL(crypto_shash_finup);
+
+static int fn_21(struct struct_45 *desc, const u8 *data,
+      unsigned int var_23, u8 *out)
+{
+ return crypto_shash_init(desc) ?:
+        crypto_shash_finup(desc, data, var_23, out);
+}
+
+int fn_22(struct struct_45 *desc, const u8 *data,
+   unsigned int var_23, u8 *out)
+{
+ struct struct_50 *tfm = desc->tfm;
+ struct struct_65 *shash = crypto_shash_alg(tfm);
+ unsigned long var_23 = crypto_shash_alignmask(tfm);
+
+ if (((unsigned long)data | (unsigned long)out) & var_23)
+  return shash_digest_unaligned(desc, data, var_23, out);
+
+ return shash->digest(desc, data, var_23, out);
+}
+EXPORT_SYMBOL_GPL(crypto_shash_digest);
+
+static int fn_23(struct struct_45 *desc, void *out)
+{
+ memcpy(out, shash_desc_ctx(desc), crypto_shash_descsize(desc->tfm));
+ return 0;
+}
+
+static int fn_24(struct struct_45 *desc, const void *in)
+{
+ memcpy(shash_desc_ctx(desc), in, crypto_shash_descsize(desc->tfm));
+ return 0;
+}
+
+static int fn_25(struct struct_45 *tfm, const u8 *key,
+         unsigned int var_27)
+{
+ struct struct_50 **ctx = crypto_ahash_ctx(tfm);
+
+ return crypto_shash_setkey(*ctx, key, var_27);
+}
+
+static int fn_27(struct struct_41 *req)
+{
+ struct struct_50 **ctx = crypto_ahash_ctx(crypto_ahash_reqtfm(req));
+ struct struct_45 *desc = ahash_request_ctx(req);
+
+ desc->tfm = *ctx;
+ desc->flags = req->base.flags;
+
+ return crypto_shash_init(desc);
+}
+
+int fn_29(struct struct_41 *req, struct struct_45 *desc)
+{
+ struct struct_35 walk;
+ int var_38;
+
+ for (var_38 = crypto_hash_walk_first(req, &walk); var_38 > 0;
+      var_38 = crypto_hash_walk_done(&walk, var_38))
+  var_38 = crypto_shash_update(desc, walk.data, var_38);
+
+ return var_38;
+}
+EXPORT_SYMBOL_GPL(shash_ahash_update);
+
+static int fn_32(struct struct_41 *req)
+{
+ return shash_ahash_update(req, ahash_request_ctx(req));
+}
+
+static int fn_33(struct struct_41 *req)
+{
+ return crypto_shash_final(ahash_request_ctx(req), req->result);
+}
+
+int fn_34(struct struct_41 *req, struct struct_45 *desc)
+{
+ struct struct_35 walk;
+ int var_38;
+
+ var_38 = crypto_hash_walk_first(req, &walk);
+ if (!var_38)
+  return crypto_shash_final(desc, req->result);
+
+ do {
+  var_38 = crypto_hash_walk_last(&walk) ?
+    crypto_shash_finup(desc, walk.data, var_38,
+         req->result) :
+    crypto_shash_update(desc, walk.data, var_38);
+  var_38 = crypto_hash_walk_done(&walk, var_38);
+ } while (var_38 > 0);
+
+ return var_38;
+}
+EXPORT_SYMBOL_GPL(shash_ahash_finup);
+
+static int fn_35(struct struct_41 *req)
+{
+ struct struct_50 **ctx = crypto_ahash_ctx(crypto_ahash_reqtfm(req));
+ struct struct_45 *desc = ahash_request_ctx(req);
+
+ desc->tfm = *ctx;
+ desc->flags = req->base.flags;
+
+ return shash_ahash_finup(req, desc);
+}
+
+int fn_36(struct struct_41 *req, struct struct_45 *desc)
+{
+ unsigned int var_38 = req->nbytes;
+ struct struct_37 *sg;
+ unsigned int offset;
+ int err;
+
+ if (var_38 &&
+     (sg = req->src, offset = sg->offset,
+      var_38 < min(sg->length, ((unsigned int)(PAGE_SIZE)) - offset))) {
+  void *data;
+
+  data = kmap_atomic(sg_page(sg));
+  err = crypto_shash_digest(desc, data + offset, var_38,
+       req->result);
+  kunmap_atomic(data);
+  crypto_yield(desc->flags);
+ } else
+  err = crypto_shash_init(desc) ?:
+        shash_ahash_finup(req, desc);
+
+ return err;
+}
+EXPORT_SYMBOL_GPL(shash_ahash_digest);
+
+static int fn_38(struct struct_41 *req)
+{
+ struct struct_50 **ctx = crypto_ahash_ctx(crypto_ahash_reqtfm(req));
+ struct struct_45 *desc = ahash_request_ctx(req);
+
+ desc->tfm = *ctx;
+ desc->flags = req->base.flags;
+
+ return shash_ahash_digest(req, desc);
+}
+
+static int fn_39(struct struct_41 *req, void *out)
+{
+ return crypto_shash_export(ahash_request_ctx(req), out);
+}
+
+static int fn_40(struct struct_41 *req, const void *in)
+{
+ struct struct_50 **ctx = crypto_ahash_ctx(crypto_ahash_reqtfm(req));
+ struct struct_45 *desc = ahash_request_ctx(req);
+
+ desc->tfm = *ctx;
+ desc->flags = req->base.flags;
+
+ return crypto_shash_import(desc, in);
+}
+
+static void fn_41(struct struct_46 *tfm)
+{
+ struct struct_50 **ctx = crypto_tfm_ctx(tfm);
+
+ crypto_free_shash(*ctx);
+}
+
+int fn_43(struct struct_46 *tfm)
+{
+ struct struct_67 *calg = tfm->__crt_alg;
+ struct struct_65 *alg = __crypto_shash_alg(calg);
+ struct struct_45 *crt = __crypto_ahash_cast(tfm);
+ struct struct_50 **ctx = crypto_tfm_ctx(tfm);
+ struct struct_50 *shash;
+
+ if (!crypto_mod_get(calg))
+  return -EAGAIN;
+
+ shash = crypto_create_tfm(calg, &var_67);
+ if (IS_ERR(shash)) {
+  crypto_mod_put(calg);
+  return PTR_ERR(shash);
+ }
+
+ *ctx = shash;
+ tfm->exit = crypto_exit_shash_ops_async;
+
+ crt->init = shash_async_init;
+ crt->update = shash_async_update;
+ crt->final = shash_async_final;
+ crt->finup = shash_async_finup;
+ crt->digest = shash_async_digest;
+ crt->setkey = shash_async_setkey;
+
+ crt->has_setkey = alg->setkey != shash_no_setkey;
+
+ if (alg->export)
+  crt->export = shash_async_export;
+ if (alg->import)
+  crt->import = shash_async_import;
+
+ crt->reqsize = sizeof(struct struct_45) + crypto_shash_descsize(shash);
+
+ return 0;
+}
+
+static int fn_45(struct struct_46 *tfm)
+{
+ struct struct_50 *hash = __crypto_shash_cast(tfm);
+
+ hash->descsize = crypto_shash_alg(hash)->descsize;
+ return 0;
+}
+
+static int fn_46(struct struct_47 *skb, struct struct_67 *alg)
+{
+ return -ENOSYS;
+}
+
+
+static void fn_50(struct struct_50 *m, struct struct_67 *alg)
+ __maybe_unused;
+static void fn_50(struct struct_50 *m, struct struct_67 *alg)
+{
+ struct struct_65 *salg = __crypto_shash_alg(alg);
+
+ seq_printf(m, "type         : shash\n");
+ seq_printf(m, "blocksize    : %u\n", alg->cra_blocksize);
+ seq_printf(m, "digestsize   : %u\n", salg->digestsize);
+}
+
+static const struct struct_50 var_67 = {
+ .extsize = crypto_alg_extsize,
+ .init_tfm = crypto_shash_init_tfm,
+
+
+
+ .report = crypto_shash_report,
+ .maskclear = ~CRYPTO_ALG_TYPE_MASK,
+ .maskset = CRYPTO_ALG_TYPE_MASK,
+ .type = CRYPTO_ALG_TYPE_SHASH,
+ .tfmsize = offsetof(struct struct_50, base),
+};
+
+struct struct_50 *fn_50(const char *alg_name, u32 var_67,
+     u32 var_67)
+{
+ return crypto_alloc_tfm(alg_name, &var_67, var_67, var_67);
+}
+EXPORT_SYMBOL_GPL(crypto_alloc_shash);
+
+static int fn_52(struct struct_65 *alg)
+{
+ struct struct_67 *base = &alg->base;
+
+ if (alg->digestsize > PAGE_SIZE / 8 ||
+     alg->descsize > PAGE_SIZE / 8 ||
+     alg->statesize > PAGE_SIZE / 8)
+  return -EINVAL;
+
+ base->cra_type = &var_67;
+ base->cra_flags &= ~CRYPTO_ALG_TYPE_MASK;
+ base->cra_flags |= CRYPTO_ALG_TYPE_SHASH;
+
+ if (!alg->finup)
+  alg->finup = shash_finup_unaligned;
+ if (!alg->digest)
+  alg->digest = shash_digest_unaligned;
+ if (!alg->export) {
+  alg->export = shash_default_export;
+  alg->import = shash_default_import;
+  alg->statesize = alg->descsize;
+ }
+ if (!alg->setkey)
+  alg->setkey = shash_no_setkey;
+
+ return 0;
+}
+
+int fn_53(struct struct_65 *alg)
+{
+ struct struct_67 *base = &alg->base;
+ int err;
+
+ err = shash_prepare_alg(alg);
+ if (err)
+  return err;
+
+ return crypto_register_alg(base);
+}
+EXPORT_SYMBOL_GPL(crypto_register_shash);
+
+int fn_54(struct struct_65 *alg)
+{
+ return crypto_unregister_alg(&alg->base);
+}
+EXPORT_SYMBOL_GPL(crypto_unregister_shash);
+
+int fn_55(struct struct_65 *algs, int var_58)
+{
+ int i, ret;
+
+ for (i = 0; i < var_58; i++) {
+  ret = crypto_register_shash(&algs[i]);
+  if (ret)
+   goto err;
+ }
+
+ return 0;
+
+err:
+ for (--i; i >= 0; --i)
+  crypto_unregister_shash(&algs[i]);
+
+ return ret;
+}
+EXPORT_SYMBOL_GPL(crypto_register_shashes);
+
+int fn_57(struct struct_65 *algs, int var_58)
+{
+ int i, ret;
+
+ for (i = var_58 - 1; i >= 0; --i) {
+  ret = crypto_unregister_shash(&algs[i]);
+  if (ret)
+   pr_err("Failed to unregister %s %s: %d\n",
+          algs[i].base.cra_driver_name,
+          algs[i].base.cra_name, ret);
+ }
+
+ return 0;
+}
+EXPORT_SYMBOL_GPL(crypto_unregister_shashes);
+
+int fn_58(struct struct_59 *tmpl,
+       struct struct_60 *inst)
+{
+ int err;
+
+ err = shash_prepare_alg(&inst->alg);
+ if (err)
+  return err;
+
+ return crypto_register_instance(tmpl, shash_crypto_instance(inst));
+}
+EXPORT_SYMBOL_GPL(shash_register_instance);
+
+void fn_61(struct struct_65 *inst)
+{
+ crypto_drop_spawn(crypto_instance_ctx(inst));
+ kfree(shash_instance(inst));
+}
+EXPORT_SYMBOL_GPL(shash_free_instance);
+
+int fn_63(struct struct_64 *spawn,
+       struct struct_65 *alg,
+       struct struct_65 *inst)
+{
+ return crypto_init_spawn2(&spawn->base, &alg->base, inst,
+      &var_67);
+}
+EXPORT_SYMBOL_GPL(crypto_init_shash_spawn);
+
+struct struct_65 *fn_65(struct struct_66 *rta, u32 var_67, u32 var_67)
+{
+ struct struct_67 *alg;
+
+ alg = crypto_attr_alg2(rta, &var_67, var_67, var_67);
+ return IS_ERR(alg) ? ERR_CAST(alg) :
+        container_of(alg, struct shash_alg, base);
+}
+EXPORT_SYMBOL_GPL(shash_attr_alg);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Synchronous cryptographic hash type");

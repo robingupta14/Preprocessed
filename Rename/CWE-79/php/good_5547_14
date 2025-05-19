@@ -1,0 +1,236 @@
+<?php
+
+
+elgg_register_event_handler('init', 'system', 'bookmarks_init');
+
+
+function fn_0() {
+
+	$var_0 = dirname(var_1);
+	elgg_register_library('elgg:bookmarks', "$var_0/lib/bookmarks.php");
+
+	
+	$var_2 = "$var_0/actions/bookmarks";
+	elgg_register_action('bookmarks/save', "$var_2/save.php");
+	elgg_register_action('bookmarks/delete', "$var_2/delete.php");
+	elgg_register_action('bookmarks/share', "$var_2/share.php");
+
+	
+	elgg_register_menu_item('site', array(
+		'name' => 'bookmarks',
+		'text' => elgg_echo('bookmarks'),
+		'href' => 'bookmarks/all'
+	));
+
+	elgg_register_plugin_hook_handler('register', 'menu:page', 'bookmarks_page_menu');
+	elgg_register_plugin_hook_handler('register', 'menu:owner_block', 'bookmarks_owner_block_menu');
+
+	elgg_register_page_handler('bookmarks', 'bookmarks_page_handler');
+
+	elgg_extend_view('css/elgg', 'bookmarks/css');
+	elgg_extend_view('js/elgg', 'bookmarks/js');
+
+	elgg_register_widget_type('bookmarks', elgg_echo('bookmarks'), elgg_echo('bookmarks:widget:description'));
+
+	if (elgg_is_logged_in()) {
+		$var_3 = elgg_get_logged_in_user_guid();
+		$var_4 = urlencode(current_page_url());
+
+		elgg_register_menu_item('extras', array(
+			'name' => 'bookmark',
+			'text' => elgg_view_icon('push-pin-alt'),
+			'href' => "bookmarks/add/$var_3?address=$var_4",
+			'title' => elgg_echo('bookmarks:this'),
+			'rel' => 'nofollow',
+		));
+	}
+	
+	register_notification_object('object', 'bookmarks', elgg_echo('bookmarks:new'));
+
+	
+	elgg_register_plugin_hook_handler('notify:entity:message', 'object', 'bookmarks_notify_message');
+
+	
+	elgg_register_entity_url_handler('object', 'bookmarks', 'bookmark_url');
+
+	
+	elgg_register_entity_type('object', 'bookmarks');
+
+	
+	add_group_tool_option('bookmarks', elgg_echo('bookmarks:enablebookmarks'), true);
+	elgg_extend_view('groups/tool_latest', 'bookmarks/group_module');
+}
+
+
+function fn_1($var_5) {
+
+	elgg_load_library('elgg:bookmarks');
+
+	if (!isset($var_5[0])) {
+		$var_5[0] = 'all';
+	}
+
+	elgg_push_breadcrumb(elgg_echo('bookmarks'), 'bookmarks/all');
+
+	
+	if (substr_count($var_5[0], 'group:')) {
+		preg_match('/group\:([0-9]+)/i', $var_5[0], $var_6);
+		$var_7 = $var_6[1];
+		if ($var_8 = get_entity($var_7)) {
+			fn_2($var_5);
+		}
+	}
+
+	
+	$var_9 = get_user_by_username($var_5[0]);
+	if ($var_9) {
+		fn_2($var_5);
+	}
+
+	$var_10 = dirname(var_1) . '/pages/bookmarks';
+
+	switch ($var_5[0]) {
+		case "all":
+			break;
+
+		case "owner":
+			break;
+
+		case "friends":
+			break;
+
+		case "view":
+			set_input('guid', $var_5[1]);
+			break;
+		case 'read': 
+			register_error(elgg_echo("changebookmark"));
+			forward("bookmarks/view/{$var_5[1]}");
+			break;
+
+		case "add":
+			gatekeeper();
+			break;
+
+		case "edit":
+			gatekeeper();
+			set_input('guid', $var_5[1]);
+			break;
+
+		case 'group':
+			group_gatekeeper();
+			break;
+
+		case "bookmarklet":
+			set_input('container_guid', $var_5[1]);
+			break;
+
+		default:
+			return false;
+	}
+
+	elgg_pop_context();
+	return true;
+}
+
+
+function fn_2($var_5) {
+	global $var_11;
+
+	if (!isset($var_5[1])) {
+		$var_5[1] = 'items';
+	}
+
+	switch ($var_5[1]) {
+		case "read":
+			$var_12 = "{$var_11->var_13}bookmarks/view/{$var_5[2]}/{$var_5[3]}";
+			break;
+		case "inbox":
+			$var_12 = "{$var_11->var_13}bookmarks/inbox/{$var_5[0]}";
+			break;
+		case "friends":
+			$var_12 = "{$var_11->var_13}bookmarks/friends/{$var_5[0]}";
+			break;
+		case "add":
+			$var_12 = "{$var_11->var_13}bookmarks/add/{$var_5[0]}";
+			break;
+		case "items":
+			$var_12 = "{$var_11->var_13}bookmarks/owner/{$var_5[0]}";
+			break;
+		case "bookmarklet":
+			$var_12 = "{$var_11->var_13}bookmarks/bookmarklet/{$var_5[0]}";
+			break;
+	}
+
+	register_error(elgg_echo("changebookmark"));
+	forward($var_12);
+}
+
+
+function fn_3($var_8) {
+	global $var_11;
+
+	$var_14 = $var_8->var_14;
+	$var_14 = elgg_get_friendly_title($var_14);
+	return $var_11->var_12 . "bookmarks/view/" . $var_8->getGUID() . "/" . $var_14;
+}
+
+
+function fn_4($var_16, $var_17, $var_18, $var_19) {
+	if (elgg_instanceof($var_19['entity'], 'user')) {
+		$var_12 = "bookmarks/owner/{$var_19['entity']->var_20}";
+		$var_21 = new class_0('bookmarks', elgg_echo('bookmarks'), $var_12);
+		$var_18[] = $var_21;
+	} else {
+		if ($var_19['entity']->var_22 != 'no') {
+			$var_12 = "bookmarks/group/{$var_19['entity']->var_7}/all";
+			$var_21 = new class_0('bookmarks', elgg_echo('bookmarks:group'), $var_12);
+			$var_18[] = $var_21;
+		}
+	}
+
+	return $var_18;
+}
+
+
+function fn_5($var_16, $var_23, $var_24, $var_19) {
+	$var_8 = $var_19['entity'];
+	$var_25 = $var_19['to_entity'];
+	$var_26 = $var_19['method'];
+	if (($var_8 instanceof var_27) && ($var_8->getSubtype() == 'bookmarks')) {
+		$var_29 = $var_8->var_30;
+		$var_14 = $var_8->var_14;
+		$var_31 = $var_8->getOwnerEntity();
+
+		return elgg_echo('bookmarks:notification', array(
+			$var_31->var_33,
+			$var_14,
+			$var_8->var_4,
+			$var_29,
+			$var_8->getURL()
+		));
+	}
+	return null;
+}
+
+
+function fn_6($var_16, $var_17, $var_18, $var_19) {
+	if (elgg_is_logged_in()) {
+		
+		if (elgg_in_context('bookmarks')) {
+			$var_35 = elgg_get_page_owner_entity();
+			if (!$var_35) {
+				$var_35 = elgg_get_logged_in_user_entity();
+			}
+			
+			if ($var_35 instanceof var_36) {
+				$var_14 = elgg_echo('bookmarks:bookmarklet:group');
+			} else {
+				$var_14 = elgg_echo('bookmarks:bookmarklet');
+			}
+
+			$var_18[] = new class_0('bookmarklet', $var_14, 'bookmarks/bookmarklet/' . $var_35->getGUID());
+		}
+	}
+
+	return $var_18;
+}

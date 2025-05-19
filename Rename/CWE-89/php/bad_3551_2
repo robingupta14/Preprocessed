@@ -1,0 +1,867 @@
+<?php
+
+class class_0 extends var_1 {
+	
+	protected $var_2;
+	
+	
+	protected $var_3;
+	
+	
+	protected $var_4;
+	
+	
+	public $var_5;
+	
+	
+	protected static $var_6;
+	
+	
+	static $var_7 = array(
+		"RecordID" => "Int",
+		"Version" => "Int",
+		"WasPublished" => "Boolean",
+		"AuthorID" => "Int",
+		"PublisherID" => "Int"				
+	);
+	
+	
+	static $var_8 = array(
+		'RecordID_Version' => '(RecordID,Version)',
+		'RecordID' => true,
+		'Version' => true,
+		'AuthorID' => true,
+		'PublisherID' => true,
+	);
+
+	
+	static function fn_0() {
+		self::$var_9 = '';
+
+		Session::clear('readingMode');
+	}
+	
+	
+	function fn_1($var_2) {
+		parent::fn_1();
+
+		if(!is_array($var_2)) {
+			$var_2 = func_get_args();
+		}
+		$var_10->var_2 = $var_2;
+		$var_10->var_3 = fn_0($var_2);
+		$var_10->var_4 = array_pop($var_2);
+	}
+	
+	function fn_2() {
+		return array(
+			'db' => array(
+				'Version' => 'Int',
+			),
+			'has_many' => array(
+				'Versions' => 'SiteTree',
+			)
+		);
+	}
+	
+	function fn_3(var_11 &$var_12) {
+		
+		if($var_13 = class_0::fn_26()) {
+			foreach($var_12->var_14 as $var_15 => $var_16) {
+				if(!isset($var_17)) {
+					$var_17 = $var_15;
+				}
+				$var_12->renameTable($var_15, $var_15 . '_versions');
+				$var_12->replaceText("\"$var_15\".\"ID\"", "\"$var_15\".\"RecordID\"");
+				
+				
+				foreach(self::$var_7 as $var_20 => $var_21) {
+					$var_12->select[] = sprintf('"%s_versions"."%s"', $var_17, $var_20);
+				}
+				$var_12->select[] = sprintf('"%s_versions"."%s" AS "ID"', $var_17, 'RecordID');
+
+				if($var_15 != $var_17) {
+					$var_12->var_14[$var_15] .= " AND \"{$var_15}_versions\".\"Version\" = \"{$var_17}_versions\".\"Version\"";
+				}
+			}
+
+			
+			$var_22 = $var_10->fn_5($var_17, $var_13);
+			$var_12->var_14[$var_22] = "INNER JOIN \"$var_22\"
+				ON \"$var_22\".\"ID\" = \"{$var_17}_versions\".\"RecordID\" 
+				AND \"$var_22\".\"Version\" = \"{$var_17}_versions\".\"Version\"";
+
+		
+		} else if(class_0::fn_25() && class_0::fn_25() != $var_10->var_3 
+					&& array_search(class_0::fn_25(), $var_10->var_2) !== false) {
+			foreach($var_12->var_14 as $var_15 => $var_16) {
+				$var_12->renameTable($var_15, $var_15 . '_' . class_0::fn_25());
+			}
+		}
+	}
+	
+	
+	private static $var_24 = array();
+	
+	
+	public static function fn_6() {
+		
+		$var_25 = DB::getConn();
+		foreach(self::$var_24 as $var_26) {
+			if(method_exists($var_25, 'dropTable')) $var_25->dropTable($var_26);
+			else $var_25->query("DROP TABLE \"$var_26\"");
+		}
+
+		
+		self::$var_24 = array();
+	}
+	
+	
+	protected static function fn_5($var_17, $var_13 = null) {
+		if(!isset(self::$var_24[$var_17])) {
+			self::$var_24[$var_17] = DB::createTable("_Archive$var_17", array(
+				"ID" => "INT NOT NULL",
+				"Version" => "INT NOT NULL",
+			), null, array('temporary' => true));
+		}
+		
+		if(!DB::query("SELECT COUNT(*) FROM \"" . self::$var_24[$var_17] . "\"")->value()) {
+			if($var_13) $var_29 = "WHERE \"LastEdited\" <= '$var_13'";
+			else $var_29 = "";
+
+			DB::query("INSERT INTO \"" . self::$var_24[$var_17] . "\"
+				SELECT \"RecordID\", max(\"Version\") FROM \"{$var_17}_versions\"
+				$var_29
+				GROUP BY \"RecordID\"");
+		}
+		
+		return self::$var_24[$var_17];
+	}
+
+	
+	protected static $var_30 = array('Translatable' => 'lang');
+	
+	function fn_7() {
+		$var_31 = $var_10->var_32->var_33;
+		
+		$var_34 = ($var_10->var_32->var_33 == ClassInfo::baseDataClass($var_10->var_32->var_33));
+
+		
+		$var_35 = array();
+		foreach (var_0::$var_30 as $var_36 => $var_37) {
+			if ($var_10->var_32->hasExtension($var_36)) {
+				$var_35 = array_merge($var_35, (array)$var_37);
+				foreach ((array)$var_37 as $var_39) {
+					$var_35[$var_39] = $var_36;
+				}
+			}
+		}
+
+		
+		array_push($var_35,'');
+
+		foreach ($var_35 as $var_40 => $var_39) {
+			
+			if (!is_int($var_40)) continue;
+			
+			if ($var_39) $var_15 = "{$var_31}_$var_39";
+			else $var_15 = $var_31;
+
+			if($var_41 = DataObject::database_fields($var_10->var_32->var_33)) {
+				$var_42 = $var_10->var_32->databaseIndexes();
+				if ($var_39 && ($var_44 = $var_10->var_32->getExtensionInstance($var_35[$var_39]))) {
+					if (!$var_44->isVersionedTable($var_15)) continue;
+					$var_44->setOwner($var_10->var_32);
+					$var_41 = $var_44->fieldsInExtraTables($var_39);
+					$var_44->clearOwner();
+					$var_42 = $var_41['indexes'];
+					$var_41 = $var_41['db'];
+				}
+			
+				
+				foreach($var_10->var_2 as $var_50) {
+					
+					if($var_50 != $var_10->var_3) {
+						DB::requireTable("{$var_15}_$var_50", $var_41, $var_42, false);
+					}
+	
+					
+					
+				}
+				
+				if($var_34) {
+					
+					$var_51 = array_merge(
+						self::$var_7,
+						(array)$var_41
+					);
+				
+					$var_52 = array_merge(
+						self::$var_8,
+						(array)$var_42
+					);
+				} else {
+					
+					$var_51 = array_merge(
+						array(
+							"RecordID" => "Int",
+							"Version" => "Int",
+						),
+						(array)$var_41
+					);
+				
+					$var_52 = array_merge(
+						array(
+							'RecordID_Version' => array('type' => 'unique', 'value' => 'RecordID,Version'),
+							'RecordID' => true,
+							'Version' => true,
+						),
+						(array)$var_42
+					);
+				}
+				
+				if(DB::getConn()->hasTable("{$var_15}_versions")) {
+					
+					
+					$var_54 = DB::query("SELECT MIN(\"ID\") AS \"ID\", \"RecordID\", \"Version\" 
+						FROM \"{$var_15}_versions\" GROUP BY \"RecordID\", \"Version\" 
+						HAVING COUNT(*) > 1");
+						
+					foreach($var_54 as $var_55) {
+						DB::alteration_message("Removing {$var_15}_versions duplicate data for "
+							."{$var_55['RecordID']}/{$var_55['Version']}" ,"deleted");
+						DB::query("DELETE FROM \"{$var_15}_versions\" WHERE \"RecordID\" = {$var_55['RecordID']}
+							AND \"Version\" = {$var_55['Version']} AND \"ID\" != {$var_55['ID']}");
+					}
+					
+					
+					
+					if(!$var_34 && ($var_56 = ClassInfo::dataClassesFor($var_15))) {
+						
+						foreach($var_56 as $var_57) {
+							if($var_15 == $var_57) break; 
+							
+							$var_58 = DB::query("
+								SELECT COUNT(*) FROM \"{$var_15}_versions\"
+								LEFT JOIN \"{$var_57}_versions\" 
+									ON \"{$var_57}_versions\".\"RecordID\" = \"{$var_15}_versions\".\"RecordID\"
+									AND \"{$var_57}_versions\".\"Version\" = \"{$var_15}_versions\".\"Version\"
+								WHERE \"{$var_57}_versions\".\"ID\" IS NULL
+							")->value();
+
+							if($var_58 > 0) {
+								DB::alteration_message("Removing orphaned versioned records", "deleted");
+								
+								$var_59 = DB::query("
+									SELECT \"{$var_15}_versions\".\"ID\" FROM \"{$var_15}_versions\"
+									LEFT JOIN \"{$var_57}_versions\" 
+										ON \"{$var_57}_versions\".\"RecordID\" = \"{$var_15}_versions\".\"RecordID\"
+										AND \"{$var_57}_versions\".\"Version\" = \"{$var_15}_versions\".\"Version\"
+									WHERE \"{$var_57}_versions\".\"ID\" IS NULL
+								")->column();
+
+								if(is_array($var_59)) {
+									foreach($var_59 as $var_40 => $var_28) {
+										DB::query("DELETE FROM \"{$var_15}_versions\" WHERE \"{$var_15}_versions\".\"ID\" = '$var_28'");
+									}
+								}
+							}
+						}
+					}
+				}
+
+				DB::requireTable("{$var_15}_versions", $var_51, $var_52);
+			} else {
+				DB::dontRequireTable("{$var_15}_versions");
+				foreach($var_10->var_2 as $var_50) {
+					if($var_50 != $var_10->var_3) DB::dontrequireTable("{$var_15}_$var_50");
+				}
+			}
+		}
+	}
+	
+	
+	function fn_8(&$var_61) {
+		$var_62 = array_keys($var_61);
+		$var_63 = array();
+		foreach($var_62 as $var_15) {
+			$var_64 = ClassInfo::baseDataClass($var_15);
+			
+			$var_34 = ($var_15 == $var_64);
+			
+			
+			if( !$var_10->fn_9($var_15) ) {
+				unset($var_61[$var_15]);
+				continue;
+			}
+			$var_66 = $var_61[$var_15]['id'] ? $var_61[$var_15]['id'] : $var_61[$var_15]['fields']['ID'];;
+			if(!$var_66) user_error("Couldn't find ID in " . var_export($var_61[$var_15], true), var_67);
+			
+			$var_68 = isset($var_61[$var_15]['RecordID']) ? $var_61[$var_15]['RecordID'] : $var_66;
+
+			$var_69 = array(
+				"command" => "insert",
+				"fields" => isset($var_61[$var_15]['fields']) ? $var_61[$var_15]['fields'] : null
+			);
+			
+			if($var_10->var_5) {
+				$var_61[$var_15]['fields']['Version'] = $var_10->var_5;
+			}
+
+			
+			
+			if(!isset($var_61[$var_15]['fields']['Version'])) {
+				
+				$var_70 = DB::query("SELECT * FROM \"$var_15\" WHERE \"ID\" = $var_66")->record();
+				if($var_70) foreach($var_70 as $var_72 => $var_73) {
+					if (!isset($var_69['fields'][$var_72])) $var_69['fields'][$var_72] = "'" . DB::getConn()->addslashes($var_73) . "'";
+				}
+
+				
+				$var_69['fields']['RecordID'] = $var_68;
+				unset($var_69['fields']['ID']);
+
+				
+				if (isset($var_63[$var_15])) $var_75 = $var_63[$var_15];
+				else unset($var_75);
+
+				if($var_68 && !isset($var_75)) $var_75 = DB::query("SELECT MAX(\"Version\") + 1 FROM \"{$var_64}_versions\" WHERE \"RecordID\" = $var_68")->value();
+				
+				$var_69['fields']['Version'] = $var_75 ? $var_75 : 1;
+				
+				if($var_34) {
+					$var_76 = (Member::currentUser()) ? Member::currentUser()->var_77 : 0;
+					$var_69['fields']['AuthorID'] = $var_76;
+				}
+				
+
+
+				$var_61["{$var_15}_versions"] = $var_69;
+
+				
+				$var_61[$var_15]['fields']['Version'] = $var_69['fields']['Version'];
+				$var_63[$var_15] = $var_75;
+			}
+			
+			
+			if($var_61[$var_15]['fields']['Version'] < 0) unset($var_61[$var_15]['fields']['Version']);
+
+			if(!$var_10->fn_10($var_15)) unset($var_61[$var_15]['fields']['Version']);
+			
+			
+			if(isset($var_61[$var_15]['fields']['Version'])) $var_79 = $var_61[$var_15]['fields']['Version'];
+			
+			
+			if(class_0::fn_25() && class_0::fn_25() != $var_10->var_3) {
+				
+				if($var_61[$var_15]['command']=='insert') {
+					DB::query("DELETE FROM \"{$var_15}\" WHERE \"ID\"='$var_66'");
+				}
+				
+				$var_80 = $var_15 . '_' . class_0::fn_25();
+				$var_61[$var_80] = $var_61[$var_15];
+				unset($var_61[$var_15]);
+			}
+		}
+		
+		
+		if($var_10->var_5) $var_10->fn_11(null);
+
+		
+		if(isset($var_79)) $var_10->var_32->var_82 = str_replace("'","",$var_79);
+	}
+
+	
+	function fn_12() {
+		$var_10->fn_11(null);
+	}
+	
+	
+	function fn_9($var_15) {
+		return ClassInfo::exists($var_15) 
+			&& ClassInfo::is_subclass_of($var_15, 'DataObject')
+			&& DataObject::has_own_table($var_15);
+	}
+	
+	
+	function fn_10($var_15) {
+		$var_83 = strrpos($var_15,'_');
+		if(($var_83 !== false) && in_array(substr($var_15,$var_83), $var_10->var_2)) {
+			$var_84 = substr($var_15,0,$var_83);
+		} else {
+			$var_84 = $var_15;
+		}
+		return ('DataObject' == get_parent_class($var_84));
+	}
+	function fn_13($var_15) {
+		foreach (var_0::$var_30 as $var_36 => $var_37) {
+			if ($var_10->var_32->hasExtension($var_36)) {
+				$var_44 = $var_10->var_32->getExtensionInstance($var_36);
+				$var_44->setOwner($var_10->var_32);
+				$var_15 = $var_44->fn_13($var_15);
+				$var_44->clearOwner();
+			}
+		}
+		return $var_15;
+	}
+
+	
+	
+	
+	function fn_14() {
+		
+		$var_86 = $var_10->var_32->var_33;
+		while( ($var_87 = get_parent_class($var_86)) != "DataObject") $var_86 = $var_87;
+		
+		$var_88 = $var_86 . "_$var_10->var_4";
+
+		return DB::query("SELECT \"$var_86\".\"Version\" = \"$var_88\".\"Version\" FROM \"$var_86\" INNER JOIN \"$var_88\" ON \"$var_86\".\"ID\" = \"$var_88\".\"ID\" WHERE \"$var_86\".\"ID\" = ".  $var_10->var_32->var_77)->value();
+	}
+	
+	
+	function fn_15($var_89, $var_90, $var_91 = false) {
+		$var_92 = $var_10->var_32->var_33;
+		while( ($var_87 = get_parent_class($var_92)) != "DataObject") $var_92 = $var_87;
+		$var_93 = $var_10->fn_13($var_92);
+		
+		if(is_numeric($var_89)) {
+			$var_14 = class_0::fn_40($var_92, $var_10->var_32->var_77, $var_89);
+		} else {
+			$var_10->var_32->fn_16();
+			$var_14 = class_0::fn_29($var_92, $var_89, "\"{$var_92}\".\"ID\" = {$var_10->var_32->var_77}");
+		}
+		
+		$var_95 = isset(Member::currentUser()->var_77) ? Member::currentUser()->var_77 : 0;
+		if($var_14) {
+			$var_14->forceChange();
+			if($var_91) {
+				$var_97 = self::fn_37($var_92, $var_10->var_32->var_77);
+				$var_10->var_32->var_82 = $var_97->var_82 + 1;
+			} else {
+				$var_14->fn_11($var_14->var_82);
+			}
+			
+			
+			DB::query("UPDATE \"{$var_93}_versions\" SET \"WasPublished\" = '1', \"PublisherID\" = $var_95 WHERE \"RecordID\" = $var_14->var_77 AND \"Version\" = $var_14->var_82");
+
+			$var_98 = class_0::fn_23();
+			class_0::fn_27($var_90);
+
+			$var_99 = DB::getConn();
+			if(method_exists($var_99, 'allowPrimaryKeyEditing')) $var_99->allowPrimaryKeyEditing($var_92, true);
+			$var_14->write();
+			if(method_exists($var_99, 'allowPrimaryKeyEditing')) $var_99->allowPrimaryKeyEditing($var_92, false);
+
+			$var_14->destroy();
+			
+			class_0::fn_22($var_98);
+		} else {
+			user_error("Can't find {$var_10->var_32->var_103}/{$var_10->var_32->var_77} in stage $var_89", var_104);
+		}
+	}
+	
+	
+	function fn_11($var_105) {
+		$var_10->var_5 = $var_105;
+	}
+	
+	
+	function fn_17($var_106, $var_107) {
+		$var_86 = $var_10->fn_4($var_106);
+		$var_88 = $var_10->fn_4($var_107);
+		
+		if(!is_numeric($var_10->var_32->var_77)) {
+			return true;
+		}
+            
+		
+		
+		$var_108 = DB::query("SELECT CASE WHEN \"$var_86\".\"Version\"=\"$var_88\".\"Version\" THEN 1 ELSE 0 END FROM \"$var_86\" INNER JOIN \"$var_88\" ON \"$var_86\".\"ID\" = \"$var_88\".\"ID\" AND \"$var_86\".\"ID\" = {$var_10->var_32->var_77}")->value();
+		return !$var_108;
+	}
+	
+	function fn_18($var_109 = "", $var_110 = "", $var_111 = "", $var_112 = "", $var_113 = "") {
+		return $var_10->fn_19($var_109, $var_110, $var_111, $var_112, $var_113);
+	}
+	
+	
+	function fn_19($var_109 = "", $var_110 = "", $var_111 = "", $var_112 = "", $var_113 = "") {
+		
+		$var_98 = self::fn_23();
+		self::fn_27('Stage');
+
+		$var_12 = $var_10->var_32->extendedSQL($var_109, $var_110, $var_111, $var_112, $var_113);
+
+		foreach($var_12->var_14 as $var_15 => $var_116) {
+			if($var_116[0] == '"') $var_17 = str_replace('"','',$var_116);
+			else if (substr($var_116,0,5) != 'INNER') $var_12->var_14[$var_15] = "LEFT JOIN \"$var_15\" ON \"$var_15\".\"RecordID\" = \"{$var_17}_versions\".\"RecordID\" AND \"$var_15\".\"Version\" = \"{$var_17}_versions\".\"Version\"";
+			$var_12->renameTable($var_15, $var_15 . '_versions');
+		}
+		
+		
+		foreach(self::$var_7 as $var_20 => $var_21) {
+			$var_12->select[] = sprintf('"%s_versions"."%s"', $var_17, $var_20);
+		}
+		
+		$var_12->where[] = "\"{$var_17}_versions\".\"RecordID\" = '{$var_10->var_32->var_77}'";
+		$var_12->var_117 = ($var_110) ? $var_110 : "\"{$var_17}_versions\".\"LastEdited\" DESC, \"{$var_17}_versions\".\"Version\" DESC";
+		
+		$var_118 = $var_12->execute();
+		$var_120 = new class_1();
+		
+		foreach($var_118 as $var_71) {
+			$var_120->push(new class_2($var_71));
+		}
+		
+		class_0::fn_22($var_98);
+		return $var_120;
+	}
+	
+	
+	function fn_20($var_14, $var_122) {
+		$var_123 = class_0::fn_40($var_10->var_32->var_33, $var_10->var_32->var_77, $var_14);
+		$var_124 = class_0::fn_40($var_10->var_32->var_33, $var_10->var_32->var_77, $var_122);
+		
+		$var_125 = new class_3($var_123, $var_124);
+		return $var_125->diffedData();
+	}
+	
+	
+	function fn_4($var_50 = null) {
+		$var_127 = ClassInfo::dataClassesFor($var_10->var_32->var_33);
+		$var_92 = array_shift($var_127);
+		return (!$var_50 || $var_50 == $var_10->var_3) ? $var_92 : $var_92 . "_$var_50";		
+	}
+		
+	
+	
+	
+	static function fn_21() {
+		if(isset($_GET['stage'])) {
+			$var_50 = ucfirst(strtolower($_GET['stage']));
+			
+			if(!in_array($var_50, array('Stage', 'Live'))) $var_50 = 'Live';
+
+			Session::set('readingMode', 'Stage.' . $var_50);
+		}
+		if(isset($_GET['archiveDate'])) {
+			Session::set('readingMode', 'Archive.' . $_GET['archiveDate']);
+		}
+		
+		if($var_128 = Session::get('readingMode')) {
+			class_0::fn_22($var_128);
+		} else {
+			class_0::fn_27("Live");
+		}
+
+		if(!headers_sent()) {
+			if(class_0::fn_25() == 'Live') {
+				Cookie::set('bypassStaticCache', null, 0, null, null, false, true );
+			} else {
+				Cookie::set('bypassStaticCache', '1', 0, null, null, false, true );
+			}
+		}
+	}
+	
+	
+	static function fn_22($var_128) {
+		var_0::$var_9 = $var_128;
+	}
+	
+	
+	static function fn_23() {
+		return var_0::$var_9;
+	}
+	
+	
+	static function fn_24() {
+		return "Live";
+	}
+	
+	
+	static function fn_25() {
+		$var_129 = explode('.', class_0::fn_23());
+		if($var_129[0] == 'Stage') return $var_129[1];
+	}
+	
+	
+	static function fn_26() {
+		$var_129 = explode('.', class_0::fn_23());
+		if($var_129[0] == 'Archive') return $var_129[1];
+	}
+	
+	
+	static function fn_27($var_50) {
+		class_0::fn_22('Stage.' . $var_50);
+	}
+	
+	
+	static function fn_28($var_13) {
+		class_0::fn_22('Archive.' . $var_13);
+	}
+	
+	
+	
+	static function fn_29($var_33, $var_50, $var_109 = '', $var_130 = true, $var_117 = '') {
+		$var_98 = class_0::fn_23();
+		class_0::fn_27($var_50);
+		
+		singleton($var_33)->fn_16();
+		$var_131 = DataObject::get_one($var_33, $var_109, $var_130, $var_117);
+		singleton($var_33)->fn_16();
+
+		class_0::fn_22($var_98);
+		return $var_131;
+	}
+	
+	
+	static function fn_30($var_33, $var_50, $var_66, $var_130 = true) {
+		$var_92 = ClassInfo::baseDataClass($var_33);
+		$var_132 = ($var_50 == 'Stage') ? $var_92 : "{$var_92}_{$var_50}";
+
+		
+		if($var_130 && isset(self::$var_6[$var_92][$var_50][$var_66])) {
+			return self::$var_6[$var_92][$var_50][$var_66];
+		}
+		
+		
+		$var_105 = DB::query("SELECT \"Version\" FROM \"$var_132\" WHERE \"ID\" = $var_66")->value();
+		
+		
+		if($var_130) {
+			if(!isset(self::$var_6[$var_92])) self::$var_6[$var_92] = array();
+			if(!isset(self::$var_6[$var_92][$var_50])) self::$var_6[$var_92][$var_50] = array();
+			self::$var_6[$var_92][$var_50][$var_66] = $var_105;
+		}
+		
+		return $var_105;
+	}
+	
+	
+	static function fn_31($var_33, $var_50, $var_133 = null) {
+		$var_109 = "";
+		if($var_133) {
+			
+			foreach($var_133 as $var_66) if(!is_numeric($var_66)) user_error("Bad ID passed to Versioned::prepopulate_versionnumber_cache() in \$idList: " . $var_66, var_67);
+			$var_109 = "WHERE \"ID\" IN(" .implode(", ", $var_133) . ")";
+		}
+		
+		$var_92 = ClassInfo::baseDataClass($var_33);
+		$var_132 = ($var_50 == 'Stage') ? $var_92 : "{$var_92}_{$var_50}";
+
+		$var_120 = DB::query("SELECT \"ID\", \"Version\" FROM \"$var_132\" $var_109")->map();
+		foreach($var_120 as $var_66 => $var_105) {
+			self::$var_6[$var_92][$var_50][$var_66] = $var_105;
+		}
+	}
+	
+	
+	static function fn_32($var_33, $var_50, $var_109 = '', $var_110 = '', $var_112 = '', $var_111 = '', $var_135 = 'DataObjectSet') {
+		$var_98 = class_0::fn_23();
+		class_0::fn_27($var_50);
+		$var_131 = DataObject::get($var_33, $var_109, $var_110, $var_112, $var_111, $var_135);
+		class_0::fn_22($var_98);
+		return $var_131;
+	}
+	
+	function fn_33($var_50) {
+		$var_98 = class_0::fn_23();
+		class_0::fn_27($var_50);
+		$var_136 = clone $var_10->var_32;
+		$var_131 = $var_136->delete();
+		class_0::fn_22($var_98);
+
+		
+		$var_92 = ClassInfo::baseDataClass($var_10->var_32->var_33);
+		self::$var_6[$var_92][$var_50][$var_10->var_32->var_77] = null;
+
+		return $var_131;
+	}
+	
+	function fn_34($var_50, $var_138 = false) {
+		$var_98 = class_0::fn_23();
+		class_0::fn_27($var_50);
+		$var_131 = $var_10->var_32->write(false, $var_138);
+		class_0::fn_22($var_98);
+		return $var_131;
+	}
+		
+	
+	function fn_35($var_109 = "", $var_110 = "") {
+		$var_12 = $var_10->var_32->extendedSQL($var_109,$var_110);
+		foreach($var_12->var_14 as $var_15 => $var_112) {
+			if($var_112[0] == '"') $var_17 = str_replace('"','',$var_112);
+			else $var_12->var_14[$var_15] = "LEFT JOIN \"$var_15\" ON \"$var_15\".\"RecordID\" = \"{$var_17}_versions\".\"RecordID\" AND \"$var_15\".\"Version\" = \"{$var_17}_versions\".\"Version\"";
+			$var_12->renameTable($var_15, $var_15 . '_versions');
+		}
+		
+		
+		foreach(self::$var_7 as $var_20 => $var_21) {
+			$var_12->select[] = sprintf('"%s_versions"."%s"', $var_17, $var_20);
+		}
+		$var_12->select[] = sprintf('"%s_versions"."%s" AS "ID"', $var_17, 'RecordID');
+		
+		return $var_12;
+	}
+
+	static function fn_36($var_140, $var_109 = "", $var_110 = "") {
+		$var_12 = singleton($var_140)->extendedSQL($var_109,$var_110);
+		foreach($var_12->var_14 as $var_15 => $var_112) {
+			if($var_112[0] == '"') $var_17 = str_replace('"','',$var_112);
+			else $var_12->var_14[$var_15] = "LEFT JOIN \"$var_15\" ON \"$var_15\".\"RecordID\" = \"{$var_17}_versions\".\"RecordID\" AND \"$var_15\".\"Version\" = \"{$var_17}_versions\".\"Version\"";
+			$var_12->renameTable($var_15, $var_15 . '_versions');
+		}
+		
+		
+		foreach(self::$var_7 as $var_20 => $var_21) {
+			$var_12->select[] = sprintf('"%s_versions"."%s"', $var_17, $var_20);
+		}
+		$var_12->select[] = sprintf('"%s_versions"."%s" AS "ID"', $var_17, 'RecordID');
+		
+		return $var_12;
+	}
+	
+	
+	static function fn_37($var_33, $var_66) {
+		$var_98 = class_0::fn_23();
+		class_0::fn_22('');
+
+		$var_17 = ClassInfo::baseDataClass($var_33);
+		$var_12 = singleton($var_33)->fn_35("\"{$var_17}\".\"RecordID\" = $var_66", "\"{$var_17}\".\"Version\" DESC");
+		$var_12->var_111 = 1;
+		$var_71 = $var_12->execute()->record();
+		if(!$var_71) return;
+		
+		$var_140 = $var_71['ClassName'];
+		if(!$var_140) {
+			Debug::show($var_12->sql());
+			Debug::show($var_71);
+			user_error("Versioned::get_version: Couldn't get $var_33.$var_66", var_67);
+		}
+
+		class_0::fn_22($var_98);
+
+		return new $var_140($var_71);
+	}
+
+	
+	static function fn_38($var_33, $var_109 = "", $var_110 = "") {
+		$var_12 = self::fn_39($var_33, $var_109, $var_110);
+		
+		
+		$var_142 = singleton($var_33);
+		return $var_142->buildDataObjectSet($var_12->execute(), 'DataObjectSet', null, $var_33);
+	}
+	
+	
+	static function fn_39($var_33, $var_109 = "", $var_110 = "") {
+		$var_98 = class_0::fn_23();
+		class_0::fn_22('');
+
+		$var_142 = singleton($var_33);
+		
+		
+		$var_12 = $var_142->fn_35($var_109, $var_110);
+		$var_17 = ClassInfo::baseDataClass($var_33);
+		$var_22 = self::fn_5($var_17);
+		$var_12->var_14[$var_22] = "INNER JOIN \"$var_22\"
+			ON \"$var_22\".\"ID\" = \"{$var_17}_versions\".\"RecordID\"
+			AND \"$var_22\".\"Version\" = \"{$var_17}_versions\".\"Version\"";
+
+		class_0::fn_22($var_98);
+		return $var_12;
+	}
+	
+	
+	static function fn_40($var_33, $var_66, $var_105) {
+		$var_98 = class_0::fn_23();
+		class_0::fn_22('');
+
+		$var_17 = ClassInfo::baseDataClass($var_33);
+		$var_12 = singleton($var_33)->fn_35("\"{$var_17}\".\"RecordID\" = $var_66 AND \"{$var_17}\".\"Version\" = $var_105");
+		$var_71 = $var_12->execute()->record();
+		$var_140 = $var_71['ClassName'];
+		if(!$var_140) {
+			Debug::show($var_12->sql());
+			Debug::show($var_71);
+			user_error("Versioned::get_version: Couldn't get $var_33.$var_66, version $var_105", var_67);
+		}
+
+		class_0::fn_22($var_98);
+		return new $var_140($var_71);
+	}
+
+	
+	static function fn_41($var_33, $var_66, $var_105) {
+		$var_17 = ClassInfo::baseDataClass($var_33);
+		$var_12 = singleton($var_33)->fn_35("\"{$var_17}\".\"RecordID\" = $var_66 AND \"{$var_17}\".\"Version\" = $var_105");
+		$var_71 = $var_12->execute()->record();
+		$var_140 = $var_71['ClassName'];
+		if(!$var_140) {
+			Debug::show($var_12->sql());
+			Debug::show($var_71);
+			user_error("Versioned::get_version: Couldn't get $var_33.$var_66, version $var_105", var_67);
+		}
+		return new $var_140($var_71);
+	}
+	
+	function fn_42($var_144) {
+		self::fn_21();
+	}
+	function fn_43($var_144) {
+		self::fn_21();
+	}
+	
+	protected static $var_9 = null;
+	
+	function fn_44(&$var_145) {
+		$var_145['Versions'] = _t('Versioned.has_many_Versions', 'Versions', var_146, 'Past Versions of this page');
+	}
+	
+	function fn_16() {
+		self::$var_6 = array();
+	}
+
+	
+	function fn_45() {
+		return 'stage-'.self::fn_25();
+	}
+}
+
+
+class class_2 extends var_147 {
+	protected $var_71;
+	protected $var_148;
+	
+	function fn_1($var_71) {
+		$var_10->var_71 = $var_71;
+		$var_71['ID'] = $var_71['RecordID'];
+		$var_140 = $var_71['ClassName'];
+		
+		$var_10->var_148 = new $var_140($var_71);
+		$var_10->var_149 = $var_10->var_148;
+		
+		parent::fn_1();
+	}
+	
+	function fn_46() {
+		return $var_10->var_71['WasPublished'] ? 'published' : 'internal';
+	}
+	
+	function fn_47() {
+		return DataObject::get_by_id("Member", $var_10->var_71['AuthorID']);
+	}
+	
+	function fn_48() {
+		if( !$var_10->var_71['WasPublished'] )
+			return null;
+			
+		return DataObject::get_by_id("Member", $var_10->var_71['PublisherID']);
+	}
+	
+	function fn_49() {
+		return !empty( $var_10->var_71['WasPublished'] );
+	}
+}
+
+?>

@@ -1,0 +1,953 @@
+<?php
+
+if (!defined('_PS_VERSION_')) {
+    var_0;
+}
+
+
+class class_0 extends var_1 implements var_2
+{
+    const var_3 = 'install.sql';
+
+    private $var_4 = '';
+
+    private $var_5 = [];
+    private $var_6;
+
+    public function fn_0()
+    {
+        $var_7->var_8 = 'productcomments';
+        $var_7->var_9 = 'front_office_features';
+        $var_7->var_10 = '4.2.1';
+        $var_7->var_11 = 'PrestaShop';
+        $var_7->var_12 = 0;
+        $var_7->var_13 = true;
+
+        parent::fn_0();
+
+        $var_7->var_14 = $var_7->trans('Product Comments', [], 'Modules.Productcomments.Admin');
+        $var_7->var_16 = $var_7->trans('Allow users to post reviews on your products and/or rate them based on specific criteria.', [], 'Modules.Productcomments.Admin');
+
+        $var_7->var_17 = ['min' => '1.7.6', 'max' => var_18];
+    }
+
+    public function fn_1($var_20 = true)
+    {
+        if (class_1::isFeatureActive()) {
+            class_1::setContext(var_21::var_22);
+        }
+
+        if ($var_20) {
+            if (!file_exists(dirname(var_23) . '/' . self::var_3)) {
+                return false;
+            } elseif (!$var_24 = file_get_contents(dirname(var_23) . '/' . self::var_3)) {
+                return false;
+            }
+            $var_24 = str_replace(['PREFIX_', 'ENGINE_TYPE'], [var_25, var_26], $var_24);
+            $var_24 = preg_split("/;\s*[\r\n]+/", trim($var_24));
+
+            foreach ($var_24 as $var_27) {
+                if (!Db::getInstance()->execute(trim($var_27))) {
+                    return false;
+                }
+            }
+        }
+
+        if (parent::fn_1() == false ||
+            !$var_7->registerHook('displayFooterProduct') || 
+            !$var_7->registerHook('header') || 
+            !$var_7->registerHook('displayProductListReviews') || 
+            !$var_7->registerHook('displayProductAdditionalInfo') || 
+
+            !$var_7->registerHook('registerGDPRConsent') ||
+            !$var_7->registerHook('actionDeleteGDPRCustomer') ||
+            !$var_7->registerHook('actionExportGDPRData') ||
+
+            !Configuration::updateValue('PRODUCT_COMMENTS_MINIMAL_TIME', 30) ||
+            !Configuration::updateValue('PRODUCT_COMMENTS_ALLOW_GUESTS', 0) ||
+            !Configuration::updateValue('PRODUCT_COMMENTS_USEFULNESS', 1) ||
+            !Configuration::updateValue('PRODUCT_COMMENTS_COMMENTS_PER_PAGE', 5) ||
+            !Configuration::updateValue('PRODUCT_COMMENTS_ANONYMISATION', 0) ||
+            !Configuration::updateValue('PRODUCT_COMMENTS_MODERATE', 1)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function fn_2($var_20 = true)
+    {
+        if (!parent::fn_2() || ($var_20 && !$var_7->fn_3()) ||
+            !Configuration::deleteByName('PRODUCT_COMMENTS_MODERATE') ||
+            !Configuration::deleteByName('PRODUCT_COMMENTS_COMMENTS_PER_PAGE') ||
+            !Configuration::deleteByName('PRODUCT_COMMENTS_ANONYMISATION') ||
+            !Configuration::deleteByName('PRODUCT_COMMENTS_ALLOW_GUESTS') ||
+            !Configuration::deleteByName('PRODUCT_COMMENTS_USEFULNESS') ||
+            !Configuration::deleteByName('PRODUCT_COMMENTS_MINIMAL_TIME') ||
+
+            !$var_7->unregisterHook('registerGDPRConsent') ||
+            !$var_7->unregisterHook('actionDeleteGDPRCustomer') ||
+            !$var_7->unregisterHook('actionExportGDPRData') ||
+
+            !$var_7->unregisterHook('displayProductAdditionalInfo') ||
+            !$var_7->unregisterHook('header') ||
+            !$var_7->unregisterHook('displayFooterProduct') ||
+            !$var_7->unregisterHook('displayProductListReviews')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function fn_4()
+    {
+        if (!$var_7->fn_2(false)) {
+            return false;
+        }
+        if (!$var_7->fn_1(false)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function fn_3()
+    {
+        return Db::getInstance()->execute('
+			DROP TABLE IF EXISTS
+			`' . var_25 . 'product_comment`,
+			`' . var_25 . 'product_comment_criterion`,
+			`' . var_25 . 'product_comment_criterion_product`,
+			`' . var_25 . 'product_comment_criterion_lang`,
+			`' . var_25 . 'product_comment_criterion_category`,
+			`' . var_25 . 'product_comment_grade`,
+			`' . var_25 . 'product_comment_usefulness`,
+			`' . var_25 . 'product_comment_report`');
+    }
+
+    public function fn_5($var_33 = null)
+    {
+        return parent::fn_5() . '|' . (int) $var_33;
+    }
+
+    protected function fn_6()
+    {
+        if (Tools::isSubmit('submitModerate')) {
+            Configuration::updateValue('PRODUCT_COMMENTS_MODERATE', (int) Tools::getValue('PRODUCT_COMMENTS_MODERATE'));
+            Configuration::updateValue('PRODUCT_COMMENTS_ALLOW_GUESTS', (int) Tools::getValue('PRODUCT_COMMENTS_ALLOW_GUESTS'));
+            Configuration::updateValue('PRODUCT_COMMENTS_USEFULNESS', (int) Tools::getValue('PRODUCT_COMMENTS_USEFULNESS'));
+            Configuration::updateValue('PRODUCT_COMMENTS_COMMENTS_PER_PAGE', (int) Tools::getValue('PRODUCT_COMMENTS_COMMENTS_PER_PAGE'));
+            Configuration::updateValue('PRODUCT_COMMENTS_ANONYMISATION', (int) Tools::getValue('PRODUCT_COMMENTS_ANONYMISATION'));
+            Configuration::updateValue('PRODUCT_COMMENTS_MINIMAL_TIME', (int) Tools::getValue('PRODUCT_COMMENTS_MINIMAL_TIME'));
+            $var_7->var_4 .= '<div class="conf confirm alert alert-success">' . $var_7->trans('Settings updated', [], 'Modules.Productcomments.Admin') . '</div>';
+        } elseif (Tools::isSubmit('productcomments')) {
+            $var_35 = (int) Tools::getValue('id_product_comment');
+            $var_36 = new class_2($var_35);
+            $var_36->validate();
+            class_2::deleteReports($var_35);
+        } elseif (Tools::isSubmit('deleteproductcomments')) {
+            $var_35 = (int) Tools::getValue('id_product_comment');
+            $var_36 = new class_2($var_35);
+            $var_36->delete();
+        } elseif (Tools::isSubmit('submitEditCriterion')) {
+            $var_39 = new class_3((int) Tools::getValue('id_product_comment_criterion'));
+            $var_39->var_41 = (int) Tools::getValue('id_product_comment_criterion_type');
+            $var_39->var_42 = Tools::getValue('active');
+
+            $var_43 = class_5::getLanguages();
+            $var_8 = [];
+            foreach ($var_43 as $var_44 => $var_45) {
+                $var_8[$var_45['id_lang']] = Tools::getValue('name_' . $var_45['id_lang']);
+            }
+            $var_39->var_8 = $var_8;
+
+            if (!$var_39->validateFields(false) || !$var_39->validateFieldsLang(false)) {
+                $var_7->var_4 .= '<div class="conf confirm alert alert-danger">' . $var_7->trans('The criterion cannot be saved', [], 'Modules.Productcomments.Admin') . '</div>';
+            } else {
+                $var_39->save();
+
+                
+                $var_39->deleteCategories();
+                $var_39->deleteProducts();
+                if ($var_39->var_41 == 2) {
+                    if ($var_51 = Tools::getValue('categoryBox')) {
+                        if (count($var_51)) {
+                            foreach ($var_51 as $var_52) {
+                                $var_39->addCategory((int) $var_52);
+                            }
+                        }
+                    }
+                } elseif ($var_39->var_41 == 3) {
+                    if ($var_54 = Tools::getValue('ids_product')) {
+                        if (count($var_54)) {
+                            foreach ($var_54 as $var_55) {
+                                $var_39->addProduct((int) $var_55);
+                            }
+                        }
+                    }
+                }
+                if ($var_39->save()) {
+                    Tools::redirectAdmin(Context::getContext()->var_57->getAdminLink('AdminModules', true, [], ['configure' => $var_7->var_8, 'conf' => 4]));
+                } else {
+                    $var_7->var_4 .= '<div class="conf confirm alert alert-danger">' . $var_7->trans('The criterion cannot be saved', [], 'Modules.Productcomments.Admin') . '</div>';
+                }
+            }
+        } elseif (Tools::isSubmit('deleteproductcommentscriterion')) {
+            $var_59 = new class_3((int) Tools::getValue('id_product_comment_criterion'));
+            if ($var_59->var_60) {
+                if ($var_59->delete()) {
+                    $var_7->var_4 .= '<div class="conf confirm alert alert-success">' . $var_7->trans('Criterion deleted', [], 'Modules.Productcomments.Admin') . '</div>';
+                }
+            }
+        } elseif (Tools::isSubmit('statusproductcommentscriterion')) {
+            $var_39 = new class_3((int) Tools::getValue('id_product_comment_criterion'));
+            if ($var_39->var_60) {
+                $var_39->var_42 = (int) (!$var_39->var_42);
+                $var_39->save();
+            }
+            Tools::redirectAdmin($var_7->var_61->var_57->getAdminLink('AdminModules', true, [], ['configure' => $var_7->var_8, 'tab_module' => $var_7->var_9, 'conf' => 4, 'module_name' => $var_7->var_8]));
+        } elseif ($var_35 = (int) Tools::getValue('approveComment')) {
+            $var_36 = new class_2($var_35);
+            $var_36->validate();
+        } elseif ($var_35 = (int) Tools::getValue('noabuseComment')) {
+            class_2::deleteReports($var_35);
+            Tools::redirectAdmin($var_7->var_61->var_57->getAdminLink('AdminModules', true, [], ['configure' => $var_7->var_8]));
+        }
+
+        $var_7->_clearcache('productcomments_reviews.tpl');
+    }
+
+    public function fn_7()
+    {
+
+        $var_7->var_4 = '';
+        if (Tools::isSubmit('updateproductcommentscriterion')) {
+            $var_7->var_4 .= $var_7->fn_8((int) Tools::getValue('id_product_comment_criterion'));
+        } else {
+            $var_7->fn_6();
+            $var_7->var_4 .= $var_7->fn_9();
+            $var_7->var_4 .= $var_7->fn_10();
+            $var_7->var_4 .= $var_7->fn_11();
+            $var_7->var_4 .= $var_7->fn_12();
+
+            $var_7->var_61->var_68->addCss($var_7->var_70 . 'views/css/module-addons-suggestion.css');
+            $var_7->var_4 .= $var_7->fn_13();
+        }
+
+        $var_7->fn_14();
+        $var_7->var_5 = class_3::getTypes();
+
+        $var_7->var_61->var_68->addJs($var_7->var_70 . 'js/moderate.js');
+
+        return $var_7->var_4;
+    }
+
+    private function fn_14()
+    {
+        $var_7->var_6 = 'index.php?';
+        foreach ($var_74 as $var_75 => $var_45) {
+            if (!in_array($var_75, ['deleteCriterion', 'editCriterion'])) {
+                $var_7->var_6 .= $var_75 . '=' . $var_45 . '&';
+            }
+        }
+        $var_7->var_6 = rtrim($var_7->var_6, '&');
+    }
+
+    public function fn_9()
+    {
+        $var_76 = [
+            'form' => [
+                'legend' => [
+                    'title' => $var_7->trans('Configuration', [], 'Modules.Productcomments.Admin'),
+                    'icon' => 'icon-cogs',
+                ],
+                'input' => [
+                    [
+                        'type' => 'switch',
+                        'is_bool' => true, 
+                        'label' => $var_7->trans('All reviews must be validated by an employee', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'PRODUCT_COMMENTS_MODERATE',
+                        'values' => [
+                                        [
+                                            'id' => 'active_on',
+                                            'value' => 1,
+                                            'label' => $var_7->trans('Yes', [], 'Modules.Productcomments.Admin'),
+                                        ],
+                                        [
+                                            'id' => 'active_off',
+                                            'value' => 0,
+                                            'label' => $var_7->trans('No', [], 'Modules.Productcomments.Admin'),
+                                        ],
+                                    ],
+                    ],
+                    [
+                        'type' => 'switch',
+                        'is_bool' => true, 
+                        'label' => $var_7->trans('Allow guest reviews', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'PRODUCT_COMMENTS_ALLOW_GUESTS',
+                        'values' => [
+                                        [
+                                            'id' => 'active_on',
+                                            'value' => 1,
+                                            'label' => $var_7->trans('Yes', [], 'Modules.Productcomments.Admin'),
+                                        ],
+                                        [
+                                            'id' => 'active_off',
+                                            'value' => 0,
+                                            'label' => $var_7->trans('No', [], 'Modules.Productcomments.Admin'),
+                                        ],
+                                    ],
+                    ],
+                    [
+                        'type' => 'switch',
+                        'is_bool' => true, 
+                        'label' => $var_7->trans('Enable upvotes / downvotes on reviews', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'PRODUCT_COMMENTS_USEFULNESS',
+                        'values' => [
+                            [
+                                'id' => 'active_on',
+                                'value' => 1,
+                                'label' => $var_7->trans('Yes', [], 'Modules.Productcomments.Admin'),
+                            ],
+                            [
+                                'id' => 'active_off',
+                                'value' => 0,
+                                'label' => $var_7->trans('No', [], 'Modules.Productcomments.Admin'),
+                            ],
+                        ],
+                    ],
+                    [
+                        'type' => 'switch',
+                        'is_bool' => true, 
+                        'label' => $var_7->trans('Anonymize the user\'s last name', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'PRODUCT_COMMENTS_ANONYMISATION',
+                        'desc' => $var_7->trans('Display only initials, e.g. John D.', [], 'Modules.Productcomments.Admin'),
+                        'values' => [
+                            [
+                                'id' => 'active_on',
+                                'value' => 1,
+                                'label' => $var_7->trans('Yes', [], 'Modules.Productcomments.Admin'),
+                            ],
+                            [
+                                'id' => 'active_off',
+                                'value' => 0,
+                                'label' => $var_7->trans('No', [], 'Modules.Productcomments.Admin'),
+                            ],
+                        ],
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $var_7->trans('Minimum time between 2 reviews from the same user', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'PRODUCT_COMMENTS_MINIMAL_TIME',
+                        'class' => 'fixed-width-xs',
+                        'suffix' => 'seconds',
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $var_7->trans('Number of comments per page', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'PRODUCT_COMMENTS_COMMENTS_PER_PAGE',
+                        'class' => 'fixed-width-xs',
+                        'suffix' => 'comments',
+                    ],
+                ],
+            'submit' => [
+                'title' => $var_7->trans('Save', [], 'Modules.Productcomments.Admin'),
+                'class' => 'btn btn-default pull-right',
+                'name' => 'submitModerate',
+                ],
+            ],
+        ];
+
+        $var_77 = new class_4();
+        $var_77->var_78 = false;
+        $var_77->var_79 = $var_7->var_8;
+        $var_80 = new class_5((int) Configuration::get('PS_LANG_DEFAULT'));
+        $var_77->var_81 = $var_80->var_60;
+        $var_77->var_82 = $var_7;
+        $var_77->var_83 = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ? Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') : 0;
+        $var_77->var_84 = $var_7->var_84;
+        $var_77->var_85 = 'submitProducCommentsConfiguration';
+        $var_77->var_86 = $var_7->var_61->var_57->getAdminLink('AdminModules', false, [], ['configure' => $var_7->var_8, 'tab_module' => $var_7->var_9, 'module_name' => $var_7->var_8]);
+        $var_77->var_87 = Tools::getAdminTokenLite('AdminModules');
+        $var_77->var_88 = [
+            'fields_value' => $var_7->fn_15(),
+            'languages' => $var_7->var_61->var_68->getLanguages(),
+            'id_language' => $var_7->var_61->var_91->var_60,
+        ];
+
+        return $var_77->generateForm([$var_76]);
+    }
+
+    public function fn_10()
+    {
+        $var_93 = null;
+
+        if (Configuration::get('PRODUCT_COMMENTS_MODERATE')) {
+            $var_94 = class_2::getByValidate(0, false);
+
+            $var_95 = $var_7->fn_16();
+
+            if (version_compare(var_18, '1.6', '<')) {
+                $var_93 .= '<h1>' . $var_7->trans('Reviews waiting for approval', [], 'Modules.Productcomments.Admin') . '</h1>';
+                $var_97 = ['enable', 'delete'];
+            } else {
+                $var_97 = ['approve', 'delete'];
+            }
+
+            $var_77 = new class_6();
+            $var_77->var_98 = 'form-productcomments-moderate-list';
+            $var_77->var_99 = '';
+            $var_77->var_100 = true;
+            $var_77->var_97 = $var_97;
+            $var_77->var_78 = false;
+            $var_77->var_82 = $var_7;
+            $var_77->var_101 = count($var_94);
+            $var_77->var_84 = 'id_product_comment';
+            $var_77->var_102 = $var_7->trans('Reviews waiting for approval', [], 'Modules.Productcomments.Admin');
+            $var_77->var_79 = $var_7->var_8;
+            $var_77->var_87 = Tools::getAdminTokenLite('AdminModules');
+            $var_77->var_86 = var_103::$var_86 . '&configure=' . $var_7->var_8;
+            $var_77->var_104 = true;
+
+            $var_93 .= $var_77->generateList($var_94, $var_95);
+        }
+
+        $var_94 = class_2::getReportedComments();
+
+        $var_95 = $var_7->fn_16();
+
+        $var_97 = ['delete', 'noabuse'];
+
+        $var_77 = new class_6();
+        $var_77->var_98 = 'form-productcomments-reported-list';
+        $var_77->var_99 = '';
+        $var_77->var_100 = true;
+        $var_77->var_97 = $var_97;
+        $var_77->var_78 = false;
+        $var_77->var_82 = $var_7;
+        $var_77->var_101 = count($var_94);
+        $var_77->var_84 = 'id_product_comment';
+        $var_77->var_102 = $var_7->trans('Reported Reviews', [], 'Modules.Productcomments.Admin');
+        $var_77->var_79 = $var_7->var_8;
+        $var_77->var_87 = Tools::getAdminTokenLite('AdminModules');
+        $var_77->var_86 = var_103::$var_86 . '&configure=' . $var_7->var_8;
+        $var_77->var_104 = true;
+
+        $var_93 .= $var_77->generateList($var_94, $var_95);
+
+        return $var_93;
+    }
+
+    
+    public function fn_17($var_87, $var_60, $var_8 = null)
+    {
+        $var_7->var_106->assign([
+            'href' => $var_7->var_61->var_57->getAdminLink('AdminModules', true, [], ['configure' => $var_7->var_8, 'module_name' => $var_7->var_8, 'approveComment' => $var_60]),
+            'action' => $var_7->trans('Approve', [], 'Modules.Productcomments.Admin'),
+        ]);
+
+        return $var_7->display(var_23, 'views/templates/admin/list_action_approve.tpl');
+    }
+
+    
+    public function fn_18($var_87, $var_60, $var_8 = null)
+    {
+        $var_7->var_106->assign([
+            'href' => $var_7->var_61->var_57->getAdminLink('AdminModules', true, [], ['configure' => $var_7->var_8, 'module_name' => $var_7->var_8, 'noabuseComment' => $var_60]),
+            'action' => $var_7->trans('Not abusive', [], 'Modules.Productcomments.Admin'),
+        ]);
+
+        return $var_7->display(var_23, 'views/templates/admin/list_action_noabuse.tpl');
+    }
+
+    public function fn_11()
+    {
+
+        $var_109 = class_3::getCriterions($var_7->var_61->var_91->var_60, false, false);
+
+        $var_95 = [
+            'id_product_comment_criterion' => [
+                'title' => $var_7->trans('ID', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+            ],
+            'name' => [
+                'title' => $var_7->trans('Name', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+            ],
+            'type_name' => [
+                'title' => $var_7->trans('Type', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+            ],
+            'active' => [
+                'title' => $var_7->trans('Status', [], 'Modules.Productcomments.Admin'),
+                'active' => 'status',
+                'type' => 'bool',
+            ],
+        ];
+
+        $var_77 = new class_6();
+        $var_77->var_99 = '';
+        $var_77->var_100 = false;
+        $var_77->var_97 = ['edit', 'delete'];
+        $var_77->var_78 = true;
+        $var_77->toolbar_btn['new'] = [
+            'href' => $var_7->var_61->var_57->getAdminLink('AdminModules', true, [], ['configure' => $var_7->var_8, 'module_name' => $var_7->var_8, 'updateproductcommentscriterion' => '']),
+            'desc' => $var_7->trans('Add New Criterion', [], 'Modules.Productcomments.Admin'),
+        ];
+        $var_77->var_82 = $var_7;
+        $var_77->var_84 = 'id_product_comment_criterion';
+        $var_77->var_102 = $var_7->trans('Review Criteria', [], 'Modules.Productcomments.Admin');
+        $var_77->var_79 = $var_7->var_8 . 'criterion';
+        $var_77->var_87 = Tools::getAdminTokenLite('AdminModules');
+        $var_77->var_86 = var_103::$var_86 . '&configure=' . $var_7->var_8;
+
+        return $var_77->generateList($var_109, $var_95);
+    }
+
+    public function fn_12()
+    {
+
+        $var_95 = $var_7->fn_16();
+
+        $var_77 = new class_6();
+        $var_77->var_98 = 'form-productcomments-list';
+        $var_77->var_99 = '';
+        $var_77->var_100 = false;
+        $var_77->var_97 = ['delete'];
+        $var_77->var_78 = false;
+        $var_77->var_82 = $var_7;
+        $var_77->var_84 = 'id_product_comment';
+        $var_77->var_102 = $var_7->trans('Approved Reviews', [], 'Modules.Productcomments.Admin');
+        $var_77->var_79 = $var_7->var_8;
+        $var_77->var_87 = Tools::getAdminTokenLite('AdminModules');
+        $var_77->var_86 = var_103::$var_86 . '&configure=' . $var_7->var_8;
+        $var_77->var_104 = true;
+
+        $var_110 = ($var_110 = Tools::getValue('submitFilter' . $var_77->var_98)) ? $var_110 : 1;
+        $var_111 = ($var_111 = Tools::getValue($var_77->var_98 . '_pagination')) ? $var_111 : 50;
+
+        $var_112 = Configuration::get('PRODUCT_COMMENTS_MODERATE');
+        if (empty($var_112)) {
+            $var_94 = class_2::getByValidate(0, false, (int) $var_110, (int) $var_111, true);
+            $var_113 = (int) class_2::getCountByValidate(0, true);
+        } else {
+            $var_94 = class_2::getByValidate(1, false, (int) $var_110, (int) $var_111);
+            $var_113 = (int) class_2::getCountByValidate(1);
+        }
+
+        $var_77->var_101 = $var_113;
+
+        return $var_77->generateList($var_94, $var_95);
+    }
+
+    public function fn_13()
+    {
+        $var_114 = new class_7(
+            480,
+            [
+                'name' => 'Customer reviews',
+                'link' => '/en/480-customer-reviews',
+                'description' => '<h2>Display customer reviews on your store!</h2>Customer reviews reassure your visitors and help you improve conversion! Encourage your customers to leave a review, display them, and do not forget to use rich snippets to show your products’ satisfaction ratings on search engines: they will be more visible!',
+            ]
+        );
+        $var_115 = $var_114->getData($var_7->var_61->var_91->var_117);
+        $var_7->var_61->var_106->assign([
+            'addons_category' => $var_115,
+        ]);
+
+        return $var_7->var_61->var_106->fetch('module:productcomments/views/templates/admin/addons-suggestion.tpl');
+    }
+
+    public function fn_15()
+    {
+        return [
+            'PRODUCT_COMMENTS_MODERATE' => Tools::getValue('PRODUCT_COMMENTS_MODERATE', Configuration::get('PRODUCT_COMMENTS_MODERATE')),
+            'PRODUCT_COMMENTS_ALLOW_GUESTS' => Tools::getValue('PRODUCT_COMMENTS_ALLOW_GUESTS', Configuration::get('PRODUCT_COMMENTS_ALLOW_GUESTS')),
+            'PRODUCT_COMMENTS_USEFULNESS' => Tools::getValue('PRODUCT_COMMENTS_USEFULNESS', Configuration::get('PRODUCT_COMMENTS_USEFULNESS')),
+            'PRODUCT_COMMENTS_MINIMAL_TIME' => Tools::getValue('PRODUCT_COMMENTS_MINIMAL_TIME', Configuration::get('PRODUCT_COMMENTS_MINIMAL_TIME')),
+            'PRODUCT_COMMENTS_COMMENTS_PER_PAGE' => Tools::getValue('PRODUCT_COMMENTS_COMMENTS_PER_PAGE', Configuration::get('PRODUCT_COMMENTS_COMMENTS_PER_PAGE')),
+            'PRODUCT_COMMENTS_ANONYMISATION' => Tools::getValue('PRODUCT_COMMENTS_ANONYMISATION', Configuration::get('PRODUCT_COMMENTS_ANONYMISATION')),
+        ];
+    }
+
+    public function fn_19($var_60 = 0)
+    {
+        $var_39 = new class_3($var_60);
+
+        return [
+                    'name' => $var_39->var_8,
+                    'id_product_comment_criterion_type' => $var_39->var_41,
+                    'active' => $var_39->var_42,
+                    'id_product_comment_criterion' => $var_39->var_60,
+                ];
+    }
+
+    public function fn_16()
+    {
+        return [
+            'id_product_comment' => [
+                'title' => $var_7->trans('ID', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+                'search' => false,
+            ],
+            'title' => [
+                'title' => $var_7->trans('Review title', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+                'search' => false,
+            ],
+            'content' => [
+                'title' => $var_7->trans('Review', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+                'search' => false,
+            ],
+            'grade' => [
+                'title' => $var_7->trans('Rating', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+                'suffix' => '/5',
+                'search' => false,
+            ],
+            'customer_name' => [
+                'title' => $var_7->trans('Author', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+                'search' => false,
+            ],
+            'name' => [
+                'title' => $var_7->trans('Product', [], 'Modules.Productcomments.Admin'),
+                'type' => 'text',
+                'search' => false,
+            ],
+            'date_add' => [
+                'title' => $var_7->trans('Time of publication', [], 'Modules.Productcomments.Admin'),
+                'type' => 'date',
+                'search' => false,
+            ],
+        ];
+    }
+
+    public function fn_8($var_120 = 0)
+    {
+        $var_121 = class_3::getTypes();
+        $var_27 = [];
+        foreach ($var_121 as $var_44 => $var_45) {
+            $var_27[] = [
+                    'id' => $var_44,
+                    'label' => $var_45,
+                ];
+        }
+
+        $var_39 = new class_3((int) $var_120);
+        $var_122 = $var_39->getCategories();
+
+        $var_124 = Product::getSimpleProducts($var_7->var_61->var_91->var_60);
+        $var_125 = $var_39->getProducts();
+        foreach ($var_124 as $var_44 => $var_55) {
+            if (false !== array_search($var_55['id_product'], $var_125)) {
+                $var_124[$var_44]['selected'] = 1;
+            }
+        }
+
+        if (version_compare(var_18, '1.6', '<')) {
+            $var_127 = [
+                                    'type' => 'categories_select',
+                                    'name' => 'categoryBox',
+                                    'label' => $var_7->trans('Criterion will be restricted to the following categories', [], 'Modules.Productcomments.Admin'),
+                                    'category_tree' => $var_7->fn_20(null, $var_120),
+                                ];
+        } else {
+            $var_127 = [
+                            'type' => 'categories',
+                            'label' => $var_7->trans('Criterion will be restricted to the following categories', [], 'Modules.Productcomments.Admin'),
+                            'name' => 'categoryBox',
+                            'desc' => $var_7->trans('Mark the boxes of categories to which this criterion applies.', [], 'Modules.Productcomments.Admin'),
+                            'tree' => [
+                                'use_search' => false,
+                                'id' => 'categoryBox',
+                                'use_checkbox' => true,
+                                'selected_categories' => $var_122,
+                            ],
+                            
+                            'values' => [
+                                'trads' => [
+                                    'Root' => class_8::getTopCategory(),
+                                    'selected' => $var_7->trans('Selected', [], 'Modules.Productcomments.Admin'),
+                                    'Collapse All' => $var_7->trans('Collapse All', [], 'Modules.Productcomments.Admin'),
+                                    'Expand All' => $var_7->trans('Expand All', [], 'Modules.Productcomments.Admin'),
+                                    'Check All' => $var_7->trans('Check All', [], 'Modules.Productcomments.Admin'),
+                                    'Uncheck All' => $var_7->trans('Uncheck All', [], 'Modules.Productcomments.Admin'),
+                                ],
+                                'selected_cat' => $var_122,
+                                'input_name' => 'categoryBox[]',
+                                'use_radio' => false,
+                                'use_search' => false,
+                                'disabled_categories' => [],
+                                'top_category' => class_8::getTopCategory(),
+                                'use_context' => true,
+                            ],
+                        ];
+        }
+
+        $var_76 = [
+            'form' => [
+                'legend' => [
+                    'title' => $var_7->trans('Add new criterion', [], 'Modules.Productcomments.Admin'),
+                    'icon' => 'icon-cogs',
+                ],
+                'input' => [
+                    [
+                        'type' => 'hidden',
+                        'name' => 'id_product_comment_criterion',
+                    ],
+                    [
+                        'type' => 'text',
+                        'lang' => true,
+                        'label' => $var_7->trans('Criterion name', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'name',
+                        'desc' => $var_7->trans('Maximum length: %s characters', [var_40::var_129], 'Modules.Productcomments.Admin'),
+                    ],
+                    [
+                        'type' => 'select',
+                        'name' => 'id_product_comment_criterion_type',
+                        'label' => $var_7->trans('Application scope of the criterion', [], 'Modules.Productcomments.Admin'),
+                        'options' => [
+                                        'query' => $var_27,
+                                        'id' => 'id',
+                                        'name' => 'label',
+                                    ],
+                    ],
+                    $var_127,
+                    [
+                        'type' => 'products',
+                        'label' => $var_7->trans('The criterion will be restricted to the following products', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'ids_product',
+                        'values' => $var_124,
+                    ],
+                    [
+                        'type' => 'switch',
+                        'is_bool' => true, 
+                        'label' => $var_7->trans('Active', [], 'Modules.Productcomments.Admin'),
+                        'name' => 'active',
+                        'values' => [
+                                        [
+                                            'id' => 'active_on',
+                                            'value' => 1,
+                                            'label' => $var_7->trans('Yes', [], 'Modules.Productcomments.Admin'),
+                                        ],
+                                        [
+                                            'id' => 'active_off',
+                                            'value' => 0,
+                                            'label' => $var_7->trans('No', [], 'Modules.Productcomments.Admin'),
+                                        ],
+                                    ],
+                    ],
+                ],
+            'submit' => [
+                'title' => $var_7->trans('Save', [], 'Modules.Productcomments.Admin'),
+                'class' => 'btn btn-default pull-right',
+                'name' => 'submitEditCriterion',
+                ],
+            ],
+        ];
+
+        $var_77 = new class_4();
+        $var_77->var_78 = false;
+        $var_77->var_79 = $var_7->var_8;
+        $var_80 = new class_5((int) Configuration::get('PS_LANG_DEFAULT'));
+        $var_77->var_81 = $var_80->var_60;
+        $var_77->var_82 = $var_7;
+        $var_77->var_83 = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ? Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') : 0;
+        $var_77->var_84 = $var_7->var_84;
+        $var_77->var_85 = 'submitEditCriterion';
+        $var_77->var_86 = $var_7->var_61->var_57->getAdminLink('AdminModules', false, [], ['configure' => $var_7->var_8, 'tab_module' => $var_7->var_9, 'module_name' => $var_7->var_8]);
+        $var_77->var_87 = Tools::getAdminTokenLite('AdminModules');
+        $var_77->var_88 = [
+            'fields_value' => $var_7->fn_19($var_120),
+            'languages' => $var_7->var_61->var_68->getLanguages(),
+            'id_language' => $var_7->var_61->var_91->var_60,
+        ];
+
+        return $var_77->generateForm([$var_76]);
+    }
+
+    public function fn_20($var_130 = null, $var_120 = 0)
+    {
+        if (is_null($var_130)) {
+            $var_130 = Configuration::get('PS_ROOT_CATEGORY');
+        }
+        $var_131 = (int) Tools::getValue('id_shop');
+        $var_132 = new class_1($var_131);
+        if ($var_120 == 0) {
+            $var_133 = [];
+        } else {
+            $var_134 = new class_3($var_120);
+            $var_133 = $var_134->getCategories();
+        }
+
+        if (class_1::getContext() == var_21::var_135 && Tools::isSubmit('id_shop')) {
+            $var_136 = new class_8($var_132->var_52);
+        } else {
+            $var_136 = new class_8($var_130);
+        }
+        $var_136 = ['id_category' => $var_136->var_60, 'name' => $var_136->var_8[$var_7->var_61->var_91->var_60]];
+
+        $var_77 = new class_9();
+
+        return $var_77->renderCategoryTree($var_136, $var_133, 'categoryBox', false, true);
+    }
+
+    public function fn_21($var_138)
+    {
+        if (isset($var_138['id'])) {
+            
+            $var_139 = $var_7->var_61->var_68->getContainer()->get('product_comment_repository');
+            $var_139->cleanCustomerData($var_138['id']);
+        }
+
+        return true;
+    }
+
+    public function fn_22($var_138)
+    {
+        if (isset($var_138['id'])) {
+            
+            $var_139 = $var_7->var_61->var_68->getContainer()->get('product_comment_repository');
+            $var_143 = isset($var_138['id_lang']) ? $var_138['id_lang'] : $var_7->var_61->var_91->var_60;
+
+            return json_encode($var_139->getCustomerData($var_138['id'], $var_143));
+        }
+    }
+
+    
+    public function fn_23()
+    {
+        $var_145 = [];
+        $var_146 = [];
+
+        $var_146[] = '/modules/productcomments/views/css/productcomments.css';
+        $var_145[] = '/modules/productcomments/views/js/jquery.rating.plugin.js';
+        $var_145[] = '/modules/productcomments/views/js/productListingComments.js';
+        if ($var_7->var_61->var_68 instanceof var_147) {
+            $var_145[] = '/modules/productcomments/views/js/post-comment.js';
+            $var_145[] = '/modules/productcomments/views/js/list-comments.js';
+            $var_145[] = '/modules/productcomments/views/js/jquery.simplePagination.js';
+        }
+        foreach ($var_146 as $var_148) {
+            $var_7->var_61->var_68->registerStylesheet(sha1($var_148), $var_148, ['media' => 'all', 'priority' => 80]);
+        }
+        foreach ($var_145 as $var_150) {
+            $var_7->var_61->var_68->registerJavascript(sha1($var_150), $var_150, ['position' => 'bottom', 'priority' => 80]);
+        }
+    }
+
+    
+    public function fn_24($var_152)
+    {
+        return $var_7->fn_25($var_152['product']) . $var_7->fn_26($var_152['product']);
+    }
+
+    
+    private function fn_25($var_55)
+    {
+        
+        $var_139 = $var_7->var_61->var_68->getContainer()->get('product_comment_repository');
+
+        $var_155 = $var_139->getAverageGrade($var_55->var_60, (bool) Configuration::get('PRODUCT_COMMENTS_MODERATE'));
+        $var_157 = $var_139->getCommentsNumber($var_55->var_60, (bool) Configuration::get('PRODUCT_COMMENTS_MODERATE'));
+        $var_159 = $var_139->isPostAllowed($var_55->var_60, (int) $var_7->var_61->var_160->var_161, (int) $var_7->var_61->var_160->var_162);
+
+        $var_7->var_61->var_106->assign([
+            'post_allowed' => $var_159,
+            'usefulness_enabled' => Configuration::get('PRODUCT_COMMENTS_USEFULNESS'),
+            'average_grade' => $var_155,
+            'nb_comments' => $var_157,
+            'list_comments_url' => $var_7->var_61->var_57->getModuleLink(
+                'productcomments',
+                'ListComments',
+                ['id_product' => $var_55->var_60]
+            ),
+            'update_comment_usefulness_url' => $var_7->var_61->var_57->getModuleLink(
+                'productcomments',
+                'UpdateCommentUsefulness'
+            ),
+            'report_comment_url' => $var_7->var_61->var_57->getModuleLink(
+                'productcomments',
+                'ReportComment'
+            ),
+        ]);
+
+        return $var_7->var_61->var_106->fetch('module:productcomments/views/templates/hook/product-comments-list.tpl');
+    }
+
+    
+    private function fn_26($var_55)
+    {
+        
+        $var_164 = $var_7->var_61->var_68->getContainer()->get('product_comment_criterion_repository');
+        $var_109 = $var_164->getByProduct($var_55->var_60, $var_7->var_61->var_91->var_60);
+
+        $var_7->var_61->var_106->assign([
+            'logged' => (bool) $var_7->var_61->var_160->var_161,
+            'post_comment_url' => $var_7->var_61->var_57->getModuleLink(
+                'productcomments',
+                'PostComment',
+                ['id_product' => $var_55->var_60]
+            ),
+            'moderation_active' => (int) Configuration::get('PRODUCT_COMMENTS_MODERATE'),
+            'criterions' => $var_109,
+            'product' => $var_55,
+        ]);
+
+        return $var_7->var_61->var_106->fetch('module:productcomments/views/templates/hook/post-comment-modal.tpl');
+    }
+
+    public function fn_27($var_167 = null, array $var_168 = [])
+    {
+        $var_139 = $var_7->var_61->var_68->getContainer()->get('product_comment_repository');
+        $var_155 = $var_139->getAverageGrade($var_168['id_product'], Configuration::get('PRODUCT_COMMENTS_MODERATE'));
+        $var_157 = $var_139->getCommentsNumber($var_168['id_product'], Configuration::get('PRODUCT_COMMENTS_MODERATE'));
+        $var_159 = $var_139->isPostAllowed($var_168['id_product'], (int) $var_7->var_61->var_160->var_161, (int) $var_7->var_61->var_160->var_162);
+
+        return [
+            'average_grade' => $var_155,
+            'nb_comments' => $var_157,
+            'post_allowed' => $var_159,
+        ];
+    }
+
+    public function fn_28($var_167 = null, array $var_168 = [])
+    {
+        $var_169 = [];
+        $var_170 = 'module:productcomments/views/templates/hook/';
+
+        if ('displayProductListReviews' === $var_167 || isset($var_168['type']) && 'product_list' === $var_168['type']) {
+            $var_55 = $var_168['product'];
+            $var_171 = $var_55['id_product'];
+            $var_169 = $var_7->fn_27($var_167, ['id_product' => $var_171]);
+
+            $var_169 = array_merge($var_169, [
+                'product' => $var_55,
+                'product_comment_grade_url' => $var_7->var_61->var_57->getModuleLink('productcomments', 'CommentGrade'),
+            ]);
+
+            $var_172 = $var_170 . 'product-list-reviews.tpl';
+        } elseif ($var_7->var_61->var_68 instanceof var_147) {
+            $var_171 = $var_7->var_61->var_68->getProduct()->var_60;
+            $var_169 = $var_7->fn_27($var_167, ['id_product' => $var_171]);
+
+            $var_172 = 'quickview' === Tools::getValue('action') ? $var_170 . 'product-additional-info-quickview.tpl' : $var_170 . 'product-additional-info.tpl';
+        }
+
+        if (empty($var_169) || empty($var_172)) {
+            return false;
+        }
+
+        $var_7->var_106->assign($var_169);
+
+        return $var_7->fetch($var_172);
+    }
+
+    
+    public function fn_29()
+    {
+        
+    }
+}

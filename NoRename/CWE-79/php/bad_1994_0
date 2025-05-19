@@ -1,0 +1,1549 @@
+<?php
+
+
+
+
+class postParser
+{
+	
+	public $mycode_cache = 0;
+
+	
+	public $smilies_cache = 0;
+
+	
+	public $badwords_cache = 0;
+
+	
+	public $base_url;
+
+	
+	public $highlight_cache = array();
+
+	
+	public $options;
+
+	
+	public $list_elements;
+
+	
+	public $list_count;
+
+	
+	public $clear_needed = false;
+
+	
+	function parse_message($message, $options=array())
+	{
+		global $plugins, $mybb;
+
+		$this->clear_needed = false;
+
+		
+		$this->base_url = $mybb->settings['bburl'];
+
+		if($this->base_url != "")
+		{
+			if(my_substr($this->base_url, my_strlen($this->base_url) -1) != "/")
+			{
+				$this->base_url = $this->base_url."/";
+			}
+		}
+
+		
+		$this->options = $options;
+
+		$message = $plugins->run_hooks("parse_message_start", $message);
+
+		
+		$message = str_replace("\r", "", $message);
+
+		
+		if(!empty($this->options['filter_badwords']))
+		{
+			$message = $this->parse_badwords($message);
+		}
+
+		
+		if(!empty($this->options['filter_cdata']))
+		{
+			$message = $this->parse_cdata($message);
+		}
+
+		
+		$code_matches = array();
+		if(!empty($this->options['allow_mycode']) && $mybb->settings['allowcodemycode'] == 1)
+		{
+			
+			$message = str_replace("<mybb-code>\n", "<mybb_code>\n", $message);
+
+			preg_match_all("
+			foreach($code_matches as $point => $part)
+			{
+				if(isset($part[3]))
+				{
+					$part[1] = "[".$part[1]."]";
+					$code_matches[$point][2] = substr_replace($part[0], "", strrpos($part[0], $part[3]), strlen($part[3]));
+					$code_matches[$point][2] = substr_replace($code_matches[$point][2], "", strpos($code_matches[$point][2], $part[1]), strlen($part[1]));
+				}
+			}
+			$message = preg_replace("
+		}
+
+		if(empty($this->options['allow_html']))
+		{
+			$message = $this->parse_html($message);
+			$message = str_replace("&lt;mybb-code&gt;\n", "<mybb-code>\n", $message);
+		}
+		else
+		{
+			
+			$message = preg_replace('
+			$message = $this->fix_javascript($message);
+
+			$find = array("<br />\n", "<br>\n");
+			$replace = array("\n", "\n");
+			$message = str_replace($find, $replace, $message);
+		}
+
+		$message = $plugins->run_hooks("parse_message_htmlsanitized", $message);
+
+		
+		if(!empty($this->options['me_username']) && $mybb->settings['allowmemycode'] == 1)
+		{
+			global $lang;
+
+			$message = preg_replace('
+			$message = preg_replace('
+		}
+
+		$message = $plugins->run_hooks("parse_message_me_mycode", $message);
+
+		
+		if(!empty($this->options['allow_smilies']))
+		{
+			$message = $this->parse_smilies($message, $this->options['allow_html']);
+		}
+
+		
+		if(!empty($this->options['allow_mycode']))
+		{
+			$message = $this->parse_mycode($message);
+		}
+
+		
+		if($mybb->settings['allowlinkmycode'] != 1)
+		{
+			$message = preg_replace("
+		}
+
+		
+		if(!empty($this->options['highlight']))
+		{
+			$message = $this->highlight_message($message, $this->options['highlight']);
+		}
+
+		
+		$message = $plugins->run_hooks("parse_message", $message);
+
+		if(!empty($this->options['allow_mycode']))
+		{
+			
+			if(count($code_matches) > 0)
+			{
+				foreach($code_matches as $text)
+				{
+					if(my_strtolower($text[1]) == "code")
+					{
+						
+						$text[2] = $this->parse_html($text[2]);
+
+						$code = $this->mycode_parse_code($text[2]);
+					}
+					elseif(my_strtolower($text[1]) == "php")
+					{
+						$code = $this->mycode_parse_php($text[2]);
+					}
+					$message = preg_replace("
+				}
+			}
+		}
+
+		if(!isset($this->options['nl2br']) || $this->options['nl2br'] != 0)
+		{
+			$message = nl2br($message);
+			
+			$message = preg_replace("
+			$message = preg_replace("
+		}
+
+		if($this->clear_needed)
+		{
+			$message .= '<br class="clear" />';
+		}
+
+		$message = $plugins->run_hooks("parse_message_end", $message);
+
+		return $message;
+	}
+
+	
+	function parse_html($message)
+	{
+		$message = preg_replace("
+		$message = str_replace("<","&lt;",$message);
+		$message = str_replace(">","&gt;",$message);
+		return $message;
+	}
+
+	
+	function cache_mycode()
+	{
+		global $cache, $lang, $mybb;
+		$this->mycode_cache = array();
+
+		$standard_mycode = $callback_mycode = $nestable_mycode = array();
+		$standard_count = $callback_count = $nestable_count = 0;
+
+		if($mybb->settings['allowbasicmycode'] == 1)
+		{
+			$standard_mycode['b']['regex'] = "
+			$standard_mycode['b']['replacement'] = "<span style=\"font-weight: bold;\" class=\"mycode_b\">$1</span>";
+
+			$standard_mycode['u']['regex'] = "
+			$standard_mycode['u']['replacement'] = "<span style=\"text-decoration: underline;\" class=\"mycode_u\">$1</span>";
+
+			$standard_mycode['i']['regex'] = "
+			$standard_mycode['i']['replacement'] = "<span style=\"font-style: italic;\" class=\"mycode_i\">$1</span>";
+
+			$standard_mycode['s']['regex'] = "
+			$standard_mycode['s']['replacement'] = "<span style=\"text-decoration: line-through;\" class=\"mycode_s\">$1</span>";
+
+			$standard_mycode['hr']['regex'] = "
+			$standard_mycode['hr']['replacement'] = "<hr class=\"mycode_hr\" />";
+
+			++$standard_count;
+		}
+
+		if($mybb->settings['allowsymbolmycode'] == 1)
+		{
+			$standard_mycode['copy']['regex'] = "
+			$standard_mycode['copy']['replacement'] = "&copy;";
+
+			$standard_mycode['tm']['regex'] = "
+			$standard_mycode['tm']['replacement'] = "&
+
+			$standard_mycode['reg']['regex'] = "
+			$standard_mycode['reg']['replacement'] = "&reg;";
+
+			++$standard_count;
+		}
+
+		if($mybb->settings['allowlinkmycode'] == 1)
+		{
+			$callback_mycode['url_simple']['regex'] = "
+			$callback_mycode['url_simple']['replacement'] = array($this, 'mycode_parse_url_callback1');
+
+			$callback_mycode['url_simple2']['regex'] = "
+			$callback_mycode['url_simple2']['replacement'] = array($this, 'mycode_parse_url_callback2');
+
+			$callback_mycode['url_complex']['regex'] = "
+			$callback_mycode['url_complex']['replacement'] = array($this, 'mycode_parse_url_callback1');
+
+			$callback_mycode['url_complex2']['regex'] = "
+			$callback_mycode['url_complex2']['replacement'] = array($this, 'mycode_parse_url_callback2');
+
+			++$callback_count;
+		}
+
+		if($mybb->settings['allowemailmycode'] == 1)
+		{
+			$callback_mycode['email_simple']['regex'] = "
+			$callback_mycode['email_simple']['replacement'] = array($this, 'mycode_parse_email_callback');
+
+			$callback_mycode['email_complex']['regex'] = "
+			$callback_mycode['email_complex']['replacement'] = array($this, 'mycode_parse_email_callback');
+
+			++$callback_count;
+		}
+
+		if($mybb->settings['allowcolormycode'] == 1)
+		{
+			$nestable_mycode['color']['regex'] = "
+			$nestable_mycode['color']['replacement'] = "<span style=\"color: $1;\" class=\"mycode_color\">$2</span>";
+
+			++$nestable_count;
+		}
+
+		if($mybb->settings['allowsizemycode'] == 1)
+		{
+			$nestable_mycode['size']['regex'] = "
+			$nestable_mycode['size']['replacement'] = "<span style=\"font-size: $1;\" class=\"mycode_size\">$2</span>";
+
+			$callback_mycode['size_int']['regex'] = "
+			$callback_mycode['size_int']['replacement'] = array($this, 'mycode_handle_size_callback');
+
+			++$nestable_count;
+			++$callback_count;
+		}
+
+		if($mybb->settings['allowfontmycode'] == 1)
+		{
+			$nestable_mycode['font']['regex'] = "
+			$nestable_mycode['font']['replacement'] = "<span style=\"font-family: $2;\" class=\"mycode_font\">$3</span>";
+
+			++$nestable_count;
+		}
+
+		if($mybb->settings['allowalignmycode'] == 1)
+		{
+			$nestable_mycode['align']['regex'] = "
+			$nestable_mycode['align']['replacement'] = "<div style=\"text-align: $1;\" class=\"mycode_align\">$2</div>";
+
+			++$nestable_count;
+		}
+
+		$custom_mycode = $cache->read("mycode");
+
+		
+		if(is_array($custom_mycode))
+		{
+			foreach($custom_mycode as $key => $mycode)
+			{
+				$mycode['regex'] = str_replace("\x0", "", $mycode['regex']);
+				$custom_mycode[$key]['regex'] = "
+
+				++$standard_count;
+			}
+			$mycode = array_merge($standard_mycode, $custom_mycode);
+		}
+		else
+		{
+			$mycode = $standard_mycode;
+		}
+
+		
+		foreach($mycode as $code)
+		{
+			$this->mycode_cache['standard']['find'][] = $code['regex'];
+			$this->mycode_cache['standard']['replacement'][] = $code['replacement'];
+		}
+
+		
+		foreach($nestable_mycode as $code)
+		{
+			$this->mycode_cache['nestable'][] = array('find' => $code['regex'], 'replacement' => $code['replacement']);
+		}
+
+		
+		foreach($callback_mycode as $code)
+		{
+			$this->mycode_cache['callback'][] = array('find' => $code['regex'], 'replacement' => $code['replacement']);
+		}
+
+		$this->mycode_cache['standard_count'] = $standard_count;
+		$this->mycode_cache['callback_count'] = $callback_count;
+		$this->mycode_cache['nestable_count'] = $nestable_count;
+	}
+
+	
+	function parse_mycode($message, $options=array())
+	{
+		global $lang, $mybb;
+
+		if(empty($this->options))
+		{
+			$this->options = $options;
+		}
+
+		
+		if($this->mycode_cache == 0)
+		{
+			$this->cache_mycode();
+		}
+
+		
+		$message = $this->mycode_parse_quotes($message);
+
+		
+		if(!empty($this->options['allow_imgcode']))
+		{
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+		}
+		else
+		{
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+		}
+
+		
+		if(!empty($this->options['allow_videocode']))
+		{
+			$message = preg_replace_callback("
+		}
+		else
+		{
+			$message = preg_replace_callback("
+		}
+
+		$message = str_replace('$', '&
+
+		
+		if($this->mycode_cache['standard_count'] > 0)
+		{
+			$message = preg_replace($this->mycode_cache['standard']['find'], $this->mycode_cache['standard']['replacement'], $message);
+		}
+
+		if($this->mycode_cache['callback_count'] > 0)
+		{
+			foreach($this->mycode_cache['callback'] as $replace)
+			{
+				$message = preg_replace_callback($replace['find'], $replace['replacement'], $message);
+			}
+		}
+
+		
+		if($this->mycode_cache['nestable_count'] > 0)
+		{
+			foreach($this->mycode_cache['nestable'] as $mycode)
+			{
+				while(preg_match($mycode['find'], $message))
+				{
+					$message = preg_replace($mycode['find'], $mycode['replacement'], $message);
+				}
+			}
+		}
+
+		
+		if($mybb->settings['allowlistmycode'] == 1)
+		{
+			$this->list_elements = array();
+			$this->list_count = 0;
+
+			
+			$message = preg_replace_callback("
+
+			
+			for($i = $this->list_count; $i > 0; $i--)
+			{
+				
+				$message = preg_replace_callback("
+			}
+		}
+
+		$message = $this->mycode_auto_url($message);
+
+		return $message;
+	}
+
+	
+	function cache_smilies()
+	{
+		global $cache, $mybb, $theme, $templates;
+		$this->smilies_cache = array();
+
+		$smilies = $cache->read("smilies");
+		if(is_array($smilies))
+		{
+			$extra_class = $onclick = '';
+			foreach($smilies as $sid => $smilie)
+			{
+				$smilie['find'] = explode("\n", $smilie['find']);
+				$smilie['image'] = str_replace("{theme}", $theme['imgdir'], $smilie['image']);
+				$smilie['image'] = htmlspecialchars_uni($mybb->get_asset_url($smilie['image']));
+				$smilie['name'] = htmlspecialchars_uni($smilie['name']);
+
+				foreach($smilie['find'] as $s)
+				{
+					$s = $this->parse_html($s);
+					eval("\$smilie_template = \"".$templates->get("smilie", 1, 0)."\";");
+					$this->smilies_cache[$s] = $smilie_template;
+					
+					if($s[0] == ";")
+					{
+						$this->smilies_cache += array(
+							"&amp$s" => "&amp$s",
+							"&lt$s" => "&lt$s",
+							"&gt$s" => "&gt$s",
+						);
+					}
+				}
+			}
+		}
+	}
+
+	
+	function parse_smilies($message, $allow_html=0)
+	{
+		if($this->smilies_cache == 0)
+		{
+			$this->cache_smilies();
+		}
+
+		
+		if(!count($this->smilies_cache))
+		{
+			return $message;
+		}
+
+		
+		preg_match_all("
+		if(count($bad_matches[0]) > 0)
+		{
+			$message = preg_replace("
+		}
+
+		$message = strtr($message, $this->smilies_cache);
+
+		
+		if(count($bad_matches[0]) > 0)
+		{
+			$message = explode("<mybb-bad-sm>", $message);
+			$i = 0;
+			foreach($bad_matches[0] as $match)
+			{
+				$message[$i] .= $match;
+				$i++;
+			}
+			$message = implode("", $message);
+		}
+
+		return $message;
+	}
+
+	
+	function cache_badwords()
+	{
+		global $cache;
+		$this->badwords_cache = array();
+		$this->badwords_cache = $cache->read("badwords");
+	}
+
+	
+	function parse_badwords($message, $options=array())
+	{
+		if(empty($this->options))
+		{
+			$this->options = $options;
+		}
+
+		if($this->badwords_cache == 0)
+		{
+			$this->cache_badwords();
+		}
+		if(is_array($this->badwords_cache))
+		{
+			reset($this->badwords_cache);
+			foreach($this->badwords_cache as $bid => $badword)
+			{
+				if(!$badword['replacement'])
+				{
+					$badword['replacement'] = "*****";
+				}
+
+				if(!$badword['regex'])
+				{
+					$badword['badword'] = $this->generate_regex($badword['badword']);
+				}
+
+				$message = preg_replace('
+			}
+		}
+		if(!empty($this->options['strip_tags']))
+		{
+			$message = strip_tags($message);
+		}
+		return $message;
+	}
+
+	
+	function generate_regex($bad_word = "")
+	{
+		if($bad_word == "")
+		{
+			return;
+		}
+
+		
+		$ptrn = array('/\\\\/', '/([\[\^\$\.\|\?\(\)\{\}]{1})/', '/\*\++/', '/\++\*/', '/\*+/');
+		$rplc = array('\\\\\\\\','\\\\${1}', '*', '*', '[^\s\n]*');
+		$bad_word = preg_replace($ptrn, $rplc, $bad_word);
+		
+		
+		$bad_word = explode('+', $bad_word);
+		$trap = "";
+		$plus = 0;
+		foreach($bad_word as $bad_piece)
+		{
+			if($bad_piece)
+			{
+				$trap .= $plus ? '[^\s\n]{'.$plus.'}'.$bad_piece : $bad_piece;
+				$plus = 1;
+			}
+			else
+			{
+				$plus++;
+			}
+		}
+		
+		
+		if($plus > 1)
+		{
+			$trap .= '[^\s\n]{'.($plus-1).'}';
+		}
+		
+		return '\b'.$trap.'\b';
+	}
+
+	
+	function parse_cdata($message)
+	{
+		$message = str_replace(']]>', ']]]]><![CDATA[>', $message);
+
+		return $message;
+	}
+
+	
+	function fix_javascript($message)
+	{
+		$js_array = array(
+			"
+			"
+		);
+
+		
+		$message = preg_replace($js_array, "$1\xE2\x80\x8C$2$6", $message);
+
+		return $message;
+	}
+
+	
+	function mycode_handle_size($size, $text)
+	{
+		global $templates;
+
+		$size = (int)$size;
+
+		if($size < 1)
+		{
+			$size = 1;
+		}
+
+		if($size > 50)
+		{
+			$size = 50;
+		}
+
+		$text = str_replace("\'", "'", $text);
+
+		eval("\$mycode_size = \"".$templates->get("mycode_size_int", 1, 0)."\";");
+		return $mycode_size;
+	}
+
+	
+	function mycode_handle_size_callback($matches)
+	{
+		return $this->mycode_handle_size($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_parse_quotes($message, $text_only=false)
+	{
+		global $lang, $templates, $theme, $mybb;
+
+		
+		$pattern = "
+		$pattern_callback = "
+
+		if($text_only == false)
+		{
+			$replace = "<blockquote class=\"mycode_quote\"><cite>$lang->quote</cite>$1</blockquote>\n";
+			$replace_callback = array($this, 'mycode_parse_post_quotes_callback1');
+		}
+		else
+		{
+			$replace = empty($this->options['signature_parse']) ? "\n{$lang->quote}\n--\n$1\n--\n" : "$1";
+			$replace_callback = array($this, 'mycode_parse_post_quotes_callback2');
+		}
+
+		do
+		{
+			
+			$previous_message = $message;
+			$message = preg_replace($pattern, $replace, $message, -1, $count);
+			$message = preg_replace_callback($pattern_callback, $replace_callback, $message, -1, $count_callback);
+			if(!$message)
+			{
+				$message = $previous_message;
+				break;
+			}
+		} while($count || $count_callback);
+
+		if($text_only == false)
+		{
+			$find = array(
+				"
+				"
+			);
+
+			$replace = array(
+				"</cite><br />",
+				"</blockquote>"
+			);
+			$message = preg_replace($find, $replace, $message);
+		}
+		return $message;
+	}
+
+	
+	function mycode_parse_post_quotes($message, $username, $text_only=false)
+	{
+		global $lang, $templates, $theme, $mybb;
+
+		$linkback = $date = "";
+
+		$message = trim($message);
+		$message = preg_replace("
+
+		if(!$message)
+		{
+			return '';
+		}
+
+		$username .= "'";
+		$delete_quote = true;
+
+		preg_match("
+		if((int)$match[1])
+		{
+			$pid = (int)$match[1];
+			$url = $mybb->settings['bburl']."/".get_post_link($pid)."
+			if(defined("IN_ARCHIVE"))
+			{
+				$linkback = " <a href=\"{$url}\">[ -> ]</a>";
+			}
+			else
+			{
+				eval("\$linkback = \" ".$templates->get("postbit_gotopost", 1, 0)."\";");
+			}
+
+			$username = preg_replace("
+			$delete_quote = false;
+		}
+
+		unset($match);
+		preg_match("
+		if((int)$match[1])
+		{
+			if($match[1] < TIME_NOW)
+			{
+				if($text_only)
+				{
+					$postdate = my_date('normal', (int)$match[1]);
+				}
+				else
+				{
+					$postdate = my_date('relative', (int)$match[1]);
+				}
+				$date = " ({$postdate})";
+			}
+			$username = preg_replace("
+			$delete_quote = false;
+		}
+
+		if($delete_quote)
+		{
+			$username = my_substr($username, 0, my_strlen($username)-1);
+		}
+
+		if(!empty($this->options['allow_html']))
+		{
+			$username = htmlspecialchars_uni($username);
+		}
+
+		if($text_only)
+		{
+			return "\n{$username} {$lang->wrote}{$date}\n--\n{$message}\n--\n";
+		}
+		else
+		{
+			$span = "";
+			if(!$delete_quote)
+			{
+				$span = "<span>{$date}</span>";
+			}
+
+			eval("\$mycode_quote = \"".$templates->get("mycode_quote_post", 1, 0)."\";");
+			return $mycode_quote;
+		}
+	}
+
+	
+	function mycode_parse_post_quotes_callback1($matches)
+	{
+		return $this->mycode_parse_post_quotes($matches[4],$matches[2].$matches[3]);
+	}
+
+	
+	function mycode_parse_post_quotes_callback2($matches)
+	{
+		return $this->mycode_parse_post_quotes($matches[4],$matches[2].$matches[3], true);
+	}
+
+	
+	function mycode_parse_code($code, $text_only=false)
+	{
+		global $lang, $templates;
+
+		if($text_only == true)
+		{
+			return empty($this->options['signature_parse']) ? "\n{$lang->code}\n--\n{$code}\n--\n" : $code;
+		}
+
+		
+		$code = preg_replace('
+		$code = rtrim($code);
+		$original = preg_replace('
+
+		if(empty($original))
+		{
+			return;
+		}
+
+		$code = str_replace('$', '&
+		$code = preg_replace('
+		$code = str_replace('\\', '&
+		$code = str_replace("\t", '&nbsp;&nbsp;&nbsp;&nbsp;', $code);
+		$code = str_replace("  ", '&nbsp;&nbsp;', $code);
+
+		eval("\$mycode_code = \"".$templates->get("mycode_code", 1, 0)."\";");
+		return $mycode_code;
+	}
+
+	
+	function mycode_parse_code_callback($matches)
+	{
+		return $this->mycode_parse_code($matches[1], true);
+	}
+
+	
+	function mycode_parse_php($str, $bare_return = false, $text_only = false)
+	{
+		global $lang, $templates;
+
+		if($text_only == true)
+		{
+			return empty($this->options['signature_parse']) ? "\n{$lang->php_code}\n--\n{$str}\n--\n" : $str;
+		}
+
+		
+		$str = preg_replace('
+		$str = rtrim($str);
+
+		$original = preg_replace('
+
+		if(empty($original))
+		{
+			return;
+		}
+
+		
+		$added_open_tag = false;
+		if(!preg_match("
+		{
+			$added_open_tag = true;
+			$str = "<?php \n".$str;
+		}
+
+		$added_end_tag = false;
+		if(!preg_match("
+		{
+			$added_end_tag = true;
+			$str = $str." \n?>";
+		}
+
+		$code = @highlight_string($str, true);
+
+		
+		$code = preg_replace('
+		$code = preg_replace("
+		$code = preg_replace("
+		$code = str_replace("\\", '&
+		$code = str_replace('$', '&
+		$code = preg_replace("
+
+		if($added_open_tag)
+		{
+			$code = preg_replace("
+		}
+
+		if($added_end_tag)
+		{
+			$code = str_replace("?&gt;</span></code>", "</span></code>", $code);
+			
+			$code = str_replace("?&gt;</code>", "</code>", $code);
+		}
+
+		$code = preg_replace("
+		$code = str_replace("<code>", "<div dir=\"ltr\"><code>", $code);
+		$code = str_replace("</code>", "</code></div>", $code);
+		$code = preg_replace("
+
+		if($bare_return)
+		{
+			return $code;
+		}
+
+		
+		eval("\$mycode_php = \"".$templates->get("mycode_php", 1, 0)."\";");
+		return $mycode_php;
+	}
+
+	
+	function mycode_parse_php_callback($matches)
+	{
+		return $this->mycode_parse_php($matches[1], false, true);
+	}
+
+	
+	function mycode_parse_url($url, $name="")
+	{
+		global $templates;
+		if(!preg_match("
+		{
+			$url = "http:
+		}
+
+		if(!empty($this->options['allow_html']))
+		{
+			$url = $this->parse_html($url);
+		}
+
+		if(!$name)
+		{
+			$name = $url;
+		}
+
+		if($name == $url && (!isset($this->options['shorten_urls']) || !empty($this->options['shorten_urls'])))
+		{
+			$name = htmlspecialchars_decode($name);
+			if(my_strlen($name) > 55)
+			{
+				$name = my_substr($name , 0, 40).'...'.my_substr($name , -10);
+			}
+			$name = htmlspecialchars_uni($name);
+		}
+
+		if(!empty($this->options['nofollow_on']))
+		{
+			$rel = " rel=\"noopener nofollow\"";
+		}
+		else
+		{
+			$rel = " rel=\"noopener\"";
+		}
+
+		
+		$url = $this->encode_url($url);
+		$name = $this->parse_badwords(preg_replace("
+
+		eval("\$mycode_url = \"".$templates->get("mycode_url", 1, 0)."\";");
+		return $mycode_url;
+	}
+
+	
+	function mycode_parse_url_callback1($matches)
+	{
+		if(!isset($matches[3]))
+		{
+			$matches[3] = '';
+		}
+		return $this->mycode_parse_url($matches[1].$matches[2], $matches[3]);
+	}
+
+	
+	function mycode_parse_url_callback2($matches)
+	{
+		if(!isset($matches[2]))
+		{
+			$matches[2] = '';
+		}
+		return $this->mycode_parse_url($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_parse_img($url, $dimensions=array(), $align='')
+	{
+		global $lang, $templates;
+		$url = trim($url);
+		$url = str_replace("\n", "", $url);
+		$url = str_replace("\r", "", $url);
+
+		if(!empty($this->options['allow_html']))
+		{
+			$url = $this->parse_html($url);
+		}
+
+		$css_align = '';
+		if($align == "right")
+		{
+			$css_align = ' style="float: right;"';
+		}
+		else if($align == "left")
+		{
+			$css_align = ' style="float: left;"';
+		}
+
+		if($align)
+		{
+			$this->clear_needed = true;
+		}
+
+		$alt = basename($url);
+		$alt = htmlspecialchars_decode($alt);
+		if(my_strlen($alt) > 55)
+		{
+			$alt = my_substr($alt, 0, 40).'...'.my_substr($alt, -10);
+		}
+		$alt = $this->encode_url($alt);
+
+		$alt = $lang->sprintf($lang->posted_image, $alt);
+		$width = $height = '';
+		if(isset($dimensions[0]) && $dimensions[0] > 0 && isset($dimensions[1]) && $dimensions[1] > 0)
+		{
+			$width = " width=\"{$dimensions[0]}\"";
+			$height = " height=\"{$dimensions[1]}\"";
+		}
+
+		$url = $this->encode_url($url);
+
+		eval("\$mycode_img = \"".$templates->get("mycode_img", 1, 0)."\";");
+		return $mycode_img;
+	}
+
+	
+	function mycode_parse_img_callback1($matches)
+	{
+		return $this->mycode_parse_img($matches[2]);
+	}
+
+	
+	function mycode_parse_img_callback2($matches)
+	{
+		return $this->mycode_parse_img($matches[4], array($matches[1], $matches[2]));
+	}
+
+	
+	function mycode_parse_img_callback3($matches)
+	{
+		return $this->mycode_parse_img($matches[3], array(), $matches[1]);
+	}
+
+	
+	function mycode_parse_img_callback4($matches)
+	{
+		return $this->mycode_parse_img($matches[5], array($matches[1], $matches[2]), $matches[3]);
+	}
+
+	
+	function mycode_parse_img_disabled($url)
+	{
+		global $lang;
+		$url = trim($url);
+		$url = str_replace("\n", "", $url);
+		$url = str_replace("\r", "", $url);
+		$url = str_replace("\'", "'", $url);
+
+		$image = $lang->sprintf($lang->posted_image, $this->mycode_parse_url($url));
+		return $image;
+	}
+
+	
+	function mycode_parse_img_disabled_callback1($matches)
+	{
+		return $this->mycode_parse_img_disabled($matches[2]);
+	}
+
+	
+	function mycode_parse_img_disabled_callback2($matches)
+	{
+		return $this->mycode_parse_img_disabled($matches[4]);
+	}
+
+	
+	function mycode_parse_img_disabled_callback3($matches)
+	{
+		return $this->mycode_parse_img_disabled($matches[3]);
+	}
+
+	
+	function mycode_parse_img_disabled_callback4($matches)
+	{
+		return $this->mycode_parse_img_disabled($matches[5]);
+	}
+
+	
+	function mycode_parse_email($email, $name="")
+	{
+		global $templates;
+
+		if(!$name)
+		{
+			$name = $email;
+		}
+		if(preg_match("/^([a-zA-Z0-9-_\+\.]+?)@[a-zA-Z0-9-]+\.[a-zA-Z0-9\.-]+$/si", $email))
+		{
+			$email = $email;
+		}
+		elseif(preg_match("/^([a-zA-Z0-9-_\+\.]+?)@[a-zA-Z0-9-]+\.[a-zA-Z0-9\.-]+\?(.*?)$/si", $email))
+		{
+			$email = htmlspecialchars_uni($email);
+		}
+
+		eval("\$mycode_email = \"".$templates->get("mycode_email", 1, 0)."\";");
+		return $mycode_email;
+	}
+
+	
+	function mycode_parse_email_callback($matches)
+	{
+		if(!isset($matches[2]))
+		{
+			$matches[2] = '';
+		}
+		return $this->mycode_parse_email($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_parse_video($video, $url)
+	{
+		global $templates;
+
+		if(empty($video) || empty($url))
+		{
+			return "[video={$video}]{$url}[/video]";
+		}
+
+		
+		if(false === filter_var($url, FILTER_VALIDATE_URL))
+		{
+            return "[video={$video}]{$url}[/video]";
+        }
+
+		$parsed_url = @parse_url(urldecode($url));
+		if($parsed_url === false)
+		{
+			return "[video={$video}]{$url}[/video]";
+		}
+
+		$fragments = array();
+		if($parsed_url['fragment'])
+		{
+			$fragments = explode("&", $parsed_url['fragment']);
+		}
+
+		if($video == "liveleak")
+		{
+			
+			$parsed_url['query'] = "i".substr($parsed_url['query'], 1);
+		}
+
+		$queries = explode("&", $parsed_url['query']);
+
+		$input = array();
+		foreach($queries as $query)
+		{
+			list($key, $value) = explode("=", $query);
+			$key = str_replace("amp;", "", $key);
+			$input[$key] = $value;
+		}
+
+		$path = explode('/', $parsed_url['path']);
+
+		switch($video)
+		{
+			case "dailymotion":
+				if(isset($path[2]))
+				{
+					list($id) = explode('_', $path[2], 2); 
+				}
+				else
+				{
+					$id = $path[1]; 
+				}
+				break;
+			case "metacafe":
+				$id = $path[2]; 
+				$title = htmlspecialchars_uni($path[3]);
+				break;
+			case "myspacetv":
+				$id = $path[4]; 
+				break;
+			case "facebook":
+				if(isset($input['v']))
+				{
+					$id = $input['v']; 
+				}
+				elseif(substr($path[3], 0, 3) == 'vb.')
+				{
+					$id = $path[4]; 
+				}
+				else
+				{
+					$id = $path[3]; 
+				}
+				break;
+			case "mixer":
+				$id = $path[1]; 
+				break;
+			case "liveleak":
+				$id = $input['i']; 
+				break;
+			case "yahoo":
+				if(isset($path[2]))
+				{
+					$id = $path[2]; 
+				}
+				else
+				{
+					$id = $path[1]; 
+				}
+				
+				$domain = explode('.', $parsed_url['host']);
+				if($domain[0] != 'screen' && preg_match('
+				{
+					$local = "{$domain[0]}.";
+				}
+				else
+				{
+					$local = '';
+				}
+				break;
+			case "vimeo":
+				if(isset($path[3]))
+				{
+					$id = $path[3]; 
+				}
+				else
+				{
+					$id = $path[1]; 
+				}
+				break;
+			case "youtube":
+				if($fragments[0])
+				{
+					$id = str_replace('!v=', '', $fragments[0]); 
+				}
+				elseif($input['v'])
+				{
+					$id = $input['v']; 
+				}
+				else
+				{
+					$id = $path[1]; 
+				}
+				break;
+			case "twitch":
+				if(count($path) >= 3 && $path[1] == 'videos')
+				{
+					
+					$id = 'video=v'.$path[2];
+				}
+				elseif(count($path) >= 4 && $path[2] == 'v')
+				{
+					
+					$id = 'video=v'.$path[3];
+				}
+				elseif(count($path) >= 2)
+				{
+					
+					$id = 'channel='.$path[1];
+				}
+				break;
+			default:
+				return "[video={$video}]{$url}[/video]";
+		}
+
+		if(empty($id))
+		{
+			return "[video={$video}]{$url}[/video]";
+		}
+
+		$id = $this->encode_url($id);
+
+		eval("\$video_code = \"".$templates->get("video_{$video}_embed", 1, 0)."\";");
+		return $video_code;
+	}
+
+	
+	function mycode_parse_video_callback($matches)
+	{
+		return $this->mycode_parse_video($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_parse_video_disabled($url)
+	{
+		global $lang;
+		$url = trim($url);
+		$url = str_replace("\n", "", $url);
+		$url = str_replace("\r", "", $url);
+		$url = str_replace("\'", "'", $url);
+
+		$video = $lang->sprintf($lang->posted_video, $this->mycode_parse_url($url));
+		return $video;
+	}
+
+	
+	function mycode_parse_video_disabled_callback($matches)
+	{
+		return $this->mycode_parse_video_disabled($matches[2]);
+	}
+
+	
+	function mycode_auto_url($message)
+	{
+		$message = " ".$message;
+
+		
+		
+		$message = preg_replace_callback("
+		$message = preg_replace_callback("
+		$message = my_substr($message, 1);
+
+		return $message;
+	}
+
+	
+	function mycode_auto_url_callback($matches=array())
+	{
+		
+		
+		if(count($matches) == 1)
+		{
+			return $matches[0];
+		}
+
+		$external = '';
+		
+		while(my_substr($matches[4], -1) == ')')
+		{
+			if(substr_count($matches[4], ')') > substr_count($matches[4], '('))
+			{
+				$matches[4] = my_substr($matches[4], 0, -1);
+				$external = ')'.$external;
+			}
+			else
+			{
+				break;
+			}
+
+			
+			$last_char = my_substr($matches[4], -1);
+			while($last_char == '.' || $last_char == ',' || $last_char == '?' || $last_char == '!')
+			{
+				$matches[4] = my_substr($matches[4], 0, -1);
+				$external = $last_char.$external;
+				$last_char = my_substr($matches[4], -1);
+			}
+		}
+		$url = "{$matches[2]}{$matches[3]}{$matches[4]}";
+
+		return $matches[1].$this->mycode_parse_url($url, $url).$external;
+	}
+
+	
+	function mycode_parse_list($message, $type="")
+	{
+		
+		if(strpos($message, '[*]') === false)
+		{
+			$message = "[*]{$message}";
+		}
+
+		$message = preg_split("
+		if(isset($message[0]) && trim($message[0]) == '')
+		{
+			array_shift($message);
+		}
+		$message = '<li>'.implode("</li>\n<li>", $message)."</li>\n";
+
+		if($type)
+		{
+			$list = "\n<ol type=\"$type\" class=\"mycode_list\">$message</ol>\n";
+		}
+		else
+		{
+			$list = "<ul class=\"mycode_list\">$message</ul>\n";
+		}
+		$list = preg_replace("
+		return $list;
+	}
+
+	
+	function mycode_parse_list_callback($matches)
+	{
+		return $this->mycode_parse_list($matches[3], $matches[2]);
+	}
+
+	
+	function mycode_prepare_list($matches)
+	{
+		
+		if(strcasecmp($matches[1], '[/list]') == 0)
+		{
+			$count = array_pop($this->list_elements);
+			if($count !== NULL)
+			{
+				return "[/list&{$count}]";
+			}
+			else
+			{
+				
+				return $matches[0];
+			}
+		}
+		else
+		{
+			++$this->list_count;
+			$this->list_elements[] = $this->list_count;
+			if(!empty($matches[2]))
+			{
+				return "[list{$matches[2]}&{$this->list_count}]";
+			}
+			else
+			{
+				return "[list&{$this->list_count}]";
+			}
+		}
+	}
+
+	
+	function strip_smilies($message)
+	{
+		if($this->smilies_cache == 0)
+		{
+			$this->cache_smilies();
+		}
+		if(is_array($this->smilies_cache))
+		{
+			$message = str_replace($this->smilies_cache, array_keys($this->smilies_cache), $message);
+		}
+		return $message;
+	}
+
+	
+	function highlight_message($message, $highlight)
+	{
+		if(empty($this->highlight_cache))
+		{
+			$this->highlight_cache = build_highlight_array($highlight);
+		}
+
+		if(is_array($this->highlight_cache) && !empty($this->highlight_cache))
+		{
+			$message = preg_replace(array_keys($this->highlight_cache), $this->highlight_cache, $message);
+		}
+
+		return $message;
+	}
+
+	
+	function text_parse_message($message, $options=array())
+	{
+		global $plugins;
+
+		if(empty($this->options))
+		{
+			$this->options = $options;
+		}
+		else
+		{
+			foreach($options as $option_name => $option_value)
+			{
+				$this->options[$option_name] = $option_value;
+			}
+		}
+
+		
+		if(!empty($this->options['filter_badwords']))
+		{
+			$message = $this->parse_badwords($message);
+		}
+
+		
+		$message = $this->mycode_parse_quotes($message, true);
+
+		$message = preg_replace_callback("
+		$message = preg_replace_callback("
+
+		$find = array(
+			"
+			"
+			"
+			"
+			"
+			"
+		);
+
+		$replace = array(
+			"$2",
+			"$2",
+			"$4",
+			"$3 ($1$2)",
+			"$2 ($1)",
+			"",
+		);
+		
+		$messageBefore = "";
+		
+		for($cnt = 1; $cnt < 20 && $message != $messageBefore; $cnt++)
+		{
+			$messageBefore = $message;
+			$message = preg_replace($find, $replace, $messageBefore);
+		}
+
+		
+		if(!empty($this->options['me_username']))
+		{
+			global $lang;
+
+			$message = preg_replace('
+			$message = preg_replace('
+		}
+
+		
+		$this->list_elements = array();
+		$this->list_count = 0;
+
+		
+		$message = preg_replace_callback("
+
+		
+		for($i = $this->list_count; $i > 0; $i--)
+		{
+			
+			$message = preg_replace_callback("
+		}
+
+		
+		$message = $plugins->run_hooks("text_parse_message", $message);
+
+		return $message;
+	}
+
+	
+	function encode_url($url)
+	{
+		$entities = array('$' => '%24', '&
+
+		$url = str_replace(array_keys($entities), array_values($entities), $url);
+
+		return $url;
+	}
+}

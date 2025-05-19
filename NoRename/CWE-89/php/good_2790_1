@@ -1,0 +1,476 @@
+<?php
+
+
+
+
+
+
+$langs->load("admin");
+$langs->load('other');
+
+if (! $user->admin) accessforbidden();
+
+$dirstandard = array();
+$dirsmartphone = array();
+$dirmenus=array_merge(array("/core/menus/"),(array) $conf->modules_parts['menus']);
+foreach($dirmenus as $dirmenu)
+{
+    $dirstandard[]=$dirmenu.'standard';
+    $dirsmartphone[]=$dirmenu.'smartphone';
+}
+
+$action=GETPOST('action','aZ09');
+
+$menu_handler_top=$conf->global->MAIN_MENU_STANDARD;
+$menu_handler_smartphone=$conf->global->MAIN_MENU_SMARTPHONE;
+$menu_handler_top=preg_replace('/_backoffice.php/i','',$menu_handler_top);
+$menu_handler_top=preg_replace('/_frontoffice.php/i','',$menu_handler_top);
+$menu_handler_smartphone=preg_replace('/_backoffice.php/i','',$menu_handler_smartphone);
+$menu_handler_smartphone=preg_replace('/_frontoffice.php/i','',$menu_handler_smartphone);
+
+$menu_handler=$menu_handler_top;
+
+if (GETPOST("handler_origine")) $menu_handler=GETPOST("handler_origine");
+if (GETPOST("menu_handler"))    $menu_handler=GETPOST("menu_handler");
+
+
+
+
+
+if ($action == 'update')
+{
+    if (! $_POST['cancel'])
+    {
+        $leftmenu=''; $mainmenu='';
+        if (! empty($_POST['menuIdParent']) && ! is_numeric($_POST['menuIdParent']))
+        {
+            $tmp=explode('&',$_POST['menuIdParent']);
+            foreach($tmp as $s)
+            {
+                if (preg_match('/fk_mainmenu=/',$s))
+                {
+                    $mainmenu=preg_replace('/fk_mainmenu=/','',$s);
+                }
+                if (preg_match('/fk_leftmenu=/',$s))
+                {
+                    $leftmenu=preg_replace('/fk_leftmenu=/','',$s);
+                }
+            }
+        }
+
+        $menu = new Menubase($db);
+        $result=$menu->fetch(GETPOST('menuId', 'int'));
+        if ($result > 0)
+        {
+            $menu->titre=GETPOST('titre', 'alpha');
+            $menu->leftmenu=GETPOST('leftmenu', 'alpha');
+            $menu->url=GETPOST('url','alpha');
+            $menu->langs=GETPOST('langs','alpha');
+            $menu->position=GETPOST('position','int');
+            $menu->enabled=GETPOST('enabled','alpha');
+            $menu->perms=GETPOST('perms','alpha');
+            $menu->target=GETPOST('target','alpha');
+            $menu->user=GETPOST('user','alpha');
+            if (is_numeric(GETPOST('menuIdParent','alpha')))
+            {
+            	$menu->fk_menu=GETPOST('menuIdParent','alpha');
+            }
+            else
+            {
+    	       	if (GETPOST('type','alpha') == 'top') $menu->fk_menu=0;
+    	       	else $menu->fk_menu=-1;
+            	$menu->fk_mainmenu=$mainmenu;
+            	$menu->fk_leftmenu=$leftmenu;
+            }
+
+            $result=$menu->update($user);
+            if ($result > 0)
+            {
+	            setEventMessages($langs->trans("RecordModifiedSuccessfully"), null, 'mesgs');
+            }
+            else
+            {
+	            setEventMessages($menu->error, $menu->errors, 'errors');
+            }
+        }
+        else
+        {
+	        setEventMessages($menu->error, $menu->errors, 'errors');
+        }
+        $action = "edit";
+    }
+    else
+    {
+        header("Location: ".DOL_URL_ROOT."/admin/menus/index.php?menu_handler=".$menu_handler);
+        exit;
+    }
+
+    if ($_GET['return'])
+    {
+        header("Location: ".DOL_URL_ROOT."/admin/menus/index.php?menu_handler=".$menu_handler);
+        exit;
+    }
+}
+
+if ($action == 'add')
+{
+    if ($_POST['cancel'])
+    {
+        header("Location: ".DOL_URL_ROOT."/admin/menus/index.php?menu_handler=".$menu_handler);
+        exit;
+    }
+
+    $leftmenu=''; $mainmenu='';
+    if (GETPOST('menuId','int') && ! is_numeric(GETPOST('menuId','int')))
+    {
+	    $tmp=explode('&',GETPOST('menuId','int'));
+	    foreach($tmp as $s)
+	    {
+	    	if (preg_match('/fk_mainmenu=/',$s))
+	    	{
+				$mainmenu=preg_replace('/fk_mainmenu=/','',$s);
+	    	}
+	    	if (preg_match('/fk_leftmenu=/',$s))
+	    	{
+	    		$leftmenu=preg_replace('/fk_leftmenu=/','',$s);
+	    	}
+	    }
+    }
+
+    $langs->load("errors");
+
+    $error=0;
+    if (! $error && ! $_POST['menu_handler'])
+    {
+	    setEventMessages($langs->trans("ErrorFieldRequired", $langs->transnoentities("MenuHandler")), null, 'errors');
+        $action = 'create';
+        $error++;
+    }
+    if (! $error && ! $_POST['type'])
+    {
+	    setEventMessages($langs->trans("ErrorFieldRequired", $langs->transnoentities("Type")), null, 'errors');
+        $action = 'create';
+        $error++;
+    }
+    if (! $error && ! $_POST['url'])
+    {
+	    setEventMessages($langs->trans("ErrorFieldRequired", $langs->trans("URL")), null, 'errors');
+        $action = 'create';
+        $error++;
+    }
+    if (! $error && ! $_POST['titre'])
+    {
+	    setEventMessages($langs->trans("ErrorFieldRequired", $langs->trans("Title")), null, 'errors');
+        $action = 'create';
+        $error++;
+    }
+    if (! $error && $_POST['menuId'] && $_POST['type'] == 'top')
+    {
+	    setEventMessages($langs->trans("ErrorTopMenuMustHaveAParentWithId0"), null, 'errors');
+        $action = 'create';
+        $error++;
+    }
+    if (! $error && ! $_POST['menuId'] && $_POST['type'] == 'left')
+    {
+	    setEventMessages($langs->trans("ErrorLeftMenuMustHaveAParentId"), null, 'errors');
+        $action = 'create';
+        $error++;
+    }
+
+    if (! $error)
+    {
+        $menu = new Menubase($db);
+        $menu->menu_handler=preg_replace('/_menu$/','',GETPOST('menu_handler','aZ09'));
+        $menu->type=GETPOST('type','alpha');
+        $menu->titre=GETPOST('titre','alpha');
+        $menu->url=GETPOST('url','alpha');
+        $menu->langs=GETPOST('langs','alpha');
+        $menu->position=GETPOST('position','int');
+        $menu->enabled=GETPOST('enabled','alpha');
+        $menu->perms=GETPOST('perms','alpha');
+        $menu->target=GETPOST('target','alpha');
+        $menu->user=GETPOST('user','alpha');
+        if (is_numeric(GETPOST('menuId','int')))
+        {
+        	$menu->fk_menu=GETPOST('menuId','int');
+        }
+        else
+       {
+	       	if (GETPOST('type','alpha') == 'top') $menu->fk_menu=0;
+	       	else $menu->fk_menu=-1;
+        	$menu->fk_mainmenu=$mainmenu;
+        	$menu->fk_leftmenu=$leftmenu;
+       }
+
+        $result=$menu->create($user);
+        if ($result > 0)
+        {
+            header("Location: ".DOL_URL_ROOT."/admin/menus/index.php?menu_handler=".GETPOST('menu_handler','aZ09'));
+            exit;
+        }
+        else
+        {
+            $action = 'create';
+	        setEventMessages($menu->error, $menu->errors, 'errors');
+        }
+    }
+}
+
+
+if ($action == 'confirm_delete' && $_POST["confirm"] == 'yes')
+{
+    $this->db->begin();
+
+    $sql = "DELETE FROM ".MAIN_DB_PREFIX."menu WHERE rowid = ".GETPOST('menuId', 'int');
+    $result=$db->query($sql);
+
+    if ($result == 0)
+    {
+        $this->db->commit();
+
+        llxHeader();
+	    setEventMessages($langs->trans("MenuDeleted"), null, 'mesgs');
+        llxFooter();
+        exit ;
+    }
+    else
+    {
+        $this->db->rollback();
+
+        $reload = 0;
+        $_GET["action"]='';
+    }
+}
+
+
+
+
+
+$form=new Form($db);
+$formadmin=new FormAdmin($db);
+
+llxHeader('',$langs->trans("Menu"));
+
+
+if ($action == 'create')
+{
+    
+    	jQuery("
+    		init_topleft();
+    	});
+    });
+    </script>';
+
+    
+
+    
+    
+
+    dol_fiche_head();
+
+    
+
+    
+    $parent_rowid = GETPOST('menuId', 'int');
+    if (GETPOST('menuId', 'int'))
+    {
+        $sql = "SELECT m.rowid, m.mainmenu, m.leftmenu, m.level, m.langs FROM ".MAIN_DB_PREFIX."menu as m WHERE m.rowid = ".GETPOST('menuId', 'int');
+        $res  = $db->query($sql);
+        if ($res)
+        {
+
+            while ($menu = $db->fetch_array($res))
+            {
+                $parent_rowid = $menu['rowid'];
+                $parent_mainmenu = $menu['mainmenu'];
+                $parent_leftmenu = $menu['leftmenu'];
+                $parent_langs = $menu['langs'];
+                $parent_level = $menu['level'];
+            }
+        }
+    }
+
+    
+    
+    
+    $formadmin->select_menu_families($menu_handler.(preg_match('/_menu/',$menu_handler)?'':'_menu'),'menu_handler',array_merge($dirstandard,$dirsmartphone));
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+
+    
+    
+    if ($parent_rowid)
+    {
+        
+        
+    }
+    else
+    {
+        
+        </option>';
+        
+        
+        
+    }
+    
+    
+
+    
+    
+    if ($parent_rowid)
+    {
+        
+    }
+    else
+    {
+        
+    }
+    
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+    </option>';
+    
+    
+
+    
+    
+
+    
+    
+
+    
+
+    dol_fiche_end();
+
+    
+    
+	
+    &nbsp;&nbsp;&nbsp;&nbsp;';
+    
+	
+
+    
+}
+elseif ($action == 'edit')
+{
+    
+    
+
+    
+    
+    
+    
+
+    dol_fiche_head();
+
+    
+
+    $menu = new Menubase($db);
+    $result=$menu->fetch(GETPOST('menuId', 'int'));
+    
+
+    
+    
+
+    
+    
+
+    
+    if ($menu->menu_handler == 'all') $handler = $langs->trans('AllMenus');
+    else $handler = $menu->menu_handler;
+    
+
+    
+    
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    $valtouse=$menu->fk_menu;
+    if ($menu->fk_mainmenu) $valtouse='fk_mainmenu='.$menu->fk_mainmenu;
+    if ($menu->fk_leftmenu) $valtouse.='&fk_leftmenu='.$menu->fk_leftmenu;
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+    </option>';
+    
+    
+
+    
+    
+    if (! empty($menu->enabled)) 
+    
+
+    
+    
+    if (! empty($menu->perms)) 
+    
+
+    
+
+    dol_fiche_end();
+
+    
+    
+	
+    &nbsp;&nbsp;&nbsp;&nbsp;';
+    
+	
+
+    
+
+    
+}
+
+llxFooter();
+$db->close();

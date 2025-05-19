@@ -1,0 +1,260 @@
+<?php
+
+App::uses('AppController', 'Controller');
+
+class class_0 extends var_0
+{
+    public $var_1 = array('Security' ,'RequestHandler');
+
+    public $var_2 = array(
+            'limit' => 50,
+            'order' => array(
+                    'TemplateElement.position' => 'asc'
+            )
+    );
+
+    public function fn_0($var_3)
+    {
+        if (!is_numeric($var_3)) {
+            throw new class_1(__('No template with the provided ID exists, or you are not authorised to see it.'));
+        }
+        
+        $var_4 = $var_5->var_6->var_7->checkAuthorisation($var_3, $var_5->var_9->user(), false);
+        if (!$var_5->_isSiteAdmin() && !$var_4) {
+            throw new class_1(__('No template with the provided ID exists, or you are not authorised to see it.'));
+        }
+
+        $var_12 = $var_5->var_6->find('all', array(
+            'conditions' => array(
+                'template_id' => $var_3,
+            ),
+            'contain' => array(
+                'TemplateElementAttribute',
+                'TemplateElementText',
+                'TemplateElementFile'
+            ),
+            'order' => array('TemplateElement.position ASC')
+        ));
+        $var_5->loadModel('Attribute');
+        $var_5->set('validTypeGroups', $var_5->var_16->var_17);
+        $var_5->set('id', $var_3);
+        $var_5->var_18 = 'ajaxTemplate';
+        $var_5->set('elements', $var_12);
+        $var_19 = false;
+        if ($var_5->_isSiteAdmin() || $var_4['Template']['org'] == $var_5->var_9->user('Organisation')['name']) {
+            $var_19 = true;
+        }
+        $var_5->set('mayModify', $var_19);
+        $var_5->render('ajax/ajaxIndex');
+    }
+
+    public function fn_1($var_3)
+    {
+        if (!$var_5->_isSiteAdmin() && !$var_5->var_6->var_7->checkAuthorisation($var_3, $var_5->var_9->user(), true)) {
+            throw new class_1('You are not authorised to do that.');
+        }
+        if (!$var_5->var_21->is('ajax')) {
+            throw new class_1('This action is for ajax requests only.');
+        }
+        $var_5->set('id', $var_3);
+        $var_5->var_18 = 'ajax';
+        $var_5->render('ajax/template_element_add_choices');
+    }
+
+    public function fn_2($var_23, $var_3)
+    {
+        $var_24 = 'TemplateElement' . ucfirst($var_23);
+        if (!$var_5->_isSiteAdmin() && !$var_5->var_6->var_7->checkAuthorisation($var_3, $var_5->var_9->user(), true)) {
+            return new class_2(array('body'=> json_encode(array('saved' => false, 'errors' => 'You are not authorised to do that.')), 'status' => 200, 'type' => 'json'));
+        }
+        if (!$var_5->var_21->is('ajax')) {
+            throw new class_1('This action is for ajax requests only.');
+        }
+        if ($var_5->var_21->is('get')) {
+            $var_5->set('id', $var_3);
+            if ($var_23 == 'attribute') {
+                $var_5->loadModel('Attribute');
+                
+                $var_25 = array_keys($var_5->var_16->var_26);
+                $var_25 = $var_5->_arrayToValuesIndexArray($var_25);
+                $var_5->set('types', $var_25);
+                
+                $var_28 = array_keys($var_5->var_16->var_29);
+                $var_28 = $var_5->_arrayToValuesIndexArray($var_28);
+                $var_5->set('categories', compact('categories'));
+                $var_5->set('attrDescriptions', $var_5->var_16->var_30);
+                $var_5->set('typeDefinitions', $var_5->var_16->var_26);
+                $var_29 = $var_5->var_16->var_29;
+                foreach ($var_29 as $var_31 => $var_32) {
+                    foreach ($var_32['types'] as $var_33 => $var_34) {
+                        if ($var_34 == 'malware-sample' || $var_34 == 'attachment') {
+                            unset($var_29[$var_31]['types'][$var_33]);
+                        }
+                    }
+                }
+                $var_5->set('categoryDefinitions', $var_29);
+                $var_5->set('validTypeGroups', $var_5->var_16->var_17);
+                $var_5->set('typeGroupCategoryMapping', $var_5->var_16->var_35);
+            } elseif ($var_23 == 'file') {
+                $var_5->loadModel('Attribute');
+                $var_36 = array();
+                $var_28 = array();
+                foreach ($var_5->var_16->var_29 as $var_31 => $var_32) {
+                    $var_37 = array();
+                    if (in_array('malware-sample', $var_32['types'])) {
+                        $var_37[] = 'malware-sample';
+                    }
+                    if (in_array('attachment', $var_32['types'])) {
+                        $var_37[] = 'attachment';
+                    }
+                    if (!empty($var_37)) {
+                        $var_36[$var_31] = $var_37;
+                        $var_28[] = $var_31;
+                    }
+                }
+                $var_28 = $var_5->_arrayToValuesIndexArray($var_28);
+                $var_5->set('categoryArray', $var_36);
+                $var_5->set('categories', $var_28);
+            }
+            $var_5->var_18 = 'ajaxTemplate';
+            $var_5->render('ajax/template_element_add_' . $var_23);
+        } elseif ($var_5->var_21->is('post')) {
+            $var_38 = $var_5->var_6->lastPosition($var_3);
+            $var_5->var_6->create();
+            $var_41 = array(
+                'TemplateElement' => array(
+                    'template_id' => $var_3,
+                    'position' => ++$var_38,
+                    'element_definition' => $var_23
+                ),
+            );
+            $var_42 = 'The element could not be added.';
+            if ($var_5->var_6->save($var_41)) {
+                $var_5->var_21->var_44[$var_24]['template_element_id'] = $var_5->var_6->var_3;
+                $var_5->var_6->$var_24->create();
+                if ($var_5->var_6->$var_24->save($var_5->var_21->var_44)) {
+                    return new class_2(array('body'=> json_encode(array('saved' => true, 'success' => 'Element successfully added to template.')), 'status' => 200, 'type' => 'json'));
+                } else {
+                    $var_5->var_6->fn_3($var_5->var_6->var_3);
+                    $var_42 = $var_5->var_6->$var_24->var_46;
+                }
+            } else {
+                $var_42 = $var_5->var_6->var_46;
+            }
+            return new class_2(array('body'=> json_encode(array('saved' => false, 'errors' => $var_42)), 'status' => 200, 'type' => 'json'));
+        }
+    }
+
+    public function fn_4($var_23, $var_3)
+    {
+        $var_24 = 'TemplateElement' . ucfirst($var_23);
+        $var_41 = $var_5->var_6->find('first', array(
+            'conditions' => array('TemplateElement.id' => $var_3),
+            'contain' => array('Template', $var_24)
+        ));
+        $var_5->set('template_id', $var_41['Template']['id']);
+        if (!$var_5->_isSiteAdmin() && !$var_5->var_6->var_7->checkAuthorisation($var_3, $var_5->var_9->user(), true)) {
+            return new class_2(array('body'=> json_encode(array('saved' => false, 'errors' => 'You are not authorised to do that.')), 'status' => 200, 'type' => 'json'));
+        }
+        if (!$var_5->var_21->is('ajax')) {
+            throw new class_1('This action is for ajax requests only.');
+        }
+        if ($var_5->var_21->is('get')) {
+            $var_5->set('id', $var_3);
+            $var_5->var_21->var_44[$var_24] = $var_41[$var_24][0];
+            if ($var_23 == 'attribute') {
+                $var_5->loadModel('Attribute');
+                
+                $var_25 = array_keys($var_5->var_16->var_26);
+                $var_25 = $var_5->_arrayToValuesIndexArray($var_25);
+                $var_5->set('types', $var_25);
+                
+                $var_28 = array_keys($var_5->var_16->var_29);
+                $var_28 = $var_5->_arrayToValuesIndexArray($var_28);
+                $var_5->set('categories', compact('categories'));
+                $var_29 = $var_5->var_16->var_29;
+                foreach ($var_29 as $var_31 => $var_32) {
+                    foreach ($var_32['types'] as $var_33 => $var_34) {
+                        if ($var_34 == 'malware-sample' || $var_34 == 'attachment') {
+                            unset($var_29[$var_31]['types'][$var_33]);
+                        }
+                    }
+                }
+                if ($var_5->var_21->var_44['TemplateElementAttribute']['complex']) {
+                    $var_5->set('initialTypes', $var_5->_arrayToValuesIndexArray($var_5->var_16->var_35[$var_41['TemplateElementAttribute'][0]['category']]));
+                } else {
+                    $var_5->set('initialTypes', $var_5->_arrayToValuesIndexArray($var_29[$var_41['TemplateElementAttribute'][0]['category']]['types']));
+                }
+                $var_5->set('initialValues', $var_41['TemplateElementAttribute'][0]);
+                $var_5->set('categoryDefinitions', $var_29);
+                $var_5->set('validTypeGroups', $var_5->var_16->var_17);
+                $var_5->set('typeGroupCategoryMapping', $var_5->var_16->var_35);
+            } elseif ($var_23 == 'file') {
+                $var_5->loadModel('Attribute');
+                $var_36 = array();
+                $var_28 = array();
+                foreach ($var_5->var_16->var_29 as $var_31 => $var_32) {
+                    $var_37 = array();
+                    if (in_array('malware-sample', $var_32['types'])) {
+                        $var_37[] = 'malware-sample';
+                    }
+                    if (in_array('attachment', $var_32['types'])) {
+                        $var_37[] = 'attachment';
+                    }
+                    if (!empty($var_37)) {
+                        $var_36[$var_31] = $var_37;
+                        $var_28[] = $var_31;
+                    }
+                }
+                $var_28 = $var_5->_arrayToValuesIndexArray($var_28);
+                $var_5->set('categoryArray', $var_36);
+                $var_5->set('categories', $var_28);
+            }
+            $var_5->var_18 = 'ajaxTemplate';
+            $var_5->render('ajax/template_element_edit_' . $var_23);
+        } elseif ($var_5->var_21->is('post') || $var_5->var_21->is('put')) {
+            $var_5->var_21->var_44[$var_24]['id'] = $var_41[$var_24][0]['id'];
+            $var_5->var_21->var_44[$var_24]['template_element_id'] = $var_41[$var_24][0]['template_element_id'];
+            if ($var_5->var_6->$var_24->save($var_5->var_21->var_44)) {
+                return new class_2(array('body'=> json_encode(array('saved' => true, 'success' => 'Element successfully edited.')), 'status' => 200, 'type' => 'json'));
+            } else {
+                $var_5->var_6->fn_3($var_5->var_6->var_3);
+                $var_42 = $var_5->var_6->$var_24->var_46;
+            }
+            return new class_2(array('body'=> json_encode(array('saved' => false, 'errors' => 'The element could not be edited.')), 'status' => 200, 'type' => 'json'));
+        }
+    }
+
+    public function fn_3($var_3)
+    {
+        if (!$var_5->var_21->is('ajax')) {
+            throw new class_1('This action is for ajax requests only.');
+        }
+        $var_5->var_6->read(null, $var_3);
+        if (!$var_5->_isSiteAdmin() && !$var_5->var_6->var_7->checkAuthorisation($var_5->var_6->var_44['Template']['id'], $var_5->var_9->user(), true)) {
+            throw new class_3('You are not authorised to do that.');
+        }
+        if ($var_5->var_21->is('post')) {
+            if ($var_5->_isSiteAdmin() || $var_5->var_9->user('Organisation')['name'] == $var_5->var_6->var_44['Template']['org']) {
+                
+                if (empty($var_5->var_6->var_44)) {
+                    throw new class_4();
+                }
+                $var_23 = 'TemplateElement' . ucfirst($var_5->var_6->var_44['TemplateElement']['element_definition']);
+                if ($var_5->var_6->$var_23->fn_3($var_5->var_6->var_44[$var_23][0]['id'])) {
+                    $var_5->var_6->fn_3($var_5->var_6->var_44['TemplateElement']['id']);
+                    $var_5->var_6->var_7->trimElementPositions($var_5->var_6->var_44['TemplateElement']['template_id']);
+                    return new class_2(array('body'=> json_encode(array('saved' => true, 'success' => 'Element deleted.')), 'status' => 200, 'type' => 'json'));
+                } else {
+                    return new class_2(array('body'=> json_encode(array('saved' => true, 'errors' => 'Couldn\'t delete the Element')), 'status' => 200, 'type' => 'json'));
+                }
+            } else {
+                return new class_2(array('body'=> json_encode(array('saved' => true, 'errors' => 'You don\'t have permission to do that.')), 'status' => 200, 'type' => 'json'));
+            }
+        } else {
+            $var_5->set('id', $var_3);
+            $var_5->set('template_id', $var_5->var_6->var_44['Template']['id']);
+            $var_5->render('ajax/templateElementConfirmationForm');
+        }
+    }
+}

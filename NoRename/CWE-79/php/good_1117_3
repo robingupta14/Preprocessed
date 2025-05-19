@@ -1,0 +1,303 @@
+<?php
+
+
+
+class WP_Test_Block_Type extends WP_UnitTestCase {
+
+	
+	protected static $editor_user_id;
+
+	
+	protected static $post_with_blocks;
+
+	
+	protected static $post_without_blocks;
+
+	
+	public static function wpSetUpBeforeClass() {
+		self::$editor_user_id = self::factory()->user->create(
+			array(
+				'role' => 'editor',
+			)
+		);
+
+		self::$post_with_blocks = self::factory()->post->create(
+			array(
+				'post_title'   => 'Example',
+				'post_content' => "<!-- wp:core/text {\"dropCap\":true} -->\n<p class=\"has-drop-cap\">Tester</p>\n<!-- /wp:core/text -->",
+			)
+		);
+
+		self::$post_without_blocks = self::factory()->post->create(
+			array(
+				'post_title'   => 'Example',
+				'post_content' => 'Tester',
+			)
+		);
+	}
+
+	
+	public function test_set_props() {
+		$name = 'core/fake';
+		$args = array(
+			'render_callback' => array( $this, 'render_fake_block' ),
+			'foo'             => 'bar',
+		);
+
+		$block_type = new WP_Block_Type( $name, $args );
+
+		$this->assertSame( $name, $block_type->name );
+		$this->assertSame( $args['render_callback'], $block_type->render_callback );
+		$this->assertSame( $args['foo'], $block_type->foo );
+	}
+
+	
+	public function test_render() {
+		$attributes = array(
+			'foo' => 'bar',
+			'bar' => 'foo',
+		);
+
+		$block_type = new WP_Block_Type(
+			'core/fake',
+			array(
+				'render_callback' => array( $this, 'render_fake_block' ),
+			)
+		);
+		$output     = $block_type->render( $attributes );
+		$this->assertEquals( $attributes, json_decode( $output, true ) );
+	}
+
+	
+	public function test_render_with_content() {
+		$attributes = array(
+			'foo' => 'bar',
+			'bar' => 'foo',
+		);
+
+		$content = 'baz';
+
+		$expected = array_merge( $attributes, array( '_content' => $content ) );
+
+		$block_type = new WP_Block_Type(
+			'core/fake',
+			array(
+				'render_callback' => array( $this, 'render_fake_block_with_content' ),
+			)
+		);
+		$output     = $block_type->render( $attributes, $content );
+		$this->assertEquals( $expected, json_decode( $output, true ) );
+	}
+
+	
+	public function test_render_for_static_block() {
+		$block_type = new WP_Block_Type( 'core/fake', array() );
+		$output     = $block_type->render();
+
+		$this->assertEquals( '', $output );
+	}
+
+	
+	public function test_is_dynamic_for_static_block() {
+		$block_type = new WP_Block_Type( 'core/fake', array() );
+
+		$this->assertFalse( $block_type->is_dynamic() );
+	}
+
+	
+	public function test_is_dynamic_for_dynamic_block() {
+		$block_type = new WP_Block_Type(
+			'core/fake',
+			array(
+				'render_callback' => array( $this, 'render_fake_block' ),
+			)
+		);
+
+		$this->assertTrue( $block_type->is_dynamic() );
+	}
+
+	
+	public function test_prepare_attributes() {
+		$attributes = array(
+			'correct'            => 'include',
+			'wrongType'          => 5,
+			'wrongTypeDefaulted' => 5,
+			
+			'undefined'          => 'include',
+			'intendedNull'       => null,
+		);
+
+		$block_type = new WP_Block_Type(
+			'core/fake',
+			array(
+				'attributes' => array(
+					'correct'            => array(
+						'type' => 'string',
+					),
+					'wrongType'          => array(
+						'type' => 'string',
+					),
+					'wrongTypeDefaulted' => array(
+						'type'    => 'string',
+						'default' => 'defaulted',
+					),
+					'missingDefaulted'   => array(
+						'type'    => 'string',
+						'default' => 'define',
+					),
+					'intendedNull'       => array(
+						'type'    => array( 'string', 'null' ),
+						'default' => 'wrong',
+					),
+				),
+			)
+		);
+
+		$prepared_attributes = $block_type->prepare_attributes_for_render( $attributes );
+
+		$this->assertEquals(
+			array(
+				'correct'            => 'include',
+				
+				'wrongTypeDefaulted' => 'defaulted',
+				'missingDefaulted'   => 'define',
+				'undefined'          => 'include',
+				'intendedNull'       => null,
+			),
+			$prepared_attributes
+		);
+	}
+
+	
+	function test_prepare_attributes_none_defined() {
+		$attributes = array( 'exists' => 'keep' );
+
+		$block_type = new WP_Block_Type( 'core/dummy', array() );
+
+		$prepared_attributes = $block_type->prepare_attributes_for_render( $attributes );
+
+		$this->assertEquals( $attributes, $prepared_attributes );
+	}
+
+	
+	public function test_has_block_with_mixed_content() {
+		$mixed_post_content = 'before' .
+		'<!-- wp:core/fake --><!-- /wp:core/fake -->' .
+		'<!-- wp:core/fake_atts {"value":"b1"} --><!-- /wp:core/fake_atts -->' .
+		'<!-- wp:core/fake-child -->
+		<p>testing the test</p>
+		<!-- /wp:core/fake-child -->' .
+		'between' .
+		'<!-- wp:core/self-close-fake /-->' .
+		'<!-- wp:custom/fake {"value":"b2"} /-->' .
+		'after';
+
+		$this->assertTrue( has_block( 'core/fake', $mixed_post_content ) );
+
+		$this->assertTrue( has_block( 'core/fake_atts', $mixed_post_content ) );
+
+		$this->assertTrue( has_block( 'core/fake-child', $mixed_post_content ) );
+
+		$this->assertTrue( has_block( 'core/self-close-fake', $mixed_post_content ) );
+
+		$this->assertTrue( has_block( 'custom/fake', $mixed_post_content ) );
+
+		
+		$this->assertFalse( has_block( 'core/fak', $mixed_post_content ) );
+
+		
+		$this->assertFalse( has_block( 'custom/fake_atts', $mixed_post_content ) );
+
+		
+		$this->assertFalse( has_block( 'core', $mixed_post_content ) );
+	}
+
+	
+	public function test_has_block_with_invalid_content() {
+		
+		$invalid_content = 'before' .
+		'<!- - wp:core/weird-space --><!-- /wp:core/weird-space -->' .
+		'<!--wp:core/untrimmed-left --><!-- /wp:core/untrimmed -->' .
+		'<!-- wp:core/fake --><!-- /wp:core/fake -->' .
+		'<!-- wp:core/untrimmed-right--><!-- /wp:core/untrimmed2 -->' .
+		'after';
+
+		$this->assertFalse( has_block( 'core/text', self::$post_without_blocks ) );
+
+		$this->assertFalse( has_block( 'core/weird-space', $invalid_content ) );
+
+		$this->assertFalse( has_block( 'core/untrimmed-left', $invalid_content ) );
+
+		$this->assertFalse( has_block( 'core/untrimmed-right', $invalid_content ) );
+
+		$this->assertTrue( has_block( 'core/fake', $invalid_content ) );
+	}
+
+	
+	public function test_post_has_block() {
+		
+		$this->assertFalse( has_block( 'custom/fake', self::$post_with_blocks ) );
+
+		
+		$this->assertFalse( has_block( 'core/text' ) );
+		$this->assertFalse( has_block( 'core/fake' ) );
+
+		global $post;
+		$post = get_post( self::$post_with_blocks );
+
+		
+		$this->assertTrue( has_block( 'core/text' ) );
+		
+		$this->assertFalse( has_block( 'core/fake' ) );
+	}
+
+	public function test_post_has_block_serialized_name() {
+		$content = '<!-- wp:serialized /--><!-- wp:core/normalized /--><!-- wp:plugin/third-party /-->';
+
+		$this->assertTrue( has_block( 'core/serialized', $content ) );
+
+		
+		$this->assertTrue( has_block( 'serialized', $content ) );
+		$this->assertTrue( has_block( 'core/normalized', $content ) );
+		$this->assertTrue( has_block( 'normalized', $content ) );
+		$this->assertFalse( has_block( 'plugin/normalized', $content ) );
+		$this->assertFalse( has_block( 'plugin/serialized', $content ) );
+		$this->assertFalse( has_block( 'third-party', $content ) );
+		$this->assertFalse( has_block( 'core/third-party', $content ) );
+	}
+
+	
+	public function render_fake_block( $attributes ) {
+		return json_encode( $attributes );
+	}
+
+	
+	public function render_fake_block_with_content( $attributes, $content ) {
+		$attributes['_content'] = $content;
+
+		return json_encode( $attributes );
+	}
+
+	
+	public function test_block_version( $content, $expected ) {
+		$this->assertSame( $expected, block_version( $content ) );
+	}
+
+	
+	public function data_block_version() {
+		return array(
+			
+			array( null, 0 ),
+			
+			array( '', 0 ),
+			
+			array( '<hr class="wp-block-separator" />', 0 ),
+			
+			array( '<!-- wp:core/separator -->', 1 ),
+			
+			array( '<!-- wp:core/fake --><!-- /wp:core/fake -->', 1 ),
+			
+			array( '<!- - wp:core/separator -->', 0 ),
+		);
+	}
+}

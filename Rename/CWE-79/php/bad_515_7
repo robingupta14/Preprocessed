@@ -1,0 +1,376 @@
+<?php
+
+
+
+$var_0 = array(
+	1 => __('Rerun Check'),
+	2 => __('Delete')
+);
+
+
+set_default_action();
+
+switch (get_request_var('action')) {
+	case 'save':
+		fn_1();
+		break;
+	case 'actions':
+		fn_0();
+		break;
+	case 'edit':
+		top_header();
+		fn_4();
+		bottom_footer();
+		break;
+	case 'view':
+		top_header();
+		fn_6();
+		bottom_footer();
+		break;
+	default:
+		top_header();
+		fn_5();
+		bottom_footer();
+		break;
+}
+
+function fn_0() {
+	global $var_0, $var_1;
+
+
+	
+	get_filter_request_var('id');
+	get_filter_request_var('drp_action', var_2, array('options' => array('regexp' => '/^([a-zA-Z0-9_]+)$/')));
+	
+
+
+
+	$var_3 = array();
+	if (isset_request_var('save_list')) {
+		
+		while (list($var_4,$var_5) = each($var_6)) {
+			if (preg_match('/^chk_([0-9]+)$/', $var_4, $var_7)) {
+				
+				input_validate_input_number($var_7[1]);
+				
+
+				$var_3[] = $var_7[1];
+			}
+		}
+
+	
+		if (isset_request_var('save_list')) {
+			if (get_request_var('drp_action') == '2') { 
+				fn_3($var_3);
+			}elseif (get_request_var('drp_action') == '1') { 
+				fn_2($var_3);
+			}
+			header('Location: data_debug.php?header=false');
+			var_8;
+		}
+	}
+}
+
+
+function fn_1() {
+
+	if (isset_request_var('save_component')) {
+		
+		get_filter_request_var('id');
+		get_filter_request_var('local_data_id');
+
+		
+		$var_9 = array();
+		$var_9['id']        		= get_nfilter_request_var('id');
+		$var_9['datasource']      = get_nfilter_request_var('local_data_id');
+
+		$var_10 = array(
+			'rrd_folder_writable' => '',
+			'rrd_exists' => '',
+			'rrd_writable' => '',
+			'active' => '',
+			'owner' => '',
+			'runas_poller' => '',
+			'runas_website' => get_running_user(),
+			'last_result' => '',
+			'valid_data' => '',
+			'rra_timestamp' => '',
+			'rra_timestamp2' => '',
+			'rrd_match' => '');
+		$var_9['info'] = serialize($var_10);
+		$var_9['started'] = time();
+		$var_9['user'] = intval($_SESSION['sess_user_id']);
+
+		if (!is_error_message()) {
+			$var_11 = sql_save($var_9, 'data_debug');
+			if ($var_11) {
+				raise_message(1);
+			} else {
+				raise_message(2);
+			}
+		}
+
+		header('Location: data_debug.php?header=false');
+		var_8;
+	}
+}
+
+
+function fn_2 ($var_3) {
+
+	$var_10 = array(
+		'rrd_folder_writable' => '',
+		'rrd_exists' => '',
+		'rrd_writable' => '',
+		'active' => '',
+		'owner' => '',
+		'runas_poller' => '',
+		'runas_website' => get_running_user(),
+		'last_result' => '',
+		'valid_data' => '',
+		'rra_timestamp' => '',
+		'rra_timestamp2' => '',
+		'rrd_match' => '');
+	$var_10 = serialize($var_10);
+
+	if (!empty($var_3)) {
+		foreach($var_3 as $var_11) {
+			$var_12 = time();
+			db_execute_prepared('UPDATE data_debug SET started = ?, done = 0, info = ?, issue = "" WHERE id = ? LIMIT 1', array($var_12, $var_10, $var_11));
+		}
+	}
+
+	header('Location: data_debug.php?header=false');
+	var_8;
+}
+
+function fn_3 ($var_3) {
+	if (!empty($var_3)) {
+		foreach($var_3 as $var_11) {
+			$var_12 = time();
+			db_execute_prepared('DELETE FROM data_debug WHERE id = ? LIMIT 1', array($var_11));
+		}
+	}
+
+	header('Location: data_debug.php?header=false');
+	var_8;
+}
+
+function fn_4() {
+	global $var_13;
+
+	$var_11 = 0;
+	$var_14 = __('New Check');
+
+	form_start('data_debug.php', 'debug');
+
+	html_start_box(htmlspecialchars($var_14), '100%', '', '3', 'center', '');
+
+	$var_15 = array(
+		'general_header' => array(
+			'friendly_name' => __('Debugging Data Source'),
+			'method' => 'spacer',
+		),
+		'local_data_id' => array(
+			'friendly_name' => __('Data Source'),
+			'method' => 'drop_sql',
+			'description' => __('Provide the Maintenance Schedule a meaningful name'),
+			'sql' => 'SELECT DISTINCT local_data_id as id, name_cache as name FROM data_template_data WHERE local_data_id > 0 ORDER BY name_cache',
+			'value' => ''
+		),
+		'save_component' => array(
+			'method' => 'hidden',
+			'value' => '1'
+		),
+		'save' => array(
+			'method' => 'hidden',
+			'value'  => 'edit'
+		),
+		'id' => array(
+			'method' => 'hidden',
+			'value' => $var_11
+		)
+	);
+
+	draw_edit_form(
+		array(
+			'config' => array(
+				'no_form_tag' => true
+				),
+			'fields' => $var_15
+		)
+	);
+	html_end_box();
+
+	form_save_button('data_debug.php', 'return');
+
+
+}
+
+function fn_5() {
+	global $var_0, $var_16;
+	$var_16 = 60;
+
+	$var_17 = db_fetch_assoc('SELECT * FROM data_debug ORDER BY id');
+
+	form_start('data_debug.php', 'chk');
+
+	html_start_box(__('Data Source Debugger'), '100%', '', '2', 'center', 'data_debug.php?action=edit');
+
+	html_header_checkbox(array(__('ID'), __('User'), __('Started'), __('Data Source'), __('Status'), __('Writable'), __('Exists'), __('Active'), __('RRD Match'), __('Valid Data'), __('RRD Updated'), __('Issue')));
+
+	if (cacti_sizeof($var_17)) {
+		foreach ($var_17 as $var_18) {
+			$var_10 = unserialize($var_18['info']);
+			$var_19 = explode("\n", $var_18['issue']);
+			$var_20 = '';
+			if (cacti_sizeof($var_19)) {
+				$var_20 = $var_19[0];
+			}
+			$var_21 = implode($var_19, '<br/>');
+
+			$var_22 = db_fetch_cell_prepared('SELECT username FROM user_auth WHERE id = ?', array($var_18['user']), 'username');
+			form_alternate_row('line' . $var_18['id']);
+			$var_23 = get_data_source_title($var_18['datasource']);
+			$var_24 = $var_23;
+			if (strlen($var_23) > 50) {
+				$var_23 = substr($var_23, 0, 50);
+			}
+			form_selectable_cell('<a class="linkEditMain" title="' . $var_24 .'" href="' . htmlspecialchars('data_debug.php?action=view&id=' . $var_18['id']) . '">' . $var_23 . '</a>', $var_18['id']);
+			form_selectable_cell($var_22, $var_18['id']);
+			form_selectable_cell(date('F j, Y, G:i', $var_18['started']), $var_18['id']);
+			form_selectable_cell($var_18['datasource'], $var_18['id']);
+			form_selectable_cell(fn_7(($var_18['done'] ? (strlen($var_20) ? 'off' : 'on' ) : '')), $var_18['id'], '', 'text-align: center;');
+			form_selectable_cell(fn_7($var_10['rrd_writable']), $var_18['id'], '', 'text-align: center;');
+			form_selectable_cell(fn_7($var_10['rrd_exists']), $var_18['id'], '', 'text-align: center;');
+			form_selectable_cell(fn_7($var_10['active']), $var_18['id'], '', 'text-align: center;');
+			form_selectable_cell(fn_7($var_10['rrd_match']), $var_18['id'], '', 'text-align: center;');
+			form_selectable_cell(fn_7($var_10['valid_data']), $var_18['id'], '', 'text-align: center;');
+			form_selectable_cell(fn_7(($var_10['rra_timestamp2'] != '' ? 1 : '')), $var_18['id'], '', 'text-align: center;');
+			form_selectable_cell('<a class=\'linkEditMain\' href=\'
+			form_checkbox_cell($check['var_11'], $var_18['id']);
+			form_end_row();
+		}
+	}else{
+		
+	}
+
+	html_end_box(false);
+
+	form_hidden_box('save_list', '1', '');
+
+	
+	draw_actions_dropdown($var_0);
+
+	form_end();
+}
+
+function fn_6() {
+	global $var_13, $var_16;
+	$var_16 = 60;
+
+	get_filter_request_var('id');
+	$var_11 = get_nfilter_request_var('id');
+
+	$var_18 = db_fetch_row_prepared('SELECT * FROM data_debug WHERE id = ?', array($var_11));
+	if (isset($var_18) && is_array($var_18)) {
+		$var_18['info'] = unserialize($var_18['info']);
+	}
+	$var_25 = db_fetch_row_prepared('SELECT * from data_template_data WHERE local_data_id = ?', array($var_18['datasource']));
+	$var_26 = str_replace('<path_rra>', $var_13['rra_path'], $var_25['data_source_path']);
+
+	$var_27 = array();
+	if (!empty($var_18['info']['last_result'])) {
+		foreach ($var_18['info']['last_result'] as $var_28 => $var_29) {
+			$var_27[] = "$var_28: $var_29";
+		}
+	}
+	$var_27 = implode('<br>', $var_27);
+
+	$var_30 = '';
+	if (isset($var_18['info']['rra_timestamp2'])) {
+		$var_30 = $var_18['info']['rra_timestamp2'] != '' ? 1 : '';
+	}
+
+	$var_31 = '';
+	if (isset($var_18['issue'])) {
+		$var_31 = $var_18['issue'];
+	}
+
+	$var_32 = array(
+		array('name' => 'owner', 'title' => __('RRD Owner'), 'icon' => '-'),
+		array('name' => 'runas_website', 'title' => __('Website runs as')),
+		array('name' => 'runas_poller', 'title' => __('Poller runs as')),
+		array('name' => 'rrd_folder_writable', 'title' => __('Is RRA Folder writeable by poller?'), 'value' => dirname($var_26)),
+		array('name' => 'rrd_writable', 'title' => __('Is RRD writeable by poller?'), 'value' => $var_26),
+		array('name' => 'rrd_exists', 'title' => __('Does the RRD Exist?')),
+		array('name' => 'active', 'title' => __('Is the Data Source set as Active?')),
+		array('name' => 'last_result', 'title' => __('Did the poller receive valid data?'), 'value' => $var_27),
+		array('name' => 'rra_updated', 'title' => __('Was the RRD File updated?'), 'value' => '', 'icon' => $var_30),
+		array('name' => 'rra_timestamp', 'title' => __('First Check TimeStamp'), 'icon' => '-'),
+		array('name' => 'rra_timestamp2', 'title' => __('Second Check TimeStamp'), 'icon' => '-'),
+		array('name' => 'convert_name', 'title' => __('Were we able to convert the title?'), 'value' => get_data_source_title($var_18['datasource'])),
+		array('name' => 'rrd_match', 'title' => __('Does the RRA Profile match the RRD File structure?'), 'value' => ''),
+		array('name' => 'issue', 'title' => __('Issue'), 'value' => $var_31, 'icon' => '-'),
+	);
+
+	html_start_box(__('Data Source Debugger'), '', '', '2', 'center', '');
+	html_header(array(__('Check'), __('Value'), __('Results')));
+
+	$var_33 = 1;
+	foreach ($var_32 as $var_34) {
+		$var_35 = $var_34['name'];
+
+		form_alternate_row('line' . $var_33);
+		form_selectable_cell($var_34['title'], $var_33);
+
+		$var_36 = '<not set>';
+		$var_37  = '';
+
+		if (array_key_exists($var_35, $var_18['info'])) {
+			$var_36 = $var_18['info'][$var_35];
+			$var_37  = fn_7($var_18['info'][$var_35]);
+		}
+
+		if (array_key_exists('value', $var_34)) {
+			$var_36 = $var_34['value'];
+		}
+
+		if (array_key_exists('icon', $var_34)) {
+			$var_37 = $var_34['icon'];
+		}
+
+		$var_38 = $var_36;
+		if (strlen($var_36) > 100) {
+			$var_36 = substr($var_36, 0, 100);
+		}
+
+		form_selectable_cell($var_36, $var_33, '', '', $var_38);
+		form_selectable_cell($var_37, $var_33);
+
+		form_end_row();
+		$var_33++;
+	}
+
+
+	html_end_box(false);
+
+
+
+}
+
+function fn_7($var_39) {
+	if ($var_39 === '' || $var_39 === false) {
+			return '<i class="fa fa-spinner fa-pulse fa-fw"></i>';
+	}
+	if ($var_39 === '-') {
+			return '<i class="fa fa-info-circle"></i>';
+	}
+	if ($var_39 === 1 || $var_39 === 'on') {
+			return '<i class="fa fa-check" style="color:green"></i>';
+	}
+	if ($var_39 === 0 || $var_39 === 'off') {
+			return '<i class="fa fa-times" style="color:red"></i>';
+	}
+	return '<i class="fa fa-warn-triagle" style="color:orange"></i>';
+}

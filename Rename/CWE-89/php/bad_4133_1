@@ -1,0 +1,113 @@
+<?php
+
+
+
+
+$var_0 = 1;
+
+
+header("Content-Type: text/html; charset=UTF-8");
+Html::header_nocache();
+
+Session::checkRight("networking", var_1);
+
+
+if (class_exists($_POST["itemtype"])
+    && isset($_POST["item"])) {
+   $var_2 = getTableForItemType($_POST["itemtype"]);
+
+   $var_3 = [];
+   $var_4 = new class_0("'' AS " . $var_5->quoteName('npname'));
+
+   if ($_POST['instantiation_type'] == 'NetworkPortEthernet') {
+      $var_4 = 'glpi_netpoints.name AS npname';
+      $var_3 = [
+         'glpi_networkportethernets'   => [
+            'ON'  => [
+               'glpi_networkportethernets'   => 'id',
+               'glpi_networkports'           => 'id'
+            ]
+         ],
+         'glpi_netpoints'              => [
+            'ON'  => [
+               'glpi_networkportethernets'   => 'netpoints_id',
+               'glpi_netpoints'              => 'id'
+            ]
+         ]
+      ];
+   }
+
+   $var_7 = [
+      'SELECT'    => [
+         'glpi_networkports_networkports.id AS wid',
+         'glpi_networkports.id AS did',
+         "$var_2.name AS cname",
+         'glpi_networkports.name AS nname',
+         $var_4
+      ],
+      'DISTINCT'  => true,
+      'FROM'      => $var_2,
+      'LEFT JOIN' => [
+         'glpi_networkports'  => [
+            'ON'  => [
+               'glpi_networkports'  => 'items_id',
+               $var_2               => 'id', [
+                  'AND' => [
+                     'glpi_networkports.items_id'           => $_POST['item'],
+                     'glpi_networkports.itemtype'           => $_POST["itemtype"],
+                     'glpi_networkports.instantiation_type' => $_POST['instantiation_type']
+                  ]
+               ]
+            ]
+         ],
+         'glpi_networkports_networkports' => [
+            'ON'  => [
+               'glpi_networkports_networkports' => 'networkports_id_1',
+               'glpi_networkports'              => 'id', [
+                  'OR'  => [
+                     'glpi_networkports_networkports.networkports_id_2' => $var_5->quoteName('glpi_networkports.id')
+                  ]
+               ]
+            ]
+         ]
+      ] + $var_3,
+      'WHERE'     => [
+         'glpi_networkports_networkports.id' => null,
+         'NOT'                               => ['glpi_networkports.id' => null],
+         'glpi_networkports.id'              => ['<>', $_POST['networkports_id']],
+         "$var_2.is_deleted"                 => 0,
+         "$var_2.is_template"                => 0
+      ],
+      'ORDERBY'   => 'glpi_networkports.id'
+   ];
+   $var_8 = $var_5->request($var_7);
+
+   
+
+   $var_10 = [];
+   while ($var_11 = $var_8->next()) {
+      
+      $var_13 = $var_14 = $var_11['cname'];
+
+      if (!empty($var_11['nname'])) {
+         $var_13      = sprintf(__('%1$s - %2$s'), $var_13, $var_11['nname']);
+         
+         $var_14 = sprintf(__('%1$s - The port %2$s'), $var_14, $var_11['nname']);
+      }
+
+      
+      if (!empty($var_11['npname'])) {
+         $var_13      = sprintf(__('%1$s - %2$s'), $var_13, $var_11['npname']);
+         
+         $var_14 = sprintf(__('%1$s - Network outlet %2$s'), $var_14, $var_11['npname']);
+      }
+      $var_15 = $var_11['did'];
+
+      if ($_SESSION["glpiis_ids_visible"] || empty($var_13) || empty($var_14)) {
+         $var_13      = sprintf(__('%1$s (%2$s)'), $var_13, $var_15);
+         $var_14 = sprintf(__('%1$s (%2$s)'), $var_14, $var_15);
+      }
+      $var_10[$var_15] = $var_14;
+   }
+   Dropdown::showFromArray($_POST['myname'], $var_10, ['display_emptychoice' => true]);
+}

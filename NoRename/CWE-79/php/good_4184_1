@@ -1,0 +1,122 @@
+<?php
+
+
+
+declare(strict_types=1);
+
+
+
+class VerificationContext implements Context
+{
+    
+    private $sharedStorage;
+
+    
+    private $dashboardPage;
+
+    
+    private $verificationPage;
+
+    
+    private $notificationChecker;
+
+    public function __construct(
+        SharedStorageInterface $sharedStorage,
+        DashboardPageInterface $dashboardPage,
+        VerificationPageInterface $verificationPage,
+        NotificationCheckerInterface $notificationChecker
+    ) {
+        $this->sharedStorage = $sharedStorage;
+        $this->dashboardPage = $dashboardPage;
+        $this->verificationPage = $verificationPage;
+        $this->notificationChecker = $notificationChecker;
+    }
+
+    
+    public function iShouldBeNotifiedThatNewAccountHasBeenSuccessfullyCreated(): void
+    {
+        $this->notificationChecker->checkNotification(
+            'Thank you for registering, check your email to verify your account.',
+            Sylius\Behat\NotificationType::success()
+        );
+    }
+
+    
+    public function myAccountShouldBeVerified(): void
+    {
+        Webmozart\Assert\Assert::true($this->dashboardPage->isVerified());
+    }
+
+    
+    public function iUseItToVerify(ShopUserInterface $user): void
+    {
+        $this->verificationPage->verifyAccount($user->getEmailVerificationToken());
+    }
+
+    
+    public function iVerifyMyAccount(CustomerInterface $customer): void
+    {
+        $user = $customer->getUser();
+        Webmozart\Assert\Assert::notNull($user, 'No account for given customer');
+
+        $this->iUseItToVerify($user);
+    }
+
+    
+    public function iResendVerificationEmail(): void
+    {
+        $this->dashboardPage->open();
+        $this->dashboardPage->pressResendVerificationEmail();
+    }
+
+    
+    public function iUseVerificationLinkFromFirstEmailToVerify(): void
+    {
+        $token = $this->sharedStorage->get('verification_token');
+
+        $this->verificationPage->verifyAccount($token);
+    }
+
+    
+    public function iTryToVerifyUsing(string $token): void
+    {
+        $this->verificationPage->verifyAccount($token);
+    }
+
+    
+    public function myAccountShouldNotBeVerified(): void
+    {
+        $this->dashboardPage->open();
+
+        Webmozart\Assert\Assert::false($this->dashboardPage->isVerified());
+    }
+
+    
+    public function iShouldBeUnableToResendVerificationEmail(): void
+    {
+        $this->dashboardPage->open();
+
+        Webmozart\Assert\Assert::false($this->dashboardPage->hasResendVerificationEmailButton());
+    }
+
+    
+    public function iShouldBeNotifiedThatTheVerificationWasSuccessful(): void
+    {
+        $this->notificationChecker->checkNotification('has been successfully verified.', Sylius\Behat\NotificationType::success());
+    }
+
+    
+    public function iShouldBeNotifiedThatTheVerificationTokenIsInvalid(): void
+    {
+        $this->notificationChecker->checkNotification('The verification token is invalid.', Sylius\Behat\NotificationType::failure());
+    }
+
+    
+    public function iShouldBeNotifiedThatTheVerificationEmailHasBeenSent(): void
+    {
+        $this->notificationChecker->checkNotification(
+            'An email with the verification link has been sent to your email address.',
+            Sylius\Behat\NotificationType::success()
+        );
+    }
+}

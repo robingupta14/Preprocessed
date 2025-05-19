@@ -1,0 +1,1732 @@
+
+
+
+
+
+
+
+
+__FBSDID("$FreeBSD$");
+
+struct fixup_entry {
+ struct fixup_entry *next;
+ struct archive_acl acl;
+ mode_t mode;
+ int64_t atime;
+ int64_t birthtime;
+ int64_t mtime;
+ int64_t ctime;
+ unsigned long atime_nanos;
+ unsigned long birthtime_nanos;
+ unsigned long mtime_nanos;
+ unsigned long ctime_nanos;
+ unsigned long fflags_set;
+ size_t mac_metadata_size;
+ void *mac_metadata;
+ int fixup;
+ char *name;
+};
+
+struct archive_write_disk {
+ struct archive archive;
+
+ mode_t user_umask;
+ struct fixup_entry *fixup_list;
+ struct fixup_entry *current_fixup;
+ int64_t user_uid;
+ int skip_file_set;
+ int64_t skip_file_dev;
+ int64_t skip_file_ino;
+ time_t start_time;
+
+ int64_t (*lookup_gid)(void *private, const char *gname, int64_t gid);
+ void (*cleanup_gid)(void *private);
+ void *lookup_gid_data;
+ int64_t (*lookup_uid)(void *private, const char *uname, int64_t uid);
+ void (*cleanup_uid)(void *private);
+ void *lookup_uid_data;
+
+
+
+
+ struct archive_string path_safe;
+
+
+
+
+
+
+ struct stat st;
+ struct stat *pst;
+
+
+ struct archive_entry *entry;
+ char *name;
+ struct archive_string _name_data;
+
+ int todo;
+
+ int deferred;
+
+ int flags;
+
+ int fd;
+
+ int64_t offset;
+
+ int64_t fd_offset;
+
+ int64_t total_bytes_written;
+
+ int64_t filesize;
+
+ int restore_pwd;
+
+ mode_t mode;
+
+ int64_t uid;
+ int64_t gid;
+
+
+
+
+ uint32_t decmpfs_attr_size;
+ unsigned char *decmpfs_header_p;
+
+ int rsrc_xattr_options;
+
+ unsigned char *resource_fork;
+ size_t resource_fork_allocated_size;
+ unsigned int decmpfs_block_count;
+ uint32_t *decmpfs_block_info;
+
+ unsigned char *compressed_buffer;
+ size_t compressed_buffer_size;
+ size_t compressed_buffer_remaining;
+
+
+ uint32_t compressed_rsrc_position;
+ uint32_t compressed_rsrc_position_v;
+
+ char *uncompressed_buffer;
+ size_t block_remaining_bytes;
+ size_t file_remaining_bytes;
+
+
+
+
+
+};
+
+static int check_symlinks(struct archive_write_disk *);
+static int create_filesystem_object(struct archive_write_disk *);
+static struct fixup_entry *current_fixup(struct archive_write_disk *, const char *pathname);
+
+
+
+static int cleanup_pathname(struct archive_write_disk *);
+static int create_dir(struct archive_write_disk *, char *);
+static int create_parent_dir(struct archive_write_disk *, char *);
+static ssize_t hfs_write_data_block(struct archive_write_disk *,
+      const char *, size_t);
+static int fixup_appledouble(struct archive_write_disk *, const char *);
+static int older(struct stat *, struct archive_entry *);
+static int restore_entry(struct archive_write_disk *);
+static int set_mac_metadata(struct archive_write_disk *, const char *,
+     const void *, size_t);
+static int set_xattrs(struct archive_write_disk *);
+static int set_fflags(struct archive_write_disk *);
+static int set_fflags_platform(struct archive_write_disk *, int fd,
+      const char *name, mode_t mode,
+      unsigned long fflags_set, unsigned long fflags_clear);
+static int set_ownership(struct archive_write_disk *);
+static int set_mode(struct archive_write_disk *, int mode);
+static int set_time(int, int, const char *, time_t, long, time_t, long);
+static int set_times(struct archive_write_disk *, int, int, const char *,
+      time_t, long, time_t, long, time_t, long, time_t, long);
+static int set_times_from_entry(struct archive_write_disk *);
+static struct fixup_entry *sort_dir_list(struct fixup_entry *p);
+static ssize_t write_data_block(struct archive_write_disk *,
+      const char *, size_t);
+
+static struct archive_vtable *archive_write_disk_vtable(void);
+
+static int _archive_write_disk_close(struct archive *);
+static int _archive_write_disk_free(struct archive *);
+static int _archive_write_disk_header(struct archive *, struct archive_entry *);
+static int64_t _archive_write_disk_filter_bytes(struct archive *, int);
+static int _archive_write_disk_finish_entry(struct archive *);
+static ssize_t _archive_write_disk_data(struct archive *, const void *, size_t);
+static ssize_t _archive_write_disk_data_block(struct archive *, const void *, size_t, int64_t);
+
+static int
+lazy_stat(struct archive_write_disk *a)
+{
+ if (a->pst != NULL) {
+
+  return (ARCHIVE_OK);
+ }
+
+ if (lstat(a->name, &a->st) == 0) {
+  a->pst = &a->st;
+  return (ARCHIVE_OK);
+ }
+ archive_set_error(&a->archive, errno, "Couldn't stat file");
+ return (ARCHIVE_WARN);
+}
+
+static struct archive_vtable *
+archive_write_disk_vtable(void)
+{
+ static struct archive_vtable av;
+ static int inited = 0;
+
+ if (!inited) {
+  av.archive_close = _archive_write_disk_close;
+  av.archive_filter_bytes = _archive_write_disk_filter_bytes;
+  av.archive_free = _archive_write_disk_free;
+  av.archive_write_header = _archive_write_disk_header;
+  av.archive_write_finish_entry
+      = _archive_write_disk_finish_entry;
+  av.archive_write_data = _archive_write_disk_data;
+  av.archive_write_data_block = _archive_write_disk_data_block;
+  inited = 1;
+ }
+ return (&av);
+}
+
+static int64_t
+_archive_write_disk_filter_bytes(struct archive *_a, int n)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ (void)n;
+ if (n == -1 || n == 0)
+  return (a->total_bytes_written);
+ return -1;
+}
+
+
+int
+archive_write_disk_set_options(struct archive *_a, int flags)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+
+ a->flags = flags;
+ return (ARCHIVE_OK);
+}
+
+static int
+_archive_write_disk_header(struct archive *_a, struct archive_entry *entry)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ struct fixup_entry *fe;
+ int ret, r;
+
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_HEADER | ARCHIVE_STATE_DATA,
+     "archive_write_disk_header");
+ archive_clear_error(&a->archive);
+ if (a->archive.state & ARCHIVE_STATE_DATA) {
+  r = _archive_write_disk_finish_entry(&a->archive);
+  if (r == ARCHIVE_FATAL)
+   return (r);
+ }
+
+
+ a->pst = NULL;
+ a->current_fixup = NULL;
+ a->deferred = 0;
+ if (a->entry) {
+  archive_entry_free(a->entry);
+  a->entry = NULL;
+ }
+ a->entry = archive_entry_clone(entry);
+ a->fd = -1;
+ a->fd_offset = 0;
+ a->offset = 0;
+ a->restore_pwd = -1;
+ a->uid = a->user_uid;
+ a->mode = archive_entry_mode(a->entry);
+ if (archive_entry_size_is_set(a->entry))
+  a->filesize = archive_entry_size(a->entry);
+ else
+  a->filesize = -1;
+ archive_strcpy(&(a->_name_data), archive_entry_pathname(a->entry));
+ a->name = a->_name_data.s;
+ archive_clear_error(&a->archive);
+
+
+
+
+
+
+ ret = cleanup_pathname(a);
+ if (ret != ARCHIVE_OK)
+  return (ret);
+
+
+
+
+
+
+
+ umask(a->user_umask = umask(0));
+
+
+ a->todo = 0x20000000;
+ if (a->flags & ARCHIVE_EXTRACT_PERM) {
+  a->todo |= 0x40000000;
+
+  if (a->mode & S_ISGID)
+   a->todo |= 0x04000000 | 0x02000000;
+
+
+
+
+  if (a->mode & S_ISUID)
+   a->todo |= 0x10000000 | 0x08000000;
+ } else {
+
+
+
+
+  a->mode &= ~S_ISUID;
+  a->mode &= ~S_ISGID;
+  a->mode &= ~S_ISVTX;
+  a->mode &= ~a->user_umask;
+ }
+ if (a->flags & ARCHIVE_EXTRACT_OWNER)
+  a->todo |= ARCHIVE_EXTRACT_OWNER;
+ if (a->flags & ARCHIVE_EXTRACT_TIME)
+  a->todo |= ARCHIVE_EXTRACT_TIME;
+ if (a->flags & ARCHIVE_EXTRACT_ACL) {
+  if (archive_entry_filetype(a->entry) == AE_IFDIR)
+   a->deferred |= ARCHIVE_EXTRACT_ACL;
+  else
+   a->todo |= ARCHIVE_EXTRACT_ACL;
+ }
+ if (a->flags & ARCHIVE_EXTRACT_MAC_METADATA) {
+  if (archive_entry_filetype(a->entry) == AE_IFDIR)
+   a->deferred |= ARCHIVE_EXTRACT_MAC_METADATA;
+  else
+   a->todo |= ARCHIVE_EXTRACT_MAC_METADATA;
+ }
+
+ if (a->flags & ARCHIVE_EXTRACT_XATTR)
+  a->todo |= ARCHIVE_EXTRACT_XATTR;
+ if (a->flags & ARCHIVE_EXTRACT_FFLAGS)
+  a->todo |= ARCHIVE_EXTRACT_FFLAGS;
+ if (a->flags & ARCHIVE_EXTRACT_SECURE_SYMLINKS) {
+  ret = check_symlinks(a);
+  if (ret != ARCHIVE_OK)
+   return (ret);
+ }
+
+
+
+
+
+ ret = restore_entry(a);
+
+ if (a->deferred & (0x20000000|0x10000000|0x04000000)) {
+  fe = current_fixup(a, archive_entry_pathname(entry));
+  if (fe == NULL)
+   return (ARCHIVE_FATAL);
+  fe->fixup |= 0x20000000;
+  fe->mode = a->mode;
+ }
+
+ if ((a->deferred & ARCHIVE_EXTRACT_TIME)
+  && (archive_entry_mtime_is_set(entry)
+      || archive_entry_atime_is_set(entry))) {
+  fe = current_fixup(a, archive_entry_pathname(entry));
+  if (fe == NULL)
+   return (ARCHIVE_FATAL);
+  fe->mode = a->mode;
+  fe->fixup |= ARCHIVE_EXTRACT_TIME;
+  if (archive_entry_atime_is_set(entry)) {
+   fe->atime = archive_entry_atime(entry);
+   fe->atime_nanos = archive_entry_atime_nsec(entry);
+  } else {
+
+   fe->atime = a->start_time;
+   fe->atime_nanos = 0;
+  }
+  if (archive_entry_mtime_is_set(entry)) {
+   fe->mtime = archive_entry_mtime(entry);
+   fe->mtime_nanos = archive_entry_mtime_nsec(entry);
+  } else {
+
+   fe->mtime = a->start_time;
+   fe->mtime_nanos = 0;
+  }
+  if (archive_entry_birthtime_is_set(entry)) {
+   fe->birthtime = archive_entry_birthtime(entry);
+   fe->birthtime_nanos = archive_entry_birthtime_nsec(entry);
+  } else {
+
+   fe->birthtime = fe->mtime;
+   fe->birthtime_nanos = fe->mtime_nanos;
+  }
+ }
+
+ if (a->deferred & ARCHIVE_EXTRACT_ACL) {
+  fe = current_fixup(a, archive_entry_pathname(entry));
+  if (fe == NULL)
+   return (ARCHIVE_FATAL);
+  fe->fixup |= ARCHIVE_EXTRACT_ACL;
+  archive_acl_copy(&fe->acl, archive_entry_acl(entry));
+ }
+
+ if (a->deferred & ARCHIVE_EXTRACT_MAC_METADATA) {
+  const void *metadata;
+  size_t metadata_size;
+  metadata = archive_entry_mac_metadata(a->entry, &metadata_size);
+  if (metadata != NULL && metadata_size > 0) {
+   fe = current_fixup(a, archive_entry_pathname(entry));
+   if (fe == NULL)
+    return (ARCHIVE_FATAL);
+   fe->mac_metadata = malloc(metadata_size);
+   if (fe->mac_metadata != NULL) {
+    memcpy(fe->mac_metadata, metadata, metadata_size);
+    fe->mac_metadata_size = metadata_size;
+    fe->fixup |= ARCHIVE_EXTRACT_MAC_METADATA;
+   }
+  }
+ }
+
+ if (a->deferred & ARCHIVE_EXTRACT_FFLAGS) {
+  fe = current_fixup(a, archive_entry_pathname(entry));
+  if (fe == NULL)
+   return (ARCHIVE_FATAL);
+  fe->fixup |= ARCHIVE_EXTRACT_FFLAGS;
+
+ }
+
+
+ if (ret >= ARCHIVE_WARN)
+  a->archive.state = ARCHIVE_STATE_DATA;
+
+
+
+
+ if (a->fd < 0) {
+  archive_entry_set_size(entry, 0);
+  a->filesize = 0;
+ }
+
+ return (ret);
+}
+
+int
+archive_write_disk_set_skip_file(struct archive *_a, int64_t d, int64_t i)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_ANY, "archive_write_disk_set_skip_file");
+ a->skip_file_set = 1;
+ a->skip_file_dev = d;
+ a->skip_file_ino = i;
+ return (ARCHIVE_OK);
+}
+
+static ssize_t
+write_data_block(struct archive_write_disk *a, const char *buff, size_t size)
+{
+ uint64_t start_size = size;
+ ssize_t bytes_written = 0;
+ ssize_t block_size = 0, bytes_to_write;
+
+ if (size == 0)
+  return (ARCHIVE_OK);
+
+ if (a->filesize == 0 || a->fd < 0) {
+  archive_set_error(&a->archive, 0,
+      "Attempt to write to an empty file");
+  return (ARCHIVE_WARN);
+ }
+
+ if (a->flags & ARCHIVE_EXTRACT_SPARSE) {
+
+  block_size = 16384;
+
+ }
+
+
+ if (a->filesize >= 0 && (int64_t)(a->offset + size) > a->filesize)
+  start_size = size = (size_t)(a->filesize - a->offset);
+
+
+ while (size > 0) {
+  if (block_size == 0) {
+   bytes_to_write = size;
+  } else {
+
+   const char *p, *end;
+   int64_t block_end;
+
+
+   for (p = buff, end = buff + size; p < end; ++p) {
+    if (*p != '\0')
+     break;
+   }
+   a->offset += p - buff;
+   size -= p - buff;
+   buff = p;
+   if (size == 0)
+    break;
+
+
+   block_end
+       = (a->offset / block_size + 1) * block_size;
+
+
+
+   bytes_to_write = size;
+   if (a->offset + bytes_to_write > block_end)
+    bytes_to_write = block_end - a->offset;
+  }
+
+  if (a->offset != a->fd_offset) {
+   if (lseek(a->fd, a->offset, SEEK_SET) < 0) {
+    archive_set_error(&a->archive, errno,
+        "Seek failed");
+    return (ARCHIVE_FATAL);
+   }
+   a->fd_offset = a->offset;
+  }
+  bytes_written = write(a->fd, buff, bytes_to_write);
+  if (bytes_written < 0) {
+   archive_set_error(&a->archive, errno, "Write failed");
+   return (ARCHIVE_WARN);
+  }
+  buff += bytes_written;
+  size -= bytes_written;
+  a->total_bytes_written += bytes_written;
+  a->offset += bytes_written;
+  a->fd_offset = a->offset;
+ }
+ return (start_size - size);
+}
+
+static ssize_t
+hfs_write_data_block(struct archive_write_disk *a, const char *buff,
+    size_t size)
+{
+ return (write_data_block(a, buff, size));
+}
+
+
+static ssize_t
+_archive_write_disk_data_block(struct archive *_a,
+    const void *buff, size_t size, int64_t offset)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ ssize_t r;
+
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_DATA, "archive_write_data_block");
+
+ a->offset = offset;
+ if (a->todo & ARCHIVE_EXTRACT_HFS_COMPRESSION_FORCED)
+  r = hfs_write_data_block(a, buff, size);
+ else
+  r = write_data_block(a, buff, size);
+ if (r < ARCHIVE_OK)
+  return (r);
+ if ((size_t)r < size) {
+  archive_set_error(&a->archive, 0,
+      "Write request too large");
+  return (ARCHIVE_WARN);
+ }
+
+ return (ARCHIVE_OK);
+
+
+
+}
+
+static ssize_t
+_archive_write_disk_data(struct archive *_a, const void *buff, size_t size)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_DATA, "archive_write_data");
+
+ if (a->todo & ARCHIVE_EXTRACT_HFS_COMPRESSION_FORCED)
+  return (hfs_write_data_block(a, buff, size));
+ return (write_data_block(a, buff, size));
+}
+
+static int
+_archive_write_disk_finish_entry(struct archive *_a)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ int ret = ARCHIVE_OK;
+
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_HEADER | ARCHIVE_STATE_DATA,
+     "archive_write_finish_entry");
+ if (a->archive.state & ARCHIVE_STATE_HEADER)
+  return (ARCHIVE_OK);
+ archive_clear_error(&a->archive);
+
+
+ if (a->fd < 0) {
+
+ } else if (a->filesize < 0) {
+
+ } else if (a->fd_offset == a->filesize) {
+
+ } else {
+
+  a->pst = NULL;
+  if ((ret = lazy_stat(a)) != ARCHIVE_OK)
+   return (ret);
+
+
+  if (a->st.st_size < a->filesize) {
+   const char nul = '\0';
+   if (lseek(a->fd, a->filesize - 1, SEEK_SET) < 0) {
+    archive_set_error(&a->archive, errno,
+        "Seek failed");
+    return (ARCHIVE_FATAL);
+   }
+   if (write(a->fd, &nul, 1) < 0) {
+    archive_set_error(&a->archive, errno,
+        "Write to restore size failed");
+    return (ARCHIVE_FATAL);
+   }
+   a->pst = NULL;
+  }
+ }
+
+ if (a->todo & 0x01000000) {
+  int r2 = fixup_appledouble(a, a->name);
+  if (r2 == ARCHIVE_EOF) {
+
+
+
+   goto finish_metadata;
+  }
+  if (r2 < ret) ret = r2;
+ }
+
+
+
+
+
+ if (a->todo & (ARCHIVE_EXTRACT_OWNER | 0x10000000 | 0x04000000)) {
+  a->uid = archive_write_disk_uid(&a->archive,
+      archive_entry_uname(a->entry),
+      archive_entry_uid(a->entry));
+ }
+
+
+ if (a->todo & (ARCHIVE_EXTRACT_OWNER | 0x04000000 | 0x10000000)) {
+  a->gid = archive_write_disk_gid(&a->archive,
+      archive_entry_gname(a->entry),
+      archive_entry_gid(a->entry));
+  }
+
+
+
+
+
+
+ if (a->todo & ARCHIVE_EXTRACT_OWNER) {
+  int r2 = set_ownership(a);
+  if (r2 < ret) ret = r2;
+ }
+
+
+
+
+
+ if (a->todo & (0x20000000|0x10000000|0x04000000)) {
+  int r2 = set_mode(a, a->mode);
+  if (r2 < ret) ret = r2;
+ }
+
+
+
+
+
+
+ if (a->todo & ARCHIVE_EXTRACT_XATTR) {
+  int r2 = set_xattrs(a);
+  if (r2 < ret) ret = r2;
+ }
+
+
+
+
+
+ if (a->todo & ARCHIVE_EXTRACT_FFLAGS) {
+  int r2 = set_fflags(a);
+  if (r2 < ret) ret = r2;
+ }
+
+
+
+
+
+ if (a->todo & ARCHIVE_EXTRACT_TIME) {
+  int r2 = set_times_from_entry(a);
+  if (r2 < ret) ret = r2;
+ }
+
+
+
+
+ if (a->todo & ARCHIVE_EXTRACT_MAC_METADATA) {
+  const void *metadata;
+  size_t metadata_size;
+  metadata = archive_entry_mac_metadata(a->entry, &metadata_size);
+  if (metadata != NULL && metadata_size > 0) {
+   int r2 = set_mac_metadata(a, archive_entry_pathname(
+       a->entry), metadata, metadata_size);
+   if (r2 < ret) ret = r2;
+  }
+ }
+
+
+
+
+
+ if (a->todo & ARCHIVE_EXTRACT_ACL) {
+  int r2 = archive_write_disk_set_acls(&a->archive, a->fd,
+      archive_entry_pathname(a->entry),
+      archive_entry_acl(a->entry));
+  if (r2 < ret) ret = r2;
+ }
+
+finish_metadata:
+
+ if (a->fd >= 0) {
+  close(a->fd);
+  a->fd = -1;
+ }
+
+ if (a->entry) {
+  archive_entry_free(a->entry);
+  a->entry = NULL;
+ }
+ a->archive.state = ARCHIVE_STATE_HEADER;
+ return (ret);
+}
+
+int
+archive_write_disk_set_group_lookup(struct archive *_a,
+    void *private_data,
+    int64_t (*lookup_gid)(void *private, const char *gname, int64_t gid),
+    void (*cleanup_gid)(void *private))
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_ANY, "archive_write_disk_set_group_lookup");
+
+ if (a->cleanup_gid != NULL && a->lookup_gid_data != NULL)
+  (a->cleanup_gid)(a->lookup_gid_data);
+
+ a->lookup_gid = lookup_gid;
+ a->cleanup_gid = cleanup_gid;
+ a->lookup_gid_data = private_data;
+ return (ARCHIVE_OK);
+}
+
+int
+archive_write_disk_set_user_lookup(struct archive *_a,
+    void *private_data,
+    int64_t (*lookup_uid)(void *private, const char *uname, int64_t uid),
+    void (*cleanup_uid)(void *private))
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_ANY, "archive_write_disk_set_user_lookup");
+
+ if (a->cleanup_uid != NULL && a->lookup_uid_data != NULL)
+  (a->cleanup_uid)(a->lookup_uid_data);
+
+ a->lookup_uid = lookup_uid;
+ a->cleanup_uid = cleanup_uid;
+ a->lookup_uid_data = private_data;
+ return (ARCHIVE_OK);
+}
+
+int64_t
+archive_write_disk_gid(struct archive *_a, const char *name, int64_t id)
+{
+       struct archive_write_disk *a = (struct archive_write_disk *)_a;
+       archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+           ARCHIVE_STATE_ANY, "archive_write_disk_gid");
+       if (a->lookup_gid)
+               return (a->lookup_gid)(a->lookup_gid_data, name, id);
+       return (id);
+}
+
+int64_t
+archive_write_disk_uid(struct archive *_a, const char *name, int64_t id)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_ANY, "archive_write_disk_uid");
+ if (a->lookup_uid)
+  return (a->lookup_uid)(a->lookup_uid_data, name, id);
+ return (id);
+}
+
+
+
+
+struct archive *
+archive_write_disk_new(void)
+{
+ struct archive_write_disk *a;
+
+ a = (struct archive_write_disk *)malloc(sizeof(*a));
+ if (a == NULL)
+  return (NULL);
+ memset(a, 0, sizeof(*a));
+ a->archive.magic = ARCHIVE_WRITE_DISK_MAGIC;
+
+ a->archive.state = ARCHIVE_STATE_HEADER;
+ a->archive.vtable = archive_write_disk_vtable();
+ a->start_time = time(NULL);
+
+ umask(a->user_umask = umask(0));
+
+
+
+ if (archive_string_ensure(&a->path_safe, 512) == NULL) {
+  free(a);
+  return (NULL);
+ }
+
+
+
+ return (&a->archive);
+}
+
+static int
+restore_entry(struct archive_write_disk *a)
+{
+ int ret = ARCHIVE_OK, en;
+
+ if (a->flags & ARCHIVE_EXTRACT_UNLINK && !S_ISDIR(a->mode)) {
+
+  if (unlink(a->name) == 0) {
+
+   a->pst = NULL;
+  } else if (errno == ENOENT) {
+
+  } else if (rmdir(a->name) == 0) {
+
+   a->pst = NULL;
+  } else {
+
+   archive_set_error(&a->archive, errno,
+       "Could not unlink");
+   return(ARCHIVE_FAILED);
+  }
+ }
+
+
+ en = create_filesystem_object(a);
+
+ if ((en == ENOTDIR || en == ENOENT)
+     && !(a->flags & ARCHIVE_EXTRACT_NO_AUTODIR)) {
+
+  create_parent_dir(a, a->name);
+
+  en = create_filesystem_object(a);
+ }
+
+ if ((en == EISDIR || en == EEXIST)
+     && (a->flags & ARCHIVE_EXTRACT_NO_OVERWRITE)) {
+
+  archive_entry_unset_size(a->entry);
+  return (ARCHIVE_OK);
+ }
+
+ if (en == EISDIR) {
+
+  if (rmdir(a->name) != 0) {
+   archive_set_error(&a->archive, errno,
+       "Can't remove already-existing dir");
+   return (ARCHIVE_FAILED);
+  }
+  a->pst = NULL;
+
+  en = create_filesystem_object(a);
+ } else if (en == EEXIST) {
+
+
+
+
+  int r = 0;
+
+
+
+
+
+  if (S_ISDIR(a->mode))
+   r = stat(a->name, &a->st);
+
+
+
+
+  if (r != 0 || !S_ISDIR(a->mode))
+   r = lstat(a->name, &a->st);
+  if (r != 0) {
+   archive_set_error(&a->archive, errno,
+       "Can't stat existing object");
+   return (ARCHIVE_FAILED);
+  }
+
+
+
+
+  if ((a->flags & ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER)
+      && !S_ISDIR(a->st.st_mode)) {
+   if (!older(&(a->st), a->entry)) {
+    archive_entry_unset_size(a->entry);
+    return (ARCHIVE_OK);
+   }
+  }
+
+
+  if (a->skip_file_set &&
+      a->st.st_dev == (dev_t)a->skip_file_dev &&
+      a->st.st_ino == (ino_t)a->skip_file_ino) {
+   archive_set_error(&a->archive, 0,
+       "Refusing to overwrite archive");
+   return (ARCHIVE_FAILED);
+  }
+
+  if (!S_ISDIR(a->st.st_mode)) {
+
+   if (unlink(a->name) != 0) {
+    archive_set_error(&a->archive, errno,
+        "Can't unlink already-existing object");
+    return (ARCHIVE_FAILED);
+   }
+   a->pst = NULL;
+
+   en = create_filesystem_object(a);
+  } else if (!S_ISDIR(a->mode)) {
+
+   if (rmdir(a->name) != 0) {
+    archive_set_error(&a->archive, errno,
+        "Can't replace existing directory with non-directory");
+    return (ARCHIVE_FAILED);
+   }
+
+   en = create_filesystem_object(a);
+  } else {
+
+
+
+
+
+
+
+   if ((a->mode != a->st.st_mode)
+       && (a->todo & 0x40000000))
+    a->deferred |= (a->todo & (0x20000000|0x10000000|0x04000000));
+
+   en = 0;
+  }
+ }
+
+ if (en) {
+
+  archive_set_error(&a->archive, en, "Can't create '%s'",
+      a->name);
+  return (ARCHIVE_FAILED);
+ }
+
+ a->pst = NULL;
+ return (ret);
+}
+
+
+
+
+
+
+static int
+create_filesystem_object(struct archive_write_disk *a)
+{
+
+ const char *linkname;
+ mode_t final_mode, mode;
+ int r;
+
+
+
+ linkname = archive_entry_hardlink(a->entry);
+ if (linkname != NULL) {
+
+  return (EPERM);
+
+ }
+ linkname = archive_entry_symlink(a->entry);
+ if (linkname != NULL) {
+
+
+
+  return (EPERM);
+
+ }
+
+ final_mode = a->mode & 7777;
+
+
+
+
+
+ mode = final_mode & 777 & ~a->user_umask;
+
+ switch (a->mode & AE_IFMT) {
+ default:
+
+
+ case AE_IFREG:
+  a->fd = open(a->name,
+      O_WRONLY | O_CREAT | O_EXCL | 0 | 0, mode);
+  __archive_ensure_cloexec_flag(a->fd);
+  r = (a->fd < 0);
+  break;
+ case AE_IFCHR:
+
+  return (EINVAL);
+
+ case AE_IFBLK:
+
+
+
+
+
+
+
+  return (EINVAL);
+
+ case AE_IFDIR:
+  mode = (mode | 700) & 775;
+  r = mkdir(a->name, mode);
+  if (r == 0) {
+
+   a->deferred |= (a->todo & ARCHIVE_EXTRACT_TIME);
+   a->todo &= ~ARCHIVE_EXTRACT_TIME;
+
+
+
+   if ((mode != final_mode)
+       || (a->flags & ARCHIVE_EXTRACT_PERM))
+    a->deferred |= (a->todo & (0x20000000|0x10000000|0x04000000));
+   a->todo &= ~(0x20000000|0x10000000|0x04000000);
+  }
+  break;
+ case AE_IFIFO:
+
+
+
+
+
+
+  return (EINVAL);
+
+ }
+
+
+ if (r)
+  return (errno);
+
+
+ if (mode == final_mode)
+  a->todo &= ~(0x20000000|0x10000000|0x04000000);
+ return 0;
+}
+
+static int
+_archive_write_disk_close(struct archive *_a)
+{
+ struct archive_write_disk *a = (struct archive_write_disk *)_a;
+ struct fixup_entry *next, *p;
+ int ret;
+
+ archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_HEADER | ARCHIVE_STATE_DATA,
+     "archive_write_disk_close");
+ ret = _archive_write_disk_finish_entry(&a->archive);
+
+
+ p = sort_dir_list(a->fixup_list);
+
+ while (p != NULL) {
+  a->pst = NULL;
+  if (p->fixup & ARCHIVE_EXTRACT_TIME) {
+   set_times(a, -1, p->mode, p->name,
+       p->atime, p->atime_nanos,
+       p->birthtime, p->birthtime_nanos,
+       p->mtime, p->mtime_nanos,
+       p->ctime, p->ctime_nanos);
+  }
+  if (p->fixup & 0x20000000)
+   chmod(p->name, p->mode);
+  if (p->fixup & ARCHIVE_EXTRACT_ACL)
+   archive_write_disk_set_acls(&a->archive,
+          -1, p->name, &p->acl);
+  if (p->fixup & ARCHIVE_EXTRACT_FFLAGS)
+   set_fflags_platform(a, -1, p->name,
+       p->mode, p->fflags_set, 0);
+  if (p->fixup & ARCHIVE_EXTRACT_MAC_METADATA)
+   set_mac_metadata(a, p->name, p->mac_metadata,
+      p->mac_metadata_size);
+  next = p->next;
+  archive_acl_clear(&p->acl);
+  free(p->mac_metadata);
+  free(p->name);
+  free(p);
+  p = next;
+ }
+ a->fixup_list = NULL;
+ return (ret);
+}
+
+static int
+_archive_write_disk_free(struct archive *_a)
+{
+ struct archive_write_disk *a;
+ int ret;
+ if (_a == NULL)
+  return (ARCHIVE_OK);
+ archive_check_magic(_a, ARCHIVE_WRITE_DISK_MAGIC,
+     ARCHIVE_STATE_ANY | ARCHIVE_STATE_FATAL, "archive_write_disk_free");
+ a = (struct archive_write_disk *)_a;
+ ret = _archive_write_disk_close(&a->archive);
+ archive_write_disk_set_group_lookup(&a->archive, NULL, NULL, NULL);
+ archive_write_disk_set_user_lookup(&a->archive, NULL, NULL, NULL);
+ if (a->entry)
+  archive_entry_free(a->entry);
+ archive_string_free(&a->_name_data);
+ archive_string_free(&a->archive.error_string);
+ archive_string_free(&a->path_safe);
+ a->archive.magic = 0;
+ __archive_clean(&a->archive);
+ free(a->decmpfs_header_p);
+ free(a->resource_fork);
+ free(a->compressed_buffer);
+ free(a->uncompressed_buffer);
+
+ free(a);
+ return (ret);
+}
+
+
+
+
+
+static struct fixup_entry *
+sort_dir_list(struct fixup_entry *p)
+{
+ struct fixup_entry *a, *b, *t;
+
+ if (p == NULL)
+  return (NULL);
+
+ if (p->next == NULL)
+  return (p);
+
+
+ t = p;
+ a = p->next->next;
+ while (a != NULL) {
+
+  a = a->next;
+  if (a != NULL)
+   a = a->next;
+  t = t->next;
+ }
+
+ b = t->next;
+ t->next = NULL;
+ a = p;
+
+
+ a = sort_dir_list(a);
+ b = sort_dir_list(b);
+
+
+
+ if (strcmp(a->name, b->name) > 0) {
+  t = p = a;
+  a = a->next;
+ } else {
+  t = p = b;
+  b = b->next;
+ }
+
+
+ while (a != NULL && b != NULL) {
+  if (strcmp(a->name, b->name) > 0) {
+   t->next = a;
+   a = a->next;
+  } else {
+   t->next = b;
+   b = b->next;
+  }
+  t = t->next;
+ }
+
+
+ if (a != NULL)
+  t->next = a;
+ if (b != NULL)
+  t->next = b;
+
+ return (p);
+}
+
+
+
+
+
+
+
+static struct fixup_entry *
+new_fixup(struct archive_write_disk *a, const char *pathname)
+{
+ struct fixup_entry *fe;
+
+ fe = (struct fixup_entry *)calloc(1, sizeof(struct fixup_entry));
+ if (fe == NULL) {
+  archive_set_error(&a->archive, ENOMEM,
+      "Can't allocate memory for a fixup");
+  return (NULL);
+ }
+ fe->next = a->fixup_list;
+ a->fixup_list = fe;
+ fe->fixup = 0;
+ fe->name = strdup(pathname);
+ return (fe);
+}
+
+
+
+
+static struct fixup_entry *
+current_fixup(struct archive_write_disk *a, const char *pathname)
+{
+ if (a->current_fixup == NULL)
+  a->current_fixup = new_fixup(a, pathname);
+ return (a->current_fixup);
+}
+
+static int
+check_symlinks(struct archive_write_disk *a)
+{
+
+
+ (void)a;
+ return (ARCHIVE_OK);
+
+}
+
+static int
+cleanup_pathname(struct archive_write_disk *a)
+{
+ char *dest, *src;
+ char separator = '\0';
+
+ dest = src = a->name;
+ if (*src == '\0') {
+  archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+      "Invalid empty pathname");
+  return (ARCHIVE_FAILED);
+ }
+
+
+
+
+
+ if (*src == '/') {
+  if (a->flags & ARCHIVE_EXTRACT_SECURE_NOABSOLUTEPATHS) {
+   archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+                     "Path is absolute");
+   return (ARCHIVE_FAILED);
+  }
+
+  separator = *src++;
+ }
+
+
+ for (;;) {
+
+  if (src[0] == '\0') {
+   break;
+  } else if (src[0] == '/') {
+
+   src++;
+   continue;
+  } else if (src[0] == '.') {
+   if (src[1] == '\0') {
+
+    break;
+   } else if (src[1] == '/') {
+
+    src += 2;
+    continue;
+   } else if (src[1] == '.') {
+    if (src[2] == '/' || src[2] == '\0') {
+
+     if (a->flags & ARCHIVE_EXTRACT_SECURE_NODOTDOT) {
+      archive_set_error(&a->archive,
+          ARCHIVE_ERRNO_MISC,
+          "Path contains '..'");
+      return (ARCHIVE_FAILED);
+     }
+    }
+
+
+
+
+
+
+
+   }
+  }
+
+
+  if (separator)
+   *dest++ = '/';
+  while (*src != '\0' && *src != '/') {
+   *dest++ = *src++;
+  }
+
+  if (*src == '\0')
+   break;
+
+
+  separator = *src++;
+ }
+
+
+
+
+ if (dest == a->name) {
+
+
+
+
+  if (separator)
+   *dest++ = '/';
+  else
+   *dest++ = '.';
+ }
+
+ *dest = '\0';
+ return (ARCHIVE_OK);
+}
+
+
+
+
+
+static int
+create_parent_dir(struct archive_write_disk *a, char *path)
+{
+ char *slash;
+ int r;
+
+
+ slash = strrchr(path, '/');
+ if (slash == NULL)
+  return (ARCHIVE_OK);
+ *slash = '\0';
+ r = create_dir(a, path);
+ *slash = '/';
+ return (r);
+}
+
+static int
+create_dir(struct archive_write_disk *a, char *path)
+{
+ struct stat st;
+ struct fixup_entry *le;
+ char *slash, *base;
+ mode_t mode_final, mode;
+ int r;
+
+
+ slash = strrchr(path, '/');
+ if (slash == NULL)
+  base = path;
+ else
+  base = slash + 1;
+
+ if (base[0] == '\0' ||
+     (base[0] == '.' && base[1] == '\0') ||
+     (base[0] == '.' && base[1] == '.' && base[2] == '\0')) {
+
+  if (slash != NULL) {
+   *slash = '\0';
+   r = create_dir(a, path);
+   *slash = '/';
+   return (r);
+  }
+  return (ARCHIVE_OK);
+ }
+
+
+
+
+
+
+ if (stat(path, &st) == 0) {
+  if (S_ISDIR(st.st_mode))
+   return (ARCHIVE_OK);
+  if ((a->flags & ARCHIVE_EXTRACT_NO_OVERWRITE)) {
+   archive_set_error(&a->archive, EEXIST,
+       "Can't create directory '%s'", path);
+   return (ARCHIVE_FAILED);
+  }
+  if (unlink(path) != 0) {
+   archive_set_error(&a->archive, errno,
+       "Can't create directory '%s': "
+       "Conflicting file cannot be removed",
+       path);
+   return (ARCHIVE_FAILED);
+  }
+ } else if (errno != ENOENT && errno != ENOTDIR) {
+
+  archive_set_error(&a->archive, errno, "Can't test directory '%s'", path);
+  return (ARCHIVE_FAILED);
+ } else if (slash != NULL) {
+  *slash = '\0';
+  r = create_dir(a, path);
+  *slash = '/';
+  if (r != ARCHIVE_OK)
+   return (r);
+ }
+
+ mode_final = 777 & ~a->user_umask;
+
+ mode = mode_final;
+ mode |= 700;
+ mode &= 775;
+ if (mkdir(path, mode) == 0) {
+  if (mode != mode_final) {
+   le = new_fixup(a, path);
+   if (le == NULL)
+    return (ARCHIVE_FATAL);
+   le->fixup |=0x20000000;
+   le->mode = mode_final;
+  }
+  return (ARCHIVE_OK);
+ }
+
+
+
+
+
+
+
+ if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+  return (ARCHIVE_OK);
+
+ archive_set_error(&a->archive, errno, "Failed to create dir '%s'",
+     path);
+ return (ARCHIVE_FAILED);
+}
+
+static int
+set_ownership(struct archive_write_disk *a)
+{
+
+
+
+
+
+ if (a->user_uid != 0 && a->user_uid != a->uid) {
+  archive_set_error(&a->archive, errno,
+      "Can't set UID=%jd", (intmax_t)a->uid);
+  return (ARCHIVE_WARN);
+ }
+
+ archive_set_error(&a->archive, errno,
+     "Can't set user=%jd/group=%jd for %s",
+     (intmax_t)a->uid, (intmax_t)a->gid, a->name);
+ return (ARCHIVE_WARN);
+}
+
+
+
+
+static int
+set_time(int fd, int mode, const char *name,
+    time_t atime, long atime_nsec,
+    time_t mtime, long mtime_nsec)
+{
+
+ (void)fd;
+ (void)mode;
+ (void)name;
+ (void)atime_nsec;
+ (void)mtime_nsec;
+ return (ARCHIVE_WARN);
+
+}
+
+static int
+set_times(struct archive_write_disk *a,
+    int fd, int mode, const char *name,
+    time_t atime, long atime_nanos,
+    time_t birthtime, long birthtime_nanos,
+    time_t mtime, long mtime_nanos,
+    time_t cctime, long ctime_nanos)
+{
+
+
+ int r1 = 0, r2 = 0;
+
+ (void)cctime;
+ (void)ctime_nanos;
+
+ (void)birthtime;
+ (void)birthtime_nanos;
+
+ r2 = set_time(fd, mode, name,
+        atime, atime_nanos,
+        mtime, mtime_nanos);
+ if (r1 != 0 || r2 != 0) {
+  archive_set_error(&a->archive, errno,
+      "Can't restore time");
+  return (ARCHIVE_WARN);
+ }
+ return (ARCHIVE_OK);
+}
+
+static int
+set_times_from_entry(struct archive_write_disk *a)
+{
+ time_t atime, birthtime, mtime, cctime;
+ long atime_nsec, birthtime_nsec, mtime_nsec, ctime_nsec;
+
+
+ atime = birthtime = mtime = cctime = a->start_time;
+ atime_nsec = birthtime_nsec = mtime_nsec = ctime_nsec = 0;
+
+
+ if (!archive_entry_atime_is_set(a->entry)
+
+
+
+     && !archive_entry_mtime_is_set(a->entry))
+  return (ARCHIVE_OK);
+
+ if (archive_entry_atime_is_set(a->entry)) {
+  atime = archive_entry_atime(a->entry);
+  atime_nsec = archive_entry_atime_nsec(a->entry);
+ }
+ if (archive_entry_birthtime_is_set(a->entry)) {
+  birthtime = archive_entry_birthtime(a->entry);
+  birthtime_nsec = archive_entry_birthtime_nsec(a->entry);
+ }
+ if (archive_entry_mtime_is_set(a->entry)) {
+  mtime = archive_entry_mtime(a->entry);
+  mtime_nsec = archive_entry_mtime_nsec(a->entry);
+ }
+ if (archive_entry_ctime_is_set(a->entry)) {
+  cctime = archive_entry_ctime(a->entry);
+  ctime_nsec = archive_entry_ctime_nsec(a->entry);
+ }
+
+ return set_times(a, a->fd, a->mode, a->name,
+    atime, atime_nsec,
+    birthtime, birthtime_nsec,
+    mtime, mtime_nsec,
+    cctime, ctime_nsec);
+}
+
+static int
+set_mode(struct archive_write_disk *a, int mode)
+{
+ int r = ARCHIVE_OK;
+ mode &= 7777;
+
+ if (a->todo & 0x02000000) {
+
+
+
+
+
+
+  if ((r = lazy_stat(a)) != ARCHIVE_OK)
+   return (r);
+  if (a->pst->st_gid != a->gid) {
+   mode &= ~ S_ISGID;
+   if (a->flags & ARCHIVE_EXTRACT_OWNER) {
+
+
+
+
+
+
+
+    archive_set_error(&a->archive, -1,
+        "Can't restore SGID bit");
+    r = ARCHIVE_WARN;
+   }
+  }
+
+  if (a->pst->st_uid != a->uid
+      && (a->todo & 0x10000000)) {
+   mode &= ~ S_ISUID;
+   if (a->flags & ARCHIVE_EXTRACT_OWNER) {
+    archive_set_error(&a->archive, -1,
+        "Can't restore SUID bit");
+    r = ARCHIVE_WARN;
+   }
+  }
+  a->todo &= ~0x02000000;
+  a->todo &= ~0x08000000;
+ } else if (a->todo & 0x08000000) {
+
+
+
+
+
+  if (a->user_uid != a->uid) {
+   mode &= ~ S_ISUID;
+   if (a->flags & ARCHIVE_EXTRACT_OWNER) {
+    archive_set_error(&a->archive, -1,
+        "Can't make file SUID");
+    r = ARCHIVE_WARN;
+   }
+  }
+  a->todo &= ~0x08000000;
+ }
+
+ if (S_ISLNK(a->mode)) {
+
+ } else if (!S_ISDIR(a->mode)) {
+
+   if (chmod(a->name, mode) != 0) {
+    archive_set_error(&a->archive, errno,
+        "Can't set permissions to 0%o", (int)mode);
+    r = ARCHIVE_WARN;
+   }
+ }
+ return (r);
+}
+
+static int
+set_fflags(struct archive_write_disk *a)
+{
+ struct fixup_entry *le;
+ unsigned long set, clear;
+ int r;
+ int critical_flags;
+ mode_t mode = archive_entry_mode(a->entry);
+
+ critical_flags = 0;
+
+ if (a->todo & ARCHIVE_EXTRACT_FFLAGS) {
+  archive_entry_fflags(a->entry, &set, &clear);
+
+
+
+
+
+  if ((critical_flags != 0) && (set & critical_flags)) {
+   le = current_fixup(a, a->name);
+   if (le == NULL)
+    return (ARCHIVE_FATAL);
+   le->fixup |= ARCHIVE_EXTRACT_FFLAGS;
+   le->fflags_set = set;
+
+   if ((le->fixup & (0x20000000|0x10000000|0x04000000)) == 0)
+    le->mode = mode;
+  } else {
+   r = set_fflags_platform(a, a->fd,
+       a->name, mode, set, clear);
+   if (r != ARCHIVE_OK)
+    return (r);
+  }
+ }
+ return (ARCHIVE_OK);
+}
+
+static int
+set_fflags_platform(struct archive_write_disk *a, int fd, const char *name,
+    mode_t mode, unsigned long set, unsigned long clear)
+{
+ (void)a;
+ (void)fd;
+ (void)name;
+ (void)mode;
+ (void)set;
+ (void)clear;
+ return (ARCHIVE_OK);
+}
+
+
+
+
+
+static int
+set_mac_metadata(struct archive_write_disk *a, const char *pathname,
+   const void *metadata, size_t metadata_size)
+{
+ (void)a;
+ (void)pathname;
+ (void)metadata;
+ (void)metadata_size;
+ return (ARCHIVE_OK);
+}
+
+static int
+fixup_appledouble(struct archive_write_disk *a, const char *pathname)
+{
+ (void)a;
+ (void)pathname;
+ return (ARCHIVE_OK);
+}
+
+static int
+set_xattrs(struct archive_write_disk *a)
+{
+ static int warning_done = 0;
+
+
+
+ if (archive_entry_xattr_count(a->entry) != 0 && !warning_done) {
+  warning_done = 1;
+  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+      "Cannot restore extended attributes on this system");
+  return (ARCHIVE_WARN);
+ }
+
+ return (ARCHIVE_OK);
+}
+
+
+
+
+
+static int
+older(struct stat *st, struct archive_entry *entry)
+{
+
+
+ if (st->st_mtime < archive_entry_mtime(entry))
+  return 1;
+
+ if (st->st_mtime > archive_entry_mtime(entry))
+  return 0;
+
+ return 0;
+}

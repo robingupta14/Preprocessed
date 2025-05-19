@@ -1,0 +1,121 @@
+
+
+
+
+
+
+from tornado import web
+
+from Ellipsisbase.handlers import IPythonHandler, json_errors
+from IPython.utils.jsonutil import date_default
+from IPython.html.utils import url_path_join, url_escape
+from IPython.kernel.kernelspec import NoSuchKernel
+
+
+class class_0(IPythonHandler):
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_0(var_1):
+        
+        var_3 = var_1.session_manager
+        var_4 = var_3.list_sessions()
+        var_1.finish(json.dumps(var_4, default=date_default))
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_1(var_1):
+        
+        
+        var_3 = var_1.session_manager
+        var_5 = var_1.contents_manager
+        var_6 = var_1.kernel_manager
+
+        var_7 = var_1.get_json_body()
+        if var_7 is None:
+            raise tornado.web.HTTPError(400, 'No JSON data provided')
+        try:
+            var_8 = var_7[var_16][var_8]
+        except KeyError:
+            raise tornado.web.HTTPError(400, 'Missing field in JSON data: notebook.path')
+        try:
+            var_9 = var_7[kernel][name]
+        except KeyError:
+            var_1.log.debugNo kernel name specified, using default kernel
+            var_9 = None
+
+        
+        if var_3.session_exists(var_8=var_8):
+            var_7 = var_3.get_session(var_8=var_8)
+        else:
+            try:
+                var_7 = var_3.create_session(var_8=var_8, var_9=var_9)
+            except NoSuchKernel:
+                msg = (The '%s' kernel is not available. Please pick another 
+                       suitable kernel instead, or install that kernel. % var_9)
+                var_10 = %s not found % var_9
+                var_1.log.warn(Kernel not found: %s % var_9)
+                var_1.set_status501
+                var_1.finish(json.dumps(dict(message=msg, short_message=var_10)))
+                return
+
+        var_11 = url_path_join(var_1.base_url, api, var_4, var_7[id])
+        var_1.set_header(Location, url_escape(var_11))
+        var_1.set_status201
+        var_1.finish(json.dumps(var_7, default=date_default))
+
+class SessionHandler(IPythonHandler):
+
+    var_12 = ('GET', 'PATCH', 'DELETE')
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_0(var_1, var_14):
+        
+        var_3 = var_1.session_manager
+        var_7 = var_3.get_session(var_14=var_14)
+        var_1.finish(json.dumps(var_7, default=date_default))
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_2(var_1, var_14):
+        
+        var_3 = var_1.session_manager
+        var_7 = var_1.get_json_body()
+        if var_7 is None:
+            raise tornado.web.HTTPError(400, 'No JSON data provided')
+        var_15 = {}
+        if var_16 in var_7:
+            var_16 = var_7[var_16]
+            if var_8 in var_16:
+                var_15[var_8] = var_16[var_8]
+
+        var_3.update_session(var_14, **var_15)
+        var_7 = var_3.get_session(var_14=var_14)
+        var_1.finish(json.dumps(var_7, default=date_default))
+
+    @tornado.web.authenticated
+    @json_errors
+    def function_3(var_1, var_14):
+        
+        var_3 = var_1.session_manager
+        try:
+            var_3.delete_session(var_14)
+        except KeyError:
+            
+            raise tornado.web.HTTPError(410, 'Kernel deleted before session')
+        var_1.set_status204
+        var_1.finish()
+
+
+
+
+
+
+_session_id_regex = (?P<var_14>\w+-\w+-\w+-\w+-\w+)
+
+var_17 = [
+    (/api/var_4/%s % _session_id_regex, SessionHandler),
+    (/api/var_4,  SessionRootHandler)
+]
+

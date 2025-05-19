@@ -1,0 +1,651 @@
+<?php
+
+
+define('GLPI_ROOT', realpath('..'));
+
+
+$GLPI = new GLPI();
+$GLPI->initLogger();
+$GLPI->initErrorHandler();
+
+Config::detectRootDoc();
+
+
+function header_html($etape) {
+   global $CFG_GLPI;
+
+   
+   header("Content-Type: text/html; charset=UTF-8");
+
+   
+   
+    
+    
+   
+    
+   
+
+   
+   
+
+    
+   
+   
+   
+
+    
+   
+   
+   
+   
+   
+   
+   
+   
+   
+}
+
+
+
+function footer_html() {
+   
+}
+
+
+
+function choose_language() {
+   global $CFG_GLPI;
+
+   
+   
+
+   
+   $CFG_GLPI['ajax_limit_count'] = 15;
+
+   Dropdown::showLanguages("language", ['value' => "en_GB"]);
+   
+   
+   
+   
+   Html::closeForm();
+}
+
+
+function acceptLicense() {
+
+   
+   
+   readfile("../COPYING.txt");
+   
+
+   
+
+   
+   
+
+   
+   
+   
+   
+   
+
+   
+   
+   
+   
+   
+
+   
+   Html::closeForm();
+   
+}
+
+
+
+function step0() {
+
+   
+   
+   
+   
+   
+   
+   
+   Html::closeForm();
+
+   
+   
+   
+   
+   Html::closeForm();
+}
+
+
+
+function step1($update) {
+   
+   
+
+   $error = Toolbox::commonCheckForUseGLPI(true);
+
+   
+   switch ($error) {
+      case 0 :
+         
+         
+         
+         
+         
+         
+         Html::closeForm();
+         break;
+
+      case 1 :
+         
+         
+         
+         
+         
+         
+         Html::closeForm();
+         &nbsp;";
+
+         
+         
+         
+         
+         
+         Html::closeForm();
+         
+         break;
+
+      case 2 :
+         
+         
+         
+         
+         
+         
+         Html::closeForm();
+         break;
+   }
+
+}
+
+
+
+function step2($update) {
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   Html::closeForm();
+}
+
+
+
+function step3($host, $user, $password, $update) {
+
+   error_reporting(16);
+   
+
+   
+   $hostport = explode(":", $host);
+   if (count($hostport) < 2) {
+      $link = new mysqli($hostport[0], $user, $password);
+   } else {
+      $link = new mysqli($hostport[0], $user, $password, '', $hostport[1]);
+   }
+
+   if ($link->connect_error
+       || empty($host)
+       || empty($user)) {
+      
+
+      if (empty($host)
+          || empty($user)) {
+         
+      }
+
+      
+      
+      
+      
+      Html::closeForm();
+
+   } else {
+      $_SESSION['db_access'] = ['host'     => $host,
+                                     'user'     => $user,
+                                     'password' => $password];
+      
+
+      
+      $DB_ver = $link->query("SELECT version()");
+      $row = $DB_ver->fetch_array();
+      
+      $checkdb = Config::displayCheckDbEngine(true, $row[0]);
+      
+      if ($checkdb > 0) {
+         return;
+      }
+
+      if ($update == "no") {
+         
+         
+
+         if ($DB_list = $link->query("SHOW DATABASES")) {
+            while ($row = $DB_list->fetch_array()) {
+               if (!in_array($row['Database'], ["information_schema",
+                                                     "mysql",
+                                                     "performance_schema"] )) {
+                  
+                  
+                  
+
+                  
+                  
+                  
+                  
+               }
+            }
+         }
+
+         
+         
+         
+         
+         
+         <input type='text' name='newdatabasename'>";
+         
+         
+         
+         
+         $link->close();
+         Html::closeForm();
+
+      } else if ($update == "yes") {
+         
+         
+
+         $DB_list = $link->query("SHOW DATABASES");
+         while ($row = $DB_list->fetch_array()) {
+            
+            
+            
+            
+            
+            
+            
+         }
+
+         
+         
+         $link->close();
+         Html::closeForm();
+      }
+
+   }
+}
+
+
+
+function step4 ($databasename, $newdatabasename) {
+
+   $host     = $_SESSION['db_access']['host'];
+   $user     = $_SESSION['db_access']['user'];
+   $password = $_SESSION['db_access']['password'];
+
+   
+   
+
+   function prev_form($host, $user, $password) {
+
+      
+      
+      
+      
+      
+      
+      
+      Html::closeForm();
+   }
+
+   
+   function next_form() {
+
+      
+      
+      
+      Html::closeForm();
+   }
+
+   
+   $glpikey = new GLPIKey();
+   $secured = $glpikey->keyExists();
+   if (!$secured) {
+      $secured = $glpikey->generate();
+   }
+
+   if (!$secured) {
+      
+      prev_form($host, $user, $password);
+      return;
+   }
+
+   
+   $hostport = explode(":", $host);
+   if (count($hostport) < 2) {
+      $link = new mysqli($hostport[0], $user, $password);
+   } else {
+      $link = new mysqli($hostport[0], $user, $password, '', $hostport[1]);
+   }
+
+   $databasename    = $link->real_escape_string($databasename);
+   $newdatabasename = $link->real_escape_string($newdatabasename);
+
+   if (!empty($databasename)) { 
+      $DB_selected = $link->select_db($databasename);
+
+      if (!$DB_selected) {
+         
+         
+         prev_form($host, $user, $password);
+
+      } else {
+         if (DBConnection::createMainConfig($host, $user, $password, $databasename)) {
+            Toolbox::createSchema($_SESSION["glpilanguage"]);
+            
+
+            next_form();
+
+         } else { 
+            
+            prev_form($host, $user, $password);
+         }
+      }
+
+   } else if (!empty($newdatabasename)) { 
+      
+      if ($link->select_db($newdatabasename)) {
+         
+
+         if (DBConnection::createMainConfig($host, $user, $password, $newdatabasename)) {
+            Toolbox::createSchema($_SESSION["glpilanguage"]);
+            
+            next_form();
+
+         } else { 
+            
+            prev_form($host, $user, $password);
+         }
+
+      } else { 
+         if ($link->query("CREATE DATABASE IF NOT EXISTS `".$newdatabasename."`")) {
+            
+
+            if ($link->select_db($newdatabasename)
+                && DBConnection::createMainConfig($host, $user, $password, $newdatabasename)) {
+
+               Toolbox::createSchema($_SESSION["glpilanguage"]);
+               
+               next_form();
+
+            } else { 
+               
+               prev_form($host, $user, $password);
+            }
+
+         } else { 
+            
+            
+            prev_form($host, $user, $password);
+         }
+      }
+
+   } else { 
+      
+      
+      prev_form($host, $user, $password);
+   }
+
+   $link->close();
+
+}
+
+
+function step6() {
+   global $DB;
+   
+
+   $DB = new DB();
+
+   
+   
+
+   
+   
+
+   
+   Html::closeForm();
+}
+
+function step7() {
+   
+
+   
+   
+
+   
+
+   
+   ";
+   
+   
+   Html::closeForm();
+}
+
+
+function step8() {
+   $DB = new DB();
+
+   if (isset($_POST['send_stats'])) {
+      
+      $DB->update(
+         'glpi_crontasks',
+         ['state' => 1],
+         ['name' => 'telemetry']
+      );
+   }
+
+   $url_base = str_replace("/install/install.php", "", $_SERVER['HTTP_REFERER']);
+   $DB->update(
+      'glpi_configs',
+      ['value' => $DB->escape($url_base)], [
+         'context'   => 'core',
+         'name'      => 'url_base'
+      ]
+   );
+
+   $url_base_api = "$url_base/apirest.php/";
+   $DB->update(
+      'glpi_configs',
+      ['value' => $DB->escape($url_base_api)], [
+         'context'   => 'core',
+         'name'      => 'url_base_api'
+      ]
+   );
+
+   Session::destroy(); 
+
+   
+
+   
+   
+   
+   
+   
+   
+   
+   
+}
+
+
+function update1($DBname) {
+
+   $host     = $_SESSION['db_access']['host'];
+   $user     = $_SESSION['db_access']['user'];
+   $password = $_SESSION['db_access']['password'];
+
+   if (DBConnection::createMainConfig($host, $user, $password, $DBname) && !empty($DBname)) {
+      $from_install = true;
+
+   } else { 
+      
+      
+      
+      
+      
+      
+      
+      Html::closeForm();
+   }
+}
+
+
+
+
+
+
+
+if (is_writable(GLPI_SESSION_DIR)) {
+   Session::setPath();
+}
+
+Session::start();
+error_reporting(0); 
+
+if (isset($_POST["language"])) {
+   $_SESSION["glpilanguage"] = $_POST["language"];
+}
+
+Session::loadLanguage('', false);
+
+
+function checkConfigFile() {
+
+   if (file_exists(GLPI_CONFIG_DIR . "/config_db.php")) {
+      Html::redirect($CFG_GLPI['root_doc'] ."/index.php");
+      die();
+   }
+}
+
+if (!isset($_SESSION['can_process_install']) || !isset($_POST["install"])) {
+   $_SESSION = [];
+
+   checkConfigFile();
+
+   
+   
+   
+   
+   $_SESSION['can_process_install'] = true;
+
+   header_html("Select your language");
+   choose_language();
+
+} else {
+   
+   Toolbox::checkValidReferer();
+   
+   Session::checkCSRF($_POST);
+
+   
+   if (isset($_POST["db_pass"])) {
+      $_POST["db_pass"] = stripslashes($_POST["db_pass"]);
+      $_POST["db_pass"] = rawurldecode($_POST["db_pass"]);
+      $_POST["db_pass"] = stripslashes($_POST["db_pass"]);
+   }
+
+   switch ($_POST["install"]) {
+      case "lang_select" : 
+         checkConfigFile();
+         header_html(SoftwareLicense::getTypeName(1));
+         acceptLicense();
+         break;
+
+      case "License" : 
+         checkConfigFile();
+         header_html(__('Beginning of the installation'));
+         step0();
+         break;
+
+      case "Etape_0" : 
+         checkConfigFile();
+         
+         header_html(sprintf(__('Step %d'), 0));
+         $_SESSION["Test_session_GLPI"] = 1;
+         step1($_POST["update"]);
+         break;
+
+      case "Etape_1" : 
+         checkConfigFile();
+         
+         Toolbox::setDebugMode(Session::DEBUG_MODE, 0, 0, 1);
+
+         header_html(sprintf(__('Step %d'), 1));
+         step2($_POST["update"]);
+         break;
+
+      case "Etape_2" : 
+         checkConfigFile();
+         header_html(sprintf(__('Step %d'), 2));
+         step3($_POST["db_host"], $_POST["db_user"], $_POST["db_pass"], $_POST["update"]);
+         break;
+
+      case "Etape_3" : 
+         checkConfigFile();
+         header_html(sprintf(__('Step %d'), 3));
+         if (empty($_POST["databasename"])) {
+            $_POST["databasename"] = "";
+         }
+         if (empty($_POST["newdatabasename"])) {
+            $_POST["newdatabasename"] = "";
+         }
+         step4($_POST["databasename"],
+               $_POST["newdatabasename"]);
+         break;
+
+      case "Etape_4" : 
+         header_html(sprintf(__('Step %d'), 4));
+         step6();
+         break;
+
+      case "Etape_5" : 
+         header_html(sprintf(__('Step %d'), 5));
+         step7();
+         break;
+
+      case "Etape_6" : 
+         header_html(sprintf(__('Step %d'), 6));
+         step8();
+         break;
+
+      case "update_1" :
+         checkConfigFile();
+         if (empty($_POST["databasename"])) {
+            $_POST["databasename"] = "";
+         }
+         update1($_POST["databasename"]);
+         break;
+   }
+}
+footer_html();

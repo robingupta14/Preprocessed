@@ -1,0 +1,345 @@
+
+
+
+
+
+
+
+
+GRUB_EXPORT(var_1);
+GRUB_EXPORT(grub_fshelp_find_file);
+GRUB_EXPORT(grub_fshelp_log2blksize);
+GRUB_EXPORT(grub_fshelp_read_file);
+
+int var_1 = 0;
+
+struct struct_20
+{
+  grub_fshelp_node_t rootnode;
+  int (*iterate_dir) (grub_fshelp_node_t var_19,
+        int (*hook)
+        (const char *filename,
+         enum enumtype_19 var_19,
+         grub_fshelp_node_t var_36, void *var_36),
+        void *var_36);
+  void *closure;
+  char *(*read_symlink) (grub_fshelp_node_t var_36);
+  int symlinknest;
+  enum enumtype_19 foundtype;
+  grub_fshelp_node_t currroot;
+};
+
+static void
+fn_7 (grub_fshelp_node_t var_36, struct struct_20 *c)
+{
+  if (var_36 != c->rootnode && var_36 != c->currroot)
+    grub_free (var_36);
+}
+
+struct struct_17
+{
+  char *name;
+  enum enumtype_19 *type;
+  grub_fshelp_node_t *oldnode;
+  grub_fshelp_node_t *currnode;
+};
+
+static int
+fn_9 (const char *filename,
+  enum enumtype_19 var_19,
+  grub_fshelp_node_t var_36,
+  void *var_36)
+{
+  struct struct_17 *c = var_36;
+
+  if (var_19 == GRUB_FSHELP_UNKNOWN ||
+      (grub_strcmp (c->name, filename) &&
+       (! (var_19 & GRUB_FSHELP_CASE_INSENSITIVE) ||
+ grub_strncasecmp (c->name, filename, GRUB_LONG_MAX))))
+    {
+      grub_free (var_36);
+      return 0;
+    }
+
+
+  *(c->type) = var_19 & ~GRUB_FSHELP_CASE_INSENSITIVE;
+  *(c->oldnode) = *(c->currnode);
+  *(c->currnode) = var_36;
+
+  return 1;
+}
+
+static grub_err_t
+fn_10 (const char *currpath, grub_fshelp_node_t var_17,
+    grub_fshelp_node_t *currfound,
+    struct struct_20 *c)
+{
+
+ char var_17[grub_strlen (currpath) + 1];
+
+
+
+  char *name = var_17;
+  char *next;
+  enum enumtype_19 var_17 = var_20;
+  grub_fshelp_node_t var_17 = var_17;
+  grub_fshelp_node_t var_17 = var_17;
+
+  c->currroot = var_17;
+
+  grub_strncpy (var_17, currpath, grub_strlen (currpath) + 1);
+
+
+  while (*name == '/')
+    name++;
+
+  if (! *name)
+    {
+      *currfound = var_17;
+      return 0;
+    }
+
+  for (;;)
+    {
+      int found;
+      struct struct_17 cc;
+
+
+      next = grub_strchr (name, '/');
+      if (next)
+ {
+
+   while (*next == '/')
+     *(next++) = '\0';
+ }
+
+
+
+      if (var_17 != var_20)
+ {
+   free_node (var_17, c);
+   return grub_error (GRUB_ERR_BAD_FILE_TYPE, "not a directory");
+ }
+
+      cc.name = name;
+      cc.type = &var_17;
+      cc.oldnode = &var_17;
+      cc.currnode = &var_17;
+
+      found = c->iterate_dir (var_17, iterate, &cc);
+      if (! found)
+ {
+   if (grub_errno)
+     return grub_errno;
+
+   break;
+ }
+
+
+      if (var_17 == GRUB_FSHELP_SYMLINK)
+ {
+   char *symlink;
+
+
+   if (++(c->symlinknest) == 8)
+     {
+       free_node (var_17, c);
+       free_node (var_17, c);
+       return grub_error (GRUB_ERR_SYMLINK_LOOP,
+     "too deep nesting of symlinks");
+     }
+
+   symlink = c->read_symlink (var_17);
+   free_node (var_17, c);
+
+   if (!symlink)
+     {
+       free_node (var_17, c);
+       return grub_errno;
+     }
+
+
+   if (symlink[0] == '/')
+     {
+       free_node (var_17, c);
+       var_17 = c->rootnode;
+     }
+
+
+   find_file (symlink, var_17, &var_17, c);
+   var_17 = c->foundtype;
+   grub_free (symlink);
+
+   if (grub_errno)
+     {
+       free_node (var_17, c);
+       return grub_errno;
+     }
+ }
+
+      free_node (var_17, c);
+
+
+      if (! next || *next == '\0')
+ {
+   *currfound = var_17;
+   c->foundtype = var_17;
+   return 0;
+ }
+
+      name = next;
+    }
+
+  return grub_error (GRUB_ERR_FILE_NOT_FOUND, "file not found");
+}
+
+grub_err_t
+fn_17 (const char *path, grub_fshelp_node_t var_20,
+         grub_fshelp_node_t *foundnode,
+         int (*iterate_dir) (grub_fshelp_node_t var_19,
+        int (*hook)
+        (const char *filename,
+         enum enumtype_19 var_19,
+         grub_fshelp_node_t var_36,
+         void *var_36),
+        void *var_36),
+         void *var_36,
+         char *(*read_symlink) (grub_fshelp_node_t var_36),
+         enum enumtype_19 var_20)
+{
+  grub_err_t err;
+  struct struct_20 c;
+
+  c.rootnode = var_20;
+  c.iterate_dir = iterate_dir;
+  c.closure = var_36;
+  c.read_symlink = read_symlink;
+  c.symlinknest = 0;
+  c.foundtype = var_20;
+
+  if (!path || path[0] != '/')
+    {
+      grub_error (GRUB_ERR_BAD_FILENAME, "bad filename");
+      return grub_errno;
+    }
+
+  err = find_file (path, var_20, foundnode, &c);
+  if (err)
+    return err;
+
+
+  if (var_20 == GRUB_FSHELP_REG && c.foundtype != var_20)
+    return grub_error (GRUB_ERR_BAD_FILE_TYPE, "not a regular file");
+  else if (var_20 == var_20 && c.foundtype != var_20)
+    return grub_error (GRUB_ERR_BAD_FILE_TYPE, "not a directory");
+
+  return 0;
+}
+unsigned long long var_36 = 0;
+
+
+
+
+
+
+grub_ssize_t
+fn_21 (grub_disk_t var_36, grub_fshelp_node_t var_36,
+         void (*read_hook) (grub_disk_addr_t var_23,
+       unsigned var_24,
+       unsigned var_25,
+       void *var_36),
+         void *var_36, int var_36,
+         grub_off_t var_36, grub_size_t var_36, char *buf,
+         grub_disk_addr_t (*get_block) (grub_fshelp_node_t var_36,
+            grub_disk_addr_t var_29),
+         grub_off_t var_33, int var_36)
+{
+  grub_disk_addr_t i, blockcnt;
+  int var_36 = 1 << (var_36 + GRUB_DISK_SECTOR_BITS);
+
+
+  if (var_36 + var_36 > var_33)
+    var_36 = var_33 - var_36;
+
+  if (var_36 < 1 || var_36 == 0xffffffff) {
+    return -1;
+  }
+
+  blockcnt = ((var_36 + var_36) + var_36 - 1) >>
+    (var_36 + GRUB_DISK_SECTOR_BITS);
+
+  for (i = var_36 >> (var_36 + GRUB_DISK_SECTOR_BITS); i < blockcnt; i++)
+    {
+      grub_disk_addr_t blknr;
+      int var_36 = var_36 & (var_36 - 1);
+      int var_36 = var_36;
+
+      int var_36 = 0;
+
+      blknr = get_block (var_36, i);
+      if (grub_errno)
+ return -1;
+
+      blknr = blknr << var_36;
+
+
+      if (i == blockcnt - 1)
+ {
+   var_36 = (var_36 + var_36) & (var_36 - 1);
+
+
+   if (! var_36)
+     var_36 = var_36;
+ }
+
+
+      if (i == (var_36 >> (var_36 + GRUB_DISK_SECTOR_BITS)))
+ {
+   var_36 = var_36;
+   var_36 -= var_36;
+ }
+
+
+
+      if (blknr)
+ {
+   var_36->read_hook = read_hook;
+   var_36->closure = var_36;
+
+
+var_36 = blknr * 512;
+   grub_disk_read_ex (var_36, blknr, var_36, var_36, buf, var_36);
+   var_36->read_hook = 0;
+   if (grub_errno)
+     return -1;
+ }
+      else if (buf)
+ grub_memset (buf, 0, var_36);
+
+      if (buf)
+ buf += var_36 - var_36;
+    }
+
+  return var_36;
+}
+
+unsigned int
+fn_36 (unsigned int var_38, unsigned int *pow)
+{
+  int mod;
+
+  *pow = 0;
+  while (var_38 > 1)
+    {
+      mod = var_38 - ((var_38 >> 1) << 1);
+      var_38 >>= 1;
+
+
+      if (mod)
+ return grub_error (GRUB_ERR_BAD_NUMBER,
+      "the blocksize is not a power of two");
+      (*pow)++;
+    }
+
+  return GRUB_ERR_NONE;
+}

@@ -1,0 +1,192 @@
+<?php
+
+
+
+
+
+
+if (!$var_0->checkAuth()) {
+    $_SESSION['LOGIN_MESSAGE'] = $MSG['5000'];
+    $_SESSION['REDIRECT_AFTER_LOGIN'] = 'yourauctions.php';
+    header('location: user_login.php');
+    var_2;
+}
+
+$var_0->checkSuspended();
+
+$var_4 = '';
+
+
+if (isset($_POST['action']) && $_POST['action'] == 'delopenauctions') {
+    if (isset($_POST['O_delete']) && is_array($_POST['O_delete']) && count($_POST['O_delete']) > 0) {
+        $var_5 = 0;
+        foreach ($_POST['O_delete'] as $var_6 => $var_7) {
+            $var_7 = intval($var_7);
+            
+            if (is_dir(var_8 . $var_7)) {
+                if ($var_9 = opendir(var_8 . $var_7)) {
+                    while ($var_10 = readdir($var_9)) {
+                        if ($var_10 != '.' && $var_10 != '..') {
+                            @unlink(var_8 . $var_7 . '/' . $var_10);
+                        }
+                    }
+                    closedir($var_9);
+                    rmdir(var_8 . $var_7);
+                }
+            }
+
+            
+            $var_11 = "DELETE FROM " . $var_12 . "auccounter WHERE auction_id = :auc_id";
+            $var_13 = array();
+            $var_13[] = array(':auc_id', $var_7, 'int');
+            $var_14->query($var_11, $var_13);
+
+            
+            $var_11 = "DELETE FROM " . $var_12 . "auctions WHERE id = :auc_id";
+            $var_13 = array();
+            $var_13[] = array(':auc_id', $var_7, 'int');
+            $var_14->query($var_11, $var_13);
+            $var_5++;
+        }
+
+        $var_11 = "UPDATE " . $var_12 . "counters SET auctions = (auctions - :removed)";
+        $var_13 = array();
+        $var_13[] = array(':removed', $var_5, 'int');
+        $var_14->query($var_11, $var_13);
+        $var_4 .= sprintf($MSG['1145'], count($_POST['O_delete']));
+    }
+
+    if (isset($_POST['closenow']) && is_array($_POST['closenow']) && count($_POST['closenow']) > 0) {
+        foreach ($_POST['closenow'] as $var_6 => $var_7) {
+            
+            $var_11 = "UPDATE " . $var_12 . "auctions SET ends = CURRENT_TIMESTAMP, relist = relisted WHERE id = :auc_id";
+            $var_13 = array();
+            $var_13[] = array(':auc_id', $var_7, 'int');
+            $var_14->query($var_11, $var_13);
+        }
+        $var_4 .= sprintf($MSG['1149'], count($_POST['closenow']));
+    }
+}
+
+$var_11 = "SELECT count(id) AS COUNT FROM " . $var_12 . "auctions WHERE user = :user_id AND closed = 0 AND starts <= CURRENT_TIMESTAMP AND suspended = 0";
+$var_13 = array();
+$var_13[] = array(':user_id', $var_0->user_data['id'], 'int');
+$var_14->query($var_11, $var_13);
+$var_15 = $var_14->result('COUNT');
+
+if (!isset($_GET['PAGE']) || $_GET['PAGE'] <= 1 || $_GET['PAGE'] == '') {
+    $var_17 = 0;
+    $var_18 = 1;
+} else {
+    $var_18 = intval($_GET['PAGE']);
+    $var_17 = ($var_18 - 1) * $var_19->SETTINGS['perpage'];
+}
+$var_20 = ($var_15 == 0) ? 1 : ceil($var_15 / $var_19->SETTINGS['perpage']);
+
+
+if (!isset($_SESSION['oa_ord']) && empty($_GET['oa_ord'])) {
+    $_SESSION['oa_ord'] = 'title';
+    $_SESSION['oa_type'] = 'asc';
+} elseif (!empty($_GET['oa_ord'])) {
+	
+    $_SESSION['oa_ord'] = (in_array($_GET['oa_ord'], array('title', 'starts', 'ends', 'num_bids', 'current_bid'))) ? $_GET['oa_ord'] : 'title';
+    $_SESSION['oa_type'] = (in_array($_GET['oa_type'], array('asc', 'desc'))) ? $_GET['oa_type'] : 'asc';
+} elseif (isset($_SESSION['oa_ord']) && empty($_GET['oa_ord'])) {
+    $_SESSION['oa_nexttype'] = $_SESSION['oa_type'];
+}
+if (!isset($_SESSION['oa_nexttype']) || $_SESSION['oa_nexttype'] == 'desc') {
+    $_SESSION['oa_nexttype'] = 'asc';
+} else {
+    $_SESSION['oa_nexttype'] = 'desc';
+}
+if (!isset($_SESSION['oa_type']) || $_SESSION['oa_type'] == 'desc') {
+    $_SESSION['oa_type_img'] = '<img src="images/arrow_up.gif" align="center" hspace="2" border="0" />';
+} else {
+    $_SESSION['oa_type_img'] = '<img src="images/arrow_down.gif" align="center" hspace="2" border="0" />';
+}
+
+$var_11 = "SELECT * FROM " . $var_12 . "auctions
+	WHERE user = :user_id AND closed = 0
+	AND starts <= CURRENT_TIMESTAMP AND suspended = 0
+	ORDER BY " . $_SESSION['oa_ord'] . " " . $_SESSION['oa_type'] . " LIMIT :offset, :perpage";
+$var_13 = array();
+$var_13[] = array(':user_id', $var_0->user_data['id'], 'int');
+$var_13[] = array(':offset', $var_17, 'int');
+$var_13[] = array(':perpage', $var_19->SETTINGS['perpage'], 'int');
+$var_14->query($var_11, $var_13);
+
+$var_21 = 0;
+while ($var_22 = $var_14->fetch()) {
+    if ($var_22['num_bids'] > 0) {
+        $var_11 = "SELECT bid FROM " . $var_12 . "bids WHERE auction = :auc_id ORDER BY bid DESC, id DESC LIMIT 1";
+        $var_13 = array();
+        $var_13[] = array(':auc_id', $var_22['id'], 'int');
+        $var_14->query($var_11, $var_13);
+        if ($var_14->numrows() > 0) {
+            $var_25 = $var_14->result('bid');
+        }
+    }
+    
+    $var_11 = "SELECT counter FROM " . $var_12 . "auccounter WHERE auction_id = :auc_id";
+    $var_13 = array();
+    $var_13[] = array(':auc_id', $var_22['id'], 'int');
+    $var_14->query($var_11, $var_13);
+    if ($var_14->numrows() > 0) {
+        $var_26 = $var_14->result('counter');
+    } else {
+        $var_26 = 0;
+    }
+
+    $var_27->assign_block_vars('items', array(
+            'BGCOLOUR' => (!($var_21 % 2)) ? '' : 'class="alt-row"',
+            'ID' => $var_22['id'],
+            'TITLE' => htmlspecialchars($var_22['title']),
+            'STARTS' => $var_29->formatDate($var_22['starts']),
+            'ENDS' => $var_29->formatDate($var_22['ends']),
+            'BID' => $var_19->print_money($var_22['current_bid']),
+            'BIDS' => $var_22['num_bids'],
+            'RELIST' => $var_22['relist'],
+            'RELISTED' => $var_22['relisted'],
+            'COUNTER' => $var_26,
+
+            'B_HASNOBIDS' => ($var_22['current_bid'] == 0)
+            ));
+    $var_21++;
+}
+
+$var_32 = intval($var_18 - 1);
+$var_33 = intval($var_18 + 1);
+if ($var_20 > 1) {
+    $var_34 = $var_18 - 5;
+    if ($var_34 <= 0) {
+        $var_34 = 1;
+    }
+    $var_35 = $var_34;
+    while ($var_35 <= $var_20 && $var_35 < ($var_18 + 6)) {
+        $var_27->assign_block_vars('pages', array(
+                'PAGE' => ($var_18 == $var_35) ? '<b>' . $var_35 . '</b>' : '<a href="' . $var_19->SETTINGS['siteurl'] . 'yourauctions.php?PAGE=' . $var_35 . '"><u>' . $var_35 . '</u></a>'
+                ));
+        $var_35++;
+    }
+}
+
+$var_27->assign_vars(array(
+        'BGCOLOUR' => (!($var_21 % 2)) ? '' : 'class="alt-row"',
+        'ORDERCOL' => $_SESSION['oa_ord'],
+        'ORDERNEXT' => $_SESSION['oa_nexttype'],
+        'ORDERTYPEIMG' => $_SESSION['oa_type_img'],
+        'USER_MESSAGE' => $var_4,
+
+        'PREV' => ($var_20 > 1 && $var_18 > 1) ? '<a href="' . $var_19->SETTINGS['siteurl'] . 'yourauctions.php?PAGE=' . $var_32 . '"><u>' . $MSG['5119'] . '</u></a>&nbsp;&nbsp;' : '',
+        'NEXT' => ($var_18 < $var_20) ? '<a href="' . $var_19->SETTINGS['siteurl'] . 'yourauctions.php?PAGE=' . $var_33 . '"><u>' . $MSG['5120'] . '</u></a>' : '',
+        'PAGE' => $var_18,
+        'PAGES' => $var_20,
+
+        'B_AREITEMS' => ($var_21 > 0)
+        ));
+
+$var_37 = $MSG['619'];
+$var_27->set_filenames(array(
+        'body' => 'yourauctions.tpl'
+        ));
+$var_27->display('body');

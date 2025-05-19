@@ -1,0 +1,172 @@
+<?php
+
+class FormResponse {
+	
+	
+	static protected $rules = array();
+
+	
+	static protected $behaviour_apply_rules = array();
+	
+	
+	static protected $non_ajax_content;
+	
+	
+	static protected $status_messages = array();
+	
+	
+	static protected $redirect_url;
+
+	
+	
+	static protected $status_include_order = array('bad', 'good', 'unknown');
+	
+	
+	static function respond() {
+		
+		if(isset($_REQUEST['forcehtml'])) {
+			return self::$non_ajax_content;			
+		} else if(isset($_REQUEST['forceajax']) || Director::is_ajax()) {
+			ContentNegotiator::disable();
+			
+			
+			return self::get_javascript();
+		} elseif(!empty(self::$non_ajax_content)) {
+			return self::$non_ajax_content;			
+		} elseif(!empty(self::$redirect_url)) {
+			Director::redirect(self::$redirect_url);
+			return null;
+		} else {
+			Director::redirectBack();
+			return null;
+		}
+		
+	}
+	
+	
+	static function load_form($content, $id = 'Form_EditForm') {
+		
+		
+		$content = preg_replace(array('/<form[^>]*>/','/<\/form>/'), '', $content);
+		$JS_content = Convert::raw2js($content);
+		self::$rules[] = "\$('{$id}').loadNewPage('{$JS_content}');";
+		self::$rules[] = "\$('{$id}').initialize();";
+		self::$rules[] = "if(typeof onload_init_tabstrip != 'undefined') onload_init_tabstrip();";
+	}
+	
+	
+	static function add($scriptContent, $uniquenessID = null) {
+		if(isset($uniquenessID)) {
+			self::$rules[$uniquenessID] = $scriptContent;
+		} else {
+			self::$rules[] = $scriptContent;
+		}
+	}
+	
+	static function clear() {
+		self::$rules = array();
+	}
+	
+	
+	static function get_page($id, $form = 'Form_EditForm', $uniquenessID = null) {
+		$JS_id = (int)$id;
+		if($JS_id){
+			if(isset($uniquenessID)) {
+				self::$rules[$uniquenessID] = "\$('$form').getPageFromServer($JS_id);";	
+			} else {
+				self::$rules[] = "\$('$form').getPageFromServer($JS_id);";	
+			}
+		}
+	}
+
+	
+	static function status_message($message = "", $status = null) {
+		$JS_message = Convert::raw2js($message);
+		$JS_status = Convert::raw2js($status);
+		if(isset($JS_status)) {
+			self::$status_messages[$JS_status] = "statusMessage('{$JS_message}', '{$JS_status}');";
+		} else {
+			self::$status_messages['unknown'] = "statusMessage('{$JS_message}');";
+		}
+	}
+
+	
+	static function error($message = "") {
+		$JS_message = Convert::raw2js($message);
+		self::$status_messages['bad'] = $JS_message;
+	}
+	
+	
+	static function update_status($status, $form = "Form_EditForm") {
+		$JS_form = Convert::raw2js($form);
+		$JS_status = Convert::raw2js($status);
+		self::$rules[] = "\$('$JS_form').updateStatus('$JS_status');";
+	}
+
+	
+	static function set_node_title($id, $title = "") {
+		$JS_id = Convert::raw2js($id);
+		$JS_title = Convert::raw2js($title);
+		self::$rules[] = "$('sitetree').setNodeTitle('$JS_id', '$JS_title');";
+	}
+	
+	
+	static function set_non_ajax_content($content) {
+		self::$non_ajax_content = $content;
+	}
+	
+	
+	static function set_redirect_url($url) {
+		self::$redirect_url = $url;
+	}
+	
+	
+	static function get_redirect_url() {
+		return self::$redirect_url;
+	}
+	
+	
+	static function update_dom_id($domID, $domContent, $reapplyBehaviour = true, $replaceMethod = 'replace', $uniquenessID = null) {
+		
+		$JS_domID = Convert::raw2js($domID);
+		$JS_domContent = Convert::raw2js($domContent);
+		$JS_replaceMethod = Convert::raw2js($replaceMethod);
+		if(isset($uniquenessID)) {
+			self::$rules[$uniquenessID] = "Element.$JS_replaceMethod('{$JS_domID}','{$JS_domContent}');";
+		} else {
+			self::$rules[] = "Element.$JS_replaceMethod('{$JS_domID}','{$JS_domContent}');";
+		}
+		if($reapplyBehaviour) {
+			if(isset($uniquenessID)) {
+				self::$behaviour_apply_rules[$uniquenessID] .= "Behaviour.apply('{$JS_domID}', true);";
+			} else {
+				self::$behaviour_apply_rules[] = "Behaviour.apply('{$JS_domID}', true);";
+			}
+		}
+	}
+	
+	
+	protected static function get_javascript() {
+		$js = "";
+		
+		
+		$msg = "";
+		foreach(self::$status_include_order as $status) {
+			if(isset(self::$status_messages[$status])) {
+				$msg = self::$status_messages[$status];
+				break;
+			}
+		}
+		if(!empty($msg)) self::$rules[] = $msg;
+		
+
+		$js .= implode("\n", self::$rules);
+		$js .= Requirements::get_custom_scripts();
+
+		
+		$js .= implode("\n", self::$behaviour_apply_rules);
+		
+		return $js;
+	}
+}
+?>

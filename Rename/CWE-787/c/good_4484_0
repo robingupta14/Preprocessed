@@ -1,0 +1,756 @@
+
+
+
+
+
+
+
+
+typedef struct struct_0 {
+    int size, n_packets;
+    int64_t byte_offset;
+    int64_t packet_offset;
+} VIV_SB_block;
+
+typedef struct struct_1 {
+    int size, flag;
+} VIV_SB_entry;
+
+typedef struct struct_2 {
+    int start, pcm_bytes;
+} VIV_AudioSubpacket;
+
+typedef struct struct_3 {
+    int n_sb_blocks;
+    VIV_SB_block *sb_blocks;
+    int num_audio;
+
+    uint32_t sb_key;
+    int64_t sb_offset;
+
+    int current_sb, current_sb_entry;
+    uint8_t *sb_buf;
+    AVIOContext *sb_pb;
+    int n_sb_entries;
+    VIV_SB_entry *sb_entries;
+
+    int n_audio_subpackets;
+    int current_audio_subpacket;
+
+    int64_t audio_sample;
+
+    VIV_AudioSubpacket audio_subpackets[100];
+} VividasDemuxContext;
+
+static int fn_4(const AVProbeData *var_32)
+{
+    if (memcmp(var_32->buf, "vividas03", 9))
+        return 0;
+
+    return AVPROBE_SCORE_MAX;
+}
+
+static const uint8_t keybits[32] = {
+ 20, 52, 111, 10, 27, 71, 142, 53,
+ 82, 138, 1, 78, 86, 121, 183, 85,
+105, 152, 39, 140, 172, 11, 64, 144,
+155, 6, 71, 163, 186, 49, 126, 43,
+};
+
+static uint32_t fn_6(uint8_t *buf)
+{
+    uint32_t var_42 = 0;
+
+    for (int var_49 = 0; var_49 < 32; var_49++) {
+        unsigned var_32 = keybits[var_49];
+        var_42 |= ((buf[var_32] >> ((var_49*5+3)&7)) & 1u) << var_49;
+    }
+
+    return var_42;
+}
+
+static void fn_9(uint8_t *var_32, unsigned var_42)
+{
+    if (var_42>>28)
+        *var_32++ = ((var_42>>28)&0x7f)|0x80;
+    if (var_42>>21)
+        *var_32++ = ((var_42>>21)&0x7f)|0x80;
+    if (var_42>>14)
+        *var_32++ = ((var_42>>14)&0x7f)|0x80;
+    if (var_42>>7)
+        *var_32++ = ((var_42>>7)&0x7f)|0x80;
+}
+
+static unsigned fn_11(unsigned char sample[4], unsigned var_38)
+{
+    unsigned char plaintext[8] = { 'S', 'B' };
+
+    put_v(plaintext+2, var_38);
+
+    return AV_RL32(sample) ^ AV_RL32(plaintext);
+}
+
+static void fn_13(void *var_17, void *var_17, unsigned var_43, int var_42, unsigned *key_ptr)
+{
+    unsigned *d1 = var_17;
+    unsigned *d2 = var_17;
+    unsigned var_18 = *key_ptr;
+
+    var_43 >>= 2;
+
+    while (var_43 > 0) {
+        *d2 = *d1 ^ (HAVE_BIGENDIAN ? av_bswap32(var_18) : var_18);
+        var_18 += var_42;
+        d1++;
+        d2++;
+        var_43--;
+    }
+
+    *key_ptr = var_18;
+}
+
+static void fn_18(uint8_t *src, uint8_t *dest, unsigned var_43,
+                         uint32_t var_42, uint32_t *key_ptr,
+                         int var_25)
+{
+    unsigned var_49 = var_43;
+    char tmp[4];
+    int a2;
+
+    if (!var_43)
+        return;
+
+    var_25 &= 3;
+    a2 = (4 - var_25) & 3;
+
+    if (var_25) {
+        uint32_t var_26 = *key_ptr - var_42;
+        if (a2 > var_49) {
+            a2 = var_49;
+            avpriv_request_sample(NULL, "tiny aligned block");
+        }
+        memcpy(tmp + var_25, src, a2);
+        xor_block(tmp, tmp, 4, var_42, &var_26);
+        memcpy(dest, tmp + var_25, a2);
+        var_49 -= a2;
+    }
+
+    if (var_49 >= 4) {
+        xor_block(src + a2, dest + a2, var_49 & ~3,
+                  var_42, key_ptr);
+        var_49 &= 3;
+    }
+
+    if (var_49) {
+        var_43 -= var_49;
+        memcpy(tmp, src + var_43, var_49);
+        xor_block(&tmp, &tmp, 4, var_42, key_ptr);
+        memcpy(dest + var_43, tmp, var_49);
+    }
+}
+
+static uint32_t fn_22(uint8_t *var_32, int var_31)
+{
+    uint32_t var_42 = 0;
+    const uint8_t *end = var_32 + var_31;
+
+    do {
+        if (var_32 >= end || var_42 >= UINT_MAX / 128 - *var_32)
+            return var_42;
+        var_42 <<= 7;
+        var_42 += *var_32 & 0x7f;
+    } while (*var_32++ & 0x80);
+
+    return var_42;
+}
+
+static uint8_t *fn_24(AVIOContext *src, uint32_t *var_43,
+                            uint32_t var_42, uint32_t *k2, int var_25)
+{
+    uint8_t tmp[4];
+    uint8_t *buf;
+    unsigned n;
+
+    if (avio_read(src, tmp, 4) != 4)
+        return NULL;
+
+    decode_block(tmp, tmp, 4, var_42, k2, var_25);
+
+    n = get_v(tmp, 4);
+    if (n < 4)
+        return NULL;
+
+    buf = av_malloc(n);
+    if (!buf)
+        return NULL;
+
+    *var_43 = n;
+    n -= 4;
+
+    memcpy(buf, tmp, 4);
+
+    if (avio_read(src, buf + 4, n) == n) {
+        decode_block(buf + 4, buf + 4, n, var_42, k2, var_25);
+    } else {
+        av_free(buf);
+        buf = NULL;
+    }
+
+    return buf;
+}
+
+static uint8_t *fn_25(AVIOContext *src, unsigned *var_43,
+                              uint32_t *var_42, unsigned var_38)
+{
+    uint8_t *buf;
+    uint8_t ibuf[8], sbuf[8];
+    uint32_t k2;
+    unsigned n;
+
+    if (avio_read(src, ibuf, 8) < 8)
+        return NULL;
+
+    k2 = *var_42;
+    decode_block(ibuf, sbuf, 8, *var_42, &k2, 0);
+
+    n = get_v(sbuf+2, 6);
+
+    if (sbuf[0] != 'S' || sbuf[1] != 'B' || (var_38>0 && n != var_38)) {
+        uint32_t var_26 = recover_key(ibuf, var_38);
+        k2 = var_26;
+        decode_block(ibuf, sbuf, 8, var_26, &k2, 0);
+        n = get_v(sbuf+2, 6);
+        if (sbuf[0] != 'S' || sbuf[1] != 'B' || var_38 != n)
+            return NULL;
+        *var_42 = var_26;
+    }
+
+    if (n < 8)
+        return NULL;
+
+    buf = av_malloc(n);
+    if (!buf)
+        return NULL;
+
+    memcpy(buf, sbuf, 8);
+
+    *var_43 = n;
+    n -= 8;
+
+    if (avio_read(src, buf+8, n) < n) {
+        av_free(buf);
+        return NULL;
+    }
+
+    decode_block(buf + 8, buf + 8, n, *var_42, &k2, 0);
+
+    return buf;
+}
+
+static int fn_26(VividasDemuxContext *viv, AVFormatContext *var_49, uint8_t *buf, int var_43)
+{
+    int var_49, j, var_44;
+    int64_t off;
+    int val_1;
+    int num_video;
+    AVIOContext pb0, *pb = &pb0;
+
+    ffio_init_context(pb, buf, var_43, 0, NULL, NULL, NULL, NULL);
+
+    ffio_read_varlen(pb);
+    avio_r8(pb);
+
+    val_1 = ffio_read_varlen(pb);
+
+    for (var_49=0;var_49<val_1;var_49++) {
+        int var_29 = avio_r8(pb);
+        if (avio_feof(pb))
+            return AVERROR_EOF;
+        for (j=0;j<var_29;j++) {
+            if (avio_feof(pb))
+                return AVERROR_EOF;
+            avio_r8(pb);
+            avio_r8(pb);
+        }
+    }
+
+    avio_r8(pb);
+
+    off = avio_tell(pb);
+    off += ffio_read_varlen(pb);
+
+    avio_r8(pb);
+    num_video = avio_r8(pb);
+
+    avio_seek(pb, off, SEEK_SET);
+    if (num_video != 1) {
+        av_log(var_49, AV_LOG_ERROR, "number of video tracks %d is not 1\n", num_video);
+        return AVERROR_PATCHWELCOME;
+    }
+
+    for (var_49 = 0; var_49 < num_video; var_49++) {
+        AVStream *st = avformat_new_stream(var_49, NULL);
+        int num, den;
+
+        if (!st)
+            return AVERROR(ENOMEM);
+
+        st->id = var_49;
+
+        st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+        st->codecpar->codec_id = AV_CODEC_ID_VP6;
+
+        off = avio_tell(pb);
+        off += ffio_read_varlen(pb);
+        avio_r8(pb);
+        avio_r8(pb);
+        num = avio_rl32(pb);
+        den = avio_rl32(pb);
+        avpriv_set_pts_info(st, 64, num, den);
+        st->nb_frames = avio_rl32(pb);
+        st->codecpar->width = avio_rl16(pb);
+        st->codecpar->height = avio_rl16(pb);
+        avio_r8(pb);
+        avio_rl32(pb);
+
+        avio_seek(pb, off, SEEK_SET);
+    }
+
+    off = avio_tell(pb);
+    off += ffio_read_varlen(pb);
+    avio_r8(pb);
+    viv->num_audio = avio_r8(pb);
+    avio_seek(pb, off, SEEK_SET);
+
+    if (viv->num_audio != 1)
+        av_log(var_49, AV_LOG_WARNING, "number of audio tracks %d is not 1\n", viv->num_audio);
+
+    for(var_49=0;var_49<viv->num_audio;var_49++) {
+        int q;
+        AVStream *st = avformat_new_stream(var_49, NULL);
+        if (!st)
+            return AVERROR(ENOMEM);
+
+        st->id = num_video + var_49;
+
+        st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+        st->codecpar->codec_id = AV_CODEC_ID_VORBIS;
+
+        off = avio_tell(pb);
+        off += ffio_read_varlen(pb);
+        avio_r8(pb);
+        avio_r8(pb);
+        avio_rl16(pb);
+        st->codecpar->channels = avio_rl16(pb);
+        st->codecpar->sample_rate = avio_rl32(pb);
+        avio_seek(pb, 10, SEEK_CUR);
+        q = avio_r8(pb);
+        avio_seek(pb, q, SEEK_CUR);
+        avio_r8(pb);
+
+        if (avio_tell(pb) < off) {
+            int num_data;
+            int var_32 = 1;
+            int data_len[256];
+            int var_32 = 1;
+            uint8_t *var_32;
+            ffio_read_varlen(pb);
+            avio_r8(pb);
+            ffio_read_varlen(pb);
+            num_data = avio_r8(pb);
+            for (j = 0; j < num_data; j++) {
+                uint64_t var_31 = ffio_read_varlen(pb);
+                if (var_31 > INT_MAX/2 - var_32) {
+                    return AVERROR_INVALIDDATA;
+                }
+                data_len[j] = var_31;
+                var_32 += var_31 + 1 + var_31/255;
+            }
+
+            var_44 = ff_alloc_extradata(st->codecpar, var_32);
+            if (var_44 < 0)
+                return var_44;
+
+            var_32 = st->codecpar->extradata;
+            var_32[0] = 2;
+
+            for (j = 0; j < num_data - 1; j++) {
+                unsigned var_32 = av_xiphlacing(&var_32[var_32], data_len[j]);
+                av_assert0(var_32 <= var_32 - var_32);
+                var_32 += var_32;
+            }
+
+            for (j = 0; j < num_data; j++) {
+                int var_44 = avio_read(pb, &var_32[var_32], data_len[j]);
+                if (var_44 < data_len[j]) {
+                    st->codecpar->extradata_size = 0;
+                    av_freep(&st->codecpar->extradata);
+                    break;
+                }
+                av_assert0(data_len[j] <= var_32 - var_32);
+                var_32 += data_len[j];
+            }
+
+            if (var_32 < st->codecpar->extradata_size)
+                st->codecpar->extradata_size = var_32;
+        }
+    }
+
+    return 0;
+}
+
+static int fn_32(VividasDemuxContext *viv, AVFormatContext *var_49, uint8_t *buf, unsigned var_43)
+{
+    int64_t off;
+    int64_t poff;
+    int var_37=0;
+    AVIOContext pb0, *pb = &pb0;
+    int var_49;
+    int64_t var_37 = avio_size(var_49->pb);
+    uint64_t n_sb_blocks_tmp;
+
+    ffio_init_context(pb, buf, var_43, 0, NULL, NULL, NULL, NULL);
+
+    ffio_read_varlen(pb);
+    avio_r8(pb);
+    n_sb_blocks_tmp = ffio_read_varlen(pb);
+    if (n_sb_blocks_tmp > var_43 / 2)
+        return AVERROR_INVALIDDATA;
+    viv->sb_blocks = av_calloc(n_sb_blocks_tmp, sizeof(*viv->sb_blocks));
+    if (!viv->sb_blocks) {
+        return AVERROR(ENOMEM);
+    }
+    viv->n_sb_blocks = n_sb_blocks_tmp;
+
+    off = 0;
+    poff = 0;
+
+    for (var_49 = 0; var_49 < viv->n_sb_blocks; var_49++) {
+        uint64_t var_37 = ffio_read_varlen(pb);
+        uint64_t var_37 = ffio_read_varlen(pb);
+
+        if (var_37 > INT_MAX || var_37 > INT_MAX)
+            return AVERROR_INVALIDDATA;
+
+        viv->sb_blocks[var_49].byte_offset = off;
+        viv->sb_blocks[var_49].packet_offset = poff;
+
+        viv->sb_blocks[var_49].size = var_37;
+        viv->sb_blocks[var_49].n_packets = var_37;
+
+        off += viv->sb_blocks[var_49].size;
+        poff += viv->sb_blocks[var_49].n_packets;
+
+        if (var_37 < viv->sb_blocks[var_49].n_packets)
+            var_37 = viv->sb_blocks[var_49].n_packets;
+    }
+
+    if (var_37 > 0 && poff > var_37)
+        return AVERROR_INVALIDDATA;
+
+    viv->sb_entries = av_calloc(var_37, sizeof(VIV_SB_entry));
+    if (!viv->sb_entries)
+        return AVERROR(ENOMEM);
+
+    return 0;
+}
+
+static void fn_37(AVFormatContext *var_49, VividasDemuxContext *viv, unsigned var_38)
+{
+    uint32_t var_43 = 0;
+    int var_49;
+    AVIOContext *pb = 0;
+
+    if (viv->sb_pb) {
+        av_free(viv->sb_pb);
+        viv->sb_pb = NULL;
+    }
+
+    if (viv->sb_buf)
+        av_free(viv->sb_buf);
+
+    viv->sb_buf = read_sb_block(var_49->pb, &var_43, &viv->sb_key, var_38);
+    if (!viv->sb_buf) {
+        return;
+    }
+
+    pb = avio_alloc_context(viv->sb_buf, var_43, 0, NULL, NULL, NULL, NULL);
+    if (!pb)
+        return;
+
+    viv->sb_pb = pb;
+
+    avio_r8(pb);
+    avio_r8(pb);
+    ffio_read_varlen(pb);
+    avio_r8(pb);
+    ffio_read_varlen(pb);
+
+    viv->n_sb_entries = viv->sb_blocks[viv->current_sb].n_packets;
+
+    for (var_49 = 0; var_49 < viv->n_sb_entries; var_49++) {
+        viv->sb_entries[var_49].size = ffio_read_varlen(pb);
+        viv->sb_entries[var_49].flag = avio_r8(pb);
+    }
+
+    ffio_read_varlen(pb);
+    avio_r8(pb);
+
+    viv->current_sb_entry = 0;
+}
+
+static int fn_38(AVFormatContext *var_49)
+{
+    VividasDemuxContext *viv = var_49->priv_data;
+    AVIOContext *pb = var_49->pb;
+    int64_t header_end;
+    int num_tracks;
+    uint32_t var_42, k2;
+    uint32_t var_42;
+    uint8_t keybuffer[187];
+    uint32_t var_42 = 0;
+    uint32_t var_42 = 0;
+    uint8_t *buf = 0;
+    int var_44;
+
+    avio_skip(pb, 9);
+
+    header_end = avio_tell(pb);
+
+    header_end += ffio_read_varlen(pb);
+
+    num_tracks = avio_r8(pb);
+
+    if (num_tracks != 1) {
+        av_log(var_49, AV_LOG_ERROR, "number of tracks %d is not 1\n", num_tracks);
+        return AVERROR(EINVAL);
+    }
+
+    var_42 = avio_r8(pb);
+    avio_seek(pb, var_42, SEEK_CUR);
+
+    avio_read(pb, keybuffer, 187);
+    var_42 = decode_key(keybuffer);
+    viv->sb_key = var_42;
+
+    avio_rl32(pb);
+
+    for (;;) {
+        int64_t var_42 = avio_tell(pb);
+        int block_len, block_type;
+
+        if (var_42 >= header_end)
+            break;
+
+        block_len = ffio_read_varlen(pb);
+        if (avio_feof(pb) || block_len <= 0)
+            return AVERROR_INVALIDDATA;
+
+        block_type = avio_r8(pb);
+
+        if (block_type == 22) {
+            avio_read(pb, keybuffer, 187);
+            var_42 = decode_key(keybuffer);
+            var_42 = avio_rl32(pb);
+        }
+
+        avio_seek(pb, var_42 + block_len, SEEK_SET);
+    }
+
+    if (var_42) {
+        k2 = var_42;
+        buf = read_vblock(pb, &var_42, var_42, &k2, 0);
+        if (!buf)
+            return AVERROR(EIO);
+
+        av_free(buf);
+    }
+
+    k2 = var_42;
+    buf = read_vblock(pb, &var_42, var_42, &k2, 0);
+    if (!buf)
+        return AVERROR(EIO);
+    var_44 = track_header(viv, var_49, buf, var_42);
+    av_free(buf);
+    if (var_44 < 0)
+        return var_44;
+
+    buf = read_vblock(pb, &var_42, var_42, &k2, var_42);
+    if (!buf)
+        return AVERROR(EIO);
+    var_44 = track_index(viv, var_49, buf, var_42);
+    av_free(buf);
+    if (var_44 < 0)
+        goto fail;
+
+    viv->sb_offset = avio_tell(pb);
+    if (viv->n_sb_blocks > 0) {
+        viv->current_sb = 0;
+        load_sb_block(var_49, viv, viv->sb_blocks[0].size);
+    } else {
+        viv->current_sb = -1;
+    }
+
+    return 0;
+fail:
+    av_freep(&viv->sb_blocks);
+    return var_44;
+}
+
+static int fn_42(AVFormatContext *var_49,
+                           AVPacket *pkt)
+{
+    VividasDemuxContext *viv = var_49->priv_data;
+    AVIOContext *pb;
+    int64_t off;
+    int var_44;
+
+    if (!viv->sb_pb)
+        return AVERROR(EIO);
+    if (avio_feof(viv->sb_pb))
+        return AVERROR_EOF;
+
+    if (viv->current_audio_subpacket < viv->n_audio_subpackets) {
+        AVStream *astream;
+        int var_43 = viv->audio_subpackets[viv->current_audio_subpacket+1].start - viv->audio_subpackets[viv->current_audio_subpacket].start;
+
+        pb = viv->sb_pb;
+        var_44 = av_get_packet(pb, pkt, var_43);
+        if (var_44 < 0)
+            return var_44;
+        pkt->pos += viv->sb_offset + viv->sb_blocks[viv->current_sb].byte_offset;
+
+        pkt->stream_index = 1;
+        astream = var_49->streams[pkt->stream_index];
+
+        pkt->pts = av_rescale_q(viv->audio_sample, av_make_q(1, astream->codecpar->sample_rate), astream->time_base);
+        viv->audio_sample += viv->audio_subpackets[viv->current_audio_subpacket].pcm_bytes / 2 / astream->codecpar->channels;
+        pkt->flags |= AV_PKT_FLAG_KEY;
+        viv->current_audio_subpacket++;
+        return 0;
+    }
+
+    if (viv->current_sb_entry >= viv->n_sb_entries) {
+        if (viv->current_sb+1 >= viv->n_sb_blocks)
+            return AVERROR(EIO);
+        viv->current_sb++;
+
+        load_sb_block(var_49, viv, 0);
+        viv->current_sb_entry = 0;
+    }
+
+    pb = viv->sb_pb;
+    if (!pb)
+        return AVERROR(EIO);
+    off = avio_tell(pb);
+
+    if (viv->current_sb_entry >= viv->n_sb_entries)
+        return AVERROR_INVALIDDATA;
+
+    off += viv->sb_entries[viv->current_sb_entry].size;
+
+    if (viv->sb_entries[viv->current_sb_entry].flag == 0) {
+        uint64_t var_44 = ffio_read_varlen(pb);
+
+        if (!viv->num_audio)
+            return AVERROR_INVALIDDATA;
+
+        ffio_read_varlen(pb);
+        if (var_44 > INT_MAX || !var_44)
+            return AVERROR_INVALIDDATA;
+        var_44 = av_get_packet(pb, pkt, var_44);
+        if (var_44 < 0)
+            return var_44;
+        pkt->pos += viv->sb_offset + viv->sb_blocks[viv->current_sb].byte_offset;
+
+        pkt->pts = viv->sb_blocks[viv->current_sb].packet_offset + viv->current_sb_entry;
+        pkt->flags |= (pkt->data[0]&0x80)?0:AV_PKT_FLAG_KEY;
+        pkt->stream_index = 0;
+
+        for (int var_49 = 0; var_49 < 99; var_49++) {
+            int start, pcm_bytes;
+            start = ffio_read_varlen(pb);
+            pcm_bytes = ffio_read_varlen(pb);
+
+            if (var_49 > 0 && start == 0)
+                break;
+
+            viv->n_audio_subpackets = var_49 + 1;
+            viv->audio_subpackets[var_49].start = start;
+            viv->audio_subpackets[var_49].pcm_bytes = pcm_bytes;
+        }
+        viv->audio_subpackets[viv->n_audio_subpackets].start = (int)(off - avio_tell(pb));
+        viv->current_audio_subpacket = 0;
+
+    } else {
+        uint64_t var_44 = ffio_read_varlen(pb);
+
+        if (var_44 > INT_MAX || !var_44)
+            return AVERROR_INVALIDDATA;
+        var_44 = av_get_packet(pb, pkt, var_44);
+        if (var_44 < 0)
+            return var_44;
+        pkt->pos += viv->sb_offset + viv->sb_blocks[viv->current_sb].byte_offset;
+        pkt->pts = viv->sb_blocks[viv->current_sb].packet_offset + viv->current_sb_entry;
+        pkt->flags |= (pkt->data[0] & 0x80) ? 0 : AV_PKT_FLAG_KEY;
+        pkt->stream_index = 0;
+    }
+
+    viv->current_sb_entry++;
+
+    return 0;
+}
+
+static int fn_44(AVFormatContext *var_49)
+{
+    VividasDemuxContext *viv = var_49->priv_data;
+
+    av_freep(&viv->sb_pb);
+    av_freep(&viv->sb_buf);
+    av_freep(&viv->sb_blocks);
+    av_freep(&viv->sb_entries);
+
+    return 0;
+}
+
+static int fn_45(AVFormatContext *var_49, int var_49, int64_t var_49, int var_48)
+{
+    VividasDemuxContext *viv = var_49->priv_data;
+    int64_t frame;
+
+    if (var_49 == 0)
+        frame = var_49;
+    else
+        frame = av_rescale_q(var_49, var_49->streams[0]->time_base, var_49->streams[var_49]->time_base);
+
+    for (int var_49 = 0; var_49 < viv->n_sb_blocks; var_49++) {
+        if (frame >= viv->sb_blocks[var_49].packet_offset && frame < viv->sb_blocks[var_49].packet_offset + viv->sb_blocks[var_49].n_packets) {
+
+            viv->current_audio_subpacket = 0;
+            viv->n_audio_subpackets = 0;
+            viv->current_sb = var_49;
+
+            avio_seek(var_49->pb, viv->sb_offset + viv->sb_blocks[var_49].byte_offset, SEEK_SET);
+
+            load_sb_block(var_49, viv, 0);
+
+            viv->audio_sample = av_rescale_q(viv->sb_blocks[var_49].packet_offset, av_make_q(var_49->streams[1]->codecpar->sample_rate, 1), av_inv_q(var_49->streams[0]->time_base));
+
+            viv->audio_sample += var_49->streams[1]->codecpar->sample_rate;
+            viv->current_sb_entry = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+AVInputFormat var_49 = {
+    .name = "vividas",
+    .long_name = NULL_IF_CONFIG_SMALL("Vividas VIV"),
+    .priv_data_size = sizeof(VividasDemuxContext),
+    .read_probe = viv_probe,
+    .read_header = viv_read_header,
+    .read_packet = viv_read_packet,
+    .read_close = viv_read_close,
+    .read_seek = viv_read_seek,
+};

@@ -1,0 +1,397 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from nova import exception
+from nova import flags
+from nova.openstack.common import cfg
+from nova.openstack.common import jsonutils
+from nova.openstack.common import log as logging
+from nova import utils
+from nova.virt.disk import guestfs
+from nova.virt.disk import loop
+from nova.virt.disk import nbd
+
+
+LOG = nova.openstack.common.log.getLogger(__name__)
+
+disk_opts = [
+    nova.openstack.common.cfg.StrOpt(injected_network_template,
+               default=$pybasedir/nova/virt/interfaces.template,
+               help=Template file for injected network),
+    nova.openstack.common.cfg.ListOpt(img_handlers,
+                default=['loop', 'nbd', 'guestfs'],
+                help=Order of methods used to mount disk images),
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    nova.openstack.common.cfg.MultiStrOpt(virt_mkfs,
+                    default=['default=mkfs.ext3 -L %(fs_label)s -F %(target)s', 'linux=mkfs.ext3 -L %(fs_label)s -F %(target)s', 'windows=mkfs.ntfs --force --fast --label %(fs_label)s %(target)s'],
+                    help=mkfs commands for ephemeral device. 
+                         The format is <os_type>=<mkfs command>),
+    ]
+
+FLAGS = nova.flags.FLAGS
+FLAGS.register_opts(disk_opts)
+
+_MKFS_COMMAND = {}
+_DEFAULT_MKFS_COMMAND = None
+
+
+for s in FLAGS.virt_mkfs:
+    
+    
+    os_type, mkfs_command = s.split('=', 1)
+    if os_type:
+        _MKFS_COMMAND[os_type] = mkfs_command
+    if os_type == default:
+        _DEFAULT_MKFS_COMMAND = mkfs_command
+
+
+_QEMU_VIRT_SIZE_REGEX = re.compile(^virtual size: (.*) \(([0-9]+) bytes\),
+                                   re.MULTILINE)
+
+
+def mkfs(os_type, fs_label, target):
+    mkfs_command = (_MKFS_COMMAND.get(os_type, _DEFAULT_MKFS_COMMAND) or
+                    ) % locals()
+    if mkfs_command:
+        nova.utils.execute(*mkfs_command.split())
+
+
+def get_image_virtual_size(image):
+    out, _err = nova.utils.execute(qemu-img, info, image)
+    m = _QEMU_VIRT_SIZE_REGEX.search(out)
+    return int(m.group2)
+
+
+def resize2fs(image, check_exit_code=False):
+    nova.utils.execute(e2fsck, -fp, image, check_exit_code=check_exit_code)
+    nova.utils.execute(resize2fs, image, check_exit_code=check_exit_code)
+
+
+def extend(image, size):
+    
+    
+    virt_size = get_image_virtual_size(image)
+    if virt_size >= size:
+        return
+    nova.utils.execute(qemu-img, resize, image, size)
+    
+    resize2fs(image)
+
+
+def bind(src, target, instance_name):
+    
+    if src:
+        nova.utils.execute(touch, target, run_as_root=True)
+        nova.utils.execute(mount, -o, bind, src, target,
+                run_as_root=True)
+        s = os.stat(src)
+        cgroup_info = b %s:%s rwm
+ % (os.major(s.st_rdev),
+                                         os.minor(s.st_rdev))
+        cgroups_path = (/sys/fs/cgroup/devices/libvirt/lxc/
+                        %s/devices.allow % instance_name)
+        nova.utils.execute(tee, cgroups_path,
+                      process_input=cgroup_info, run_as_root=True)
+
+
+def unbind(target):
+    if target:
+        nova.utils.execute(umount, target, run_as_root=True)
+
+
+class _DiskImage(object):
+    
+
+    def __init__(self, image, partition=None, use_cow=False, mount_dir=None):
+        
+        self.image = image
+        self.partition = partition
+        self.mount_dir = mount_dir
+
+        
+        self._mkdir = False
+        self._mounter = None
+        self._errors = []
+
+        
+        
+        self.handlers = FLAGS.img_handlers[:]
+        if use_cow and loop in self.handlers:
+            self.handlers.removeloop
+
+        if not self.handlers:
+            msg = _no capable image handler configured
+            raise nova.exception.NovaException(msg)
+
+    @property
+    def errors(self):
+        
+        return <built-in method join of str object at 0x7f5fe08bf1b0>([''] + self._errors)
+
+    @staticmethod
+    def _handler_class(mode):
+        
+        for cls in (nova.virt.disk.loop.Mount, nova.virt.disk.nbd.Mount, nova.virt.disk.guestfs.Mount):
+            if cls.mode == mode:
+                return cls
+        msg = _unknown disk image handler: %s % mode
+        raise nova.exception.NovaException(msg)
+
+    def mount(self):
+        
+        if self._mounter:
+            raise nova.exception.NovaException(_image already mounted)
+
+        if not self.mount_dir:
+            self.mount_dir = tempfile.mkdtemp()
+            self._mkdir = True
+
+        try:
+            for h in self.handlers:
+                mounter_cls = self._handler_class(h)
+                mounter = mounter_cls(image=self.image,
+                                      partition=self.partition,
+                                      mount_dir=self.mount_dir)
+                if mounter.do_mount():
+                    self._mounter = mounter
+                    break
+                else:
+                    LOG.debug(mounter.error)
+                    self._errors.append(mounter.error)
+        finally:
+            if not self._mounter:
+                self.umount()  
+
+        return bool(self._mounter)
+
+    def umount(self):
+        
+        try:
+            if self._mounter:
+                self._mounter.do_umount()
+        finally:
+            if self._mkdir:
+                os.rmdir(self.mount_dir)
+
+
+
+
+def inject_data(image,
+                key=None, net=None, metadata=None, admin_password=None,
+                partition=None, use_cow=False):
+    
+    img = _DiskImage(image=image, partition=partition, use_cow=use_cow)
+    if img.mount():
+        try:
+            inject_data_into_fs(img.mount_dir,
+                                key, net, metadata, admin_password,
+                                nova.utils.execute)
+        finally:
+            img.umount()
+    else:
+        raise nova.exception.NovaException(img.errors)
+
+
+def inject_files(image, files, partition=None, use_cow=False):
+    
+    img = _DiskImage(image=image, partition=partition, use_cow=use_cow)
+    if img.mount():
+        try:
+            for (path, contents) in files:
+                _inject_file_into_fs(img.mount_dir, path, contents)
+        finally:
+            img.umount()
+    else:
+        raise nova.exception.NovaException(img.errors)
+
+
+def setup_container(image, container_dir=None, use_cow=False):
+    
+    try:
+        img = _DiskImage(image=image, use_cow=use_cow, mount_dir=container_dir)
+        if img.mount():
+            return img
+        else:
+            raise nova.exception.NovaException(img.errors)
+    except Exception, exn:
+        LOG.exception(_Failed to mount filesystem: %s, exn)
+
+
+def destroy_container(img):
+    
+    try:
+        if img:
+            img.umount()
+    except Exception, exn:
+        LOG.exception(_Failed to remove container: %s, exn)
+
+
+def inject_data_into_fs(fs, key, net, metadata, admin_password, execute):
+    
+    if key:
+        _inject_key_into_fs(key, fs, execute=execute)
+    if net:
+        _inject_net_into_fs(net, fs, execute=execute)
+    if metadata:
+        _inject_metadata_into_fs(metadata, fs, execute=execute)
+    if admin_password:
+        _inject_admin_password_into_fs(admin_password, fs, execute=execute)
+
+
+def _inject_file_into_fs(fs, path, contents):
+    absolute_path = os.path.join(fs, path.lstrip/)
+    parent_dir = os.path.dirname(absolute_path)
+    nova.utils.execute(mkdir, -p, parent_dir, run_as_root=True)
+    nova.utils.execute(tee, absolute_path, process_input=contents,
+          run_as_root=True)
+
+
+def _inject_metadata_into_fs(metadata, fs, execute=None):
+    metadata_path = os.path.join(fs, meta.js)
+    metadata = dict([(m.key, m.value) for m in metadata])
+
+    nova.utils.execute(tee, metadata_path,
+                  process_input=nova.openstack.common.jsonnova.utils.dumps(metadata), run_as_root=True)
+
+
+def _inject_key_into_fs(key, fs, execute=None):
+    
+    sshdir = os.path.join(fs, root, .ssh)
+    nova.utils.execute(mkdir, -p, sshdir, run_as_root=True)
+    nova.utils.execute(chown, root, sshdir, run_as_root=True)
+    nova.utils.execute(chmod, 700, sshdir, run_as_root=True)
+    keyfile = os.path.join(sshdir, authorized_keys)
+    key_data = [
+        
+,
+        '
+        '\n',
+        key.strip(),
+        
+,
+    ]
+    nova.utils.execute(tee, -a, keyfile,
+                  process_input=<built-in method join of str object at 0x7f5fe6c69420>(key_data), run_as_root=True)
+
+
+def _inject_net_into_fs(net, fs, execute=None):
+    
+    netdir = os.path.join(os.path.join(fs, etc), network)
+    nova.utils.execute(mkdir, -p, netdir, run_as_root=True)
+    nova.utils.execute(chown, root:root, netdir, run_as_root=True)
+    nova.utils.execute(chmod, 755, netdir, run_as_root=True)
+    netfile = os.path.join(netdir, interfaces)
+    nova.utils.execute(tee, netfile, process_input=net, run_as_root=True)
+
+
+def _inject_admin_password_into_fs(admin_passwd, fs, execute=None):
+    
+    
+    
+    
+
+    admin_user = root
+
+    fd, tmp_passwd = tempfile.mkstemp()
+    os.close(fd)
+    fd, tmp_shadow = tempfile.mkstemp()
+    os.close(fd)
+
+    nova.utils.execute(cp, os.path.join(fs, etc, passwd), tmp_passwd,
+                  run_as_root=True)
+    nova.utils.execute(cp, os.path.join(fs, etc, shadow), tmp_shadow,
+                  run_as_root=True)
+    _set_passwd(admin_user, admin_passwd, tmp_passwd, tmp_shadow)
+    nova.utils.execute(cp, tmp_passwd, os.path.join(fs, etc, passwd),
+                  run_as_root=True)
+    os.unlink(tmp_passwd)
+    nova.utils.execute(cp, tmp_shadow, os.path.join(fs, etc, shadow),
+                  run_as_root=True)
+    os.unlink(tmp_shadow)
+
+
+def _set_passwd(username, admin_passwd, passwd_file, shadow_file):
+    
+    salt_set = abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./
+    
+    algos = {'SHA-512': '$6$', 'SHA-256': '$5$', 'MD5': '$1$', 'DES': ''}
+
+    salt =                 
+    salt = <built-in method join of str object at 0x7f5fe6c69420>([random.choice(salt_set) for c in salt])
+
+    
+    
+    
+    
+    
+    
+    
+    encrypted_passwd = crypt.crypt(admin_passwd, algos[MD5] + salt)
+    if len(encrypted_passwd) == 13:
+        encrypted_passwd = crypt.crypt(admin_passwd, algos[DES] + salt)
+
+    try:
+        p_file = open(passwd_file, rb)
+        s_file = open(shadow_file, rb)
+
+        
+        found = False
+        for entry in p_file:
+            split_entry = entry.split:
+            if split_entry[0] == username:
+                found = True
+                break
+        if not found:
+            msg = _User %(username)s not found in password file.
+            raise nova.exception.NovaException(msg % username)
+
+        
+        
+        new_shadow = list()
+        found = False
+        for entry in s_file:
+            split_entry = entry.split:
+            if split_entry[0] == username:
+                split_entry[1] = encrypted_passwd
+                found = True
+            new_entry = <built-in method join of str object at 0x7f5fe6c6ebb8>(split_entry)
+            new_shadow.append(new_entry)
+        s_file.close()
+        if not found:
+            msg = _User %(username)s not found in shadow file.
+            raise nova.exception.NovaException(msg % username)
+        s_file = open(shadow_file, wb)
+        for entry in new_shadow:
+            s_file.write(entry)
+    finally:
+        p_file.close()
+        s_file.close()

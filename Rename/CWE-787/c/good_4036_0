@@ -1,0 +1,1444 @@
+
+
+
+
+
+
+
+
+static int roms_loaded;
+
+
+int64_t fn_0(const char *filename)
+{
+    int var_68;
+    int64_t var_90;
+    var_68 = open(filename, O_RDONLY | O_BINARY);
+    if (var_68 < 0)
+        return -1;
+    var_90 = lseek(var_68, 0, SEEK_END);
+    close(var_68);
+    return var_90;
+}
+
+
+ssize_t fn_3(const char *filename, void *var_109, size_t var_90)
+{
+    int var_68;
+    ssize_t actsize, var_89 = 0;
+
+    var_68 = open(filename, O_RDONLY | O_BINARY);
+    if (var_68 < 0) {
+        return -1;
+    }
+
+    while ((actsize = read(var_68, var_109 + var_89, var_90 - var_89)) > 0) {
+        var_89 += actsize;
+    }
+
+    close(var_68);
+
+    return actsize < 0 ? -1 : var_89;
+}
+
+
+ssize_t fn_6(const char *name,
+                      int var_68, hwaddr var_9, size_t var_9)
+{
+    uint8_t *buf;
+    ssize_t did;
+
+    buf = g_malloc(var_9);
+    did = read(var_68, buf, var_9);
+    if (did > 0)
+        rom_add_blob_fixed("read", buf, did, var_9);
+    g_free(buf);
+    return did;
+}
+
+int fn_9(const char *filename,
+                        hwaddr var_109, uint64_t var_56)
+{
+    return load_image_targphys_as(filename, var_109, var_56, NULL);
+}
+
+
+int fn_11(const char *filename,
+                           hwaddr var_109, uint64_t var_56, AddressSpace *as)
+{
+    int var_90;
+
+    var_90 = get_image_size(filename);
+    if (var_90 < 0 || var_90 > var_56) {
+        return -1;
+    }
+    if (var_90 > 0) {
+        if (rom_add_file_fixed_as(filename, var_109, -1, as) < 0) {
+            return -1;
+        }
+    }
+    return var_90;
+}
+
+int fn_12(const char *filename, MemoryRegion *mr)
+{
+    int var_90;
+
+    if (!memory_access_is_direct(mr, false)) {
+
+        return -1;
+    }
+
+    var_90 = get_image_size(filename);
+
+    if (var_90 < 0 || var_90 > memory_region_size(mr)) {
+        return -1;
+    }
+    if (var_90 > 0) {
+        if (rom_add_file_mr(filename, mr, -1) < 0) {
+            return -1;
+        }
+    }
+    return var_90;
+}
+
+void fn_13(const char *name, hwaddr var_89, int var_16,
+                      const char *source)
+{
+    const char *nulp;
+    char *ptr;
+
+    if (var_16 <= 0) return;
+    nulp = memchr(source, 0, var_16);
+    if (nulp) {
+        rom_add_blob_fixed(name, source, (nulp - source) + 1, var_89);
+    } else {
+        rom_add_blob_fixed(name, source, var_16, var_89);
+        ptr = rom_ptr(var_89 + var_16 - 1, sizeof(*ptr));
+        *ptr = 0;
+    }
+}
+
+
+
+struct struct_22
+{
+  uint32_t a_info;
+  uint32_t a_text;
+  uint32_t a_data;
+  uint32_t a_bss;
+  uint32_t a_syms;
+  uint32_t a_entry;
+  uint32_t a_trsize;
+  uint32_t a_drsize;
+};
+
+static void fn_17(struct struct_22 *e)
+{
+    bswap32s(&e->a_info);
+    bswap32s(&e->a_text);
+    bswap32s(&e->a_data);
+    bswap32s(&e->a_bss);
+    bswap32s(&e->a_syms);
+    bswap32s(&e->a_entry);
+    bswap32s(&e->a_trsize);
+    bswap32s(&e->a_drsize);
+}
+
+int fn_18(const char *filename, hwaddr var_109, int var_56,
+              int var_22, hwaddr var_22)
+{
+    int var_68;
+    ssize_t var_90, var_55;
+    struct struct_22 e;
+    uint32_t magic;
+
+    var_68 = open(filename, O_RDONLY | O_BINARY);
+    if (var_68 < 0)
+        return -1;
+
+    var_90 = read(var_68, &e, sizeof(e));
+    if (var_90 < 0)
+        goto fail;
+
+    if (var_22) {
+        bswap_ahdr(&e);
+    }
+
+    magic = ((e).a_info & 0xffff);
+    switch (magic) {
+    case 413:
+    case 314:
+    case 407:
+        if (e.a_text + e.a_data > var_56)
+            goto fail;
+        lseek(var_68, (((e).a_info & 0xffff) == 413 ? (1024 - sizeof (struct struct_22)) + sizeof (struct struct_22) : (((e).a_info & 0xffff) == 314 ? 0 : sizeof (struct struct_22))), SEEK_SET);
+        var_90 = read_targphys(filename, var_68, var_109, e.a_text + e.a_data);
+        if (var_90 < 0)
+            goto fail;
+        break;
+    case 410:
+        if ((((e).a_info & 0xffff)==407? (((((e).a_info & 0xffff) == 314 ? var_22 : 0)+(e).a_text)) : ((((((((e).a_info & 0xffff) == 314 ? var_22 : 0)+(e).a_text)) + var_22 - 1) & ~(var_22 - 1)))) + e.a_data > var_56)
+            goto fail;
+        lseek(var_68, (((e).a_info & 0xffff) == 413 ? (1024 - sizeof (struct struct_22)) + sizeof (struct struct_22) : (((e).a_info & 0xffff) == 314 ? 0 : sizeof (struct struct_22))), SEEK_SET);
+        var_90 = read_targphys(filename, var_68, var_109, e.a_text);
+        if (var_90 < 0)
+            goto fail;
+        var_55 = read_targphys(filename, var_68, var_109 + (((e).a_info & 0xffff)==407? (((((e).a_info & 0xffff) == 314 ? var_22 : 0)+(e).a_text)) : ((((((((e).a_info & 0xffff) == 314 ? var_22 : 0)+(e).a_text)) + var_22 - 1) & ~(var_22 - 1)))),
+                            e.a_data);
+        if (var_55 < 0)
+            goto fail;
+        var_90 += var_55;
+        break;
+    default:
+        goto fail;
+    }
+    close(var_68);
+    return var_90;
+ fail:
+    close(var_68);
+    return -1;
+}
+
+
+
+static void *fn_22(int var_68, off_t var_24, size_t var_90)
+{
+    void *ptr;
+    if (lseek(var_68, var_24, SEEK_SET) < 0)
+        return NULL;
+    ptr = g_malloc(var_90);
+    if (read(var_68, ptr, var_90) != var_90) {
+        g_free(ptr);
+        return NULL;
+    }
+    return ptr;
+}
+
+const char *fn_24(int var_26)
+{
+    switch (var_26) {
+    case 0:
+        return "No error";
+    case var_39:
+        return "Failed to load ELF";
+    case ELF_LOAD_NOT_ELF:
+        return "The image is not ELF";
+    case ELF_LOAD_WRONG_ARCH:
+        return "The image is from incompatible architecture";
+    case ELF_LOAD_WRONG_ENDIAN:
+        return "The image has incorrect endianness";
+    default:
+        return "Unknown error";
+    }
+}
+
+void fn_27(const char *filename, void *hdr, bool *is64, Error **errp)
+{
+    int var_68;
+    uint8_t e_ident_local[EI_NIDENT];
+    uint8_t *e_ident;
+    size_t hdr_size, off;
+    bool is64l;
+
+    if (!hdr) {
+        hdr = e_ident_local;
+    }
+    e_ident = hdr;
+
+    var_68 = open(filename, O_RDONLY | O_BINARY);
+    if (var_68 < 0) {
+        error_setg_errno(errp, errno, "Failed to open file: %s", filename);
+        return;
+    }
+    if (read(var_68, hdr, EI_NIDENT) != EI_NIDENT) {
+        error_setg_errno(errp, errno, "Failed to read file: %s", filename);
+        goto fail;
+    }
+    if (e_ident[0] != ELFMAG0 ||
+        e_ident[1] != ELFMAG1 ||
+        e_ident[2] != ELFMAG2 ||
+        e_ident[3] != ELFMAG3) {
+        error_setg(errp, "Bad ELF magic");
+        goto fail;
+    }
+
+    is64l = e_ident[EI_CLASS] == ELFCLASS64;
+    hdr_size = is64l ? sizeof(Elf64_Ehdr) : sizeof(Elf32_Ehdr);
+    if (is64) {
+        *is64 = is64l;
+    }
+
+    off = EI_NIDENT;
+    while (hdr != e_ident_local && off < hdr_size) {
+        size_t var_29 = read(var_68, hdr + off, hdr_size - off);
+        switch (var_29) {
+        case 0:
+            error_setg(errp, "File too short: %s", filename);
+            goto fail;
+        case -1:
+            error_setg_errno(errp, errno, "Failed to read file: %s",
+                             filename);
+            goto fail;
+        }
+        off += var_29;
+    }
+
+fail:
+    close(var_68);
+}
+
+
+int fn_29(const char *filename,
+             uint64_t (*elf_note_fn)(void *, void *, bool),
+             uint64_t (*translate_fn)(void *, uint64_t),
+             void *translate_opaque, uint64_t *pentry, uint64_t *lowaddr,
+             uint64_t *highaddr, int var_39, int var_39,
+             int var_39, int var_39)
+{
+    return load_elf_as(filename, elf_note_fn, translate_fn, translate_opaque,
+                       pentry, lowaddr, highaddr, var_39, var_39,
+                       var_39, var_39, NULL);
+}
+
+
+int fn_34(const char *filename,
+                uint64_t (*elf_note_fn)(void *, void *, bool),
+                uint64_t (*translate_fn)(void *, uint64_t),
+                void *translate_opaque, uint64_t *pentry, uint64_t *lowaddr,
+                uint64_t *highaddr, int var_39, int var_39,
+                int var_39, int var_39, AddressSpace *as)
+{
+    return load_elf_ram(filename, elf_note_fn, translate_fn, translate_opaque,
+                        pentry, lowaddr, highaddr, var_39, var_39,
+                        var_39, var_39, as, true);
+}
+
+
+int fn_35(const char *filename,
+                 uint64_t (*elf_note_fn)(void *, void *, bool),
+                 uint64_t (*translate_fn)(void *, uint64_t),
+                 void *translate_opaque, uint64_t *pentry, uint64_t *lowaddr,
+                 uint64_t *highaddr, int var_39, int var_39,
+                 int var_39, int var_39, AddressSpace *as,
+                 bool var_39)
+{
+    return load_elf_ram_sym(filename, elf_note_fn,
+                            translate_fn, translate_opaque,
+                            pentry, lowaddr, highaddr, var_39,
+                            var_39, var_39, var_39, as,
+                            var_39, NULL);
+}
+
+
+int fn_37(const char *filename,
+                     uint64_t (*elf_note_fn)(void *, void *, bool),
+                     uint64_t (*translate_fn)(void *, uint64_t),
+                     void *translate_opaque, uint64_t *pentry,
+                     uint64_t *lowaddr, uint64_t *highaddr, int var_39,
+                     int var_39, int var_39, int var_39,
+                     AddressSpace *as, bool var_39, symbol_fn_t var_39)
+{
+    int var_68, data_order, target_data_order, must_swab, var_55 = var_39;
+    uint8_t e_ident[EI_NIDENT];
+
+    var_68 = open(filename, O_RDONLY | O_BINARY);
+    if (var_68 < 0) {
+        perror(filename);
+        return -1;
+    }
+    if (read(var_68, e_ident, sizeof(e_ident)) != sizeof(e_ident))
+        goto fail;
+    if (e_ident[0] != ELFMAG0 ||
+        e_ident[1] != ELFMAG1 ||
+        e_ident[2] != ELFMAG2 ||
+        e_ident[3] != ELFMAG3) {
+        var_55 = ELF_LOAD_NOT_ELF;
+        goto fail;
+    }
+
+
+
+    data_order = ELFDATA2LSB;
+
+    must_swab = data_order != e_ident[EI_DATA];
+    if (var_39) {
+        target_data_order = ELFDATA2MSB;
+    } else {
+        target_data_order = ELFDATA2LSB;
+    }
+
+    if (target_data_order != e_ident[EI_DATA]) {
+        var_55 = ELF_LOAD_WRONG_ENDIAN;
+        goto fail;
+    }
+
+    lseek(var_68, 0, SEEK_SET);
+    if (e_ident[EI_CLASS] == ELFCLASS64) {
+        var_55 = load_elf64(filename, var_68, elf_note_fn,
+                         translate_fn, translate_opaque, must_swab,
+                         pentry, lowaddr, highaddr, var_39, var_39,
+                         var_39, as, var_39, var_39);
+    } else {
+        var_55 = load_elf32(filename, var_68, elf_note_fn,
+                         translate_fn, translate_opaque, must_swab,
+                         pentry, lowaddr, highaddr, var_39, var_39,
+                         var_39, as, var_39, var_39);
+    }
+
+ fail:
+    close(var_68);
+    return var_55;
+}
+
+static void fn_39(uboot_image_header_t *hdr)
+{
+
+    bswap32s(&hdr->ih_magic);
+    bswap32s(&hdr->ih_hcrc);
+    bswap32s(&hdr->ih_time);
+    bswap32s(&hdr->ih_size);
+    bswap32s(&hdr->ih_load);
+    bswap32s(&hdr->ih_ep);
+    bswap32s(&hdr->ih_dcrc);
+
+}
+
+
+
+
+static void *fn_40(void *x, unsigned var_42, unsigned var_90)
+{
+    void *p;
+
+    var_90 *= var_42;
+    var_90 = (var_90 + 16 - 1) & ~15;
+
+    p = g_malloc(var_90);
+
+    return (p);
+}
+
+static void fn_42(void *x, void *var_109)
+{
+    g_free(var_109);
+}
+
+ssize_t fn_43(void *dst, size_t var_46, uint8_t *src, size_t var_46)
+{
+    z_stream s;
+    ssize_t dstbytes;
+    int r, i, flags;
+
+
+    i = 10;
+    flags = src[3];
+    if (src[2] != 8 || (flags & 0xe0) != 0) {
+        puts ("Error: Bad gzipped data\n");
+        return -1;
+    }
+    if ((flags & 4) != 0)
+        i = 12 + src[10] + (src[11] << 8);
+    if ((flags & 8) != 0)
+        while (src[i++] != 0)
+            ;
+    if ((flags & 0x10) != 0)
+        while (src[i++] != 0)
+            ;
+    if ((flags & 2) != 0)
+        i += 2;
+    if (i >= var_46) {
+        puts ("Error: gunzip out of data in header\n");
+        return -1;
+    }
+
+    s.zalloc = zalloc;
+    s.zfree = zfree;
+
+    r = inflateInit2(&s, -MAX_WBITS);
+    if (r != Z_OK) {
+        printf ("Error: inflateInit2() returned %d\n", r);
+        return -1;
+    }
+    s.next_in = src + i;
+    s.avail_in = var_46 - i;
+    s.next_out = dst;
+    s.avail_out = var_46;
+    r = inflate(&s, Z_FINISH);
+    if (r != Z_OK && r != Z_STREAM_END) {
+        printf ("Error: inflate() returned %d\n", r);
+        return -1;
+    }
+    dstbytes = s.next_out - (unsigned char *) dst;
+    inflateEnd(&s);
+
+    return dstbytes;
+}
+
+
+static int fn_46(const char *filename, hwaddr *ep, hwaddr *loadaddr,
+                            int *is_linux, uint8_t var_49,
+                            uint64_t (*translate_fn)(void *, uint64_t),
+                            void *translate_opaque, AddressSpace *as)
+{
+    int var_68;
+    int var_90;
+    hwaddr address;
+    uboot_image_header_t h;
+    uboot_image_header_t *hdr = &h;
+    uint8_t *data = NULL;
+    int var_55 = -1;
+    int var_49 = 0;
+
+    var_68 = open(filename, O_RDONLY | O_BINARY);
+    if (var_68 < 0)
+        return -1;
+
+    var_90 = read(var_68, hdr, sizeof(uboot_image_header_t));
+    if (var_90 < sizeof(uboot_image_header_t)) {
+        goto out;
+    }
+
+    bswap_uboot_header(hdr);
+
+    if (hdr->ih_magic != IH_MAGIC)
+        goto out;
+
+    if (hdr->ih_type != var_49) {
+        if (!(var_49 == IH_TYPE_KERNEL &&
+            hdr->ih_type == IH_TYPE_KERNEL_NOLOAD)) {
+            fprintf(stderr, "Wrong image type %d, expected %d\n", hdr->ih_type,
+                    var_49);
+            goto out;
+        }
+    }
+
+
+    switch (hdr->ih_type) {
+    case IH_TYPE_KERNEL_NOLOAD:
+        if (!loadaddr || *loadaddr == LOAD_UIMAGE_LOADADDR_INVALID) {
+            fprintf(stderr, "this image format (kernel_noload) cannot be "
+                    "loaded on this machine type");
+            goto out;
+        }
+
+        hdr->ih_load = *loadaddr + sizeof(*hdr);
+        hdr->ih_ep += hdr->ih_load;
+
+    case IH_TYPE_KERNEL:
+        address = hdr->ih_load;
+        if (translate_fn) {
+            address = translate_fn(translate_opaque, address);
+        }
+        if (loadaddr) {
+            *loadaddr = hdr->ih_load;
+        }
+
+        switch (hdr->ih_comp) {
+        case IH_COMP_NONE:
+            break;
+        case IH_COMP_GZIP:
+            var_49 = 1;
+            break;
+        default:
+            fprintf(stderr,
+                    "Unable to load u-boot images with compression type %d\n",
+                    hdr->ih_comp);
+            goto out;
+        }
+
+        if (ep) {
+            *ep = hdr->ih_ep;
+        }
+
+
+        if (is_linux) {
+            if (hdr->ih_os == IH_OS_LINUX) {
+                *is_linux = 1;
+            } else {
+                *is_linux = 0;
+            }
+        }
+
+        break;
+    case IH_TYPE_RAMDISK:
+        address = *loadaddr;
+        break;
+    default:
+        fprintf(stderr, "Unsupported u-boot image type %d\n", hdr->ih_type);
+        goto out;
+    }
+
+    data = g_malloc(hdr->ih_size);
+
+    if (read(var_68, data, hdr->ih_size) != hdr->ih_size) {
+        fprintf(stderr, "Error reading file\n");
+        goto out;
+    }
+
+    if (var_49) {
+        uint8_t *compressed_data;
+        size_t max_bytes;
+        ssize_t bytes;
+
+        compressed_data = data;
+        max_bytes = UBOOT_MAX_GUNZIP_BYTES;
+        data = g_malloc(max_bytes);
+
+        bytes = gunzip(data, max_bytes, compressed_data, hdr->ih_size);
+        g_free(compressed_data);
+        if (bytes < 0) {
+            fprintf(stderr, "Unable to decompress gzipped image!\n");
+            goto out;
+        }
+        hdr->ih_size = bytes;
+    }
+
+    rom_add_blob_fixed_as(filename, data, hdr->ih_size, address, as);
+
+    var_55 = hdr->ih_size;
+
+out:
+    g_free(data);
+    close(var_68);
+    return var_55;
+}
+
+int fn_49(const char *filename, hwaddr *ep, hwaddr *loadaddr,
+                int *is_linux,
+                uint64_t (*translate_fn)(void *, uint64_t),
+                void *translate_opaque)
+{
+    return load_uboot_image(filename, ep, loadaddr, is_linux, IH_TYPE_KERNEL,
+                            translate_fn, translate_opaque, NULL);
+}
+
+int fn_50(const char *filename, hwaddr *ep, hwaddr *loadaddr,
+                   int *is_linux,
+                   uint64_t (*translate_fn)(void *, uint64_t),
+                   void *translate_opaque, AddressSpace *as)
+{
+    return load_uboot_image(filename, ep, loadaddr, is_linux, IH_TYPE_KERNEL,
+                            translate_fn, translate_opaque, as);
+}
+
+
+int fn_51(const char *filename, hwaddr var_109, uint64_t var_56)
+{
+    return load_ramdisk_as(filename, var_109, var_56, NULL);
+}
+
+int fn_52(const char *filename, hwaddr var_109, uint64_t var_56,
+                    AddressSpace *as)
+{
+    return load_uboot_image(filename, NULL, &var_109, NULL, IH_TYPE_RAMDISK,
+                            NULL, NULL, as);
+}
+
+
+int fn_53(const char *filename, uint64_t var_56,
+                              uint8_t **buffer)
+{
+    uint8_t *compressed_data = NULL;
+    uint8_t *data = NULL;
+    gsize var_72;
+    ssize_t bytes;
+    int var_55 = -1;
+
+    if (!g_file_get_contents(filename, (char **) &compressed_data, &var_72,
+                             NULL)) {
+        goto out;
+    }
+
+
+    if (var_72 < 2 ||
+        compressed_data[0] != 0x1f ||
+        compressed_data[1] != 0x8b) {
+        goto out;
+    }
+
+    if (var_56 > LOAD_IMAGE_MAX_GUNZIP_BYTES) {
+        var_56 = LOAD_IMAGE_MAX_GUNZIP_BYTES;
+    }
+
+    data = g_malloc(var_56);
+    bytes = gunzip(data, var_56, compressed_data, var_72);
+    if (bytes < 0) {
+        fprintf(stderr, "%s: unable to decompress gzipped kernel file\n",
+                filename);
+        goto out;
+    }
+
+
+    *buffer = g_realloc(data, bytes);
+    var_55 = bytes;
+
+    data = NULL;
+
+ out:
+    g_free(compressed_data);
+    g_free(data);
+    return var_55;
+}
+
+
+int fn_55(const char *filename, hwaddr var_109, uint64_t var_56)
+{
+    int bytes;
+    uint8_t *data;
+
+    bytes = load_image_gzipped_buffer(filename, var_56, &data);
+    if (bytes != -1) {
+        rom_add_blob_fixed(filename, data, bytes, var_109);
+        g_free(data);
+    }
+    return bytes;
+}
+
+
+
+
+
+
+
+typedef struct struct_57 Rom;
+
+struct struct_57 {
+    char *name;
+    char *path;
+
+
+
+
+
+    size_t romsize;
+    size_t datasize;
+
+    uint8_t *data;
+    MemoryRegion *mr;
+    AddressSpace *as;
+    int isrom;
+    char *fw_dir;
+    char *fw_file;
+
+    bool committed;
+
+    hwaddr addr;
+    QTAILQ_ENTRY(Rom) next;
+};
+
+static FWCfgState *fw_cfg;
+static QTAILQ_HEAD(, Rom) var_91 = QTAILQ_HEAD_INITIALIZER(var_91);
+
+
+static void fn_58(Rom *rom)
+{
+    g_free(rom->data);
+    g_free(rom->path);
+    g_free(rom->name);
+    g_free(rom->fw_dir);
+    g_free(rom->fw_file);
+    g_free(rom);
+}
+
+static inline bool fn_59(Rom *rom, Rom *item)
+{
+    return ((uintptr_t)(void *)rom->as > (uintptr_t)(void *)item->as) ||
+           (rom->as == item->as && rom->addr >= item->addr);
+}
+
+static void fn_60(Rom *rom)
+{
+    Rom *item;
+
+    if (roms_loaded) {
+        hw_error ("ROM images must be loaded at startup\n");
+    }
+
+
+    if (!rom->as) {
+        rom->as = &address_space_memory;
+    }
+
+    rom->committed = false;
+
+
+    QTAILQ_FOREACH(item, &var_91, next) {
+        if (rom_order_compare(rom, item)) {
+            continue;
+        }
+        QTAILQ_INSERT_BEFORE(item, rom, next);
+        return;
+    }
+    QTAILQ_INSERT_TAIL(&var_91, rom, next);
+}
+
+static void fn_61(const char *id, uint64_t var_63, void *host)
+{
+    if (fw_cfg) {
+        fw_cfg_modify_file(fw_cfg, id + strlen("/rom@"), host, var_63);
+    }
+}
+
+static void *fn_63(Rom *rom, Object *owner, const char *name, bool var_65)
+{
+    void *data;
+
+    rom->mr = g_malloc(sizeof(*rom->mr));
+    memory_region_init_resizeable_ram(rom->mr, owner, name,
+                                      rom->datasize, rom->romsize,
+                                      fw_cfg_resized,
+                                      &error_fatal);
+    memory_region_set_readonly(rom->mr, var_65);
+    vmstate_register_ram_global(rom->mr);
+
+    data = memory_region_get_ram_ptr(rom->mr);
+    memcpy(data, rom->data, rom->datasize);
+
+    return data;
+}
+
+int fn_65(const char *file, const char *fw_dir,
+                 hwaddr var_109, int32_t var_77,
+                 bool var_68, MemoryRegion *mr,
+                 AddressSpace *as)
+{
+    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
+    Rom *rom;
+    int rc, var_68 = -1;
+    char devpath[100];
+
+    if (as && mr) {
+        fprintf(stderr, "Specifying an Address Space and Memory Region is " "not valid when loading a rom\n");
+
+
+        return -1;
+    }
+
+    rom = g_malloc0(sizeof(*rom));
+    rom->name = g_strdup(file);
+    rom->path = qemu_find_file(QEMU_FILE_TYPE_BIOS, rom->name);
+    rom->as = as;
+    if (rom->path == NULL) {
+        rom->path = g_strdup(file);
+    }
+
+    var_68 = open(rom->path, O_RDONLY | O_BINARY);
+    if (var_68 == -1) {
+        fprintf(stderr, "Could not open option rom '%s': %s\n",
+                rom->path, strerror(errno));
+        goto err;
+    }
+
+    if (fw_dir) {
+        rom->fw_dir = g_strdup(fw_dir);
+        rom->fw_file = g_strdup(file);
+    }
+    rom->addr = var_109;
+    rom->romsize = lseek(var_68, 0, SEEK_END);
+    if (rom->romsize == -1) {
+        fprintf(stderr, "rom: file %-20s: get size error: %s\n",
+                rom->name, strerror(errno));
+        goto err;
+    }
+
+    rom->datasize = rom->romsize;
+    rom->data = g_malloc0(rom->datasize);
+    lseek(var_68, 0, SEEK_SET);
+    rc = read(var_68, rom->data, rom->datasize);
+    if (rc != rom->datasize) {
+        fprintf(stderr, "rom: file %-20s: read error: rc=%d (expected %zd)\n",
+                rom->name, rc, rom->datasize);
+        goto err;
+    }
+    close(var_68);
+    rom_insert(rom);
+    if (rom->fw_file && fw_cfg) {
+        const char *basename;
+        char fw_file_name[FW_CFG_MAX_FILE_PATH];
+        void *data;
+
+        basename = strrchr(rom->fw_file, '/');
+        if (basename) {
+            basename++;
+        } else {
+            basename = rom->fw_file;
+        }
+        snprintf(fw_file_name, sizeof(fw_file_name), "%s/%s", rom->fw_dir,
+                 basename);
+        snprintf(devpath, sizeof(devpath), "/rom@%s", fw_file_name);
+
+        if ((!var_68 || mc->option_rom_has_mr) && mc->rom_file_has_mr) {
+            data = rom_set_mr(rom, OBJECT(fw_cfg), devpath, true);
+        } else {
+            data = rom->data;
+        }
+
+        fw_cfg_add_file(fw_cfg, fw_file_name, data, rom->romsize);
+    } else {
+        if (mr) {
+            rom->mr = mr;
+            snprintf(devpath, sizeof(devpath), "/rom@%s", file);
+        } else {
+            snprintf(devpath, sizeof(devpath), "/rom@" TARGET_FMT_plx, var_109);
+        }
+    }
+
+    add_boot_device_path(var_77, NULL, devpath);
+    return 0;
+
+err:
+    if (var_68 != -1)
+        close(var_68);
+
+    rom_free(rom);
+    return -1;
+}
+
+MemoryRegion *fn_68(const char *name, const void *blob, size_t var_72,
+                   size_t var_72, hwaddr var_109, const char *fw_file_name,
+                   FWCfgCallback var_72, void *callback_opaque,
+                   AddressSpace *as, bool var_72)
+{
+    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
+    Rom *rom;
+    MemoryRegion *mr = NULL;
+
+    rom = g_malloc0(sizeof(*rom));
+    rom->name = g_strdup(name);
+    rom->as = as;
+    rom->addr = var_109;
+    rom->romsize = var_72 ? var_72 : var_72;
+    rom->datasize = var_72;
+    rom->data = g_malloc0(rom->datasize);
+    memcpy(rom->data, blob, var_72);
+    rom_insert(rom);
+    if (fw_file_name && fw_cfg) {
+        char devpath[100];
+        void *data;
+
+        if (var_72) {
+            snprintf(devpath, sizeof(devpath), "/rom@%s", fw_file_name);
+        } else {
+            snprintf(devpath, sizeof(devpath), "/ram@%s", fw_file_name);
+        }
+
+        if (mc->rom_file_has_mr) {
+            data = rom_set_mr(rom, OBJECT(fw_cfg), devpath, var_72);
+            mr = rom->mr;
+        } else {
+            data = rom->data;
+        }
+
+        fw_cfg_add_file_callback(fw_cfg, fw_file_name,
+                                 var_72, NULL, callback_opaque,
+                                 data, rom->datasize, var_72);
+    }
+    return mr;
+}
+
+
+
+
+
+
+int fn_72(const char *name, void *data, size_t var_75,
+                        size_t var_75, hwaddr var_109, AddressSpace *as)
+{
+    Rom *rom;
+
+    rom = g_malloc0(sizeof(*rom));
+    rom->name = g_strdup(name);
+    rom->addr = var_109;
+    rom->datasize = var_75;
+    rom->romsize = var_75;
+    rom->data = data;
+    rom->as = as;
+    rom_insert(rom);
+    return 0;
+}
+
+int fn_75(const char *file)
+{
+    return rom_add_file(file, "vgaroms", 0, -1, true, NULL, NULL);
+}
+
+int fn_76(const char *file, int32_t var_77)
+{
+    return rom_add_file(file, "genroms", 0, var_77, true, NULL, NULL);
+}
+
+static void fn_77(void *unused)
+{
+    Rom *rom;
+
+    QTAILQ_FOREACH(rom, &var_91, next) {
+        if (rom->fw_file) {
+            continue;
+        }
+        if (rom->data == NULL) {
+            continue;
+        }
+        if (rom->mr) {
+            void *host = memory_region_get_ram_ptr(rom->mr);
+            memcpy(host, rom->data, rom->datasize);
+        } else {
+            address_space_write_rom(rom->as, rom->addr, MEMTXATTRS_UNSPECIFIED,
+                                    rom->data, rom->datasize);
+        }
+        if (rom->isrom) {
+
+            g_free(rom->data);
+            rom->data = NULL;
+        }
+
+
+
+
+
+
+        cpu_flush_icache_range(rom->addr, rom->datasize);
+    }
+}
+
+int fn_78(void)
+{
+    hwaddr var_109 = 0;
+    MemoryRegionSection section;
+    Rom *rom;
+    AddressSpace *as = NULL;
+
+    QTAILQ_FOREACH(rom, &var_91, next) {
+        if (rom->fw_file) {
+            continue;
+        }
+        if (!rom->mr) {
+            if ((var_109 > rom->addr) && (as == rom->as)) {
+                fprintf(stderr, "rom: requested regions overlap "
+                        "(rom %s. free=0x" TARGET_FMT_plx
+                        ", addr=0x" TARGET_FMT_plx ")\n",
+                        rom->name, var_109, rom->addr);
+                return -1;
+            }
+            var_109 = rom->addr;
+            var_109 += rom->romsize;
+            as = rom->as;
+        }
+        section = memory_region_find(rom->mr ? rom->mr : get_system_memory(),
+                                     rom->addr, 1);
+        rom->isrom = int128_nz(section.size) && memory_region_is_rom(section.mr);
+        memory_region_unref(section.mr);
+    }
+    qemu_register_reset(rom_reset, NULL);
+    roms_loaded = 1;
+    return 0;
+}
+
+void fn_79(FWCfgState *f)
+{
+    fw_cfg = f;
+}
+
+void fn_80(int var_82)
+{
+    if (!fw_cfg)
+        return;
+    fw_cfg_set_order_override(fw_cfg, var_82);
+}
+
+void fn_82(void)
+{
+    if (!fw_cfg)
+        return;
+    fw_cfg_reset_order_override(fw_cfg);
+}
+
+void fn_83(void)
+{
+    Rom *rom;
+
+
+    QTAILQ_FOREACH(rom, &var_91, next) {
+        rom->committed = true;
+    }
+}
+
+void fn_84(bool var_86)
+{
+    Rom *rom;
+    Rom *tmp;
+
+    QTAILQ_FOREACH_SAFE(rom, &var_91, next, tmp) {
+        if (rom->committed) {
+            continue;
+        }
+        if (var_86) {
+            rom->committed = true;
+        } else {
+            QTAILQ_REMOVE(&var_91, rom, next);
+            rom_free(rom);
+        }
+    }
+}
+
+static Rom *fn_86(hwaddr var_109, size_t var_90)
+{
+    Rom *rom;
+
+    QTAILQ_FOREACH(rom, &var_91, next) {
+        if (rom->fw_file) {
+            continue;
+        }
+        if (rom->mr) {
+            continue;
+        }
+        if (rom->addr > var_109) {
+            continue;
+        }
+        if (rom->addr + rom->romsize < var_109 + var_90) {
+            continue;
+        }
+        return rom;
+    }
+    return NULL;
+}
+
+
+
+
+
+
+int fn_87(uint8_t *var_89, hwaddr var_109, size_t var_90)
+{
+    hwaddr var_109 = var_109 + var_90;
+    uint8_t *s, *d = var_89;
+    size_t var_89 = 0;
+    Rom *rom;
+
+    QTAILQ_FOREACH(rom, &var_91, next) {
+        if (rom->fw_file) {
+            continue;
+        }
+        if (rom->mr) {
+            continue;
+        }
+        if (rom->addr + rom->romsize < var_109) {
+            continue;
+        }
+        if (rom->addr > var_109 || rom->addr < var_109) {
+            break;
+        }
+
+        d = var_89 + (rom->addr - var_109);
+        s = rom->data;
+        var_89 = rom->datasize;
+
+        if ((d + var_89) > (var_89 + var_90)) {
+            var_89 = var_89 - d;
+        }
+
+        if (var_89 > 0) {
+            memcpy(d, s, var_89);
+        }
+
+        if (rom->romsize > rom->datasize) {
+
+
+
+
+            d += var_89;
+            var_89 = rom->romsize - rom->datasize;
+
+            if ((d + var_89) > (var_89 + var_90)) {
+
+
+
+                var_89 = var_89 - d;
+            }
+
+            if (var_89 > 0) {
+                memset(d, 0x0, var_89);
+            }
+        }
+    }
+
+    return (d + var_89) - var_89;
+}
+
+void *fn_89(hwaddr var_109, size_t var_90)
+{
+    Rom *rom;
+
+    rom = find_rom(var_109, var_90);
+    if (!rom || !rom->data)
+        return NULL;
+    return rom->data + (var_109 - rom->addr);
+}
+
+void fn_90(Monitor *mon, const QDict *qdict)
+{
+    Rom *rom;
+
+    QTAILQ_FOREACH(rom, &var_91, next) {
+        if (rom->mr) {
+            monitor_printf(mon, "%s"
+                           " size=0x%06zx name=\"%s\"\n",
+                           memory_region_name(rom->mr),
+                           rom->romsize,
+                           rom->name);
+        } else if (!rom->fw_file) {
+            monitor_printf(mon, "addr=" TARGET_FMT_plx
+                           " size=0x%06zx mem=%s name=\"%s\"\n",
+                           rom->addr, rom->romsize,
+                           rom->isrom ? "rom" : "ram",
+                           rom->name);
+        } else {
+            monitor_printf(mon, "fw=%s/%s"
+                           " size=0x%06zx name=\"%s\"\n",
+                           rom->fw_dir,
+                           rom->fw_file,
+                           rom->romsize,
+                           rom->name);
+        }
+    }
+}
+
+typedef enum enumtype_92 HexRecord;
+enum enumtype_92 {
+    enum_92 = 0,
+    enum_93,
+    enum_94,
+    enum_95,
+    enum_96,
+    enum_97,
+};
+
+typedef struct {
+    uint8_t byte_count;
+    uint16_t address;
+    uint8_t record_type;
+    uint8_t data[0xff];
+    uint8_t checksum;
+} HexLine;
+
+
+static bool fn_98(HexLine *line, uint8_t *var_109, const uint8_t var_104,
+                         uint32_t *index, const bool var_109)
+{
+
+
+
+
+
+
+
+    uint8_t var_104 = 0;
+    uint32_t var_104 = *index;
+
+    if (g_ascii_isspace(var_104)) {
+        return true;
+    }
+    if (!g_ascii_isxdigit(var_104) || !var_109) {
+        return false;
+    }
+    var_104 = g_ascii_xdigit_value(var_104);
+    var_104 = (var_104 & 0x1) ? (var_104 & 0xf) : (var_104 << 4);
+    if (var_104 < 2) {
+        line->byte_count |= var_104;
+    } else if (2 <= var_104 && var_104 < 6) {
+        line->address <<= 4;
+        line->address += g_ascii_xdigit_value(var_104);
+    } else if (6 <= var_104 && var_104 < 8) {
+        line->record_type |= var_104;
+    } else if (8 <= var_104 && var_104 < 8 + 2 * line->byte_count) {
+        line->data[(var_104 - 8) >> 1] |= var_104;
+    } else if (8 + 2 * line->byte_count <= var_104 &&
+               var_104 < 10 + 2 * line->byte_count) {
+        line->checksum |= var_104;
+    } else {
+        return false;
+    }
+    *var_109 += var_104;
+    ++(*index);
+    return true;
+}
+
+typedef struct {
+    const char *filename;
+    HexLine line;
+    uint8_t *bin_buf;
+    hwaddr *start_addr;
+    int total_size;
+    uint32_t next_address_to_write;
+    uint32_t current_address;
+    uint32_t current_rom_index;
+    uint32_t rom_start_address;
+    AddressSpace *as;
+} HexParser;
+
+
+static int fn_104(HexParser *var_109)
+{
+    HexLine *line = &(var_109->line);
+    switch (line->record_type) {
+    case DATA_RECORD:
+        var_109->current_address =
+            (var_109->next_address_to_write & 0xffff0000) | line->address;
+
+        if (var_109->current_address != var_109->next_address_to_write) {
+            if (var_109->current_rom_index != 0) {
+                rom_add_blob_fixed_as(var_109->filename, var_109->bin_buf,
+                                      var_109->current_rom_index,
+                                      var_109->rom_start_address, var_109->as);
+            }
+            var_109->rom_start_address = var_109->current_address;
+            var_109->current_rom_index = 0;
+        }
+
+
+        memcpy(var_109->bin_buf + var_109->current_rom_index, line->data,
+               line->byte_count);
+        var_109->current_rom_index += line->byte_count;
+        var_109->total_size += line->byte_count;
+
+        var_109->next_address_to_write =
+            var_109->current_address + line->byte_count;
+        break;
+
+    case EOF_RECORD:
+        if (var_109->current_rom_index != 0) {
+            rom_add_blob_fixed_as(var_109->filename, var_109->bin_buf,
+                                  var_109->current_rom_index,
+                                  var_109->rom_start_address, var_109->as);
+        }
+        return var_109->total_size;
+    case EXT_SEG_ADDR_RECORD:
+    case EXT_LINEAR_ADDR_RECORD:
+        if (line->byte_count != 2 && line->address != 0) {
+            return -1;
+        }
+
+        if (var_109->current_rom_index != 0) {
+            rom_add_blob_fixed_as(var_109->filename, var_109->bin_buf,
+                                  var_109->current_rom_index,
+                                  var_109->rom_start_address, var_109->as);
+        }
+
+
+
+        var_109->next_address_to_write = (line->data[0] << 12) |
+                                        (line->data[1] << 4);
+        if (line->record_type == EXT_LINEAR_ADDR_RECORD) {
+            var_109->next_address_to_write <<= 12;
+        }
+
+        var_109->rom_start_address = var_109->next_address_to_write;
+        var_109->current_rom_index = 0;
+        break;
+
+    case START_SEG_ADDR_RECORD:
+        if (line->byte_count != 4 && line->address != 0) {
+            return -1;
+        }
+
+
+        *(var_109->start_addr) = (((line->data[0] << 8) | line->data[1]) << 4) +
+                                ((line->data[2] << 8) | line->data[3]);
+        break;
+
+    case START_LINEAR_ADDR_RECORD:
+        if (line->byte_count != 4 && line->address != 0) {
+            return -1;
+        }
+
+        *(var_109->start_addr) = ldl_be_p(line->data);
+        break;
+
+    default:
+        return -1;
+    }
+
+    return var_109->total_size;
+}
+
+
+static int fn_106(const char *filename, hwaddr *var_109, uint8_t *hex_blob,
+                          size_t var_111, AddressSpace *as)
+{
+    bool var_109 = false;
+
+    uint8_t *var_109 = hex_blob + var_111;
+    uint8_t var_109 = 0;
+    uint32_t var_109 = 0;
+    HexParser var_109 = {
+        .filename = filename,
+        .bin_buf = g_malloc(var_111),
+        .start_addr = var_109,
+        .as = as,
+    };
+
+    rom_transaction_begin();
+
+    for (; hex_blob < var_109; ++hex_blob) {
+        switch (*hex_blob) {
+        case '\r':
+        case '\n':
+            if (!var_109) {
+                break;
+            }
+
+            var_109 = false;
+            if ((0x5 + var_109.line.byte_count) * 2 !=
+                    var_109 ||
+                var_109 != 0) {
+                var_109.total_size = -1;
+                goto out;
+            }
+
+            if (handle_record_type(&var_109) == -1) {
+                var_109.total_size = -1;
+                goto out;
+            }
+            break;
+
+
+        case ':':
+            memset(&var_109.line, 0, sizeof(HexLine));
+            var_109 = true;
+            var_109 = 0;
+            break;
+
+
+        default:
+            if (!parse_record(&var_109.line, &var_109, *hex_blob,
+                              &var_109, var_109)) {
+                var_109.total_size = -1;
+                goto out;
+            }
+            break;
+        }
+    }
+
+out:
+    g_free(var_109.bin_buf);
+    rom_transaction_end(var_109.total_size != -1);
+    return var_109.total_size;
+}
+
+
+int fn_109(const char *filename, hwaddr *entry, AddressSpace *as)
+{
+    gsize var_111;
+    gchar *hex_blob;
+    int var_111 = 0;
+
+    if (!g_file_get_contents(filename, &hex_blob, &var_111, NULL)) {
+        return -1;
+    }
+
+    var_111 = parse_hex_blob(filename, entry, (uint8_t *)hex_blob,
+                                var_111, as);
+
+    g_free(hex_blob);
+    return var_111;
+}

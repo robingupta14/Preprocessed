@@ -1,0 +1,211 @@
+<?php
+
+
+
+function fn_0( $var_0, $var_1 = array() ) {
+	return WP_Block_Type_Registry::get_instance()->register( $var_0, $var_1 );
+}
+
+
+function fn_1( $var_0 ) {
+	return WP_Block_Type_Registry::get_instance()->unregister( $var_0 );
+}
+
+
+function fn_2( $var_4 = null ) {
+	if ( ! is_string( $var_4 ) ) {
+		$var_5 = get_post( $var_4 );
+		if ( $var_5 instanceof var_6 ) {
+			$var_4 = $var_5->var_7;
+		}
+	}
+
+	return false !== strpos( (string) $var_4, '<!-- wp:' );
+}
+
+
+function fn_3( $var_8, $var_4 = null ) {
+	if ( ! fn_2( $var_4 ) ) {
+		return false;
+	}
+
+	if ( ! is_string( $var_4 ) ) {
+		$var_5 = get_post( $var_4 );
+		if ( $var_5 instanceof var_6 ) {
+			$var_4 = $var_5->var_7;
+		}
+	}
+
+	return false !== strpos( $var_4, '<!-- wp:' . $var_8 . ' ' );
+}
+
+
+function fn_4() {
+	$var_9 = array();
+
+	$var_10 = WP_Block_Type_Registry::get_instance()->get_all_registered();
+	foreach ( $var_10 as $var_8 ) {
+		if ( $var_8->is_dynamic() ) {
+			$var_9[] = $var_8->var_0;
+		}
+	}
+
+	return $var_9;
+}
+
+
+function fn_5( $var_13 ) {
+	$var_14 = array(
+		
+		null,
+		'core/freeform',
+		'core/heading',
+		'core/html',
+		'core/list',
+		'core/media-text',
+		'core/paragraph',
+		'core/preformatted',
+		'core/pullquote',
+		'core/quote',
+		'core/table',
+		'core/verse',
+	);
+
+	$var_15 = array_merge( $var_14, array( 'core/columns' ) );
+
+	
+	$var_15 = apply_filters( 'excerpt_allowed_blocks', $var_15 );
+	$var_16         = fn_8( $var_13 );
+	$var_17         = '';
+
+	foreach ( $var_16 as $var_18 ) {
+		if ( in_array( $var_18['blockName'], $var_15, true ) ) {
+			if ( ! empty( $var_18['innerBlocks'] ) ) {
+				if ( 'core/columns' === $var_18['blockName'] ) {
+					$var_17 .= fn_6( $var_18, $var_14 );
+					continue;
+				}
+
+				
+				foreach ( $var_18['innerBlocks'] as $var_19 ) {
+					if (
+						! in_array( $var_19['blockName'], $var_14, true ) ||
+						! empty( $var_19['innerBlocks'] )
+					) {
+						continue 2;
+					}
+				}
+			}
+
+			$var_17 .= fn_7( $var_18 );
+		}
+	}
+
+	return $var_17;
+}
+
+
+function fn_6( $var_20, $var_15 ) {
+	$var_17 = '';
+
+	foreach ( $var_20['innerBlocks'] as $var_21 ) {
+		foreach ( $var_21['innerBlocks'] as $var_19 ) {
+			if ( in_array( $var_19['blockName'], $var_15, true ) && empty( $var_19['innerBlocks'] ) ) {
+				$var_17 .= fn_7( $var_19 );
+			}
+		}
+	}
+
+	return $var_17;
+}
+
+
+function fn_7( $var_18 ) {
+	global $var_4;
+
+	
+	$var_22 = apply_filters( 'pre_render_block', null, $var_18 );
+	if ( ! is_null( $var_22 ) ) {
+		return $var_22;
+	}
+
+	$var_23 = $var_18;
+
+	
+	$var_18 = apply_filters( 'render_block_data', $var_18, $var_23 );
+
+	$var_8    = WP_Block_Type_Registry::get_instance()->get_registered( $var_18['blockName'] );
+	$var_12    = $var_18['blockName'] && null !== $var_8 && $var_8->is_dynamic();
+	$var_25 = '';
+	$var_26         = 0;
+
+	foreach ( $var_18['innerContent'] as $var_27 ) {
+		$var_25 .= is_string( $var_27 ) ? $var_27 : fn_7( $var_18['innerBlocks'][ $var_26++ ] );
+	}
+
+	if ( ! is_array( $var_18['attrs'] ) ) {
+		$var_18['attrs'] = array();
+	}
+
+	if ( $var_12 ) {
+		$var_28   = $var_4;
+		$var_25 = $var_8->render( $var_18['attrs'], $var_25 );
+		$var_4          = $var_28;
+	}
+
+	
+	return apply_filters( 'render_block', $var_25, $var_18 );
+}
+
+
+function fn_8( $var_13 ) {
+	
+	$var_30 = apply_filters( 'block_parser_class', 'WP_Block_Parser' );
+
+	$var_31 = new $var_30();
+	return $var_31->parse( $var_13 );
+}
+
+
+function fn_9( $var_13 ) {
+	$var_16 = fn_8( $var_13 );
+	$var_17 = '';
+
+	foreach ( $var_16 as $var_18 ) {
+		$var_17 .= fn_7( $var_18 );
+	}
+
+	
+	$var_33 = has_filter( 'the_content', 'wpautop' );
+	if ( false !== $var_33 && doing_filter( 'the_content' ) && fn_2( $var_13 ) ) {
+		remove_filter( 'the_content', 'wpautop', $var_33 );
+		add_filter( 'the_content', '_restore_wpautop_hook', $var_33 + 1 );
+	}
+
+	return $var_17;
+}
+
+
+function fn_10( $var_13 ) {
+	$var_34 = has_filter( 'the_content', '_restore_wpautop_hook' );
+
+	add_filter( 'the_content', 'wpautop', $var_34 - 1 );
+	remove_filter( 'the_content', '_restore_wpautop_hook', $var_34 );
+
+	return $var_13;
+}
+
+
+function fn_11( $var_13 ) {
+	return fn_2( $var_13 ) ? 1 : 0;
+}
+
+
+function fn_12( $var_35, $var_36 ) {
+	return WP_Block_Styles_Registry::get_instance()->register( $var_35, $var_36 );
+}
+
+
+function fn_13( $var_35, $var_37 ) {
+	return WP_Block_Styles_Registry::get_instance()->unregister( $var_35, $var_37 );
+}

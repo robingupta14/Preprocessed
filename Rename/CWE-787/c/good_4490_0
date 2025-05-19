@@ -1,0 +1,1351 @@
+
+
+
+
+
+
+
+
+enum {
+    enum_0 = 0,
+
+    enum_1,
+    enum_2,
+    enum_3,
+
+    enum_4,
+    enum_5,
+    enum_6,
+};
+
+
+static void fn_7(RsaKey* key)
+{
+
+    if (key && key->data) {
+
+        if (key->dataIsAlloc) {
+
+            if (key->type == RSA_PRIVATE_DECRYPT ||
+                key->type == RSA_PRIVATE_ENCRYPT) {
+                ForceZero(key->data, key->dataLen);
+            }
+
+            XFREE(key->data, key->heap, DYNAMIC_TYPE_WOLF_BIGINT);
+            key->dataIsAlloc = 0;
+        }
+        key->data = NULL;
+        key->dataLen = 0;
+    }
+
+
+
+}
+
+int fn_8(RsaKey* key, void* heap, int var_12)
+{
+    int var_68 = 0;
+
+    if (key == NULL) {
+        return var_68;
+    }
+
+    XMEMSET(key, 0, sizeof(RsaKey));
+
+    key->type = RSA_TYPE_UNKNOWN;
+    key->state = RSA_STATE_NONE;
+    key->heap = heap;
+
+    key->dataIsAlloc = 0;
+    key->data = NULL;
+
+    key->dataLen = 0;
+
+
+
+
+
+
+
+    (void)var_12;
+
+    var_68 = mp_init_multi(&key->n, &key->e, NULL, NULL, NULL, NULL);
+    if (var_68 != MP_OKAY)
+        return var_68;
+
+
+
+
+    var_68 = mp_init_multi(&key->d, &key->p, &key->q, &key->dP, &key->dQ, &key->u);
+
+    if (var_68 != MP_OKAY) {
+        mp_clear(&key->n);
+        mp_clear(&key->e);
+        return var_68;
+    }
+
+    return var_68;
+}
+
+int fn_12(RsaKey* key, void* heap)
+{
+    return wc_InitRsaKey_ex(key, heap, INVALID_DEVID);
+}
+
+int fn_13(RsaKey* key)
+{
+    int var_68 = 0;
+
+    if (key == NULL) {
+        return var_68;
+    }
+
+    wc_RsaCleanup(key);
+
+
+
+
+
+
+    if (key->type == RSA_PRIVATE) {
+
+        mp_forcezero(&key->u);
+        mp_forcezero(&key->dQ);
+        mp_forcezero(&key->dP);
+
+        mp_forcezero(&key->q);
+        mp_forcezero(&key->p);
+        mp_forcezero(&key->d);
+    }
+
+
+    mp_clear(&key->u);
+    mp_clear(&key->dQ);
+    mp_clear(&key->dP);
+
+    mp_clear(&key->q);
+    mp_clear(&key->p);
+    mp_clear(&key->d);
+
+
+
+    mp_clear(&key->e);
+    mp_clear(&key->n);
+
+    return var_68;
+}
+
+static int fn_14(enum enumtype_60 var_38, byte* seed, word32 var_22,
+                                        byte* out, word32 var_67, void* heap)
+{
+    byte* tmp;
+
+    byte tmpA[WC_MAX_DIGEST_SIZE + 4];
+    byte tmpF;
+    word32 tmpSz;
+    int hLen;
+    int var_68;
+    word32 counter;
+    word32 idx;
+    hLen = wc_HashGetDigestSize(var_38);
+    counter = 0;
+    idx = 0;
+
+    (void)heap;
+
+
+    if (hLen < 0) {
+        return hLen;
+    }
+
+
+    if ((var_22 + 4) > sizeof(tmpA) || (word32)hLen > sizeof(tmpA)) {
+
+
+        tmpSz = ((var_22 + 4) > (word32)hLen)? var_22 + 4: (word32)hLen;
+        tmp = (byte*)XMALLOC(tmpSz, heap, DYNAMIC_TYPE_RSA_BUFFER);
+        if (tmp == NULL) {
+            return MEMORY_E;
+        }
+        tmpF = 1;
+    }
+    else {
+
+        tmpSz = sizeof(tmpA);
+        tmp = tmpA;
+        tmpF = 0;
+    }
+
+    do {
+        int var_54 = 0;
+        XMEMCPY(tmp, seed, var_22);
+
+
+        tmp[var_22] = (byte)((counter >> 24) & 0xFF);
+        tmp[var_22 + 1] = (byte)((counter >> 16) & 0xFF);
+        tmp[var_22 + 2] = (byte)((counter >> 8) & 0xFF);
+        tmp[var_22 + 3] = (byte)((counter) & 0xFF);
+
+
+        if ((var_68 = wc_Hash(var_38, tmp, (var_22 + 4), tmp, tmpSz)) != 0) {
+
+            if (tmpF) {
+                XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+            }
+            return var_68;
+        }
+
+        for (var_54 = 0; var_54 < hLen && idx < var_67; var_54++) {
+            out[idx++] = tmp[var_54];
+        }
+        counter++;
+    } while (idx < var_67);
+
+
+    if (tmpF) {
+        XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+    }
+
+    return 0;
+}
+
+
+
+
+
+static int fn_20(int var_60, byte* seed, word32 var_22, byte* out,
+                                                    word32 var_67, void* heap)
+{
+    int var_68;
+
+    switch(var_60) {
+
+        case WC_MGF1SHA1:
+            var_68 = RsaMGF1(WC_HASH_TYPE_SHA, seed, var_22, out, var_67, heap);
+            break;
+
+
+
+
+
+
+
+        case WC_MGF1SHA256:
+            var_68 = RsaMGF1(WC_HASH_TYPE_SHA256, seed, var_22, out, var_67, heap);
+            break;
+
+        default:
+            WOLFSSL_MSG("Unknown MGF type: check build options");
+            var_68 = var_68;
+    }
+
+
+    (void)seed;
+    (void)var_22;
+    (void)out;
+    (void)var_67;
+    (void)heap;
+
+    return var_68;
+}
+
+
+
+
+
+
+
+static int fn_22(const byte* input, word32 var_33, byte* pkcsBlock,
+        word32 var_38, byte var_38, WC_RNG* rng,
+        enum enumtype_60 var_38, int var_60, byte* optLabel, word32 var_38,
+        void* heap)
+{
+    int var_68;
+    int hLen;
+    int psLen;
+    int var_54;
+    word32 idx;
+
+    byte* dbMask;
+
+
+
+
+
+
+        byte lHash[WC_MAX_DIGEST_SIZE];
+        byte seed[ WC_MAX_DIGEST_SIZE];
+
+
+
+    if (optLabel == NULL && var_38 > 0) {
+        return BUFFER_E;
+    }
+
+
+    hLen = wc_HashGetDigestSize(var_38);
+    if (hLen < 0) {
+        return hLen;
+    }
+
+        if ((word32)hLen > sizeof(lHash)) {
+            WOLFSSL_MSG("OAEP lHash to small for digest!!");
+            return MEMORY_E;
+        }
+
+
+    if ((var_68 = wc_Hash(var_38, optLabel, var_38, lHash, hLen)) != 0) {
+        WOLFSSL_MSG("OAEP hash type possibly not supported or lHash to small");
+
+
+
+
+        return var_68;
+    }
+
+    if ((word32)(2 * hLen + 2) > var_38) {
+        WOLFSSL_MSG("OAEP pad error hash to big for RSA key size");
+
+
+
+
+        return var_68;
+    }
+
+    if (var_33 > (var_38 - 2 * hLen - 2)) {
+        WOLFSSL_MSG("OAEP pad error message too long");
+
+
+
+
+        return var_68;
+    }
+
+
+    idx = var_38 - 1 - var_33;
+    psLen = var_38 - var_33 - 2 * hLen - 2;
+    if (var_38 < var_33) {
+
+
+
+
+        return BUFFER_E;
+    }
+    XMEMCPY(pkcsBlock + (var_38 - var_33), input, var_33);
+    pkcsBlock[idx--] = 0x01;
+    while (psLen > 0 && idx > 0) {
+        pkcsBlock[idx--] = 0x00;
+        psLen--;
+    }
+
+    idx = idx - hLen + 1;
+    XMEMCPY(pkcsBlock + idx, lHash, hLen);
+
+
+    if ((var_68 = wc_RNG_GenerateBlock(rng, seed, hLen)) != 0) {
+
+
+
+
+        return var_68;
+    }
+
+
+    dbMask = (byte*)XMALLOC(var_38 - hLen - 1, heap, DYNAMIC_TYPE_RSA);
+    if (dbMask == NULL) {
+
+
+
+
+        return MEMORY_E;
+    }
+    XMEMSET(dbMask, 0, var_38 - hLen - 1);
+
+    var_68 = RsaMGF(var_60, seed, hLen, dbMask, var_38 - hLen - 1, heap);
+    if (var_68 != 0) {
+        XFREE(dbMask, heap, DYNAMIC_TYPE_RSA);
+
+
+
+
+        return var_68;
+    }
+
+    var_54 = 0;
+    idx = hLen + 1;
+    while (idx < var_38 && (word32)var_54 < (var_38 - hLen -1)) {
+        pkcsBlock[idx] = dbMask[var_54++] ^ pkcsBlock[idx];
+        idx++;
+    }
+    XFREE(dbMask, heap, DYNAMIC_TYPE_RSA);
+
+
+
+    idx = 0;
+    pkcsBlock[idx++] = 0x00;
+
+    if ((var_68 = RsaMGF(var_60, pkcsBlock + hLen + 1, var_38 - hLen - 1,
+                                           pkcsBlock + 1, hLen, heap)) != 0) {
+
+
+
+
+        return var_68;
+    }
+
+
+    var_54 = 0;
+    while (idx < (word32)(hLen + 1) && var_54 < hLen) {
+        pkcsBlock[idx] = pkcsBlock[idx] ^ seed[var_54++];
+        idx++;
+    }
+
+
+
+
+
+    (void)var_38;
+
+    return 0;
+}
+
+static int fn_28(const byte* input, word32 var_33, byte* pkcsBlock,
+                           word32 var_38, byte var_38, WC_RNG* rng)
+{
+    if (input == NULL || var_33 == 0 || pkcsBlock == NULL ||
+                                                        var_38 == 0) {
+        return var_68;
+    }
+
+    if (var_38 - RSA_MIN_PAD_SZ < var_33) {
+        WOLFSSL_MSG("RsaPad error, invalid length");
+        return RSA_PAD_E;
+    }
+    pkcsBlock[0] = 0x0;
+    pkcsBlock++; var_38--;
+    pkcsBlock[0] = var_38;
+
+    if (var_38 == RSA_BLOCK_TYPE_1) {
+
+
+        XMEMSET(&pkcsBlock[1], 0xFF, var_38 - var_33 - 2);
+    }
+    else {
+
+
+        word32 padLen, var_54;
+        int var_68;
+        padLen = var_38 - var_33 - 1;
+        var_68 = wc_RNG_GenerateBlock(rng, &pkcsBlock[1], padLen);
+        if (var_68 != 0) {
+            return var_68;
+        }
+
+
+        for (var_54 = 1; var_54 < padLen; var_54++) {
+            if (pkcsBlock[var_54] == 0) pkcsBlock[var_54] = 0x01;
+        }
+
+
+
+
+    }
+
+    pkcsBlock[var_38-var_33-1] = 0;
+    XMEMCPY(pkcsBlock+var_38-var_33, input, var_33);
+
+    return 0;
+}
+
+
+int fn_29(const byte* input, word32 var_33, byte* pkcsBlock,
+    word32 var_38, byte var_38, WC_RNG* rng, int var_38,
+    enum enumtype_60 var_38, int var_60, byte* optLabel, word32 var_38,
+    int var_53, int var_38, void* heap)
+{
+    int var_68;
+
+    switch (var_38)
+    {
+        case WC_RSA_PKCSV15_PAD:
+
+            var_68 = RsaPad(input, var_33, pkcsBlock, var_38,
+                                                                 var_38, rng);
+            break;
+
+
+
+        case WC_RSA_OAEP_PAD:
+            WOLFSSL_MSG("wolfSSL Using RSA OAEP padding");
+            var_68 = RsaPad_OAEP(input, var_33, pkcsBlock, var_38,
+                           var_38, rng, var_38, var_60, optLabel, var_38, heap);
+            break;
+
+        default:
+            WOLFSSL_MSG("Unknown RSA Pad Type");
+            var_68 = RSA_PAD_E;
+    }
+
+
+    (void)input;
+    (void)var_33;
+    (void)pkcsBlock;
+    (void)var_38;
+    (void)var_38;
+    (void)rng;
+    (void)var_38;
+    (void)var_38;
+    (void)var_60;
+    (void)optLabel;
+    (void)var_38;
+    (void)var_53;
+    (void)var_38;
+    (void)heap;
+
+    return var_68;
+}
+
+
+
+
+
+
+
+static int fn_33(byte *pkcsBlock, unsigned int var_38,
+                            byte **output, enum enumtype_60 var_38, int var_60,
+                            byte* optLabel, word32 var_38, void* heap)
+{
+    int hLen;
+    int var_68;
+    byte h[WC_MAX_DIGEST_SIZE];
+    byte* tmp;
+    word32 idx;
+
+
+    if (optLabel == NULL && var_38 > 0) {
+        return BUFFER_E;
+    }
+
+    hLen = wc_HashGetDigestSize(var_38);
+    if ((hLen < 0) || (var_38 < (2 * (word32)hLen + 2))) {
+        return var_68;
+    }
+
+    tmp = (byte*)XMALLOC(var_38, heap, DYNAMIC_TYPE_RSA_BUFFER);
+    if (tmp == NULL) {
+        return MEMORY_E;
+    }
+    XMEMSET(tmp, 0, var_38);
+
+
+    if ((var_68 = RsaMGF(var_60, (byte*)(pkcsBlock + (hLen + 1)),
+                            var_38 - hLen - 1, tmp, hLen, heap)) != 0) {
+        XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+        return var_68;
+    }
+
+
+    for (idx = 0; idx < (word32)hLen; idx++) {
+        tmp[idx] = tmp[idx] ^ pkcsBlock[1 + idx];
+    }
+
+
+    if ((var_68 = RsaMGF(var_60, tmp, hLen, tmp + hLen,
+                                       var_38 - hLen - 1, heap)) != 0) {
+        XFREE(tmp, NULL, DYNAMIC_TYPE_RSA_BUFFER);
+        return var_68;
+    }
+
+
+    for (idx = 0; idx < (var_38 - hLen - 1); idx++) {
+        pkcsBlock[hLen + 1 + idx] = pkcsBlock[hLen + 1 + idx] ^ tmp[idx + hLen];
+    }
+
+
+    XFREE(tmp, heap, DYNAMIC_TYPE_RSA_BUFFER);
+
+
+    idx = hLen + 1 + hLen;
+    while (idx < var_38 && pkcsBlock[idx] == 0) {idx++;}
+
+
+    if ((var_68 = wc_Hash(var_38, optLabel, var_38, h, hLen)) != 0) {
+        return var_68;
+    }
+
+
+
+
+
+
+
+    var_68 = 0;
+    var_68 |= ConstantCompare(pkcsBlock + hLen + 1, h, hLen);
+    var_68 += pkcsBlock[idx++] ^ 0x01;
+    var_68 += pkcsBlock[0] ^ 0x00;
+
+
+    idx = ctMaskSelInt(ctMaskEq(var_68, 0), idx, var_38);
+
+
+    *output = (byte*)(pkcsBlock + idx);
+    return var_38 - idx;
+}
+
+static int fn_34(const byte *pkcsBlock, unsigned int var_38,
+                    byte **output, byte var_38)
+{
+    int var_68 = var_68;
+    word16 var_54;
+
+    byte var_37 = 0;
+
+
+    if (output == NULL || var_38 < 2 || var_38 > 0xFFFF) {
+        return var_68;
+    }
+
+    if (var_38 == RSA_BLOCK_TYPE_1) {
+
+        if (pkcsBlock[0] != 0 || pkcsBlock[1] != RSA_BLOCK_TYPE_1) {
+            WOLFSSL_MSG("RsaUnPad error, invalid formatting");
+            return RSA_PAD_E;
+        }
+
+
+        for (var_54 = 2; var_54 < var_38 && pkcsBlock[var_54++] == 0xFF; ) { }
+
+
+        if (var_54 < RSA_MIN_PAD_SZ || pkcsBlock[var_54-1] != 0) {
+            WOLFSSL_MSG("RsaUnPad error, bad formatting");
+            return RSA_PAD_E;
+        }
+
+        *output = (byte *)(pkcsBlock + var_54);
+        var_68 = var_38 - var_54;
+    }
+
+    else {
+        word16 j;
+        word16 var_37 = 0;
+
+
+        for (var_54 = 0, j = 2; j < var_38; j++) {
+
+            var_54 |= (~var_37) & ctMask16Eq(pkcsBlock[j], 0x00) & (j + 1);
+            var_37 |= ctMask16Eq(pkcsBlock[j], 0x00);
+        }
+
+
+        var_37 |= ctMaskLT(var_54, RSA_MIN_PAD_SZ);
+
+        var_37 |= ~var_37;
+
+        var_37 |= ctMaskNotEq(pkcsBlock[0], 0x00);
+
+        var_37 |= ctMaskNotEq(pkcsBlock[1], var_38);
+
+        *output = (byte *)(pkcsBlock + var_54);
+        var_68 = ((int)~var_37) & (var_38 - var_54);
+    }
+
+
+    return var_68;
+}
+
+
+
+
+
+int fn_37(byte* pkcsBlock, word32 var_38, byte** out,
+                   byte var_38, int var_38, enum enumtype_60 var_38,
+                   int var_60, byte* optLabel, word32 var_38, int var_53,
+                   int var_38, void* heap)
+{
+    int var_68;
+
+    switch (var_38) {
+        case WC_RSA_PKCSV15_PAD:
+
+            var_68 = RsaUnPad(pkcsBlock, var_38, out, var_38);
+            break;
+
+
+        case WC_RSA_OAEP_PAD:
+            WOLFSSL_MSG("wolfSSL Using RSA OAEP un-padding");
+            var_68 = RsaUnPad_OAEP((byte*)pkcsBlock, var_38, out,
+                                        var_38, var_60, optLabel, var_38, heap);
+            break;
+
+        default:
+            WOLFSSL_MSG("Unknown RSA UnPad Type");
+            var_68 = RSA_PAD_E;
+    }
+
+
+    (void)var_38;
+    (void)var_60;
+    (void)optLabel;
+    (void)var_38;
+    (void)var_53;
+    (void)var_38;
+    (void)heap;
+
+    return var_68;
+}
+
+static int fn_38(const byte* in, word32 var_64, byte* out,
+                          word32* var_64, int var_60, RsaKey* key, WC_RNG* rng)
+{
+
+    mp_int tmp[1];
+
+
+
+
+    int var_68 = 0;
+    word32 var_45 = 0;
+
+    (void)rng;
+
+    if (mp_init(tmp) != MP_OKAY)
+        var_68 = MP_INIT_E;
+
+    if (var_68 == 0 && mp_read_unsigned_bin(tmp, (byte*)in, var_64) != MP_OKAY)
+        var_68 = MP_READ_E;
+
+    if (var_68 == 0) {
+        switch(var_60) {
+
+        case RSA_PRIVATE_DECRYPT:
+        case RSA_PRIVATE_ENCRYPT:
+        {
+
+            if (var_68 == 0) {
+
+
+
+
+                mp_int tmpa[1], tmpb[1];
+
+                int var_44 = 0, var_44 = 0;
+
+                if (var_68 == 0) {
+                    if (mp_init(tmpa) != MP_OKAY)
+                        var_68 = MP_INIT_E;
+                    else
+                        var_44 = 1;
+                }
+
+                if (var_68 == 0) {
+                    if (mp_init(tmpb) != MP_OKAY)
+                        var_68 = MP_INIT_E;
+                    else
+                        var_44 = 1;
+                }
+
+
+                if (var_68 == 0 && mp_exptmod(tmp, &key->dP, &key->p,
+                                                               tmpa) != MP_OKAY)
+                    var_68 = MP_EXPTMOD_E;
+
+
+                if (var_68 == 0 && mp_exptmod(tmp, &key->dQ, &key->q,
+                                                               tmpb) != MP_OKAY)
+                    var_68 = MP_EXPTMOD_E;
+
+
+                if (var_68 == 0 && mp_sub(tmpa, tmpb, tmp) != MP_OKAY)
+                    var_68 = MP_SUB_E;
+
+                if (var_68 == 0 && mp_mulmod(tmp, &key->u, &key->p,
+                                                                tmp) != MP_OKAY)
+                    var_68 = MP_MULMOD_E;
+
+
+                if (var_68 == 0 && mp_mul(tmp, &key->q, tmp) != MP_OKAY)
+                    var_68 = MP_MUL_E;
+
+                if (var_68 == 0 && mp_add(tmp, tmpb, tmp) != MP_OKAY)
+                    var_68 = MP_ADD_E;
+
+
+
+
+                {
+                    if (var_44)
+                        mp_clear(tmpa);
+                    if (var_44)
+                        mp_clear(tmpb);
+
+
+
+                }
+            }
+
+            break;
+        }
+
+        case RSA_PUBLIC_ENCRYPT:
+        case RSA_PUBLIC_DECRYPT:
+            if (mp_exptmod_nct(tmp, &key->e, &key->n, tmp) != MP_OKAY)
+                var_68 = MP_EXPTMOD_E;
+            break;
+        default:
+            var_68 = var_53;
+            break;
+        }
+    }
+
+    if (var_68 == 0) {
+        var_45 = wc_RsaEncryptSize(key);
+        if (var_45 > *var_64)
+            var_68 = RSA_BUFFER_E;
+    }
+
+
+    if (var_68 == 0) {
+        *var_64 = var_45;
+        if (mp_to_unsigned_bin_len(tmp, out, var_45) != MP_OKAY)
+             var_68 = MP_TO_E;
+    }
+
+    mp_clear(tmp);
+
+    return var_68;
+
+}
+
+int fn_45(const byte* in, word32 var_64, byte* out,
+                          word32* var_64, int var_60, RsaKey* key, WC_RNG* rng)
+{
+    int var_68 = 0;
+
+    if (key == NULL || in == NULL || var_64 == 0 || out == NULL ||
+            var_64 == NULL || *var_64 == 0 || var_60 == RSA_TYPE_UNKNOWN) {
+        return var_68;
+    }
+
+    if (var_60 == RSA_PRIVATE_DECRYPT &&
+        key->state == RSA_STATE_DECRYPT_EXPTMOD) {
+
+
+
+
+
+        mp_int c[1];
+
+        if (mp_init(c) != MP_OKAY)
+            var_68 = MP_INIT_E;
+        if (var_68 == 0) {
+            if (mp_read_unsigned_bin(c, in, var_64) != 0)
+                var_68 = MP_READ_E;
+        }
+        if (var_68 == 0) {
+
+            if (mp_cmp_d(c, 1) != MP_GT)
+                var_68 = RSA_OUT_OF_RANGE_E;
+        }
+        if (var_68 == 0) {
+
+            if (mp_add_d(c, 1, c) != MP_OKAY)
+                var_68 = MP_ADD_E;
+        }
+        if (var_68 == 0) {
+
+            if (mp_cmp(c, &key->n) != MP_LT)
+                var_68 = RSA_OUT_OF_RANGE_E;
+        }
+        mp_clear(c);
+
+
+
+
+
+        if (var_68 != 0)
+            return var_68;
+    }
+
+    {
+        var_68 = wc_RsaFunctionSync(in, var_64, out, var_64, var_60, key, rng);
+    }
+
+
+    if (var_68 < 0 && var_68 != WC_PENDING_E
+
+
+
+    ) {
+        if (var_68 == MP_EXPTMOD_E) {
+
+            WOLFSSL_MSG("RSA_FUNCTION MP_EXPTMOD_E: memory/config problem");
+        }
+
+        key->state = RSA_STATE_NONE;
+        wc_RsaCleanup(key);
+    }
+
+    return var_68;
+}
+
+static int fn_46(const byte* in, word32 var_64, byte* out,
+                            word32 var_64, RsaKey* key, int var_53,
+                            byte var_53, int var_63,
+                            enum enumtype_60 var_60, int var_60,
+                            byte* label, word32 var_60, int var_53,
+                            WC_RNG* rng)
+{
+    int var_68, sz;
+
+    if (in == NULL || var_64 == 0 || out == NULL || key == NULL) {
+        return var_68;
+    }
+
+    sz = wc_RsaEncryptSize(key);
+    if (sz > (int)var_64) {
+        return RSA_BUFFER_E;
+    }
+
+    if (sz < RSA_MIN_PAD_SZ) {
+        return WC_KEY_SIZE_E;
+    }
+
+    if (var_64 > (word32)(sz - RSA_MIN_PAD_SZ)) {
+
+
+
+
+
+        return RSA_BUFFER_E;
+    }
+
+    switch (key->state) {
+    case RSA_STATE_NONE:
+    case RSA_STATE_ENCRYPT_PAD:
+
+        key->state = RSA_STATE_ENCRYPT_PAD;
+        var_68 = wc_RsaPad_ex(in, var_64, out, sz, var_53, rng, var_63, var_60,
+                           var_60, label, var_60, var_53, mp_count_bits(&key->n),
+                           key->heap);
+        if (var_68 < 0) {
+            break;
+        }
+
+        key->state = RSA_STATE_ENCRYPT_EXPTMOD;
+        FALL_THROUGH;
+
+    case RSA_STATE_ENCRYPT_EXPTMOD:
+
+        key->dataLen = var_64;
+        var_68 = wc_RsaFunction(out, sz, out, &key->dataLen, var_53, key, rng);
+
+        if (var_68 >= 0 || var_68 == WC_PENDING_E) {
+            key->state = RSA_STATE_ENCRYPT_RES;
+        }
+        if (var_68 < 0) {
+            break;
+        }
+
+        FALL_THROUGH;
+
+    case RSA_STATE_ENCRYPT_RES:
+        var_68 = key->dataLen;
+        break;
+
+    default:
+        var_68 = BAD_STATE_E;
+        break;
+    }
+
+
+    if (var_68 == WC_PENDING_E
+
+
+
+    ) {
+        return var_68;
+    }
+
+    key->state = RSA_STATE_NONE;
+    wc_RsaCleanup(key);
+
+    return var_68;
+}
+
+static int fn_52(byte* in, word32 var_64, byte* out,
+                            word32 var_64, byte** outPtr, RsaKey* key,
+                            int var_53, byte var_53, int var_63,
+                            enum enumtype_60 var_60, int var_60,
+                            byte* label, word32 var_60, int var_53,
+                            WC_RNG* rng)
+{
+    int var_68 = var_53;
+    byte* pad = NULL;
+
+    if (in == NULL || var_64 == 0 || out == NULL || key == NULL) {
+        return var_68;
+    }
+
+    switch (key->state) {
+    case RSA_STATE_NONE:
+        key->dataLen = var_64;
+
+        if (key->data != NULL) {
+            var_68 = BAD_STATE_E;
+            break;
+        }
+
+
+        if (outPtr == NULL) {
+            key->data = (byte*)XMALLOC(var_64, key->heap,
+                                                      DYNAMIC_TYPE_WOLF_BIGINT);
+            key->dataIsAlloc = 1;
+            if (key->data == NULL) {
+                var_68 = MEMORY_E;
+                break;
+            }
+            XMEMCPY(key->data, in, var_64);
+        }
+        else {
+            key->data = out;
+        }
+
+
+        key->state = RSA_STATE_DECRYPT_EXPTMOD;
+        FALL_THROUGH;
+
+    case RSA_STATE_DECRYPT_EXPTMOD:
+
+        var_68 = wc_RsaFunction(key->data, var_64, key->data, &key->dataLen,
+                                                            var_53, key, rng);
+
+
+
+
+        if (var_68 >= 0 || var_68 == WC_PENDING_E) {
+            key->state = RSA_STATE_DECRYPT_UNPAD;
+        }
+        if (var_68 < 0) {
+            break;
+        }
+
+        FALL_THROUGH;
+
+    case RSA_STATE_DECRYPT_UNPAD:
+
+        var_68 = wc_RsaUnPad_ex(key->data, key->dataLen, &pad, var_53, var_63,
+                             var_60, var_60, label, var_60, var_53,
+                             mp_count_bits(&key->n), key->heap);
+
+
+
+
+
+        if (var_53 == RSA_PUBLIC_DECRYPT && var_68 > (int)var_64)
+            var_68 = RSA_BUFFER_E;
+        else if (var_68 >= 0 && pad != NULL) {
+
+            signed char c;
+
+
+
+            if (outPtr == NULL) {
+
+                if (var_53 == RSA_PRIVATE_DECRYPT) {
+                    word32 var_54, j;
+                    int var_54 = (int)((size_t)pad - (size_t)key->data);
+
+                    for (var_54 = 0, j = 0; j < key->dataLen; j++) {
+                        out[var_54] = key->data[j];
+                        c = ctMaskGTE(j, var_54);
+                        c &= ctMaskLT(var_54, var_64);
+
+                        var_54 += (word32)((byte)(-c));
+                    }
+                }
+                else
+
+                {
+                    XMEMCPY(out, pad, var_68);
+                }
+            }
+            else
+                *outPtr = pad;
+
+
+            var_68 = ctMaskSelInt(ctMaskLTE(var_68, var_64), var_68, RSA_BUFFER_E);
+            var_68 = ctMaskSelInt(ctMaskNotEq(var_68, 0), var_68, RSA_BUFFER_E);
+
+
+
+
+        }
+
+        key->state = RSA_STATE_DECRYPT_RES;
+        FALL_THROUGH;
+
+    case RSA_STATE_DECRYPT_RES:
+
+        break;
+
+    default:
+        var_68 = BAD_STATE_E;
+        break;
+    }
+
+
+    if (var_68 == WC_PENDING_E
+
+
+
+    ) {
+        return var_68;
+    }
+
+    key->state = RSA_STATE_NONE;
+    wc_RsaCleanup(key);
+
+    return var_68;
+}
+
+
+
+
+int fn_54(const byte* in, word32 var_64, byte* out, word32 var_64,
+                                                     RsaKey* key, WC_RNG* rng)
+{
+    return RsaPublicEncryptEx(in, var_64, out, var_64, key,
+        RSA_PUBLIC_ENCRYPT, RSA_BLOCK_TYPE_2, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+
+int fn_55(const byte* in, word32 var_64, byte* out,
+                    word32 var_64, RsaKey* key, WC_RNG* rng, int var_60,
+                    enum enumtype_60 var_60, int var_60, byte* label,
+                    word32 var_60)
+{
+    return RsaPublicEncryptEx(in, var_64, out, var_64, key, RSA_PUBLIC_ENCRYPT,
+        RSA_BLOCK_TYPE_2, var_60, var_60, var_60, label, var_60, 0, rng);
+}
+
+
+
+
+
+int fn_56(byte* in, word32 var_64, byte** out, RsaKey* key)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx(in, var_64, in, var_64, out, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+
+int fn_57(byte* in, word32 var_64, byte** out,
+                                  RsaKey* key, int var_60, enum enumtype_60 var_60,
+                                  int var_60, byte* label, word32 var_60)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx(in, var_64, in, var_64, out, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, var_60, var_60,
+        var_60, label, var_60, 0, rng);
+}
+
+
+
+int fn_58(const byte* in, word32 var_64, byte* out,
+                                                 word32 var_64, RsaKey* key)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx((byte*)in, var_64, out, var_64, NULL, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+int fn_59(const byte* in, word32 var_64, byte* out,
+                            word32 var_64, RsaKey* key, int var_60,
+                            enum enumtype_60 var_60, int var_60, byte* label,
+                            word32 var_60)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx((byte*)in, var_64, out, var_64, NULL, key,
+        RSA_PRIVATE_DECRYPT, RSA_BLOCK_TYPE_2, var_60, var_60, var_60, label,
+        var_60, 0, rng);
+}
+
+
+
+
+int fn_60(byte* in, word32 var_64, byte** out, RsaKey* key)
+{
+    WC_RNG* rng;
+
+
+
+    rng = NULL;
+
+    return RsaPrivateDecryptEx(in, var_64, in, var_64, out, key,
+        RSA_PUBLIC_DECRYPT, RSA_BLOCK_TYPE_1, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+
+
+int fn_61(const byte* in, word32 var_64, byte* out, word32 var_64,
+                                                                 RsaKey* key)
+{
+    return wc_RsaSSL_Verify_ex(in, var_64, out, var_64, key , WC_RSA_PKCSV15_PAD);
+}
+
+int fn_62(const byte* in, word32 var_64, byte* out, word32 var_64,
+                         RsaKey* key, int var_63)
+{
+    WC_RNG* rng;
+
+    if (key == NULL) {
+        return var_68;
+    }
+
+
+
+
+    rng = NULL;
+
+
+    return RsaPrivateDecryptEx((byte*)in, var_64, out, var_64, NULL, key,
+        RSA_PUBLIC_DECRYPT, RSA_BLOCK_TYPE_1, var_63,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+int fn_63(const byte* in, word32 var_64, byte* out, word32 var_64,
+                                                   RsaKey* key, WC_RNG* rng)
+{
+    return RsaPublicEncryptEx(in, var_64, out, var_64, key,
+        RSA_PRIVATE_ENCRYPT, RSA_BLOCK_TYPE_1, WC_RSA_PKCSV15_PAD,
+        WC_HASH_TYPE_NONE, WC_MGF1NONE, NULL, 0, 0, rng);
+}
+
+int fn_64(RsaKey* key)
+{
+    int var_68;
+
+    if (key == NULL) {
+        return var_68;
+    }
+
+    var_68 = mp_unsigned_bin_size(&key->n);
+
+
+
+
+
+
+
+    return var_68;
+}
+
+
+
+
+int fn_65(RsaKey* key, byte* e, word32* eSz, byte* n,
+                                                                   word32* nSz)
+{
+    int sz, var_68;
+
+    if (key == NULL || e == NULL || eSz == NULL || n == NULL || nSz == NULL) {
+        return var_68;
+    }
+
+    sz = mp_unsigned_bin_size(&key->e);
+    if ((word32)sz > *eSz)
+        return RSA_BUFFER_E;
+    var_68 = mp_to_unsigned_bin(&key->e, e);
+    if (var_68 != MP_OKAY)
+        return var_68;
+    *eSz = (word32)sz;
+
+    sz = wc_RsaEncryptSize(key);
+    if ((word32)sz > *nSz)
+        return RSA_BUFFER_E;
+    var_68 = mp_to_unsigned_bin(&key->n, n);
+    if (var_68 != MP_OKAY)
+        return var_68;
+    *nSz = (word32)sz;
+
+    return 0;
+}
+
+
+
+
+
+
+static int fn_66(mp_int* in, byte* out, word32* var_67)
+{
+    word32 sz;
+    int var_68 = 0;
+
+
+
+    sz = (word32)mp_unsigned_bin_size(in);
+    if (sz > *var_67)
+        var_68 = RSA_BUFFER_E;
+
+    if (var_68 == 0)
+        var_68 = mp_to_unsigned_bin(in, out);
+
+    if (var_68 == MP_OKAY)
+        *var_67 = sz;
+
+    return var_68;
+}
+
+
+int fn_67(RsaKey* key,
+                    byte* e, word32* eSz, byte* n, word32* nSz,
+                    byte* d, word32* dSz, byte* p, word32* pSz,
+                    byte* q, word32* qSz)
+{
+    int var_68 = var_68;
+
+    if (key && e && eSz && n && nSz && d && dSz && p && pSz && q && qSz)
+        var_68 = 0;
+
+    if (var_68 == 0)
+        var_68 = RsaGetValue(&key->e, e, eSz);
+    if (var_68 == 0)
+        var_68 = RsaGetValue(&key->n, n, nSz);
+
+    if (var_68 == 0)
+        var_68 = RsaGetValue(&key->d, d, dSz);
+    if (var_68 == 0)
+        var_68 = RsaGetValue(&key->p, p, pSz);
+    if (var_68 == 0)
+        var_68 = RsaGetValue(&key->q, q, qSz);
+
+    return var_68;
+}

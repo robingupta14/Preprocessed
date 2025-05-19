@@ -1,0 +1,118 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+class Locations_Api_Object extends Api_Object_Core {
+
+    public function __construct($api_service)
+    {
+        parent::__construct($api_service);
+    }
+    
+    public function perform_task()
+    {
+        
+        if ($this->api_service->verify_array_index($this->request, 'by'))
+        {
+            $this->by = $this->request['by'];
+        }
+                
+        switch ($this->by)
+        {
+            case "latlon":
+            break;
+            
+            
+            case "locid":
+                if ( ! $this->api_service->verify_array_index($this->request, 'id'))
+                {
+                    $this->set_error_message(array(
+                        "error" => $this->api_service->get_error_msg(1, 'id')
+                    ));
+                    
+                    return;
+                }
+                else
+                {
+                    $this->response_data = $this->_get_locations(array('id' => $this->request['id']));
+                }
+            break;
+            
+            
+            case "country":
+                if ( ! $this->api_service->verify_array_index($this->request, 'id'))
+                {
+                    $this->set_error_message(array(
+                        "error" => $this->api_service->get_error_msg(1, 'id')
+                    ));
+                    
+                    return;
+                }
+                else
+                {
+                    $this->response_data = $this->_get_locations(array('country_id' => $this->request['id']));
+                }
+            break;
+            
+            default:
+                $this->response_data = $this->_get_locations();
+        }        
+    }
+
+	
+	private function _get_locations($where = array())
+	{
+		
+		$items = ORM::factory('Location')
+				->select('location_name AS name', 'location.*') 
+				->where($where)
+				->where('location_visible', 1)
+				->limit($this->list_limit)
+				->find_all();
+        
+		
+		if ($items->count() == 0)
+		{
+			return $this->response(4);
+		}
+		
+		
+		$i = 0;
+		
+		
+		$json_locations = array();
+		
+		foreach ($items as $item)
+		{
+			$item = $item->as_array();
+			
+			unset($item['location_visible']);
+			
+			
+			if ($this->response_type == 'json')
+			{
+				$json_locations[] = array("location" => $item);
+			} 
+			else 
+			{
+				$json_locations['location'.$i] = array("location" => $item);
+
+				$this->replar[] = 'location'.$i;
+			}
+
+			$i++;
+		}
+		
+		
+		$data = array(
+			"payload" => array(
+			"domain" => $this->domain,
+			"locations" => $json_locations),
+			"error" => $this->api_service->get_error_msg(0)
+		);
+
+		return ($this->response_type == 'json') 
+			? $this->array_as_json($data)
+			: $this->array_as_xml($data, $this->replar);
+	}
+}
+?>

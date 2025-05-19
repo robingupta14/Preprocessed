@@ -1,0 +1,90 @@
+<?php
+
+if (!defined('IS_VALID_PHPMYFAQ')) {
+    $protocol = 'http';
+    if (isset($_SERVER['HTTPS']) && strtoupper($_SERVER['HTTPS']) === 'ON') {
+        $protocol = 'https';
+    }
+    header('Location: '.$protocol.':
+    exit();
+}
+
+if ($user->perm->checkRight($user->getUserId(), 'editconfig')) {
+    
+    $userAction = PMF_Filter::filterInput(INPUT_GET, 'config_action', FILTER_SANITIZE_STRING, 'listConfig');
+    $csrfToken = PMF_Filter::filterInput(INPUT_POST, 'csrf', FILTER_SANITIZE_STRING);
+    $currentToken = $user->getCsrfTokenFromSession();
+
+    
+    if ('saveConfig' === $userAction && $currentToken === $csrfToken) {
+        $checks = array(
+            'filter' => FILTER_UNSAFE_RAW,
+            'flags' => FILTER_REQUIRE_ARRAY,
+        );
+        $editData = PMF_Filter::filterInputArray(INPUT_POST, array('edit' => $checks));
+        $userAction = 'listConfig';
+        $oldConfigValues = $faqConfig->config;
+
+        
+        $forbiddenValues = ['{', '}', '$'];
+        $newConfigValues = [];
+        $escapeValues = ['main.contactInformations', 'main.customPdfHeader', 'main.customPdfFooter'];
+
+        
+        if (isset($editData['edit']['main.enableMarkdownEditor'])) {
+            $editData['edit']['main.enableWysiwygEditor'] = false; 
+        }
+
+        foreach ($editData['edit'] as $key => $value) {
+            
+            $newConfigValues[$key] = str_replace($forbiddenValues, '', $value);
+            
+            if (isset($escapeValues[$key])) {
+                $newConfigValues[$key] = PMF_String::htmlspecialchars($value, ENT_HTML5);
+            }
+            $keyArray = array_values(explode('.', $key));
+            $newConfigClass = array_shift($keyArray);
+        }
+
+        foreach ($oldConfigValues as $key => $value) {
+            $keyArray = array_values(explode('.', $key));
+            $oldConfigClass = array_shift($keyArray);
+            if (isset($newConfigValues[$key])) {
+                continue;
+            } else {
+                if ($oldConfigClass === $newConfigClass && $oldConfigValues[$key] === 'true') {
+                    $newConfigValues[$key] = 'false';
+                } else {
+                    $newConfigValues[$key] = $oldConfigValues[$key];
+                }
+            }
+        }
+
+        if (!is_null($editData)) {
+            $faqConfig->update($newConfigValues);
+        }
+    }
+    ?>
+        <form class="form-horizontal" id="config_list" name="config_list" method="post"
+              action="?action=config&amp;config_action=saveConfig">
+            <input type="hidden" name="csrf" value="<?php ">
+                        <div role="tabpanel" class="tab-pane fade in active" id="main"></div>
+                        <div role="tabpanel" class="tab-pane fade" id="records"></div>
+                        <div role="tabpanel" class="tab-pane fade" id="search"></div>
+                        <div role="tabpanel" class="tab-pane fade" id="security"></div>
+                        <div role="tabpanel" class="tab-pane fade" id="spam"></div>
+                        <div role="tabpanel" class="tab-pane fade" id="seo"></div>
+                        <div role="tabpanel" class="tab-pane fade" id="social"></div>
+                        <div role="tabpanel" class="tab-pane fade" id="mail"></div>
+                    </div>
+                </div>
+            </div>
+
+        </form>
+
+        <script src="assets/js/configuration.js"></script>
+<?php
+
+} else {
+    
+}

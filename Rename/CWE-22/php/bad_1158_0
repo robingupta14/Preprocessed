@@ -1,0 +1,604 @@
+<?php
+
+
+
+
+
+	if (permission_exists('music_on_hold_view')) {
+		
+	}
+	else {
+		
+		var_0;
+	}
+
+
+	$var_1 = new class_0;
+	$var_2 = $var_1->get();
+
+
+	ini_set('max_execution_time', 7200);
+
+
+	$var_4 = "select * from v_music_on_hold ";
+	$var_4 .= "where ( ";
+	$var_4 .= "domain_uuid = :domain_uuid ";
+	if (permission_exists('music_on_hold_domain')) {
+		$var_4 .= "or domain_uuid is null ";
+	}
+	$var_4 .= ") ";
+	$var_4 .= "order by domain_uuid desc, music_on_hold_name asc, music_on_hold_rate asc";
+	$var_8['domain_uuid'] = $_SESSION['domain_uuid'];
+	$var_5 = new class_1;
+	$var_6 = $var_5->select($var_4, $var_8, 'all');
+
+
+	if (
+		$_GET['action'] == "download"
+		&& is_uuid($_GET['id'])
+		&& is_array($var_6)
+		&& @sizeof($var_6) != 0
+		) {
+		
+			$var_9 = $_GET['id'];
+
+		
+			foreach($var_6 as $var_10) {
+				if ($var_9 == $var_10['music_on_hold_uuid']) {
+					$var_11 = $var_10['domain_uuid'];
+					$var_12 = $var_10['music_on_hold_name'];
+					$var_13 = $var_10['music_on_hold_path'];
+					break;
+				}
+			}
+		
+		
+			$var_13 = str_replace('$${sounds_dir}', $_SESSION['switch']['sounds']['dir'], $var_13);
+
+		
+			$var_14 = base64_decode($_GET['file']);
+			$var_15 = path_join($var_13, $var_14);
+
+		
+			session_cache_limiter('public');
+			if (file_exists($var_15)) {
+				$var_16 = fopen($var_15, "rb");
+				if ($_GET['t'] == "bin") {
+					header("Content-Type: application/force-download");
+					header("Content-Type: application/octet-stream");
+					header("Content-Type: application/download");
+					header("Content-Description: File Transfer");
+				}
+				else {
+					$var_17 = pathinfo($var_14, var_18);
+					switch ($var_17) {
+						case "wav" : header("Content-Type: audio/x-wav"); break;
+						case "mp3" : header("Content-Type: audio/mpeg"); break;
+						case "ogg" : header("Content-Type: audio/ogg"); break;
+					}
+				}
+				header('Content-Disposition: attachment; filename="'.$var_14.'"');
+				header("Cache-Control: no-cache, must-revalidate"); 
+				header("Expires: Sat, 26 Jul 1997 05:00:00 GMT"); 
+				header("Content-Length: ".filesize($var_15));
+				fpassthru($var_16);
+			}
+			var_0;
+	}
+
+
+	if (
+		$_POST['action'] == 'upload'
+		&& is_array($var_19)
+		&& is_uploaded_file($var_19['file']['tmp_name'])
+		&& is_array($var_6)
+		&& @sizeof($var_6) != 0
+		) {
+
+		
+			if ($_POST['name_new'] != '') {
+				
+					$var_20 = 'add';
+				
+					$var_12 = $_POST['name_new'];
+				
+					$var_21 = is_numeric($_POST['rate']) ? $_POST['rate'] : '';
+			}
+			else {
+				
+					$var_9 = $_POST['name'];
+				
+					foreach ($var_6 as $var_10) {
+						if ($var_9 == $var_10['music_on_hold_uuid']) {
+							
+								$var_20 = 'update';
+							
+								$var_11 = $var_10['domain_uuid'];
+								$var_12 = $var_10['music_on_hold_name'];
+								$var_13 = $var_10['music_on_hold_path'];
+								$var_21 = $var_10['music_on_hold_rate'];
+								$var_22 = $var_10['music_on_hold_shuffle'];
+								$var_23 = $var_10['music_on_hold_channels'];
+								$var_24 = $var_10['music_on_hold_interval'];
+								$var_25 = $var_10['music_on_hold_timer_name'];
+								$var_26 = $var_10['music_on_hold_chime_list'];
+								$var_27 = $var_10['music_on_hold_chime_freq'];
+								$var_28 = $var_10['music_on_hold_chime_max'];
+								$var_21 = $var_10['music_on_hold_rate'];
+							
+								break;
+						}
+					}
+			}
+
+		
+			$var_29 = $var_19['file']['tmp_name'];
+			$var_30 = $var_19['file']['name'];
+			$var_17 = strtolower(pathinfo($var_30, var_18));
+
+		
+			$var_31 = ($var_17 == 'wav' || $var_17 == 'mp3' || $var_17 == 'ogg') ? true : false;
+
+		
+			if (!$var_31) {
+				message::add($var_2['message-unsupported_file_type']);
+			}
+			else {
+
+				
+					if ($var_20 == "add") {
+
+						
+							$var_32 = array("/", "\\");
+							$var_12 = str_replace($var_32, '', $var_12);
+							$var_12 = str_replace(' ', '_', $var_12);
+							$var_30 = str_replace($var_32, '', $var_30);
+							$var_30 = str_replace(' ', '-', $var_30);
+
+						
+							if ($var_21 == '') {
+								$var_33 = '48000';
+								$var_34 = true;
+							}
+							else {
+								$var_33 = $var_21;
+								$var_34 = false;
+							}
+
+						
+							$var_13 = path_join($_SESSION['switch']['sounds']['dir'], 'music', $_SESSION['domain_name'],$var_12, $var_33);
+
+						
+							$var_35 = true;
+							foreach ($var_6 as $var_10) {
+								$var_36 = str_replace('$${sounds_dir}', $_SESSION['switch']['sounds']['dir'], $var_10['music_on_hold_path']);
+								if ($var_13 == $var_10['music_on_hold_path']
+									|| $var_13 == $var_36) {
+									$var_35 = false;
+									break;
+								}
+							}
+
+						
+							$var_13 = str_replace('$${sounds_dir}', $_SESSION['switch']['sounds']['dir'], $var_13);
+
+						
+							if ($var_35) {
+								$var_9 = uuid();
+								$var_43['music_on_hold'][0]['music_on_hold_uuid'] = $var_9;
+								$var_43['music_on_hold'][0]['domain_uuid'] = $var_37;
+								$var_43['music_on_hold'][0]['music_on_hold_name'] = $var_12;
+								$var_43['music_on_hold'][0]['music_on_hold_path'] = $var_13;
+								$var_43['music_on_hold'][0]['music_on_hold_rate'] = strlen($var_21) != 0 ? $var_21 : null;
+								$var_43['music_on_hold'][0]['music_on_hold_shuffle'] = 'false';
+								$var_43['music_on_hold'][0]['music_on_hold_channels'] = 1;
+								$var_43['music_on_hold'][0]['music_on_hold_interval'] = 20;
+								$var_43['music_on_hold'][0]['music_on_hold_timer_name'] = 'soft';
+								$var_43['music_on_hold'][0]['music_on_hold_chime_list'] = null;
+								$var_43['music_on_hold'][0]['music_on_hold_chime_freq'] = null;
+								$var_43['music_on_hold'][0]['music_on_hold_chime_max'] = null;
+
+								$var_38 = new class_2;
+								$var_38->add('music_on_hold_add', 'temp');
+
+								$var_5 = new class_1;
+								$var_5->var_40 = 'music_on_hold';
+								$var_5->var_41 = '1dafe0f8-c08a-289b-0312-15baf4f20f81';
+								$var_5->save($var_43);
+								unset($var_43);
+
+								$var_38->delete('music_on_hold_add', 'temp');
+							}
+					}
+
+				
+					if (!is_dir($var_13)) {
+						event_socket_mkdir($var_13);
+					}
+					if (is_dir($var_13)) {
+						if (copy($var_29, $var_13.'/'.$var_30)) {
+							@unlink($var_29);
+						}
+					}
+
+				
+					message::add($var_2['message-upload_completed']);
+			}
+
+		
+			$var_45 = new class_3;
+			$var_45->reload();
+
+		
+			header("Location: music_on_hold.php");
+			var_0;
+	}
+
+
+	if (
+		$_GET['action'] == "delete"
+		&& is_uuid($_GET['id'])
+		&& is_array($var_6)
+		&& @sizeof($var_6) != 0
+		) {
+
+		
+			$var_9 = $_GET['id'];
+			$var_14 = base64_decode($_GET['file']);
+
+		
+			foreach($var_6 as $var_10) {
+				if ($var_9 == $var_10['music_on_hold_uuid']) {
+					$var_11 = $var_10['domain_uuid'];
+					$var_12 = $var_10['music_on_hold_name'];
+					$var_13 = $var_10['music_on_hold_path'];
+					$var_21 = $var_10['music_on_hold_rate'];
+					break;
+				}
+			}
+
+		
+			if (($var_11 == '' && permission_exists('music_on_hold_domain')) ||
+				($var_11 != '' && permission_exists('music_on_hold_delete'))) {
+
+				
+					if ($var_14 != '') {
+						@unlink(path_join($var_13, $var_14));
+					}
+				
+					else {
+						array_map('unlink', glob(path_join($var_13, '*.wav')));
+						array_map('unlink', glob(path_join($var_13, '*.mp3')));
+						array_map('unlink', glob(path_join($var_13, '*.ogg')));
+					}
+				
+					$var_45 = new class_3;
+					$var_45->reload();
+				
+					message::add($var_2['message-delete']);
+			}
+
+		
+			header("Location: music_on_hold.php");
+			var_0;
+	}
+
+
+	$var_58['title'] = $var_2['title-music_on_hold'];
+
+	
+
+	
+	\var_47";
+	
+	\n";
+	
+	\var_47";
+	\n";
+	\var_47";
+	
+
+	
+	
+	\n";
+	\var_47";
+	\n";
+	\var_47";
+	\n";
+	
+	
+	\var_47";
+	\n";
+	\var_47";
+	\n";
+	\var_47";
+	\n";
+	
+	
+
+	
+	
+
+	
+	
+	
+	
+
+
+	if (permission_exists('music_on_hold_add')) {
+		
+		
+
+		
+		
+
+		
+		
+
+		'>\n";
+
+		
+		
+		
+		
+		
+		'>\var_47";
+		'>\n";
+
+		if (permission_exists('music_on_hold_domain')) {
+			
+			foreach ($var_6 as $var_10) {
+				if (strlen($var_10['domain_uuid']) == 0) {
+					if (strlen($var_10['music_on_hold_rate']) == 0) { $var_48 = $var_10['music_on_hold_name']; }
+					if (strlen($var_10['music_on_hold_rate']) > 0) { $var_48 = $var_10['music_on_hold_name'] .'/'.$var_10['music_on_hold_rate']; }
+					
+				}
+			}
+			
+		}
+		if (permission_exists('music_on_hold_domain')) {
+			
+		}
+		foreach ($var_6 as $var_10) {
+			if (strlen($var_10['domain_uuid']) > 0) {
+			if (strlen($var_10['music_on_hold_rate']) == 0) { $var_48 = $var_10['music_on_hold_name']; }
+			if (strlen($var_10['music_on_hold_rate']) > 0) { $var_48 = $var_10['music_on_hold_name'] .'/'.$var_10['music_on_hold_rate']; }
+				
+			}
+		}
+		if (permission_exists('music_on_hold_domain')) {
+			
+		}
+
+		
+
+		' onclick=\"name_mode('new');\"><span class='var_49 class_4-var_50'></var_51></var_52>";
+		 display: none;' type='text' name='name_new' id='name_new' maxlength='255' value=''>";
+		 var_53-var_54: 3var_55;' onclick=\"name_mode('var_7');\"><span class='glyphicon glyphicon-list-alt'></span></button>";
+		
+		
+		
+
+		
+		'>\n";
+
+		
+		
+		
+		
+		
+		
+		'>\var_47";
+		
+		
+		
+		
+		
+		
+		
+		
+		
+
+		
+		'>\n";
+
+		
+		
+		
+		
+		
+		
+		' onchange=\"check_filetype(this);\">";
+		 overflow: hidden; white-space: nowrap;'>".$var_2['var_57-var_56']."</var_57>\var_47";
+		
+		
+		
+
+		
+
+		
+		
+
+		 margin-top: 6px;'>";
+		 var_58.getElementById('file_label').var_59 = '".$var_2['label-select_a_file']."'; name_mode('select'); return true;\">\n";
+		
+		
+
+		
+	}
+
+
+	$var_60 = 0;
+	$row_style["0"] = "row_style0";
+	$row_style["1"] = "row_style1";
+
+
+	$var_61 = '';
+
+
+	if (is_array($var_6) && @sizeof($var_6) != 0) {
+
+		
+			'>\n";
+
+		
+			foreach ($streams as $row) {
+
+				
+					$music_on_hold_name = $row['var_62'];
+					$var_63 = $var_10['music_on_hold_rate'];
+
+					$var_21 = $var_10['music_on_hold_rate'];
+
+				
+					 var_64: 10var_55;'></div></td></tr>\n";
+
+				
+					if ($previous_name != $music_on_hold_name) {
+						 height: 20px;'></var_65></var_66></var_67>\var_47";
+						
+						
+						if ($var_10['domain_uuid'] == null) { 
+							&var_68;- ".$var_2['var_57-global']."\var_47";
+						}
+						
+						
+					}
+
+				
+					$var_69 = (strlen($var_63) == 0) ? true : false;
+
+				
+					$var_70 = array();
+					$var_71 = 0;
+					if (permission_exists('music_on_hold_path')) {
+						$var_70[$var_71]['glyphicon'] = 'glyphicon-folder-open';
+						$var_70[$var_71]['title'] = $var_10['var_62'];
+						$var_71++;
+					}
+					if ($var_10['var_72'] == 'true') {
+						$var_70[$var_71]['glyphicon'] = 'glyphicon-random';
+						$var_70[$var_71]['title'] = $var_2['var_57-var_73'];
+						$var_71++;
+					}
+					if ($var_10['var_74'] != '') {
+						$var_70[$var_71]['glyphicon'] = 'glyphicon-bell';
+						$var_70[$var_71]['title'] = $var_2['var_57-var_75'].': '.$var_10['var_74'];
+						$var_71++;
+					}
+					if ($var_10['var_76'] == '2') {
+						$var_70[$var_71]['glyphicon'] = 'glyphicon-headphones';
+						$var_70[$var_71]['title'] = $var_2['var_57-var_77'];
+						$var_70[$var_71]['margin'] = 6;
+						$var_71++;
+					}
+					if (is_array($var_70) && sizeof($var_70) > 0) {
+						foreach ($var_70 as $var_78) {
+							$var_79 .= "<var_51 var_80='var_49 ".$var_78['var_49']." var_81' var_82='".escape($var_78['title'])."' style='width: 12px; height: 12px; margin-left: ".(($var_78['margin'] != '') ? $var_78['margin'] : 8)."px; vertical-align: text-top; cursor: help;'></span>";
+						}
+					}
+
+				
+					if ($var_69) {
+						$var_83 = $var_2['option-default'].' '.$var_79;
+					}
+					else {
+						$var_83 = ($var_63/1000).' kHz / '.$var_79;
+					}
+			
+				
+					
+					
+					'>".$text['var_57-var_84']."</th>\n";
+					 var_2-var_85: var_86; var_87-var_88: var_89;'>".$text['var_57-var_90-var_91']."</th>\n";
+					 var_2-var_85: var_86;'>".$text['var_57-var_92']."</th>\n";
+					
+					if (permission_exists('music_on_hold_edit')) {
+						
+					}
+					if (permission_exists('music_on_hold_delete')) {
+						
+					}
+					
+					
+					unset($var_70, $var_79);
+
+				
+					if (permission_exists('music_on_hold_edit')) {
+						$var_93 = "href='music_on_hold_edit.php?id=".escape($var_10['music_on_hold_uuid'])."'";
+					}
+
+				
+					$var_13 = $var_10['music_on_hold_path'];
+					$var_13 = str_replace("\$\${sounds_dir}",$_SESSION['switch']['sounds']['dir'], $var_13);
+
+				
+					if (file_exists($var_13)) {
+						$var_94 = array_merge(glob($var_13.'/*.wav'), glob($var_13.'/*.mp3'), glob($var_13.'/*.ogg'));
+						if (is_array($var_94) && @sizeof($var_94) != 0) {
+							foreach ($var_94 as $var_95) {
+								$var_14 = pathinfo($var_95, var_96);
+								$var_97 = byte_convert(filesize($var_95));
+								$var_98 = date("M d, Y H:i:s", filemtime($var_95));
+								$var_17 = pathinfo($var_14, var_18);
+								switch ($var_17) {
+									case "wav" : $var_99 = "audio/wav"; break;
+									case "mp3" : $var_99 = "audio/mpeg"; break;
+									case "ogg" : $var_99 = "audio/ogg"; break;
+								}
+								$var_100 = uuid();
+								'><td colspan='4' class='".$row_style[$var_60]." playback_progress_bar_background' style='padding: 0; border: none;'><span class='playback_progress_bar' id='recording_progress_".$var_100."'></span></td></tr>\n";
+								$var_93 = "href=\"javascript:recording_play('".$var_100."');\"";
+								
+								
+								
+								' preload='var_101' var_102=\"update_progress('".$var_100."')\" onended=\"recording_reset('".$var_100."');\" src='?action=download&id=".escape($var_10['music_on_hold_uuid'])."&file=".base64_encode($var_14)."' type='".escape($var_99)."'></audio>";
+								
+								
+								
+								 var_87-var_88: var_89;'>".escape($stream_file_size)."</td>\n";
+								 white-space: nowrap;'>".escape($var_98)."</var_66>\var_47";
+								
+								
+								if ( (!is_uuid($var_37) && permission_exists('music_on_hold_domain')) || (is_uuid($var_37) && permission_exists('music_on_hold_delete')) ) {
+									
+								}
+								
+								
+								$var_60 = ($var_60) ? 0 : 1;
+							}
+						}
+					}
+
+				
+					$var_61 = $var_62;
+
+				
+					$var_60 = ($var_60) ? 0 : 1;
+			}
+			unset($var_6, $var_10);
+
+		
+			
+
+	}
+
+	
+	
+	
+	
+	</td>\n";
+	
+	
+	";
+	
+	
+ 	
+	
+	
+	
+	
+
+
+
+?>

@@ -1,0 +1,180 @@
+<?php
+
+
+
+
+
+
+
+class ConfigControllerTest extends \Test\TestCase {
+
+	
+	protected $appName = 'gallery';
+	
+	protected $request;
+	
+	protected $controller;
+	
+	protected $configService;
+	
+	protected $previewService;
+	
+	protected $logger;
+	
+	private $baseMimeTypes = [
+		'image/png',
+		'image/jpeg',
+		'image/gif',
+		'image/x-xbitmap',
+		'image/bmp',
+		'image/tiff',
+		'image/x-dcraw',
+		'application/x-photoshop',
+		'application/illustrator',
+		'application/postscript',
+	];
+
+	
+	public function setUp() {
+		parent::setUp();
+
+		$this->request = $this->getMockBuilder('\OCP\IRequest')
+							  ->disableOriginalConstructor()
+							  ->getMock();
+		$this->configService = $this->getMockBuilder('\OCA\Gallery\Service\ConfigService')
+									->disableOriginalConstructor()
+									->getMock();
+		$this->previewService = $this->getMockBuilder('\OCA\Gallery\Service\PreviewService')
+									 ->disableOriginalConstructor()
+									 ->getMock();
+		$this->logger = $this->getMockBuilder('\OCP\ILogger')
+							 ->disableOriginalConstructor()
+							 ->getMock();
+		$this->controller = new ConfigController(
+			$this->appName,
+			$this->request,
+			$this->configService,
+			$this->logger
+		);
+	}
+
+	
+	public function providesConfigData() {
+		$noFeatures = [];
+
+		$features = [
+			'external_shares',
+			'background_colour_toggle',
+		];
+
+		$featuresWithSvg = array_merge(
+			$features,
+			[
+				'native_svg'
+			]
+		);
+
+		$slideshowMimes = array_merge(
+			$this->baseMimeTypes,
+			[
+				'application/font-sfnt',
+				'application/x-font',
+			]
+		);
+
+		$baseMimeTypesWithSvg = array_merge(
+			$this->baseMimeTypes,
+			[
+				'image/svg+xml',
+			]
+		);
+
+		$slideshowMimesWithSvg = array_merge(
+			$slideshowMimes,
+			[
+				'image/svg+xml',
+			]
+		);
+
+		return [
+			[$noFeatures, $this->baseMimeTypes, false, false],
+			[$noFeatures, $slideshowMimes, false, true],
+			[$features, $this->baseMimeTypes, false, false],
+			[$features, $slideshowMimes, false, true],
+			[$featuresWithSvg, $baseMimeTypesWithSvg, true, false],
+			[$featuresWithSvg, $slideshowMimesWithSvg, true, true],
+		];
+	}
+
+	
+	public function testGetConfig($features, $mimeTypes, $nativeSvgSupport, $slideshow) {
+		$this->mockFeaturesList($features);
+		$this->mockSupportedMediaTypes($slideshow, $nativeSvgSupport, $mimeTypes);
+
+		$response = $this->controller->get($slideshow);
+
+		$this->assertEquals(['features' => $features, 'mediatypes' => $mimeTypes], $response);
+	}
+
+	
+	public function testCannotGetConfig() {
+		$features = $this->mockConfigRetrievalError();
+		$slideshow = true;
+		$nativeSvgSupport = false;
+		$this->mockSupportedMediaTypes($slideshow, $nativeSvgSupport, $this->baseMimeTypes);
+
+		$response = $this->controller->get($slideshow);
+
+		$this->assertEquals(
+			['features' => $features, 'mediatypes' => $this->baseMimeTypes], $response
+		);
+	}
+
+	public function testGetConfigWithBrokenSystem() {
+		$slideshow = true;
+		$exceptionMessage = 'Aïe!';
+		$this->configService->expects($this->any())
+							->method('getFeaturesList')
+							->willThrowException(new ServiceException($exceptionMessage));
+		
+		$status = OCP\AppFramework\Http::STATUS_INTERNAL_SERVER_ERROR;
+		$errorMessage = [
+			'message' => $exceptionMessage  . ' (' . $status . ')',
+			'success' => false
+		];
+		
+		$response = $this->controller->get($slideshow);
+
+		$this->assertEquals($errorMessage, $response->getData());
+	}
+
+	
+	private function mockFeaturesList($features) {
+		$this->configService->expects($this->any())
+							->method('getFeaturesList')
+							->willReturn($features);
+	}
+
+	
+	private function mockSupportedMediaTypes($slideshow, $nativeSvgSupport, $mimeTypes) {
+		$this->configService->expects($this->any())
+							 ->method('getSupportedMediaTypes')
+							 ->with(
+								 $this->equalTo($slideshow),
+								 $this->equalTo($nativeSvgSupport)
+							 )
+							 ->willReturn($mimeTypes);
+	}
+
+	
+	private function mockConfigRetrievalError() {
+		$exception = new ServiceException('Config corrupt');
+		$errorMessage = $exception->getMessage() . "</br></br>Config location: /user1";
+		$features = ['error' => ['message' => $errorMessage]];
+
+		$this->mockFeaturesList($features);
+
+		return $features;
+	}
+
+}

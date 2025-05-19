@@ -1,0 +1,316 @@
+<?php
+
+
+
+
+class FrontendSearchAjaxLivesuggest extends FrontendBaseAJAXAction
+{
+	
+	private $cacheFile;
+
+	
+	private $items;
+
+	
+	private $limit;
+
+	
+	private $offset;
+
+	
+	protected $pagination = array('limit' => 20, 'offset' => 0, 'requested_page' => 1, 'num_items' => null, 'num_pages' => null);
+
+	
+	private $requestedPage;
+
+	
+	private $term = '';
+
+	
+	private function display()
+	{
+		
+		$this->requestedPage = 1;
+		$this->limit = (int) FrontendModel::getModuleSetting('search', 'overview_num_items', 20);
+		$this->offset = ($this->requestedPage * $this->limit) - $this->limit;
+		$this->cacheFile = FRONTEND_CACHE_PATH . '/' . $this->getModule() . '/' . FRONTEND_LANGUAGE . '_' . md5($this->term) . '_' . $this->offset . '_' . $this->limit . '.php';
+
+		
+		if(!$this->getCachedData())
+		{
+			
+			$this->getRealData();
+		}
+
+		
+		$this->parse();
+
+		
+		$this->output(self::OK, $this->tpl->getContent(FRONTEND_PATH . '/modules/search/layout/templates/results.tpl', false, true));
+	}
+
+	
+	public function execute()
+	{
+		parent::execute();
+		$this->loadTemplate();
+		$this->validateForm();
+		$this->display();
+	}
+
+	
+	private function getCachedData()
+	{
+		
+		if(!$this->term) return false;
+
+		
+		if(SPOON_DEBUG) return false;
+
+		
+		if(!SpoonFile::exists($this->cacheFile)) return false;
+
+		
+		$cacheInfo = @filemtime($this->cacheFile);
+
+		
+		if(!$cacheInfo || $cacheInfo < strtotime('-1 hour')) return false;
+
+		
+
+		
+		$this->pagination = $pagination;
+		$this->items = $items;
+
+		return true;
+	}
+
+	
+	private function getRealData()
+	{
+		
+		if(!$this->term) return;
+
+		
+		$this->pagination['url'] = FrontendNavigation::getURLForBlock('search') . '?form=search&q=' . $this->term;
+
+		
+		$this->pagination['limit'] = $this->limit;
+		$this->pagination['offset'] = $this->offset;
+		$this->pagination['requested_page'] = $this->requestedPage;
+
+		
+		$this->items = FrontendSearchModel::search($this->term, $this->pagination['limit'], $this->pagination['offset']);
+
+		
+		
+		$this->pagination['num_items'] = FrontendSearchModel::getTotal($this->term);
+		$this->pagination['num_pages'] = (int) ceil($this->pagination['num_items'] / $this->pagination['limit']);
+
+		
+		if($this->pagination['num_pages'] == 0) $this->pagination['num_pages'] = 1;
+
+		
+		if($this->requestedPage > $this->pagination['num_pages'] || $this->requestedPage < 1) $this->redirect(FrontendNavigation::getURL(404));
+
+		
+		if(!SPOON_DEBUG)
+		{
+			
+			SpoonFile::setContent($this->cacheFile, "<?php\n" . '$pagination = ' . var_export($this->pagination, true) . ";\n" . '$items = ' . var_export($this->items, true) . ";\n?>");
+		}
+	}
+
+	
+	protected function loadTemplate()
+	{
+		
+		$this->tpl = new FrontendTemplate(false);
+	}
+
+	
+	private function parse()
+	{
+		
+		if(!$this->term) return;
+
+		
+		foreach($this->items as &$item)
+		{
+			
+			if(!isset($item['full_url'])) continue;
+
+			
+			$utm['utm_source'] = SpoonFilter::urlise(FrontendModel::getModuleSetting('core', 'site_title_' . FRONTEND_LANGUAGE, SITE_DEFAULT_TITLE));
+			$utm['utm_medium'] = 'fork-search';
+			$utm['utm_term'] = $this->term;
+
+			
+			if(strpos($item['full_url'], '?') !== false) $glue = '&amp;';
+			else $glue = '?';
+
+			
+			$item['full_url'] .= $glue . http_build_query($utm, '', '&amp;');
+		}
+
+		
+		$this->tpl->assign('searchResults', $this->items);
+		$this->tpl->assign('searchTerm', $this->term);
+
+		
+		$this->parsePagination();
+	}
+
+	
+	protected function parsePagination()
+	{
+		
+		$pagination = null;
+		$showFirstPages = false;
+		$showLastPages = false;
+		$useQuestionMark = true;
+
+		
+		if(!isset($this->pagination['limit'])) throw new FrontendException('no limit in the pagination-property.');
+		if(!isset($this->pagination['offset'])) throw new FrontendException('no offset in the pagination-property.');
+		if(!isset($this->pagination['requested_page'])) throw new FrontendException('no requested_page available in the pagination-property.');
+		if(!isset($this->pagination['num_items'])) throw new FrontendException('no num_items available in the pagination-property.');
+		if(!isset($this->pagination['num_pages'])) throw new FrontendException('no num_pages available in the pagination-property.');
+		if(!isset($this->pagination['url'])) throw new FrontendException('no URL available in the pagination-property.');
+
+		
+		if(mb_strpos($this->pagination['url'], '?') > 0) $useQuestionMark = false;
+
+		
+		if($this->pagination['num_pages'] < 1) return;
+
+		
+		$pagination['num_pages'] = $this->pagination['num_pages'];
+		$pagination['current_page'] = $this->pagination['requested_page'];
+
+		
+		if($this->pagination['requested_page'] < 6)
+		{
+			
+			$pagesStart = 1;
+			$pagesEnd = ($this->pagination['num_pages'] >= 6) ? 6 : $this->pagination['num_pages'];
+
+			
+			if($this->pagination['num_pages'] > 5) $showLastPages = true;
+		}
+
+		
+		elseif($this->pagination['requested_page'] >= ($this->pagination['num_pages'] - 4))
+		{
+			
+			$pagesStart = ($this->pagination['num_pages'] - 5);
+			$pagesEnd = $this->pagination['num_pages'];
+
+			
+			if($this->pagination['num_pages'] > 5) $showFirstPages = true;
+		}
+
+		
+		else
+		{
+			
+			$pagesStart = $this->pagination['requested_page'] - 2;
+			$pagesEnd = $this->pagination['requested_page'] + 2;
+			$showFirstPages = true;
+			$showLastPages = true;
+		}
+
+		
+		if($this->pagination['requested_page'] > 1)
+		{
+			
+			if($useQuestionMark) $URL = $this->pagination['url'] . '?page=' . ($this->pagination['requested_page'] - 1);
+			else $URL = $this->pagination['url'] . '&amp;page=' . ($this->pagination['requested_page'] - 1);
+
+			
+			$pagination['show_previous'] = true;
+			$pagination['previous_url'] = $URL;
+		}
+
+		
+		if($showFirstPages)
+		{
+			
+			$pagesFirstStart = 1;
+			$pagesFirstEnd = 1;
+
+			
+			for($i = $pagesFirstStart; $i <= $pagesFirstEnd; $i++)
+			{
+				
+				if($useQuestionMark) $URL = $this->pagination['url'] . '?page=' . $i;
+				else $URL = $this->pagination['url'] . '&amp;page=' . $i;
+
+				
+				$pagination['first'][] = array('url' => $URL, 'label' => $i);
+			}
+		}
+
+		
+		for($i = $pagesStart; $i <= $pagesEnd; $i++)
+		{
+			
+			$current = ($i == $this->pagination['requested_page']);
+
+			
+			if($useQuestionMark) $URL = $this->pagination['url'] . '?page=' . $i;
+			else $URL = $this->pagination['url'] . '&amp;page=' . $i;
+
+			
+			$pagination['pages'][] = array('url' => $URL, 'label' => $i, 'current' => $current);
+		}
+
+		
+		if($showLastPages)
+		{
+			
+			$pagesLastStart = $this->pagination['num_pages'];
+			$pagesLastEnd = $this->pagination['num_pages'];
+
+			
+			for($i = $pagesLastStart; $i <= $pagesLastEnd; $i++)
+			{
+				
+				if($useQuestionMark) $URL = $this->pagination['url'] . '?page=' . $i;
+				else $URL = $this->pagination['url'] . '&amp;page=' . $i;
+
+				
+				$pagination['last'][] = array('url' => $URL, 'label' => $i);
+			}
+		}
+
+		
+		if($this->pagination['requested_page'] < $this->pagination['num_pages'])
+		{
+			
+			if($useQuestionMark) $URL = $this->pagination['url'] . '?page=' . ($this->pagination['requested_page'] + 1);
+			else $URL = $this->pagination['url'] . '&amp;page=' . ($this->pagination['requested_page'] + 1);
+
+			
+			$pagination['show_next'] = true;
+			$pagination['next_url'] = $URL;
+		}
+
+		
+		$pagination['multiple_pages'] = ($pagination['num_pages'] == 1) ? false : true;
+
+		
+		$this->tpl->assign('pagination', $pagination);
+	}
+
+	
+	private function validateForm()
+	{
+		
+		$searchTerm = SpoonFilter::getPostValue('term', null, '');
+		$this->term = (SPOON_CHARSET == 'utf-8') ? SpoonFilter::htmlspecialchars($searchTerm) : SpoonFilter::htmlentities($searchTerm);
+
+		
+		if($this->term == '') $this->output(self::BAD_REQUEST, null, 'term-parameter is missing.');
+	}
+}

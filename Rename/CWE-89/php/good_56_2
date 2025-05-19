@@ -1,0 +1,567 @@
+<?php
+
+
+
+
+
+$var_0 = intval($_REQUEST['id']);
+$var_1 = (isset($_POST['bid'])) ? $_POST['bid'] : 0;
+$var_2 = (isset($_POST['qty'])) ? intval($_POST['qty']) : 1;
+$var_3 = false;
+
+if (!$var_4->checkAuth()) {
+    $_SESSION['LOGIN_MESSAGE'] = $MSG['5002'];
+    $_SESSION['REDIRECT_AFTER_LOGIN'] = 'bid.php?id=' . $var_0;
+    header('location: user_login.php');
+    var_6;
+}
+
+$var_7 = $var_4->user_data['id'];
+if (in_array($var_4->user_data['suspended'], array(5, 6, 7))) {
+    header('location: message.php');
+    var_6;
+}
+
+if (!$var_4->permissions['can_buy']) {
+    $_SESSION['TMP_MSG'] = $MSG['819'];
+    header('location: user_menu.php');
+    var_6;
+}
+
+function fn_0($var_8, $var_9 = true)
+{
+    global $var_10, $var_11, $var_12;
+
+    if ($var_9) {
+        $var_8 = $var_12->input_money($var_8);
+    }
+    
+    $var_14 = "SELECT increment FROM " . $var_11 . "increments WHERE
+              ((low <= :val0 AND high >= :val1) OR
+              (low < :val2 AND high < :val3)) ORDER BY increment DESC";
+    $var_15 = array();
+    $var_15[] = array(':val0', $var_8, 'float');
+    $var_15[] = array(':val1', $var_8, 'float');
+    $var_15[] = array(':val2', $var_8, 'float');
+    $var_15[] = array(':val3', $var_8, 'float');
+    $var_10->query($var_14, $var_15);
+    if ($var_10->numrows() != 0) {
+        $var_17 = $var_10->result('increment');
+    }
+    return $var_17;
+}
+
+function fn_1($var_0, $var_19)
+{
+    global $var_12, $var_10, $var_11;
+
+    if ($var_12->SETTINGS['ae_status'] == 'y' && (strtotime($var_19) - $var_12->SETTINGS['ae_timebefore']) < time()) {
+        $var_14 = "UPDATE " . $var_11 . "auctions SET ends = DATE_ADD(ends, INTERVAL " . $var_12->SETTINGS['ae_extend'] . " SECOND) WHERE id = :auc_id";
+        $var_15 = array();
+        $var_15[] = array(':auc_id', $var_0, 'int');
+        $var_10->query($var_14, $var_15);
+    }
+}
+
+
+$var_14 = "SELECT a.*, u.nick, u.email, u.id AS uId FROM " . $var_11 . "auctions a
+          LEFT JOIN " . $var_11 . "users u ON (a.user = u.id)
+          WHERE a.id = :auc_id";
+$var_15 = array();
+$var_15[] = array(':auc_id', $var_0, 'int');
+$var_10->query($var_14, $var_15);
+
+if ($var_10->numrows() == 0) {
+    $var_20->assign_vars(array(
+            'TITLE_MESSAGE' => $MSG['415'],
+            'BODY_MESSAGE' => $var_22
+            ));
+    $var_20->set_filenames(array(
+            'body' => 'message.tpl'
+            ));
+    $var_20->display('body');
+    var_6; 
+}
+
+
+if (empty($var_1) && !isset($var_25)) {
+    $var_25 = $var_26;
+}
+
+
+if (!$var_12->CheckMoney($var_1) && !isset($var_25)) {
+    $var_25 = $var_28;
+} else {
+    
+    $var_1 = round($var_12->input_money($var_1), 2);
+}
+
+$var_29 = $var_10->result();
+$var_30 = htmlspecialchars($var_29['title']);
+$var_31 = $var_29['id'];
+$var_32 = $var_29['nick'];
+$var_33 = $var_29['email'];
+$var_34 = $var_29['auction_type'];
+$var_35 = $var_29['quantity'];
+$var_36 = $var_29['minimum_bid'];
+$var_37 = $var_29['increment'];
+$var_38 = $var_29['current_bid'];
+$var_39 = $var_29['pict_url'];
+$var_40 = $var_29['reserve_price'];
+$var_41 = ($var_38 == 0) ? $var_36 : $var_38;
+
+if ((strtotime($var_29['ends']) <= time() || $var_29['closed']) && !isset($var_25)) {
+    $var_25 = $var_42;
+}
+if ((strtotime($var_29['starts']) > time()) && !isset($var_25)) {
+    $var_25 = $var_43;
+}
+if ($var_35 < $var_2) {
+    $var_25 = $var_44;
+}
+
+$var_14 = "SELECT bid, bidder FROM " . $var_11 . "bids WHERE auction = :auc_id ORDER BY bid DESC, id DESC LIMIT 1";
+$var_15 = array();
+$var_15[] = array(':auc_id', $var_0, 'int');
+$var_10->query($var_14, $var_15);
+$var_45 = array();
+if ($var_10->numrows() > 0) {
+    $var_45 = $var_10->result();
+    $var_46 = $var_45['bid'];
+    $var_47 = $var_45['bidder'];
+    $var_48 = ' | <a href="' . $var_12->SETTINGS['siteurl'] . 'item.php?id=' . $var_0 . '&history=view
+} else {
+    $high_bid = $current_bid;
+    $WINNING_BIDDER = 0;
+}
+
+if ($customincrement > 0) {
+    $increment = $customincrement;
+} else {
+    $increment = get_increment($high_bid, false);
+}
+
+if (ceil($high_bid) == 0 || $atype == 2) {
+    $next_bid = $minimum_bid;
+} else {
+    $next_bid = $high_bid + $increment;
+}
+
+$tmpmsg = CheckBidData();
+if ($tmpmsg != 0 && !isset($errmsg)) {
+    $errmsg = ${'var_49' . $var_50};
+}
+
+if (isset($_POST['action']) && !isset($var_25)) {
+    if ($var_12->SETTINGS['usersauth'] == 'y') {
+        if (strlen($_POST['password']) == 0) {
+            $var_25 = $var_51;
+        }
+        $var_52 = new class_0(8, false);
+        if (!($var_52->CheckPassword($_POST['password'], $var_4->user_data['password']))) {
+            $var_25 = $var_54;
+        }
+    }
+    $var_55 = false;
+    
+    if ($var_34 == 1 && !isset($var_25)) { 
+        if ($var_12->SETTINGS['proxy_bidding'] == 'n') {
+            
+            if ($var_38 < $var_1) {
+                
+                $var_14 = "SELECT u.id FROM " . $var_11 . "bids b, " . $var_11 . "users u WHERE b.auction = :auc_id AND b.bidder = u.id and u.suspended = 0 ORDER BY bid DESC";
+                $var_15 = array();
+                $var_15[] = array(':auc_id', $var_0, 'int');
+                $var_10->query($var_14, $var_15);
+                
+                if ($var_10->numrows() > 0 && $var_10->result('id') != $var_7) {
+                    $var_55 = true;
+                }
+                
+                $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                          VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                $var_15 = array();
+                $var_15[] = array(':bid', $var_1, 'float');
+                $var_15[] = array(':auc_id', $var_0, 'int');
+                $var_15[] = array(':bidder_id', $var_7, 'int');
+                $var_15[] = array(':qty', $var_2, 'int');
+                $var_10->query($var_14, $var_15);
+                $var_56 = $var_10->lastInsertId();
+                $var_14 = "UPDATE " . $var_11 . "auctions SET current_bid = :bid, current_bid_id = :current_bid_id, num_bids = num_bids + 1 WHERE id = :auc_id";
+                $var_15 = array();
+                $var_15[] = array(':bid', $var_1, 'float');
+                $var_15[] = array(':current_bid_id', $var_56, 'int');
+                $var_15[] = array(':auc_id', $var_0, 'int');
+                $var_10->query($var_14, $var_15);
+                fn_1($var_31, $var_29['ends']);
+                $var_3 = true;
+            }
+        } elseif ($var_47 == $var_7) {
+            $var_14 = "SELECT bid FROM " . $var_11 . "proxybid p
+                      LEFT JOIN " . $var_11 . "users u ON (p.userid = u.id)
+                      WHERE userid = :user_id AND itemid = :item_id ORDER BY bid DESC";
+            $var_15 = array();
+            $var_15[] = array(':user_id', $var_4->user_data['id'], 'int');
+            $var_15[] = array(':item_id', $var_0, 'int');
+            $var_10->query($var_14, $var_15);
+            if ($var_10->numrows() > 0) {
+                $var_58 = $var_10->result('bid');
+                if ($var_58 >= $var_1) {
+                    $var_25 = $var_59;
+                } else {
+                    
+                    $var_14 = "UPDATE " . $var_11 . "proxybid SET bid = :newbid
+                              WHERE userid = :user_id
+                              AND itemid = :item_id AND bid = :oldbid";
+                    $var_15 = array();
+                    $var_15[] = array(':user_id', $var_4->user_data['id'], 'int');
+                    $var_15[] = array(':item_id', $var_0, 'int');
+                    $var_15[] = array(':oldbid', $var_58, 'float');
+                    $var_15[] = array(':newbid', $var_1, 'float');
+                    $var_10->query($var_14, $var_15);
+
+                    if ($var_40 > 0 && $var_40 > $var_38 && $var_1 >= $var_40) {
+                        
+                        $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                                  VALUES (:auc_id, :bidder_id, :reserve, :qty)";
+                        $var_15 = array();
+                        $var_15[] = array(':reserve', $var_40, 'float');
+                        $var_15[] = array(':auc_id', $var_0, 'int');
+                        $var_15[] = array(':bidder_id', $var_7, 'int');
+                        $var_15[] = array(':qty', $var_2, 'int');
+                        $var_10->query($var_14, $var_15);
+                        $var_56 = $var_10->lastInsertId();
+                        $var_14 = "UPDATE " . $var_11 . "auctions SET current_bid = :reserve, current_bid_id = :current_bid_id, num_bids = num_bids + 1 WHERE id = :auc_id";
+                        $var_15 = array();
+                        $var_15[] = array(':reserve', $var_40, 'float');
+                        $var_15[] = array(':current_bid_id', $var_56, 'int');
+                        $var_15[] = array(':auc_id', $var_0, 'int');
+                        $var_10->query($var_14, $var_15);
+                    }
+                    fn_1($var_31, $var_29['ends']);
+                    $var_3 = true;
+                }
+            }
+        }
+        if (!$var_3 && !isset($var_25) && $var_12->SETTINGS['proxy_bidding'] == 'y') {
+            $var_14 = "SELECT p.userid, p.bid FROM " . $var_11 . "proxybid p, " . $var_11 . "users u WHERE itemid = :item_id AND p.userid = u.id and u.suspended = 0 ORDER by bid DESC LIMIT 1";
+            $var_15 = array();
+            $var_15[] = array(':item_id', $var_0, 'int');
+            $var_10->query($var_14, $var_15);
+            if ($var_10->numrows() == 0) { 
+                $var_14 = "INSERT INTO " . $var_11 . "proxybid VALUES (:auc_id, :bidder_id, :bid)";
+                $var_15 = array();
+                $var_15[] = array(':auc_id', $var_0, 'int');
+                $var_15[] = array(':bidder_id', $var_7, 'int');
+                $var_15[] = array(':bid', $var_1, 'float');
+                $var_10->query($var_14, $var_15);
+
+                if ($var_40 > 0 && $var_40 > $var_38 && $var_1 >= $var_40) {
+                    $var_60 = $var_40;
+                }
+                
+                $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                          VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                $var_15 = array();
+                $var_15[] = array(':auc_id', $var_0, 'int');
+                $var_15[] = array(':bidder_id', $var_7, 'int');
+                $var_15[] = array(':bid', $var_60, 'float');
+                $var_15[] = array(':qty', $var_2, 'int');
+                $var_10->query($var_14, $var_15);
+                $var_56 = $var_10->lastInsertId();
+                
+                $var_14 = "UPDATE " . $var_11 . "auctions SET current_bid = :bid, current_bid_id = :current_bid_id, num_bids = num_bids + 1 WHERE id = :auc_id";
+                $var_15 = array();
+                $var_15[] = array(':auc_id', $var_0, 'int');
+                $var_15[] = array(':current_bid_id', $var_56, 'int');
+                $var_15[] = array(':bid', $var_60, 'float');
+                $var_10->query($var_14, $var_15);
+                $var_14 = "UPDATE " . $var_11 . "counters SET bids = (bids + 1)";
+                $var_10->direct_query($var_14);
+            } else { 
+                $var_62 = $var_10->result();
+                $var_63 = $var_62['userid'];
+                $var_64 = $var_62['bid'];
+
+                if ($var_64 < $var_1) {
+                    if ($var_63 != $var_7) {
+                        $var_55 = true;
+                    }
+                    $var_60 = $var_64 + $var_17;
+                    if (($var_64 + $var_17) > $var_1) {
+                        $var_60 = $var_1;
+                    }
+
+                    $var_14 = "SELECT userid, itemid FROM " . $var_11 . "proxybid WHERE itemid = :item_id AND userid = :bidder_id";
+                    $var_15 = array();
+                    $var_15[] = array(':item_id', $var_0, 'int');
+                    $var_15[] = array(':bidder_id', $var_7, 'int');
+                    $var_10->query($var_14, $var_15);
+                    if ($var_10->numrows() == 0) {
+                        $var_14 = "INSERT INTO " . $var_11 . "proxybid VALUES (:auc_id, :bidder_id, :bid)";
+                        $var_15 = array();
+                        $var_15[] = array(':auc_id', $var_0, 'int');
+                        $var_15[] = array(':bidder_id', $var_7, 'int');
+                        $var_15[] = array(':bid', $var_1, 'float');
+                        $var_10->query($var_14, $var_15);
+                    } else {
+                        $var_14 = "UPDATE " . $var_11 . "proxybid SET bid = :newbid WHERE userid = :bidder_id AND itemid = :item_id";
+                        $var_15 = array();
+                        $var_15[] = array(':bidder_id', $var_7, 'int');
+                        $var_15[] = array(':item_id', $var_0, 'int');
+                        $var_15[] = array(':newbid', $var_1, 'float');
+                        $var_10->query($var_14, $var_15);
+                    }
+
+                    if ($var_40 > 0 && $var_40 > $var_38 && $var_1 >= $var_40) {
+                        $var_60 = $var_40;
+                    }
+                    
+                    if ($var_38 < $var_64) {
+                        $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                                  VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                        $var_15 = array();
+                        $var_15[] = array(':auc_id', $var_0, 'int');
+                        $var_15[] = array(':bidder_id', $var_63, 'int');
+                        $var_15[] = array(':bid', $var_64, 'float');
+                        $var_15[] = array(':qty', $var_2, 'int');
+                        $var_10->query($var_14, $var_15);
+                        $var_65 = 1;
+                    } else {
+                        $var_65 = 0;
+                    }
+                    
+                    $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                              VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                    $var_15 = array();
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_15[] = array(':bidder_id', $var_7, 'int');
+                    $var_15[] = array(':bid', $var_60, 'float');
+                    $var_15[] = array(':qty', $var_2, 'int');
+                    $var_10->query($var_14, $var_15);
+                    $var_56 = $var_10->lastInsertId();
+                    $var_14 = "UPDATE " . $var_11 . "counters SET bids = (bids + (1 + :fakebids))";
+                    $var_15 = array();
+                    $var_15[] = array(':fakebids', $var_65, 'int');
+                    $var_10->query($var_14, $var_15);
+                    $var_14 = "UPDATE " . $var_11 . "auctions SET current_bid = :bid, current_bid_id = :current_bid_id, num_bids = (num_bids + 1 + :fakebids) WHERE id = :auc_id";
+                    $var_15 = array();
+                    $var_15[] = array(':bid', $var_60, 'float');
+                    $var_15[] = array(':current_bid_id', $var_56, 'int');
+                    $var_15[] = array(':fakebids', $var_65, 'int');
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_10->query($var_14, $var_15);
+                } elseif ($var_64 == $var_1) {
+                    
+                    $var_41 = $var_64;
+                    $var_25 = $MSG['701'];
+                    
+                    $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                              VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                    $var_15 = array();
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_15[] = array(':bidder_id', $var_7, 'int');
+                    $var_15[] = array(':bid', $var_1, 'float');
+                    $var_15[] = array(':qty', $var_2, 'int');
+                    $var_10->query($var_14, $var_15);
+                    $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                              VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                    $var_15 = array();
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_15[] = array(':bidder_id', $var_63, 'int');
+                    $var_15[] = array(':bid', $var_41, 'float');
+                    $var_15[] = array(':qty', $var_2, 'int');
+                    $var_10->query($var_14, $var_15);
+                    $var_56 = $var_10->lastInsertId();
+                    $var_14 = "UPDATE " . $var_11 . "counters SET bids = (bids + 2)";
+                    $var_10->direct_query($var_14);
+                    $var_14 = "UPDATE " . $var_11 . "auctions SET current_bid = :bid, current_bid_id = :current_bid_id, num_bids = num_bids + 2 WHERE id = :auc_id";
+                    $var_15 = array();
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_15[] = array(':current_bid_id', $var_56, 'int');
+                    $var_15[] = array(':bid', $var_41, 'float');
+                    $var_10->query($var_14, $var_15);
+                    if ($var_37 == 0) {
+                        
+                        $var_17 = fn_0($var_41);
+                    } else {
+                        $var_17 = $var_37;
+                    }
+                    $var_60 = $var_41 + $var_17;
+                } elseif ($var_64 > $var_1) {
+                    
+                    $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                              VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                    $var_15 = array();
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_15[] = array(':bidder_id', $var_7, 'int');
+                    $var_15[] = array(':bid', $var_1, 'float');
+                    $var_15[] = array(':qty', $var_2, 'int');
+                    $var_10->query($var_14, $var_15);
+                    if ($var_37 == 0) {
+                        
+                        $var_17 = fn_0($var_1);
+                    } else {
+                        $var_17 = $var_37;
+                    }
+                    if ($var_1 + $var_17 - $var_64 >= 0) {
+                        $var_41 = $var_64;
+                    } else {
+                        $var_41 = $var_1 + $var_17;
+                    }
+                    $var_25 = $MSG['701'];
+                    
+                    $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                              VALUES (:auc_id, :bidder_id, :bid, :qty)";
+                    $var_15 = array();
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_15[] = array(':bidder_id', $var_63, 'int');
+                    $var_15[] = array(':bid', $var_41, 'float');
+                    $var_15[] = array(':qty', $var_2, 'int');
+                    $var_10->query($var_14, $var_15);
+                    $var_56 = $var_10->lastInsertId();
+                    $var_14 = "UPDATE " . $var_11 . "counters SET bids = (bids + 2)";
+                    $var_10->direct_query($var_14);
+                    $var_14 = "UPDATE " . $var_11 . "auctions SET current_bid = :bid, current_bid_id = :current_bid_id, num_bids = num_bids + 2 WHERE id = :auc_id";
+                    $var_15 = array();
+                    $var_15[] = array(':auc_id', $var_0, 'int');
+                    $var_15[] = array(':current_bid_id', $var_56, 'int');
+                    $var_15[] = array(':bid', $var_41, 'float');
+                    $var_10->query($var_14, $var_15);
+                    if ($var_37 == 0) {
+                        
+                        $var_17 = fn_0($var_41);
+                    } else {
+                        $var_17 = $var_37;
+                    }
+                    $var_60 = $var_41 + $var_17;
+                }
+            }
+            fn_1($var_31, $var_29['ends']);
+        }
+    } elseif ($var_34 == 2 && !isset($var_25)) { 
+        
+        $var_14 = "SELECT bid, quantity FROM " . $var_11 . "bids WHERE bidder = :bidder_id AND auction = :auc_id ORDER BY bid DESC LIMIT 1";
+        $var_15 = array();
+        $var_15[] = array(':auc_id', $var_0, 'int');
+        $var_15[] = array(':bidder_id', $var_7, 'int');
+        $var_10->query($var_14, $var_15);
+        if ($var_10->numrows() > 0) {
+            $var_66 = $var_10->result();
+            if (($var_1 * $var_2) <= ($var_66['bid'] * $var_66['quantity'])) {
+                $var_25 = $var_67;
+            }
+        }
+        if (!isset($var_25)) {
+            $var_14 = "INSERT INTO " . $var_11 . "bids (auction, bidder, bid, quantity)
+                      VALUES (:auc_id, :bidder_id, :bid, :qty)";
+            $var_15 = array();
+            $var_15[] = array(':auc_id', $var_0, 'int');
+            $var_15[] = array(':bidder_id', $var_7, 'int');
+            $var_15[] = array(':bid', $var_1, 'float');
+            $var_15[] = array(':qty', $var_2, 'int');
+            $var_10->query($var_14, $var_15);
+            $var_56 = $var_10->lastInsertId();
+            $var_14 = "UPDATE " . $var_11 . "counters SET bids = (bids + 1)";
+            $var_10->direct_query($var_14);
+            $var_14 = "UPDATE " . $var_11 . "auctions SET current_bid = :bid, current_bid_id = :current_bid_id, num_bids = num_bids + 1 WHERE id = :auc_id";
+            $var_15 = array();
+            $var_15[] = array(':auc_id', $var_0, 'int');
+            $var_15[] = array(':current_bid_id', $var_56, 'int');
+            $var_15[] = array(':bid', $var_1, 'float');
+            $var_10->query($var_14, $var_15);
+            fn_1($var_31, $var_29['ends']);
+        }
+    }
+
+    
+    if (count($var_45) > 0) {
+        $var_68 = $var_45['bidder'];
+
+        $var_14 = "SELECT nick, name, email FROM " . $var_11 . "users WHERE id = :user_id";
+        $var_15 = array();
+        $var_15[] = array(':user_id', $var_68, 'int');
+        $var_10->query($var_14, $var_15);
+        $var_69 = $var_10->result();
+
+        $var_70 = $var_69['nick'];
+        $var_71 = $var_69['name'];
+        $var_72 = $var_69['email'];
+    }
+    
+    
+    $var_14 = "SELECT name, email, item_watch, id FROM " . $var_11 . "users WHERE item_watch LIKE :auc_id AND id != :user_id";
+    $var_15 = array();
+    $var_15[] = array(':user_id', $var_7, 'int');
+    $var_15[] = array(':auc_id', '%' . $var_0 . '%', 'str');
+    $var_10->query($var_14, $var_15);
+
+    $var_73 = $var_10->fetchall();
+    foreach ($var_73 as $var_75) {
+        
+        $var_76 = explode(' ', $var_75['item_watch']);
+        if (in_array(strval($var_0), $var_76)) {
+            
+            $var_14 = "SELECT title, current_bid FROM " . $var_11 . "auctions WHERE id = :auc_id";
+            $var_15 = array();
+            $var_15[] = array(':auc_id', $var_0, 'int');
+            $var_10->query($var_14, $var_15);
+            $var_77 = $var_10->result();
+            $var_78 = new class_1();
+            $var_78->assign_vars(array(
+                    'REALNAME' => $var_75['name'],
+                    'TITLE' => $var_77['title'],
+                    'BID' => $var_12->print_money($var_1, false),
+                    'AUCTION_URL' => $var_12->SETTINGS['siteurl'] . 'item.php?id=' . $var_0
+                    ));
+            $var_78->var_80 = $var_75['id'];
+            $var_78->email_sender($var_75['email'], 'item_watch.inc.php', $var_12->SETTINGS['sitename'] . ' - ' . $MSG['472']);
+        }
+    }
+    
+    if ($var_55) {
+        $var_82 = $var_83->printDateTz($var_29['ends']);
+        $var_85 = $var_12->print_money($var_60);
+        
+    }
+
+    if (defined('TrackUserIPs')) {
+        
+        $var_12->log('user', 'Bid $' . $var_1 . '(previous bid was $' . $var_38 . ') on Item', $var_7, $var_0);
+    }
+    $var_20->assign_vars(array(
+            'PAGE' => 2,
+            'BID_HISTORY' => (isset($var_48)) ? $var_48 : '',
+            'TITLE' => $var_30,
+            'ID' => $var_0,
+            'BID' => $var_12->print_money($var_1),
+            'TQTY' => 0
+            ));
+}
+
+if (!isset($_POST['action']) || isset($var_25)) {
+    
+    $var_20->assign_vars(array(
+            'PAGE' => 1,
+            'ERROR' => (isset($var_25)) ? $var_25 : '',
+            'BID_HISTORY' => (isset($var_48)) ? $var_48 : '',
+            'ID' => $var_0,
+            'IMAGE' => (!empty($var_39)) ? '<img src="getthumb.php?w=' . $var_12->SETTINGS['thumb_show'] . '&auction_id=' . $var_0 . '&fromfile=' . $var_39 . '" border="0" align="center">' : '',
+            'TITLE' => $var_30,
+            'CURRENT_BID' => $var_12->print_money($var_41),
+            'ATYPE' => $var_34,
+            'BID' => $var_12->print_money_nosymbol($var_1),
+            'NEXT_BID' => $var_12->print_money($var_60),
+            'QTY' => $var_2,
+            'TQTY' => $var_35,
+            'AGREEMENT' => sprintf($MSG['25_0086'], $var_12->print_money($var_2 * $var_1)),
+            'CURRENCY' => $var_12->SETTINGS['currency'],
+
+            'B_USERAUTH' => ($var_12->SETTINGS['usersauth'] == 'y')
+            ));
+}
+
+$var_20->set_filenames(array(
+        'body' => 'bid.tpl'
+        ));
+$var_20->display('body');

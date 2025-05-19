@@ -1,0 +1,701 @@
+<?php
+
+
+
+
+$langs->load("admin");
+$langs->load("compta");
+$langs->load("accountancy");
+
+$action=GETPOST('action','alpha')?GETPOST('action','alpha'):'view';
+$confirm=GETPOST('confirm','alpha');
+$id=GETPOST('id','int');
+$rowid=GETPOST('rowid','alpha');
+$code=GETPOST('code','alpha');
+
+
+if (empty($user->rights->accounting->chartofaccount))
+{
+	accessforbidden();
+}
+
+$acts[0] = "activate";
+$acts[1] = "disable";
+$actl[0] = img_picto($langs->trans("Disabled"),'switch_off');
+$actl[1] = img_picto($langs->trans("Activated"),'switch_on');
+
+$listoffset=GETPOST('listoffset');
+$listlimit=GETPOST('listlimit')>0?GETPOST('listlimit'):1000;
+$active = 1;
+
+$sortfield = GETPOST("sortfield",'alpha');
+$sortorder = GETPOST("sortorder",'alpha');
+$page = GETPOST("page",'int');
+if (empty($page) || $page == -1) { $page = 0; }     
+$offset = $listlimit * $page ;
+$pageprev = $page - 1;
+$pagenext = $page + 1;
+if (empty($sortfield)) $sortfield='code';
+if (empty($sortorder)) $sortorder='ASC';
+
+$error = 0;
+
+
+$hookmanager->initHooks(array('admin'));
+
+
+
+
+
+$taborder=array(35);
+
+
+$tabname=array();
+$tabname[35]= MAIN_DB_PREFIX."accounting_journal";
+
+
+$tablib=array();
+$tablib[35]= "DictionaryAccountancyJournal";
+
+
+$tabsql=array();
+$tabsql[35]= "SELECT a.rowid as rowid, a.code as code, a.label, a.nature, a.active FROM ".MAIN_DB_PREFIX."accounting_journal as a";
+
+
+$tabsqlsort=array();
+$tabsqlsort[35]="code ASC";
+
+
+$tabfield=array();
+$tabfield[35]= "code,label,nature";
+
+
+$tabfieldvalue=array();
+$tabfieldvalue[35]= "code,label,nature";
+
+
+$tabfieldinsert=array();
+$tabfieldinsert[35]= "code,label,nature";
+
+
+
+
+$tabrowid=array();
+$tabrowid[35]= "";
+
+
+$tabcond=array();
+$tabcond[35]= ! empty($conf->accounting->enabled);
+
+
+$tabhelp=array();
+$tabhelp[35] = array('code'=>$langs->trans("EnterAnyCode"));
+
+
+$tabfieldcheck=array();
+$tabfieldcheck[35] = array();
+
+
+complete_dictionary_with_modules($taborder,$tabname,$tablib,$tabsql,$tabsqlsort,$tabfield,$tabfieldvalue,$tabfieldinsert,$tabrowid,$tabcond,$tabhelp,$tabfieldcheck);
+
+
+
+$elementList = array();
+	
+	$sourceList = array(
+			'1' => $langs->trans('AccountingJournalType1'),
+			'2' => $langs->trans('AccountingJournalType2'),
+			'3' => $langs->trans('AccountingJournalType3'),
+			'4' => $langs->trans('AccountingJournalType4'),
+			'5' => $langs->trans('AccountingJournalType5'),
+			'9' => $langs->trans('AccountingJournalType9')
+	);
+
+
+
+if (GETPOST('button_removefilter') || GETPOST('button_removefilter.x') || GETPOST('button_removefilter_x'))
+{
+	$search_country_id = '';
+}
+
+
+if (GETPOST('actionadd') || GETPOST('actionmodify'))
+{
+	$listfield=explode(',', str_replace(' ', '',$tabfield[$id]));
+	$listfieldinsert=explode(',',$tabfieldinsert[$id]);
+	$listfieldmodify=explode(',',$tabfieldinsert[$id]);
+	$listfieldvalue=explode(',',$tabfieldvalue[$id]);
+
+	
+	$ok=1;
+	foreach ($listfield as $f => $value)
+	{
+		if ($fieldnamekey == 'libelle' || ($fieldnamekey == 'label'))  $fieldnamekey='Label';
+		if ($fieldnamekey == 'code') $fieldnamekey = 'Code';
+		if ($fieldnamekey == 'nature') $fieldnamekey = 'Nature';
+	}
+	
+	if (isset($_POST["code"]))
+	{
+		if ($_POST["code"]=='0')
+		{
+			$ok=0;
+			setEventMessages($langs->transnoentities('ErrorCodeCantContainZero'), null, 'errors');
+		}
+		
+	}
+	if (! GETPOST('label','alpha'))
+	{
+		setEventMessages($langs->transnoentities("ErrorFieldRequired", $langs->transnoentitiesnoconv("Label")), null, 'errors');
+		$ok=0;
+	}
+
+	
+	if ($_POST["accountancy_code"] <= 0) $_POST["accountancy_code"]='';	
+	if ($_POST["accountancy_code_sell"] <= 0) $_POST["accountancy_code_sell"]='';	
+	if ($_POST["accountancy_code_buy"] <= 0) $_POST["accountancy_code_buy"]='';	
+
+	
+	if ($ok && GETPOST('actionadd'))
+	{
+		if ($tabrowid[$id])
+		{
+			
+			$newid=0;
+			$sql = "SELECT max(".$tabrowid[$id].") newid from ".$tabname[$id];
+			$result = $db->query($sql);
+			if ($result)
+			{
+				$obj = $db->fetch_object($result);
+				$newid=($obj->newid + 1);
+
+			} else {
+				dol_print_error($db);
+			}
+		}
+
+		
+		$sql = "INSERT INTO ".$tabname[$id]." (";
+		
+		if ($tabrowid[$id] && ! in_array($tabrowid[$id],$listfieldinsert))
+			$sql.= $tabrowid[$id].",";
+		$sql.= $tabfieldinsert[$id];
+		$sql.=",active,entity)";
+		$sql.= " VALUES(";
+
+		
+		if ($tabrowid[$id] && ! in_array($tabrowid[$id],$listfieldinsert))
+			$sql.= $newid.",";
+		$i=0;
+		foreach ($listfieldinsert as $f => $value)
+		{
+			if ($value == 'entity') {
+				$_POST[$listfieldvalue[$i]] = $conf->entity;
+			}
+			if ($i) $sql.=",";
+			if ($_POST[$listfieldvalue[$i]] == '') $sql.="null";  
+			else $sql.="'".$db->escape($_POST[$listfieldvalue[$i]])."'";
+			$i++;
+		}
+		$sql.=",1,".$conf->entity.")";
+
+		dol_syslog("actionadd", LOG_DEBUG);
+		$result = $db->query($sql);
+		if ($result)	
+		{
+			setEventMessages($langs->transnoentities("RecordSaved"), null, 'mesgs');
+			$_POST=array('id'=>$id);	
+		}
+		else
+		{
+			if ($db->errno() == 'DB_ERROR_RECORD_ALREADY_EXISTS') {
+				setEventMessages($langs->transnoentities("ErrorRecordAlreadyExists"), null, 'errors');
+			}
+			else {
+				dol_print_error($db);
+			}
+		}
+	}
+
+	
+	if ($ok && GETPOST('actionmodify'))
+	{
+		if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+		else { $rowidcol="rowid"; }
+
+		
+		$sql = "UPDATE ".$tabname[$id]." SET ";
+		
+		if ($tabrowid[$id] && ! in_array($tabrowid[$id],$listfieldmodify))
+		{
+			$sql.= $tabrowid[$id]."=";
+			$sql.= "'".$db->escape($rowid)."', ";
+		}
+		$i = 0;
+		foreach ($listfieldmodify as $field)
+		{
+			if ($field == 'price' || preg_match('/^amount/i',$field) || $field == 'taux') {
+				$_POST[$listfieldvalue[$i]] = price2num($_POST[$listfieldvalue[$i]],'MU');
+			}
+			else if ($field == 'entity') {
+				$_POST[$listfieldvalue[$i]] = $conf->entity;
+			}
+			if ($i) $sql.=",";
+			$sql.= $field."=";
+			if ($_POST[$listfieldvalue[$i]] == '' && ! ($listfieldvalue[$i] == 'code' && $id == 10)) $sql.="null";  
+			else $sql.="'".$db->escape($_POST[$listfieldvalue[$i]])."'";
+			$i++;
+		}
+		$sql.= " WHERE ".$rowidcol." = '".$rowid."'";
+		$sql.=" AND entity = ".$conf->entity;
+
+		dol_syslog("actionmodify", LOG_DEBUG);
+		
+		$resql = $db->query($sql);
+		if (! $resql)
+		{
+			setEventMessages($db->error(), null, 'errors');
+		}
+	}
+	
+}
+
+if (GETPOST('actioncancel'))
+{
+	
+}
+
+if ($action == 'confirm_delete' && $confirm == 'yes')       
+{
+	if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+	else { $rowidcol="rowid"; }
+
+	$sql = "DELETE from ".$tabname[$id]." WHERE ".$rowidcol."='".$rowid."'";
+	$sql.=" AND entity = ".$conf->entity;
+
+	dol_syslog("delete", LOG_DEBUG);
+	$result = $db->query($sql);
+	if (! $result)
+	{
+		if ($db->errno() == 'DB_ERROR_CHILD_EXISTS')
+		{
+			setEventMessages($langs->transnoentities("ErrorRecordIsUsedByChild"), null, 'errors');
+		}
+		else
+		{
+			dol_print_error($db);
+		}
+	}
+}
+
+
+if ($action == $acts[0])
+{
+	if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+	else { $rowidcol="rowid"; }
+
+	if ($rowid) {
+		$sql = "UPDATE ".$tabname[$id]." SET active = 1 WHERE ".$rowidcol."='".$rowid."'";
+	}
+	elseif ($code) {
+		$sql = "UPDATE ".$tabname[$id]." SET active = 1 WHERE code='".$code."'";
+	}
+	$sql.=" AND entity = ".$conf->entity;
+
+	$result = $db->query($sql);
+	if (!$result)
+	{
+		dol_print_error($db);
+	}
+}
+
+
+if ($action == $acts[1])
+{
+	if ($tabrowid[$id]) { $rowidcol=$tabrowid[$id]; }
+	else { $rowidcol="rowid"; }
+
+	if ($rowid) {
+		$sql = "UPDATE ".$tabname[$id]." SET active = 0 WHERE ".$rowidcol."='".$rowid."'";
+	}
+	elseif ($code) {
+		$sql = "UPDATE ".$tabname[$id]." SET active = 0 WHERE code='".$code."'";
+	}
+	$sql.=" AND entity = ".$conf->entity;
+
+	$result = $db->query($sql);
+	if (!$result)
+	{
+		dol_print_error($db);
+	}
+}
+
+
+
+
+$form = new Form($db);
+$formadmin=new FormAdmin($db);
+
+llxHeader();
+
+$titre=$langs->trans("DictionarySetup");
+$linkback='';
+if ($id)
+{
+	$titre.=' - '.$langs->trans($tablib[$id]);
+	$titlepicto='title_accountancy';
+}
+
+
+
+
+
+if ($action == 'delete')
+{
+	
+}
+
+
+
+if ($id)
+{
+	
+	$sql=$tabsql[$id];
+	$sql.= " WHERE a.entity = ".$conf->entity;
+
+	if ($sortfield)
+	{
+		
+		if ($sortfield == 'country') $sortfield='country_code';
+		$sql.= " ORDER BY ".$sortfield;
+		if ($sortorder)
+		{
+			$sql.=" ".strtoupper($sortorder);
+		}
+		$sql.=", ";
+		
+		$tabsqlsort[$id]=preg_replace('/([a-z]+\.)?'.$sortfield.' '.$sortorder.',/i','',$tabsqlsort[$id]);
+		$tabsqlsort[$id]=preg_replace('/([a-z]+\.)?'.$sortfield.',/i','',$tabsqlsort[$id]);
+	}
+	else {
+		$sql.=" ORDER BY ";
+	}
+	$sql.=$tabsqlsort[$id];
+	$sql.=$db->plimit($listlimit+1,$offset);
+
+	$fieldlist=explode(',',$tabfield[$id]);
+
+	
+	
+	
+
+	
+	
+
+	
+	if ($tabname[$id])
+	{
+		$alabelisused=0;
+		$var=false;
+
+		$fieldlist=explode(',',$tabfield[$id]);
+
+		
+		
+		foreach ($fieldlist as $field => $value)
+		{
+			
+			
+			$valuetoshow=ucfirst($fieldlist[$field]);   
+			$valuetoshow=$langs->trans($valuetoshow);   
+			$align="left";
+			if ($fieldlist[$field]=='code')            { $valuetoshow=$langs->trans("Code"); }
+			if ($fieldlist[$field]=='libelle' || $fieldlist[$field]=='label')
+			{
+				$valuetoshow=$langs->trans("Label");
+			}
+			if ($fieldlist[$field]=='nature')          { $valuetoshow=$langs->trans("Nature"); }
+
+			if ($valuetoshow != '')
+			{
+				
+				if (! empty($tabhelp[$id][$value]) && preg_match('/^http(s*):/i',$tabhelp[$id][$value])) 
+				else if (! empty($tabhelp[$id][$value])) 
+				else 
+				
+			 }
+			 if ($fieldlist[$field]=='libelle' || $fieldlist[$field]=='label') $alabelisused=1;
+		}
+
+		
+		
+		
+		"></td>';
+		"></td>';
+		"></td>';
+		
+
+		
+		
+
+		$obj = new stdClass();
+		
+		if (GETPOST('actionadd'))
+		{
+			foreach ($fieldlist as $key=>$val)
+			{
+				if (GETPOST($val) != '')
+					$obj->$val=GETPOST($val);
+			}
+		}
+
+		$tmpaction = 'create';
+		$parameters=array('fieldlist'=>$fieldlist, 'tabname'=>$tabname[$id]);
+		$reshook=$hookmanager->executeHooks('createDictionaryFieldlist',$parameters, $obj, $tmpaction);    
+		$error=$hookmanager->error; $errors=$hookmanager->errors;
+
+		if (empty($reshook))
+		{
+	   		fieldListJournal($fieldlist,$obj,$tabname[$id],'add');
+		}
+
+		
+	   	
+		
+		
+
+		</td></tr>';	
+	}
+
+
+
+	
+	dol_syslog("htdocs/admin/dict", LOG_DEBUG);
+	$resql=$db->query($sql);
+	if ($resql)
+	{
+		$num = $db->num_rows($resql);
+		$i = 0;
+		$var=true;
+
+		$param = '&id='.$id;
+		if ($search_country_id > 0) $param.= '&search_country_id='.$search_country_id;
+		$paramwithsearch = $param;
+		if ($sortorder) $paramwithsearch.= '&sortorder='.$sortorder;
+		if ($sortfield) $paramwithsearch.= '&sortfield='.$sortfield;
+		if (GETPOST('from')) $paramwithsearch.= '&from='.GETPOST('from','alpha');
+
+		
+		if ($num > $listlimit)
+		{
+			
+			print_fleche_navigation($page, $_SERVER["PHP_SELF"], $paramwithsearch, ($num > $listlimit), '<li class="pagination"><span>'.$langs->trans("Page").' '.($page+1).'</span></li>');
+			
+		}
+
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		if ($filterfound)
+		{
+			$searchpicto=$form->showFilterAndCheckAddButtons(0);
+			
+		}
+		
+		
+
+		
+		
+		foreach ($fieldlist as $field => $value)
+		{
+			
+			
+			$showfield=1;							  	
+			$align="left";
+			$sortable=1;
+			$valuetoshow='';
+			
+			$valuetoshow=ucfirst($fieldlist[$field]);   
+			$valuetoshow=$langs->trans($valuetoshow);   
+			if ($fieldlist[$field]=='code')            { $valuetoshow=$langs->trans("Code"); }
+			if ($fieldlist[$field]=='libelle' || $fieldlist[$field]=='label') { $valuetoshow=$langs->trans("Label"); }
+			if ($fieldlist[$field]=='nature')          { $valuetoshow=$langs->trans("Nature"); }
+
+			
+			if ($showfield)
+			{
+				
+			}
+		}
+		
+		
+		
+		
+		
+
+		if ($num)
+		{
+			
+			while ($i < $num)
+			{
+				$obj = $db->fetch_object($resql);
+				
+				
+				if ($action == 'edit' && ($rowid == (! empty($obj->rowid)?$obj->rowid:$obj->code)))
+				{
+					$tmpaction='edit';
+					$parameters=array('fieldlist'=>$fieldlist, 'tabname'=>$tabname[$id]);
+					$reshook=$hookmanager->executeHooks('editDictionaryFieldlist',$parameters,$obj, $tmpaction);    
+					$error=$hookmanager->error; $errors=$hookmanager->errors;
+
+					
+					if (empty($reshook)) fieldListJournal($fieldlist,$obj,$tabname[$id],'edit');
+
+					
+					
+					
+					
+					
+					
+					
+				}
+				else
+				{
+				  	$tmpaction = 'view';
+					$parameters=array('var'=>$var, 'fieldlist'=>$fieldlist, 'tabname'=>$tabname[$id]);
+					$reshook=$hookmanager->executeHooks('viewDictionaryFieldlist',$parameters,$obj, $tmpaction);    
+
+					$error=$hookmanager->error; $errors=$hookmanager->errors;
+
+					if (empty($reshook))
+					{
+						foreach ($fieldlist as $field => $value)
+						{
+
+							$showfield=1;
+							$align="left";
+							$valuetoshow=$obj->{$fieldlist[$field]};
+							if ($valuetoshow=='all') {
+								$valuetoshow=$langs->trans('All');
+							}
+							else if ($fieldlist[$field]=='nature' && $tabname[$id]==MAIN_DB_PREFIX.'accounting_journal') {
+								$langs->load("accountancy");
+								$key=$langs->trans("AccountingJournalType".strtoupper($obj->nature));
+								$valuetoshow=($obj->nature && $key != "AccountingJournalType".strtoupper($obj->nature)?$key:$obj->{$fieldlist[$field]});
+							}
+
+							$class='tddict';
+							
+							if ($showfield) 
+						}
+					}
+
+					
+					$iserasable=1;$canbedisabled=1;$canbemodified=1;	
+					if (isset($obj->code) && $id != 10)
+					{
+						if (($obj->code == '0' || $obj->code == '' || preg_match('/unknown/i',$obj->code))) { $iserasable = 0; $canbedisabled = 0; }
+						else if ($obj->code == 'RECEP') { $iserasable = 0; $canbedisabled = 0; }
+						else if ($obj->code == 'EF0')   { $iserasable = 0; $canbedisabled = 0; }
+					}
+
+					$canbemodified=$iserasable;
+
+					$url = $_SERVER["PHP_SELF"].'?'.($page?'page='.$page.'&':'').'sortfield='.$sortfield.'&sortorder='.$sortorder.'&rowid='.(! empty($obj->rowid)?$obj->rowid:(! empty($obj->code)?$obj->code:'')).'&code='.(! empty($obj->code)?urlencode($obj->code):'');
+					if ($param) $url .= '&'.$param;
+					$url.='&';
+
+					
+					
+					if ($canbedisabled) 
+					else
+				 	{
+				 		if (in_array($obj->code, array('AC_OTH','AC_OTH_AUTO'))) 
+				 		else if (isset($obj->type) && in_array($obj->type, array('systemauto')) && empty($obj->active)) 
+				  		else if (isset($obj->type) && in_array($obj->type, array('system')) && ! empty($obj->active) && $obj->code != 'AC_OTH') 
+						else 
+					}
+					
+
+					
+					if ($canbemodified) 
+					else </td>';
+
+					
+					if ($iserasable)
+					{
+						
+						if ($user->admin) 
+						
+						
+					}
+					else </td>';
+
+					
+
+					
+				}
+
+				
+				$i++;
+			}
+		}
+	}
+	else {
+		dol_print_error($db);
+	}
+
+	
+	
+
+	
+}
+
+
+
+
+llxFooter();
+$db->close();
+
+
+
+function fieldListJournal($fieldlist, $obj='', $tabname='', $context='')
+{
+	global $conf,$langs,$db;
+	global $form, $mysoc;
+	global $region_id;
+	global $elementList,$sourceList,$localtax_typeList;
+	global $bc;
+
+	$formadmin = new FormAdmin($db);
+	$formcompany = new FormCompany($db);
+
+	foreach ($fieldlist as $field => $value)
+	{
+		if ($fieldlist[$field] == 'nature')
+		{
+			
+			
+			
+		}
+		elseif ($fieldlist[$field] == 'code' && isset($obj->{$fieldlist[$field]})) {
+			
+		}
+		else
+		{
+			
+			$size=''; $class='';
+			if ($fieldlist[$field]=='code')  $class='maxwidth100';
+			if ($fieldlist[$field]=='label') $class='quatrevingtpercent';
+			if ($fieldlist[$field]=='sortorder' || $fieldlist[$field]=='sens' || $fieldlist[$field]=='category_type') $size='size="2" ';
+			
+			
+		}
+	}
+}

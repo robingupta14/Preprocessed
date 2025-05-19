@@ -1,0 +1,164 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+$var_0 = true;
+$var_1 = array(gettext("Diagnostics"), gettext("Traceroute"));
+
+
+define('MAX_TTL', 64);
+define('DEFAULT_TTL', 18);
+
+
+$var_2 = false;
+$var_3 = '';
+$var_4 = var_5;
+$var_6 = 'ipv4';
+$var_7 = 'any';
+
+if ($var_8 || $var_12['host']) {
+	unset($var_9);
+
+	
+	$var_10 = explode(" ", "host ttl");
+	$var_11 = array(gettext("Host"), gettext("ttl"));
+	do_input_validation($var_12, $var_10, $var_11, $var_9);
+
+	if (($var_12['ttl'] < 1) || ($var_12['ttl'] > var_13)) {
+		$var_9[] = sprintf(gettext("Maximum number of hops must be between 1 and %s"), var_13);
+	}
+	$var_3 = trim($var_12['host']);
+	$var_6 = $var_12['ipproto'];
+	if (($var_6 == "ipv4") && is_ipaddrv6($var_3)) {
+		$var_9[] = gettext("When using IPv4, the target host must be an IPv4 address or hostname.");
+	}
+	if (($var_6 == "ipv6") && is_ipaddrv4($var_3)) {
+		$var_9[] = gettext("When using IPv6, the target host must be an IPv6 address or hostname.");
+	}
+
+	$var_7 = $var_12['sourceip'];
+	$var_4 = $var_12['ttl'];
+	$var_14 = $var_12['resolve'];
+	$var_15 = $var_12['useicmp'];
+
+	if ($var_8 && !$var_9) {
+		$var_2 = true;
+	}
+
+} else {
+	$var_14 = false;
+	$var_15 = false;
+}
+
+if ($var_9) {
+	print_input_errors($var_9);
+}
+
+
+if ($var_2) {
+	$var_16 = isset($var_15) ? "-I" : "";
+	$var_17 = isset($var_14) ? "" : "-n";
+
+	$var_18 = "/usr/sbin/traceroute";
+	if ($var_6 == "ipv6") {
+		$var_18 .= "6";
+		if (empty($var_17)) {
+			$var_17 = "-l";
+		}
+		$var_19 = is_ipaddr($var_7) ? $var_7 : get_interface_ipv6($var_7);
+	} else {
+		$var_19 = is_ipaddr($var_7) ? $var_7 : get_interface_ip($var_7);
+	}
+
+	if ($var_19 && (is_ipaddr($var_3) || is_hostname($var_3))) {
+		$var_20 = "-s " . escapeshellarg($var_19);
+	}
+
+	$var_21 = "{$var_18} {$var_17} {$var_20} -w 2 {$var_16} -m " . escapeshellarg($var_4) . " " . escapeshellarg($var_3);
+	$var_22 = shell_exec($var_21);
+
+	if (!$var_22) {
+		print_info_box(sprintf(gettext('Error: %s could not be traced/resolved'), htmlspecialchars($var_3)));
+	}
+}
+
+$var_23 = new class_0(false);
+
+$var_24 = new class_1('Traceroute');
+
+$var_24->addInput(new class_2(
+	'host',
+	'*Hostname',
+	'text',
+	$var_3,
+	['placeholder' => 'Hostname to trace.']
+));
+
+$var_24->addInput(new class_3(
+	'ipproto',
+	'*IP Protocol',
+	$var_6,
+	array('ipv4' => 'IPv4', 'ipv6' => 'IPv6')
+))->setHelp('Select the protocol to use.');
+
+$var_24->addInput(new class_3(
+	'sourceip',
+	'*Source Address',
+	$var_7,
+	array('any' => gettext('Any')) + get_possible_traffic_source_addresses(true)
+))->setHelp('Select source address for the trace.');
+
+$var_24->addInput(new class_3(
+	'ttl',
+	'Maximum number of hops',
+	$var_4,
+	array_combine(range(1, var_13), range(1, var_13))
+))->setHelp('Select the maximum number of network hops to trace.');
+
+$var_24->addInput(new class_4(
+	'resolve',
+	'Reverse Address Lookup',
+	'',
+	$var_14
+))->setHelp('When checked, traceroute will attempt to perform a PTR lookup to locate hostnames for hops along the path. This will slow down the process as it has to wait for DNS replies.');
+
+$var_24->addInput(new class_4(
+	'useicmp',
+	gettext("Use ICMP"),
+	'',
+	$var_15
+))->setHelp('By default, traceroute uses UDP but that may be blocked by some routers. Check this box to use ICMP instead, which may succeed. ');
+
+$var_23->add($var_24);
+
+$var_23->addGlobal(new class_5(
+	'Submit',
+	'Traceroute',
+	null,
+	'fa-rss'
+))->addClass('btn-primary');
+
+
+
+
+if ($var_2 && $var_22) {
+?>
+	<div class="panel panel-default">
+		<div class="panel-heading"><h2 class="panel-title"><?=gettext('Results')?></h2></div>
+		<div class="panel-body">
+<?php
+	print('<pre>' . $var_22 . '</pre>');
+?>
+		</div>
+	</div>
+<?php
+}
+
+?>

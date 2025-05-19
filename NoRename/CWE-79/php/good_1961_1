@@ -1,0 +1,1129 @@
+<?php
+
+
+
+
+
+
+class OA_Admin_Statistics_Common extends OA_Admin_Statistics_Flexy
+{
+
+    
+    var $pageName;
+
+    
+    var $pageId;
+
+
+    
+    var $aPageSections;
+
+    
+    var $template;
+
+    
+    var $templateDir;
+
+    
+    var $aGlobalPrefs;
+
+    
+    var $aPagePrefs;
+
+    
+    var $aPageParams;
+
+    
+    var $aPageBreadcrumbs;
+
+    
+    var $aPageShortcuts;
+
+    
+    var $aColumns;
+
+    
+    var $aColumnVisible;
+
+    
+    var $aColumnLinks;
+
+    
+    var $aEmptyRow;
+
+    
+    var $aTotal;
+
+    
+    var $showTotals = false;
+
+    
+    var $noStatsAvailable = false;
+
+    
+    var $aPlugins;
+
+    
+    var $showDaySpanSelector = false;
+
+    
+    var $oDaySpanSelector;
+
+    
+    var $aDates;
+
+    
+    var $useHistoryClass = false;
+
+    
+    var $oHistory;
+
+    
+    var $useDailyClass = false;
+
+    
+    var $oDaily;
+
+    
+    var $pageURI;
+
+    
+    var $assetPath = ".";
+
+    
+    var $aStatsData;
+
+    
+    var $outputType;
+
+    
+    var $entity;
+
+    
+    var $breakdown;
+
+    
+    var $statsBreakdown;
+
+    
+    var $dayLinkBreakdown = 'daily';
+
+    
+    var $skipFormatting = false;
+
+    
+    var $displayInaccurateStatsWarning = false;
+
+    
+    function __construct($aParams)
+    {
+        
+        if (is_array($aParams)) {
+            foreach ($aParams as $k => $v) {
+                $this->$k = $v;
+            }
+        }
+        $this->coreParams = self::getCoreParams();
+
+        
+        if (empty($this->entity)) {
+            $this->entity = 'entity';
+        }
+        if (empty($this->breakdown)) {
+            $this->breakdown = 'breakdown';
+        }
+
+        
+        $this->pageName = basename($_SERVER['SCRIPT_NAME']);
+
+        $this->aGlobalPrefs     = array();
+        $this->aPagePrefs       = array();
+        $this->aPageParams      = array();
+        $this->aPageBreadcrumbs = array();
+        $this->aPageShortcuts   = array();
+        $this->aColumns         = array();
+        $this->aColumnLinks     = array();
+        $this->aColumnVisible   = array();
+        $this->aEmptyRow        = array();
+
+        $this->phpAds_TextDirection = $GLOBALS['phpAds_TextDirection'];
+
+        
+        $this->_loadPlugins();
+
+        
+        foreach ($this->aPlugins as $oPlugin) {
+            $this->aColumns       += $oPlugin->getFields($this);
+            $this->aColumnLinks   += $oPlugin->getColumnLinks();
+            $this->aColumnVisible += $oPlugin->getVisibleColumns();
+            $this->aEmptyRow      += $oPlugin->getEmptyRow();
+        }
+
+        
+        $this->aTotal = $this->aEmptyRow;
+
+        
+        if (empty($GLOBALS['tabindex'])) {
+            $GLOBALS['tabindex'] = 1;
+        }
+        $this->tabindex =& $GLOBALS['tabindex'];
+
+        
+        if ($this->showDaySpanSelector) {
+            $this->_initDaySpanSelector();
+        }
+
+        
+        if ($this->useDailyClass) {
+            $this->oDaily = new OA_Admin_Statistics_Daily();
+            $this->oDaily->parseDay($this->aDates);
+            $this->aPageContext = array('days', $this->aDates['day_begin']);
+            $this->statsBreakdown = 'hour';
+        }
+
+        
+        if ($this->useHistoryClass) {
+            $this->oHistory = new OA_Admin_Statistics_History();
+        }
+    }
+
+    
+    static function getCoreParams()
+    {
+        $coreParams = array();
+        return $coreParams;
+    }
+
+    function prepare(&$aParams)
+    {
+        $aParams = $this->coreParams + $aParams;
+    }
+
+    
+
+    
+    function start()
+    {
+        $message = 'Error: Abstract method ' . __FUNCTION__ . ' must be implemented.';
+        MAX::raiseError($message, MAX_ERROR_NOMETHOD);
+    }
+
+    
+    function _loadPlugins()
+    {
+        $message = 'Error: Abstract method ' . __FUNCTION__ . ' must be implemented.';
+        MAX::raiseError($message, MAX_ERROR_NOMETHOD);
+    }
+
+    
+    function _isEmptyResultArray()
+    {
+        $message = 'Error: Abstract method ' . __FUNCTION__ . ' must be implemented.';
+        MAX::raiseError($message, MAX_ERROR_NOMETHOD);
+    }
+
+    
+    function showGraph($aGraphFilterArray)
+    {
+        $message = 'Error: Abstract method ' . __FUNCTION__ . ' must be implemented.';
+        MAX::raiseError($message, MAX_ERROR_NOMETHOD);
+    }
+
+    
+    function showNoStatsString()
+    {
+        $message = 'Error: Abstract method ' . __FUNCTION__ . ' must be implemented.';
+        MAX::raiseError($message, MAX_ERROR_NOMETHOD);
+    }
+
+    
+
+    
+    function output($graphMode = false)
+    {
+        
+        $this->_checkStatsAccuracy();
+        
+        $this->_showShortcuts();
+        
+        if ($this->outputType == 'deliveryEntity') {
+
+            
+            $this->template = 'breakdown_by_entity.html';
+            $this->flattenEntities();
+            $this->_output();
+
+        } else if ($this->outputType == 'deliveryHistory') {
+
+            $aDisplayData =& $this->aStatsData;
+            if ($this->outputType == 'deliveryHistory') {
+                $weekTemplate = 'breakdown_by_week.html';
+                $dateTemplate = 'breakdown_by_date.html';
+            }
+
+            
+            if (preg_match('/daily$/', $this->breakdown)) {
+                $oDate = new Date($this->aDates['day_begin']);
+                $this->_addBreadcrumb($oDate->format($GLOBALS['date_format']), OX::assetPath() . '/images/icon-date.gif', 'day');
+            }
+
+            
+            if ($this->statsBreakdown == 'week') {
+                $this->template = $weekTemplate;
+                if (count($aDisplayData)) {
+                    
+                    $aRows = array('date');
+                    foreach (array_keys($this->aColumns) as $v) {
+                        if ($this->showColumn($v)) {
+                            $aRows[] = $v;
+                        }
+                    }
+                    $aRows = array_reverse($aRows);
+                    foreach (array_keys($aDisplayData) as $k) {
+                        $htmlclass = $aDisplayData[$k]['htmlclass'];
+                        $aTmpHtmlclass  = array();
+                        foreach ($aRows as $r => $v) {
+                            $aTmpHtmlclass[$v] = ($r ? 'nb' : '') . $htmlclass;
+                        }
+                        $aDisplayData[$k]['htmlclass'] = $aTmpHtmlclass;
+                    }
+                }
+            } else {
+                $this->template = $dateTemplate;
+            }
+
+            
+            if ($this->statsBreakdown == 'hour') {
+                $this->statsIcon = 'images/icon-time.gif';
+            } else {
+                $this->statsIcon = 'images/icon-date.gif';
+            }
+
+            $aElements = array();
+            if (!$graphMode) {
+                $aElements['statsBreakdown'] = new HTML_Template_Flexy_Element;
+                $aElements['statsBreakdown']->setOptions(
+                    array(
+                        'day'   => $GLOBALS['strBreakdownByDay'],
+                        'week'  => $GLOBALS['strBreakdownByWeek'],
+                        'month' => $GLOBALS['strBreakdownByMonth'],
+                        'dow'   => $GLOBALS['strBreakdownByDow'],
+                        'hour'  => $GLOBALS['strBreakdownByHour']
+                    )
+                );
+                $aElements['statsBreakdown']->setValue($this->statsBreakdown);
+                $aElements['statsBreakdown']->setAttributes(array('onchange' => 'this.form.submit()'));
+                $this->_output($aElements);
+            } else {
+                 $this->_outputGraph($aElements);
+            }
+        }
+    }
+
+    
+    function _output($aElements = array())
+    {
+        global $graphFilter;
+
+        
+        $oOutput = new HTML_Template_Flexy(array(
+            'templateDir'       => $this->templateDir,
+            'compileDir'        => MAX_PATH . '/var/templates_compiled',
+        ));
+
+        
+        if (OA_Permission::isAccount(OA_ACCOUNT_ADVERTISER)) {
+            $GLOBALS['clientid'] = OA_Permission::getEntityId();
+        } elseif (OA_Permission::isAccount(OA_ACCOUNT_TRAFFICKER)) {
+            $GLOBALS['affiliateid'] = OA_Permission::getEntityId();
+        }
+
+        
+        
+        $this->aPageParams['entity']    = $this->entity;
+        $this->aPageParams['breakdown'] = $this->breakdown;
+
+        
+        $this->_generatePageURI();
+        $this->assetPath = OX::assetPath();
+
+        phpAds_PageHeader($this->pageId, $this->getHeaderModel());
+
+        
+        if (!empty($this->welcomeText))
+        {
+            
+            
+            
+        }
+
+        
+        phpAds_ShowSections($this->aPageSections, $this->aPageParams, $openNewTable=false);
+
+        $graphVals = $graphFilter;
+
+        
+        if (!is_array($graphVals)) {
+            if (isset($this->aColumns['sum_views'])) {
+                $graphVals[] = 'sum_views';
+            }
+            if (isset($this->aColumns['sum_clicks'])) {
+                $graphVals[] = 'sum_clicks';
+            }
+        }
+
+        
+        $graphFilterArray = $graphVals;
+        $imageFormat = null;
+        if (!extension_loaded('gd')) {
+            $this->aGraphData['noGraph'] = true;
+	    } else {
+            $imgPath = rtrim(MAX::constructURL(MAX_URL_IMAGE), '/');
+            if (!function_exists('imagecreate')) {
+                $this->aGraphData['noGraph'] = $GLOBALS['strGDnotEnabled'];
+            } else {
+                $tmpUrl = MAX::constructURL(MAX_URL_ADMIN) . 'stats-showgraph.php?' . $_SERVER['QUERY_STRING'];
+                if(is_array($graphFilterArray)) {
+	                foreach ($graphFilterArray as $k => $v) {
+	                    $tmpUrl .= '&graphFields[]=' . $v;
+	                }
+                }
+            }
+            $formSubmitLink = explode ("/", $_SERVER['REQUEST_URI']);
+            $formSubmitLink = $formSubmitLink[ count($formSubmitLink) - 1 ];
+            $this->aGraphData['imgPath']         = $imgPath;
+            $this->aGraphData['tmpUrl']          = $tmpUrl;
+            $this->aGraphData['queryString']     = $_SERVER['QUERY_STRING'];
+            $this->aGraphData['formSubmitLink']  = $formSubmitLink;
+	    }
+
+        
+        $this->scriptOpen     = "\n<script type=\"text/javascript\"> <!--\n";
+        $this->scriptClose    = "\n
+
+        
+        $this->autoShowGraph  = strpos($_SERVER['QUERY_STRING'], 'graphFields');
+
+        
+        $this->strShowGraphOfStatistics   = $GLOBALS['strShowGraphOfStatistics'];
+        $this->strExportStatisticsToExcel = $GLOBALS['strExportStatisticsToExcel'];
+
+        
+        $aElements['graphFilter[]'] = new HTML_Template_Flexy_Element;
+        $aElements['graphFilter[]']->setValue($graphVals);
+        if ($this->_isEmptyResultArray()) {
+            $this->disableGraph = true;
+        }
+
+        
+        $oOutput->compile($this->template);
+        $oOutput->outputObject($this, $aElements);
+
+        $this->_savePrefs();
+
+        phpAds_PageFooter();
+    }
+
+    
+    function _outputGraph($aElements = array())
+    {
+        global $graphFields;
+
+        
+        $graphFields = array_unique($graphFields);
+
+        
+        if (OA_Permission::isAccount(OA_ACCOUNT_ADVERTISER)) {
+            $GLOBALS['clientid'] = OA_Permission::getEntityId();
+        } elseif (OA_Permission::isAccount(OA_ACCOUNT_TRAFFICKER)) {
+            $GLOBALS['affiliateid'] = OA_Permission::getEntityId();
+        }
+
+        
+        $this->_generatePageURI();
+        $this->assetPath = OX::assetPath();
+
+        
+        if (is_array($this->aPageContext))
+            call_user_func_array(array($this, '_showContext'), $this->aPageContext);
+
+        
+        $this->_showShortcuts();
+        $formSubmitLink = explode ("/", $_SERVER['REQUEST_URI']);
+        $formSubmitLink = $formSubmitLink[ count($formSubmitLink)-1 ];
+        $graphVals = $_POST['graphFilter'];
+
+        
+        if (!is_array($graphVals) ) {
+            if (isset($this->aColumns['sum_views'])) {
+              $graphVals[] = 'sum_views';
+            }
+            if (isset($this->aColumns['sum_clicks'])) {
+              $graphVals[] = 'sum_clicks';
+            }
+        }
+        $graphFilterArray = $graphFields;
+
+        $imgPath = 'http:
+        $tmpUrl = $this->showGraph($graphFilterArray);
+
+        
+        die;
+    }
+
+    
+    function showColumn($column)
+    {
+        return isset($this->aColumnVisible[$column]) ? $this->aColumnVisible[$column] : true;
+    }
+
+    
+    function _pluginSort($a, $b)
+    {
+        $res = $a->displayOrder - $b->displayOrder;
+        if (!$res) {
+            
+            return strcmp(get_class($a), get_class($b));
+        }
+        return $res;
+    }
+
+    
+    function _getId($type, $default = null)
+    {
+        if ($type == 'advertiser') {
+            if (OA_Permission::isAccount(OA_ACCOUNT_ADVERTISER)) {
+                return OA_Permission::getEntityId();
+            } else {
+                if (is_null($default)) {
+                    return (int) MAX_getValue('clientid', '');
+                } else {
+                    return (int) MAX_getValue('clientid', $default);
+                }
+            }
+        } else if ($type == 'publisher') {
+            if (OA_Permission::isAccount(OA_ACCOUNT_TRAFFICKER)) {
+                return OA_Permission::getEntityId();
+            } else {
+                if (is_null($default)) {
+                    return (int) MAX_getValue('affiliateid', '');
+                } else {
+                    return (int) MAX_getValue('affiliateid', $default);
+                }
+            }
+        } else if ($type == 'placement') {
+            if (is_null($default)) {
+                return (int) MAX_getValue('campaignid', '');
+            } else {
+                return (int) MAX_getValue('campaignid', $default);
+            }
+        } else if ($type == 'ad') {
+            if (is_null($default)) {
+                return (int) MAX_getValue('bannerid', '');
+            } else {
+                return (int) MAX_getValue('bannerid', $default);
+            }
+        } else if ($type == 'zone') {
+            if (is_null($default)) {
+                return (int) MAX_getValue('zoneid', '');
+            } else {
+                return (int) MAX_getValue('zoneid', $default);
+            }
+        }
+    }
+
+    
+    function _checkAccess($aParams)
+    {
+        $access = false;
+        if (count($aParams) == 1) {
+            if (array_key_exists('advertiser', $aParams)) {
+                $access = MAX_checkAdvertiser($aParams['advertiser'], $aParams + $this->coreParams);
+            } else if (array_key_exists('publisher', $aParams)) {
+                $access = MAX_checkPublisher($aParams['publisher']);
+            }
+        } else if (count($aParams) == 2) {
+            if (array_key_exists('advertiser', $aParams) && array_key_exists('placement', $aParams)) {
+                $access = MAX_checkPlacement($aParams['advertiser'], $aParams['placement'], $aParams + $this->coreParams);
+            } else if (array_key_exists('publisher', $aParams) && array_key_exists('zone', $aParams)) {
+                $access = MAX_checkZone($aParams['publisher'], $aParams['zone']);
+            }
+        } else if (count($aParams) == 3) {
+            if (array_key_exists('advertiser', $aParams) && array_key_exists('placement', $aParams) && array_key_exists('ad', $aParams)) {
+                $access = MAX_checkAd($aParams['advertiser'], $aParams['placement'], $aParams['ad']);
+            }
+        }
+        if (!$access) {
+            
+            
+            if (OA_Permission::isManualAccountSwitch()) {
+                
+                OX_Admin_Redirect::redirect('stats.php', true);
+            }
+            
+            if (OA_Permission::isAccount(OA_ACCOUNT_ADMIN) || OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                phpAds_PageHeader('2');
+            }
+            if (OA_Permission::isAccount(OA_ACCOUNT_ADVERTISER) || OA_Permission::isAccount(OA_ACCOUNT_TRAFFICKER)) {
+                phpAds_PageHeader('1');
+            }
+            phpAds_Die($GLOBALS['strAccessDenied'], $GLOBALS['strNotAdmin']);
+        }
+    }
+
+    
+    function _addPageParamsToURI($pageName = null, $aParams = null, $strip = false)
+    {
+        if (is_null($pageName)) {
+            return '';
+        }
+        if (is_null($aParams)) {
+            $aParams = $this->aPageParams;
+        }
+        if (preg_match('/\?/', $pageName)) {
+            $pageURI = $pageName.'&';
+        } else {
+            $pageURI = $pageName.'?';
+        }
+        foreach ($aParams as $k => $v) {
+            if (!preg_match('/'.$k.'/', $pageName)) {
+                $pageURI .= urlencode($k).'='.urlencode($v).'&';
+            }
+        }
+        if ($strip) {
+            $pageURI = substr($pageURI, 0, -1);
+        }
+        return $pageURI;
+    }
+
+    
+    function _addShortcut($name, $link, $iconClass)
+    {
+        $this->aPageShortcuts[] = array('name' => $name, 'link' => $link, 'iconClass' => $iconClass);
+    }
+
+    
+    function _addBreadcrumbs($type, $entityId, $level = 0)
+    {
+        switch ($type) {
+
+        case 'advertiser':
+            if (OA_Permission::isAccount(OA_ACCOUNT_ADMIN) || OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                $advertisers = Admin_DA::getAdvertisers(array('advertiser_id' => $entityId), false);
+                if (count($advertisers) == 1) {
+                    $advertiser = current($advertisers);
+                    $this->_addBreadcrumb(
+                        MAX_buildName($advertiser['advertiser_id'], $advertiser['name']),
+                        MAX_getEntityIcon('advertiser'),
+                        $type
+                    );
+                }
+            }
+            break;
+
+        case 'campaign':
+            $campaigns = Admin_DA::getPlacements(array('placement_id' => $entityId), false);
+            if (count($campaigns) == 1) {
+                $campaign = current($campaigns);
+                $this->_addBreadcrumbs('advertiser', $campaign['advertiser_id'], $level + 1);
+
+                
+                   $campaign['name'] = MAX_getPlacementName($campaign);
+                $this->_addBreadcrumb(
+                    MAX_buildName($campaign['placement_id'], $campaign['name']),
+                    MAX_getEntityIcon('placement'),
+                    $type
+                );
+            }
+            break;
+
+        case 'banner':
+            $banners = Admin_DA::getAds(array('ad_id' => $entityId), false);
+            if (count($banners) == 1) {
+                $banner = current($banners);
+                $this->_addBreadcrumbs('campaign', $banner['placement_id'], $level + 1);
+
+                
+                $campaign = Admin_DA::getPlacement($banner['placement_id']);
+                $campaignAnonymous = $campaign['anonymous'] == 't' ? true : false;
+                   $banner['name'] = MAX_getAdName($banner['name'], null, null, $campaignAnonymous, $banner['ad_id']);
+                $this->_addBreadcrumb(
+                    MAX_buildName($banner['ad_id'], $banner['name']),
+                    MAX_getEntityIcon('ad'),
+                    $type
+                );
+            }
+            break;
+
+        case 'publisher':
+            if (OA_Permission::isAccount(OA_ACCOUNT_ADMIN) || OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                $publishers = Admin_DA::getPublishers(array('publisher_id' => $entityId), false);
+                if (count($publishers) == 1) {
+                    $publisher = current($publishers);
+                    $this->_addBreadcrumb(
+                        MAX_buildName($publisher['publisher_id'], $publisher['name']),
+                        MAX_getEntityIcon('publisher'),
+                        'website'
+                    );
+                }
+            }
+            break;
+
+        case 'zone':
+            $zones = Admin_DA::getZones(array('zone_id' => $entityId), false);
+            if (count($zones) == 1) {
+                $zone = current($zones);
+                $this->_addBreadcrumbs('publisher', $zone['publisher_id'], $level + 1);
+                $this->_addBreadcrumb(
+                    MAX_buildName($zone['zone_id'], $zone['name']),
+                    MAX_getEntityIcon('zone'),
+                    $type
+                );
+            }
+            break;
+        }
+    }
+
+    
+    function _addBreadcrumb($name, $icon, $type = '')
+    {
+        $this->aPageBreadcrumbs[] = array('name' => $name, 'icon' => $icon, 'type' => $type);
+    }
+
+    function getHeaderModel()
+    {
+        $builder = new OA_Admin_UI_Model_InventoryPageHeaderModelBuilder();
+
+        $oMenu = OA_Admin_Menu::singleton();
+        $oMenu->_setLinkParams($this->aPageParams);
+        $oCurrentSection = $oMenu->get($this->pageId);
+
+        $oHeader = new OA_Admin_UI_Model_PageHeaderModel($oCurrentSection->getName());
+        $oHeader->setIconClass('iconTargetingChannelsLarge');
+
+        foreach ($this->aPageBreadcrumbs as $v) {
+            $headerMeta = $builder->getEntityHeaderMeta($v['type']);
+            $oSegment = new OA_Admin_UI_Model_EntityBreadcrumbSegment();
+            $oSegment->setEntityName($v['name']);
+            $oSegment->setEntityLabel($headerMeta['label']);
+            $oSegment->setCssClass($headerMeta['class']);
+
+            $oHeader->addSegment($oSegment);
+        }
+
+        return $oHeader;
+    }
+
+    
+    function _showContext($type, $current_id = 0)
+    {
+        if ($this->useDailyClass && $type == 'days') {
+            
+            $aArray = array(
+                'period_start' => MAX_getStoredValue('period_start', date('Y-m-d')),
+                'period_end'   => MAX_getStoredValue('period_end', date('Y-m-d'))
+            );
+            $aDates = array_reverse($this->oHistory->getDatesArray($aArray, 'day', $this->oStartDate));
+            $this->oDaily->showContext($aDates, $current_id, $this);
+        } else {
+            $aParams = array();
+            switch ($type) {
+                case 'advertisers':
+                    if (OA_Permission::isAccount(OA_ACCOUNT_ADMIN) || OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                        if (OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                            $aParams['agency_id'] = OA_Permission::getEntityId();
+                        }
+                        $params = $this->aPageParams;
+                        $advertisers = Admin_DA::getAdvertisers($aParams, false);
+                        foreach ($advertisers as $advertiser) {
+                            $params['clientid'] = $advertiser['advertiser_id'];
+                            phpAds_PageContext(
+                                MAX_buildName($advertiser['advertiser_id'], $advertiser['name']),
+                                $this->_addPageParamsToURI($this->pageName, $params, true),
+                                $current_id == $advertiser['advertiser_id']
+                            );
+                        }
+                    }
+                    break;
+
+                case 'campaigns':
+                    $aParams['advertiser_id'] = $this->aPageParams['clientid'];
+                    $params = $this->aPageParams;
+                    $campaigns = Admin_DA::getPlacements($aParams, false);
+                    foreach ($campaigns as $campaign) {
+                        $params['campaignid'] = $campaign['placement_id'];
+                        
+                        $campaign['name'] = MAX_getPlacementName($campaign);
+                        phpAds_PageContext(
+                            MAX_buildName($campaign['placement_id'], $campaign['name']),
+                            $this->_addPageParamsToURI($this->pageName, $params, true),
+                            $current_id == $campaign['placement_id']
+                        );
+                    }
+                    break;
+
+                case 'banners':
+                    $aParams['placement_id'] = $this->aPageParams['campaignid'];
+                    $params = $this->aPageParams;
+                    $banners = Admin_DA::getAds($aParams, false);
+                    foreach ($banners as $banner) {
+                        $params['bannerid'] = $banner['ad_id'];
+                        
+                        $campaign = Admin_DA::getPlacement($banner['placement_id']);
+                        $campaignAnonymous = $campaign['anonymous'] == 't' ? true : false;
+                        $banner['name'] = MAX_getAdName($banner['name'], null, null, $campaignAnonymous, $banner['ad_id']);
+                        phpAds_PageContext(
+                            MAX_buildName($banner['ad_id'], $banner['name']),
+                            $this->_addPageParamsToURI($this->pageName, $params, true),
+                            $current_id == $banner['ad_id']
+                        );
+                    }
+                    break;
+
+                case 'publishers':
+                    if (OA_Permission::isAccount(OA_ACCOUNT_ADMIN) || OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                        if (OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                            $aParams['agency_id'] = OA_Permission::getEntityId();
+                        }
+                        $params = $this->aPageParams;
+                        $campaigns = Admin_DA::getPublishers($aParams, false);
+                        foreach ($campaigns as $publisher) {
+                            $params['affiliateid'] = $publisher['publisher_id'];
+                            phpAds_PageContext(
+                                MAX_buildName($publisher['publisher_id'], $publisher['name']),
+                                $this->_addPageParamsToURI($this->pageName, $params, true),
+                                $current_id == $publisher['publisher_id']
+                            );
+                        }
+                    }
+                    break;
+
+                case 'publisher-campaigns':
+                    if (OA_Permission::isAccount(OA_ACCOUNT_ADMIN) || OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
+                        $aParams = array(
+                            'publisher_id' => $publisherId,
+                            'placement_id' => $placementId,
+                            'include' => array('placement_id'),
+                            'exclude' => array('zone_id')
+                        );
+                        $aPlacements = array();
+                        foreach (Admin_DA::fromCache('getEntitiesStats', $aParams + $this->aDates) as $v) {
+                            $aPlacements[$v['placement_id']] = true;
+                        }
+                        $params = $this->aPageParams;
+                        $campaigns = Admin_DA::getPlacements(array(), false);
+                        foreach ($campaigns as $campaign) {
+                            if (isset($aPlacements[$campaign['placement_id']])) {
+                                $params['campaignid'] = $campaign['placement_id'];
+                                phpAds_PageContext(
+                                    MAX_buildName($campaign['placement_id'], $campaign['name']),
+                                    $this->_addPageParamsToURI($this->pageName, $params, true),
+                                    $current_id == $campaign['placement_id']
+                                );
+                            }
+                        }
+                    }
+                    break;
+
+                case 'zones':
+                    $aParams['publisher_id'] = $this->aPageParams['affiliateid'];
+                    $params = $this->aPageParams;
+                    $zones = Admin_DA::getZones($aParams, false);
+                    foreach ($zones as $zone) {
+                        $params['zoneid'] = $zone['zone_id'];
+                        phpAds_PageContext(
+                            MAX_buildName($zone['zone_id'], $zone['name']),
+                            $this->_addPageParamsToURI($this->pageName, $params, true),
+                            $current_id == $zone['zone_id']
+                        );
+                    }
+                    break;
+            }
+        }
+    }
+
+    
+    function _loadParams($aMergeArray = null, $clearParams = false)
+    {
+        
+        $aVarArray = array(
+            'period_start',
+            'period_end',
+            'listorder',
+            'orderdirection',
+            'day',
+            'period_preset',
+            'setPerPage'
+        );
+
+        
+        if ($clearParams) {
+            unset($this->aPageParams);
+        }
+
+        
+        foreach ($aVarArray as $k => $v) {
+            $this->aPageParams[$v] = htmlspecialchars(MAX_getStoredValue($v, ''), ENT_QUOTES);
+        }
+
+        
+        if (empty($this->aPageParams['setPerPage'])) {
+            $this->aPageParams['setPerPage'] = 15;
+        } else {
+            $this->aPageParams['setPerPage'] = (int) $this->aPageParams['setPerPage'];
+        }
+
+        
+        if (is_array($aMergeArray)) {
+            $this->aPageParams = array_merge($this->aPageParams, $aMergeArray);
+        }
+
+        
+        if ($this->aPageParams['orderdirection'] == '') {
+            $this->aPageParams['orderdirection'] = 'up';
+        }
+
+    }
+
+    
+    function _loadStatsBreakdownParam()
+    {
+        $this->aPageParams['period_preset'] = MAX_getStoredValue('period_preset', 'today');
+    }
+
+    
+    function _loadPeriodPresetParam()
+    {
+        $this->aPageParams['statsBreakdown'] = htmlspecialchars(MAX_getStoredValue('statsBreakdown', 'day'));
+        $this->statsBreakdown = $this->aPageParams['statsBreakdown'];
+    }
+
+    
+    function _removeDuplicateParams($link)
+    {
+        if (empty($link)) {
+            return $this->aPageParams;
+        }
+        $aNewParams = array();
+        foreach ($this->aPageParams as $key => $value) {
+            if (!empty($value)) {
+                if (!strstr($link, $value) && $key != "entity" && $key != "day") {
+                    $aNewParams[$key] = $value;
+                }
+            }
+        }
+        return $aNewParams;
+    }
+
+    
+    function _summariseTotalsAndFormat(&$aRows)
+    {
+        $this->_summariseTotals($aRows);
+        $this->noStatsAvailable = !$this->_hasActiveStats($this->aTotal);
+        if (!$this->skipFormatting) {
+            
+            $this->_formatStats($aRows);
+            
+            $this->_formatStatsRowRecursive($this->aTotal, true);
+        }
+    }
+
+    
+    function _summariseTotals(&$aRows)
+    {
+        $showTotals = false;
+        reset($aRows);
+        while (list(, $aRow) = each($aRows)) {
+            reset($aRow);
+            while (list($key, $value) = each($aRow)) {
+                
+                
+                if (isset($this->aColumns[$key])) {
+                    if (is_bool($value)) {
+                        if ($value) {
+                            $this->aTotal[$key] = $value;
+                        }
+                    } else {
+                        $this->aTotal[$key] += $value;
+                    }
+                    $showTotals = true;
+                }
+            }
+        }
+        $this->showTotals = $showTotals;
+    }
+
+    
+    function _summarizeAverages($aRows)
+    {
+        $aAverages = array();
+        
+        $rows = count($aRows);
+        if ($rows == 1) {
+            
+            reset($aRows);
+            $key = key($aRows);
+            $aAverages = $aRows[$key];
+        } else {
+            
+            $aAverages = $this->aEmptyRow;
+            reset($aRows);
+            while (list(, $aRow) = each($aRows)) {
+                reset($aRow);
+                while (list($key, $value) = each($aRow)) {
+                    
+                    
+                    if (isset($this->aColumns[$key])) {
+                        if (is_bool($value)) {
+                            if ($value) {
+                                $aAverages[$key] = $value;
+                            }
+                        } else {
+                            $aAverages[$key] += $value;
+                        }
+                    }
+                }
+            }
+            foreach (array_keys($aAverages) as $key) {
+                if (!is_bool($aAverages[$key])) {
+                    $aAverages[$key] /= $rows;
+                }
+            }
+        }
+        
+        $this->_formatStatsRowRecursive($aAverages, true);
+        return $aAverages;
+    }
+
+    
+    function _formatStats(&$aRows, $isTotal = false)
+    {
+        if (isset($aRows) && is_array($aRows)) {
+            foreach (array_keys($aRows) as $key) {
+                $this->_formatStatsRowRecursive($aRows[$key], $isTotal);
+            }
+        }
+    }
+
+    
+    function _formatStatsRowRecursive(&$aRow, $isTotal = false)
+    {
+        if (isset($aRow['subentities']) && is_array($aRow['subentities'])) {
+            foreach (array_keys($aRow['subentities']) as $key) {
+                $this->_formatStatsRowRecursive($aRow['subentities'][$key], $isTotal);
+            }
+        }
+        if (is_array($aRow)) {
+            $this->_formatStatsRow($aRow, $isTotal);
+        }
+    }
+
+    
+    function _formatStatsRow(&$aRow, $isTotal = false)
+    {
+        foreach ($this->aPlugins as $oPlugin) {
+            $oPlugin->_formatStats($aRow, $isTotal);
+        }
+    }
+
+    
+
+    
+    function _initDaySpanSelector()
+    {
+
+        $aPeriod = array();
+        $aPeriod['period_preset'] = MAX_getStoredValue('period_preset', 'today');
+        $aPeriod['period_start']  = MAX_getStoredValue('period_start',  date('Y-m-d'));
+        $aPeriod['period_end']    = MAX_getStoredValue('period_end',    date('Y-m-d'));
+
+        $this->oDaySpanSelector =& FieldFactory::newField('day-span');
+        $this->oDaySpanSelector->_name = 'period';
+        $this->oDaySpanSelector->enableAutoSubmit();
+        $this->oDaySpanSelector->setValueFromArray($aPeriod);
+
+        $this->aDates = array(
+            'day_begin' => $this->oDaySpanSelector->getStartDate(),
+            'day_end'   => $this->oDaySpanSelector->getEndDate(),
+        );
+
+        if (!is_null($this->aDates['day_begin'])) {
+            $this->aDates['day_begin'] = $this->aDates['day_begin']->format('%Y-%m-%d');
+            $this->aDates['day_end']   = $this->aDates['day_end']->format('%Y-%m-%d');
+        } else {
+            $this->aDates = array();
+        }
+
+        $this->aGlobalPrefs['period_preset'] = $this->oDaySpanSelector->_fieldSelectionValue;
+        $this->aGlobalPrefs['period_start']  = $this->aDates['day_begin'];
+        $this->aGlobalPrefs['period_end']    = $this->aDates['day_end'];
+    }
+
+    
+    function _generatePageURI()
+    {
+        $this->pageURI = $this->_addPageParamsToURI($this->pageName);
+    }
+
+    
+    function _showShortcuts()
+    {
+        foreach ($this->aPageShortcuts as $shortcut) {
+            addPageShortcut($shortcut['name'], $shortcut['link'], $shortcut['iconClass']);
+        }
+    }
+
+    
+    function _savePrefs()
+    {
+        foreach ($this->aPagePrefs as $k => $v) {
+            $GLOBALS['session']['prefs'][$this->pageName][$k] = $v;
+        }
+        foreach ($this->aGlobalPrefs as $k => $v) {
+            $GLOBALS['session']['prefs']['GLOBALS'][$k] = $v;
+        }
+        phpAds_sessionDataStore();
+    }
+
+    
+    function _hasActiveStats($aRow)
+    {
+        foreach ($this->aPlugins as $oPlugin) {
+            if ($oPlugin->isRowActive($aRow)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    
+    function _checkStatsAccuracy()
+    {
+        $utcUpdate = OA_Dal_ApplicationVariables::get('utc_update');
+        if (!empty($utcUpdate)) {
+            $oUpdate = new Date($utcUpdate);
+            $oUpdate->setTZbyID('UTC');
+            
+            $oUpdate->addSeconds(43200);
+            if (!empty($this->aDates['day_begin']) && !empty($this->aDates['day_end'])) {
+                $startDate = new Date($this->aDates['day_begin']);
+                $endDate   = new Date($this->aDates['day_end']);
+
+                if ($oUpdate->after($endDate) || $oUpdate->after($startDate)) {
+                    $this->displayInaccurateStatsWarning = true;
+                }
+            } else {
+                
+                $this->displayInaccurateStatsWarning = true;
+            }
+        }
+    }
+
+    function showInaccurateStatsWarning()
+    {
+        
+    }
+
+}
+
+?>

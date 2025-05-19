@@ -1,0 +1,291 @@
+<?php
+
+class Convert extends Object {
+	
+	static function raw2att($val) {
+		if(is_array($val)) {
+			foreach($val as $k => $v) $val[$k] = self::raw2att($v);
+			return $val;
+			
+		} else {
+			return str_replace(array('&','"',"'",'<','>'),array('&amp;','&quot;','&
+		}
+	}
+	
+	
+	static function raw2htmlatt($val) {
+		if(is_array($val)) {
+			foreach($val as $k => $v) $val[$k] = self::raw2att($v);
+			return $val;
+			
+		} else {
+			$val = str_replace(array('&','"',"'",'<','>'),array('&amp;','&quot;','&
+			$val = preg_replace('/[^a-zA-Z0-9\-_]*/','', $val);
+			return $val;
+		}
+	}
+	
+	
+	static function raw2xml($val) {
+		if(is_array($val)) {
+			foreach($val as $k => $v) $val[$k] = self::raw2xml($v);
+			return $val;
+		} else {
+			return str_replace(array('&', '<', '>', "\n"), array('&amp;', '&lt;', '&gt;', '<br />'), $val);
+		}
+	}
+	
+	
+	static function raw2js($val) {
+		if(is_array($val)) {
+			foreach($val as $k => $v) $val[$k] = self::raw2js($v);
+			return $val;
+		} else {
+			return str_replace(array("\\", '"', "\n", "\r", "'"), array("\\\\", '\"', '\n', '\r', "\\'"), $val);
+		}
+	}
+	
+	
+	static function raw2json($val) {
+		if(function_exists('json_encode')) {
+			return json_encode($val);	
+		} else {
+			$json = new Services_JSON();
+			return $json->encode($val);
+		}
+	}
+	
+	
+	static function raw2sql($val) {
+		if(is_array($val)) {
+			foreach($val as $k => $v) $val[$k] = self::raw2sql($v);
+			return $val;
+			
+		} else {
+			return addslashes($val);
+		}
+	}
+
+	
+	static function xml2raw($val) {
+		if(is_array($val)) {
+			foreach($val as $k => $v) $val[$k] = self::xml2raw($v);
+			return $val;
+			
+		} else {
+
+			
+			if(strpos($val,'<') !== false) return self::html2raw($val);
+			
+			
+			else {
+				$converted = str_replace(array('&amp;', '&lt;', '&gt;'), array('&', '<', '>'), $val);
+				$converted = ereg_replace('&
+				return $converted;
+			}
+		}
+	}
+	
+	
+	static function xml2js($val) {		
+		return self::raw2js(self::html2raw($val));
+	}
+	
+	
+	static function xml2att($val) {		
+		return self::raw2att(self::xml2raw($val));
+	}
+	
+	
+	static function xml2sql($val) {		
+		return self::raw2sql(self::xml2raw($val));
+	}
+	
+	
+	static function js2raw($val) {
+		if(is_array($val)) {
+			foreach($val as $k => $v) $val[$k] = self::js2raw($v);
+			return $val;
+			
+		} else {
+			return str_replace(array('\"','\n','\r'), array('"',"\n","\r"), $val);
+		}
+	}
+	
+	
+	static function js2xml($val) {		
+		return self::raw2xml(self::js2raw($val));
+	}
+	
+	
+	static function js2att($val) {		
+		return self::raw2att(self::js2raw($val));
+	}
+	
+	
+	static function js2sql($val) {		
+		return self::raw2sql(self::js2raw($val));
+	}
+	
+	
+	static function json2obj($val) {
+		
+		
+		
+			$json = new Services_JSON();
+			return $json->decode($val);
+		
+	}
+
+	
+	static function json2array($val) {
+		$json = self::json2obj($val);
+		$arr = array();
+		foreach($json as $k => $v) {
+			$arr[$k] = $v;
+		}
+		return $arr;
+	}
+	
+	
+	static function xml2array($val) {
+		$xml = new SimpleXMLElement($val);
+		return self::recursiveXMLToArray($xml);
+	}
+	
+	protected static function recursiveXMLToArray($xml) {
+		if(is_object($xml) && get_class($xml) == 'SimpleXMLElement') {
+	       $attributes = $xml->attributes();
+	       foreach($attributes as $k=>$v) {
+	           if ($v) $a[$k] = (string) $v;
+	       }
+	       $x = $xml;
+	       $xml = get_object_vars($xml);
+	   }
+	   if (is_array($xml)) {
+	       if (count($xml) == 0) return (string) $x; 
+	       foreach($xml as $key=>$value) {
+	           $r[$key] = self::recursiveXMLToArray($value);
+	       }
+	       if (isset($a)) $r['@'] = $a;    
+	       return $r;
+	   }
+	   return (string) $xml;
+	}
+
+	static function array2json( $array ) {
+		if(function_exists("json_encode")) {
+			return json_encode($array);
+		}
+		$result = array();
+		
+		foreach( $array as $key => $value )
+			if( is_array( $value ) )
+				$result[] = "'$key':" . Convert::array2json( $value );
+			else
+				$result[] = "'$key':'$value'";
+			
+		return '{' . implode( ', ', $result ) . '}';
+	}
+	
+
+	
+	
+	static function linkIfMatch($string) {
+		if( preg_match( '/^[a-z+]+\:\/\/[a-zA-Z0-9$-_.+?&=!*\'()%]+$/', $string ) )
+			return "<a style=\"white-space: nowrap\" href=\"$string\">$string</a>";
+		else
+			return $string;
+	}
+	
+	
+	
+	
+	
+	static function html2raw($data, $preserveLinks = false, $wordWrap = 60, $config = null) {
+		$defaultConfig = array(
+			'PreserveLinks' => false,
+			'ReplaceBoldAsterisk' => true,
+			'CompressWhitespace' => true,
+			'ReplaceImagesWithAlt' => true,
+		);
+		if(isset($config)) {
+			$config = array_merge($defaultConfig,$config);
+		} else {
+			$config = $defaultConfig;
+		}
+
+		
+		
+		
+		
+		$data = preg_replace("/<style(^A-Za-z0-9>][^>]*)?>.*?<\/style[^>]*>/i","", $data);
+		$data = preg_replace("/<script(^A-Za-z0-9>][^>]*)?>.*?<\/script[^>]*>/i","", $data);
+		
+		if($config['ReplaceBoldAsterisk']) {
+			$data = str_ireplace(
+				array('<strong>','</strong>','<b>','</b>'),
+				'*',
+				$data
+			);
+		}
+		
+		if( !$preserveLinks && !isset($config['PreserveLink'])) {
+			$data = preg_replace('/<a[^>]*href\s*=\s*"([^"]*)">(.*?)<\/a>/ie', "Convert::html2raw('\\2').'[\\1]'", $data);
+			$data = preg_replace('/<a[^>]*href\s*=\s*([^ ]*)>(.*?)<\/a>/ie', "Convert::html2raw('\\2').'[\\1]'", $data);
+			
+			
+			
+		}
+	
+		
+		if($config['ReplaceImagesWithAlt']) {
+			$data = eregi_replace('<img[^>]*alt *= *"([^"]*)"[^>]*>', ' \\1 ', $data);
+			$data = eregi_replace('<img[^>]*alt *= *([^ ]*)[^>]*>', ' \\1 ', $data);
+		}
+	
+		
+		if($config['CompressWhitespace']) {
+			$data = ereg_replace("[\n\r\t ]+", " ", $data);
+		}
+		
+		
+		$data = ereg_replace("[ \n\r\t]*<[Hh][1-6]([^A-Za-z0-9>][^>]*)?> *", "\n\n", $data);
+		$data = ereg_replace("[ \n\r\t]*<[Pp]([^A-Za-z0-9>][^>]*)?> *", "\n\n", $data);
+		$data = ereg_replace("[ \n\r\t]*<[Dd][Ii][Vv]([^A-Za-z0-9>][^>]*)?> *", "\n\n", $data);
+		$data = ereg_replace("\n\n\n+","\n\n", $data);
+		
+		$data = ereg_replace("<[Bb][Rr]([^A-Za-z0-9>][^>]*)?> *", "\n", $data);
+		$data = ereg_replace("<[Tt][Rr]([^A-Za-z0-9>][^>]*)?> *", "\n", $data);
+		$data = ereg_replace("</[Tt][Dd]([^A-Za-z0-9>][^>]*)?> *", "    ", $data);
+		$data = preg_replace('/<\/p>/i', "\n\n", $data );
+		
+	
+		
+		
+		
+		$data = html_entity_decode($data, ENT_COMPAT , 'UTF-8');
+		
+		
+		
+		
+		if( !$preserveLinks ) {
+			$data = preg_replace('/<\/?[^>]*>/','', $data);
+		} else {
+			$data = strip_tags($data, '<a>');
+		}
+		return trim(wordwrap(trim($data), $wordWrap));
+	}
+	
+	
+	static function raw2mailto($data) {
+		return str_ireplace(
+			array("\n",'?','=',' ','(',')','&','@','"','\'',';'),
+			array('%0A','%3F','%3D','%20','%28','%29','%26','%40','%22','%27','%3B'),
+			$data
+		);
+	}
+
+}
+
+?>

@@ -1,0 +1,102 @@
+<?php
+
+
+
+class Horde_Text_Filter_Xss extends Horde_Text_Filter_Base
+{
+    
+    protected $_params = array(
+        'charset' => 'UTF-8',
+        'noprefetch' => false,
+        'return_document' => false,
+        'return_dom' => false,
+        'strip_styles' => true,
+        'strip_style_attributes' => true
+    );
+
+    
+    public function postProcess($text)
+    {
+        $dom = new Horde_Domhtml($text, $this->_params['charset']);
+
+        foreach ($dom as $node) {
+            $this->_node($node);
+        }
+
+        if ($this->_params['noprefetch']) {
+            $meta = $dom->dom->createElement('meta');
+            $meta->setAttribute('http-equiv', 'x-dns-prefetch-control');
+            $meta->setAttribute('value-equiv', 'off');
+
+            $head = $dom->getHead();
+            $head->appendChild($meta);
+        }
+
+        if ($this->_params['return_dom']) {
+            return $dom;
+        }
+
+        return $this->_params['return_document']
+            ? $dom->returnHtml()
+            : $dom->returnBody();
+    }
+
+    
+    protected function _node($node)
+    {
+        if ($node instanceof DOMElement) {
+            $remove = $this->_params['strip_style_attributes']
+                ? array('style')
+                : array();
+
+            switch (Horde_String::lower($node->tagName)) {
+            case 'a':
+            case 'form':
+                
+                $node->parentNode->removeChild($node);
+                break;
+
+            case 'base':
+            case 'link':
+            case 'style':
+                
+                if ($this->_params['strip_styles']) {
+                    $node->parentNode->removeChild($node);
+                }
+                break;
+
+            case 'html':
+                if ($node->hasAttribute('manifest')) {
+                    $remove[] = 'manifest';
+                }
+                break;
+
+            case 'set':
+                
+                if ($node->hasAttribute('attributename') &&
+                    (strcasecmp($node->getAttribute('attributename'), 'innerHTML') === 0)) {
+                    $node->parentNode->removeChild($node);
+                }
+                break;
+            }
+
+            foreach ($node->attributes as $val) {
+                
+                if ((stripos(ltrim($val->name), 'on') === 0) ||
+                    preg_match("/^\s*(?:mocha:|[^:]+script:|&{)/i", $val->value)) {
+                    $remove[] = $val->name;
+                }
+            }
+
+            foreach ($remove as $val) {
+                $node->removeAttribute($val);
+            }
+        } elseif ($node instanceof DOMComment) {
+            
+            if ($this->_params['strip_styles']) {
+                $node->parentNode->removeChild($node);
+            }
+        }
+    }
+
+}

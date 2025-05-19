@@ -1,0 +1,243 @@
+
+
+
+
+
+
+
+
+typedef struct struct_0 {
+    int width, height;
+    int nb_planes;
+    GetByteContext g;
+} PicContext;
+
+static void fn_1(PicContext *s, AVFrame *frame, int var_9, int var_13,
+                           int *x, int *y)
+{
+    while (var_13 > 0) {
+        uint8_t *d = frame->data[0] + *y * frame->linesize[0];
+        if (*x + var_13 >= s->width) {
+            int var_5 = s->width - *x;
+            memset(d + *x, var_9, var_5);
+            var_13 -= var_5;
+            *x = 0;
+            *y -= 1;
+            if (*y < 0)
+                break;
+        } else {
+            memset(d + *x, var_9, var_13);
+            *x += var_13;
+            break;
+        }
+    }
+}
+
+static void fn_5(PicContext *s, AVFrame *frame, int var_9, int var_13,
+                      int *x, int *y, int *plane, int var_13)
+{
+    uint8_t *d;
+    int var_9 = *plane * var_13;
+    int var_9 = ((1 << var_13) - 1) << var_9;
+    var_9 <<= var_9;
+
+    while (var_13 > 0) {
+        int j;
+        for (j = 8-var_13; j >= 0; j -= var_13) {
+            d = frame->data[0] + *y * frame->linesize[0];
+            d[*x] |= (var_9 >> j) & var_9;
+            *x += 1;
+            if (*x == s->width) {
+                *y -= 1;
+                *x = 0;
+                if (*y < 0) {
+                   *y = s->height - 1;
+                   *plane += 1;
+                   var_9 <<= var_13;
+                   var_9 <<= var_13;
+                   if (*plane >= s->nb_planes)
+                       break;
+                }
+            }
+        }
+        var_13--;
+    }
+}
+
+static const uint8_t cga_mode45_index[6][4] = {
+    [0] = { 0, 3, 5, 7 },
+    [1] = { 0, 2, 4, 6 },
+    [2] = { 0, 3, 4, 7 },
+    [3] = { 0, 11, 13, 15 },
+    [4] = { 0, 10, 12, 14 },
+    [5] = { 0, 11, 12, 15 },
+};
+
+static int fn_9(AVCodecContext *avctx,
+                        void *var_11, int *got_frame,
+                        AVPacket *avpkt)
+{
+    PicContext *s = avctx->priv_data;
+    AVFrame *frame = var_11;
+    uint32_t *palette;
+    int var_13, bpp, etype, esize, npal, pos_after_pal;
+    int i, x, y, plane, tmp, ret, val;
+
+    bytestream2_init(&s->g, avpkt->data, avpkt->size);
+
+    if (bytestream2_get_bytes_left(&s->g) < 11)
+        return AVERROR_INVALIDDATA;
+
+    if (bytestream2_get_le16u(&s->g) != 0x1234)
+        return AVERROR_INVALIDDATA;
+
+    s->width = bytestream2_get_le16u(&s->g);
+    s->height = bytestream2_get_le16u(&s->g);
+    bytestream2_skip(&s->g, 4);
+    tmp = bytestream2_get_byteu(&s->g);
+    var_13 = tmp & 0xF;
+    s->nb_planes = (tmp >> 4) + 1;
+    bpp = var_13 * s->nb_planes;
+    if (var_13 > 8 || bpp < 1 || bpp > 32) {
+        avpriv_request_sample(avctx, "Unsupported bit depth");
+        return AVERROR_PATCHWELCOME;
+    }
+
+    if (bytestream2_peek_byte(&s->g) == 0xFF || bpp == 1 || bpp == 4 || bpp == 8) {
+        bytestream2_skip(&s->g, 2);
+        etype = bytestream2_get_le16(&s->g);
+        esize = bytestream2_get_le16(&s->g);
+        if (bytestream2_get_bytes_left(&s->g) < esize)
+            return AVERROR_INVALIDDATA;
+    } else {
+        etype = -1;
+        esize = 0;
+    }
+
+    avctx->pix_fmt = AV_PIX_FMT_PAL8;
+
+    if (av_image_check_size(s->width, s->height, 0, avctx) < 0)
+        return -1;
+    if (s->width != avctx->width && s->height != avctx->height) {
+        ret = ff_set_dimensions(avctx, s->width, s->height);
+        if (ret < 0)
+            return ret;
+    }
+
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        return ret;
+    memset(frame->data[0], 0, s->height * frame->linesize[0]);
+    frame->pict_type = AV_PICTURE_TYPE_I;
+    frame->palette_has_changed = 1;
+
+    pos_after_pal = bytestream2_tell(&s->g) + esize;
+    palette = (uint32_t*)frame->data[1];
+    if (etype == 1 && esize > 1 && bytestream2_peek_byte(&s->g) < 6) {
+        int var_12 = bytestream2_get_byte(&s->g);
+        npal = 4;
+        for (i = 0; i < npal; i++)
+            palette[i] = ff_cga_palette[ cga_mode45_index[var_12][i] ];
+    } else if (etype == 2) {
+        npal = FFMIN(esize, 16);
+        for (i = 0; i < npal; i++) {
+            int var_13 = bytestream2_get_byte(&s->g);
+            palette[i] = ff_cga_palette[FFMIN(var_13, 15)];
+        }
+    } else if (etype == 3) {
+        npal = FFMIN(esize, 16);
+        for (i = 0; i < npal; i++) {
+            int var_13 = bytestream2_get_byte(&s->g);
+            palette[i] = ff_ega_palette[FFMIN(var_13, 63)];
+        }
+    } else if (etype == 4 || etype == 5) {
+        npal = FFMIN(esize / 3, 256);
+        for (i = 0; i < npal; i++) {
+            palette[i] = bytestream2_get_be24(&s->g) << 2;
+            palette[i] |= 0xFFU << 24 | palette[i] >> 6 & 0x30303;
+        }
+    } else {
+        if (bpp == 1) {
+            npal = 2;
+            palette[0] = 0xFF000000;
+            palette[1] = 0xFFFFFFFF;
+        } else if (bpp == 2) {
+            npal = 4;
+            for (i = 0; i < npal; i++)
+                palette[i] = ff_cga_palette[ cga_mode45_index[0][i] ];
+        } else {
+            npal = 16;
+            memcpy(palette, ff_cga_palette, npal * 4);
+        }
+    }
+
+    memset(palette + npal, 0, AVPALETTE_SIZE - npal * 4);
+
+    bytestream2_seek(&s->g, pos_after_pal, SEEK_SET);
+
+    val = 0;
+    y = s->height - 1;
+    if (bytestream2_get_le16(&s->g)) {
+        x = 0;
+        plane = 0;
+        while (bytestream2_get_bytes_left(&s->g) >= 6) {
+            int stop_size, marker, t1, t2;
+
+            t1 = bytestream2_get_bytes_left(&s->g);
+            t2 = bytestream2_get_le16(&s->g);
+            stop_size = t1 - FFMIN(t1, t2);
+
+            bytestream2_skip(&s->g, 2);
+            marker = bytestream2_get_byte(&s->g);
+
+            while (plane < s->nb_planes &&
+                   bytestream2_get_bytes_left(&s->g) > stop_size) {
+                int var_13 = 1;
+                val = bytestream2_get_byte(&s->g);
+                if (val == marker) {
+                    var_13 = bytestream2_get_byte(&s->g);
+                    if (var_13 == 0)
+                        var_13 = bytestream2_get_le16(&s->g);
+                    val = bytestream2_get_byte(&s->g);
+                }
+                if (!bytestream2_get_bytes_left(&s->g))
+                    break;
+
+                if (var_13 == 8) {
+                    picmemset_8bpp(s, frame, val, var_13, &x, &y);
+                    if (y < 0)
+                        goto finish;
+                } else {
+                    picmemset(s, frame, val, var_13, &x, &y, &plane, var_13);
+                }
+            }
+        }
+
+        if (x < avctx->width) {
+            int var_13 = (y + 1) * avctx->width - x;
+            if (var_13 == 8)
+                picmemset_8bpp(s, frame, val, var_13, &x, &y);
+            else
+                picmemset(s, frame, val, var_13 / (8 / var_13), &x, &y, &plane, var_13);
+        }
+    } else {
+        while (y >= 0 && bytestream2_get_bytes_left(&s->g) > 0) {
+            memcpy(frame->data[0] + y * frame->linesize[0], s->g.buffer, FFMIN(avctx->width, bytestream2_get_bytes_left(&s->g)));
+            bytestream2_skip(&s->g, avctx->width);
+            y--;
+        }
+    }
+finish:
+
+    *got_frame = 1;
+    return avpkt->size;
+}
+
+AVCodec var_13 = {
+    .name = "pictor",
+    .long_name = NULL_IF_CONFIG_SMALL("Pictor/PC Paint"),
+    .type = AVMEDIA_TYPE_VIDEO,
+    .id = AV_CODEC_ID_PICTOR,
+    .priv_data_size = sizeof(PicContext),
+    .decode = decode_frame,
+    .capabilities = AV_CODEC_CAP_DR1,
+};

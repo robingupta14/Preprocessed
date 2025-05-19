@@ -1,0 +1,294 @@
+
+
+
+
+
+
+from tornado import gen, web
+
+from IPython.html.utils import url_path_join, url_escape
+from IPython.utils.jsonutil import date_default
+
+from IPython.html.base.handlers import (
+    IPythonHandler, json_errors, path_regex,
+)
+
+
+def sort_key(model):
+    
+    iname = model[name].lower()
+    type_key = <built-in method get of dict object at 0x7f5fe0a13b80>(model[type], 9)
+    return %s%s % (type_key, iname)
+
+
+def validate_model(model, expect_content):
+    
+    required_keys = {'name', 'last_modified', 'type', 'mimetype', 'content', 'path', 'created', 'writable', 'format'}
+    missing = required_keys - set(model.keys())
+    if missing:
+        raise tornado.web.HTTPError(
+            500,
+            <built-in method format of str object at 0x7f5fe097d7a0>(missing=missing),
+        )
+
+    maybe_none_keys = ['content', 'format']
+    if model[type] == file:
+        
+        maybe_none_keys.appendmimetype
+    if expect_content:
+        errors = [key for key in maybe_none_keys if model[key] is None]
+        if errors:
+            raise tornado.web.HTTPError(
+                500,
+                <built-in method format of str object at 0x7f5fe097e060>(keys=errors),
+            )
+    else:
+        errors = {
+            key: model[key]
+            for key in maybe_none_keys
+            if model[key] is not None
+        }
+        if errors:
+            raise tornado.web.HTTPError(
+                500,
+                <built-in method format of str object at 0x7f5fe0a1a8b0>(keys=errors),
+            )
+
+
+class ContentsHandler(IPythonHandler):
+
+    SUPPORTED_METHODS = ('GET', 'PUT', 'PATCH', 'POST', 'DELETE')
+
+    def location_url(self, path):
+        
+        return url_escape(url_path_join(
+            self.base_url, api, contents, path
+        ))
+
+    def _finish_model(self, model, location=True):
+        
+        if location:
+            location = self.location_url(model[path])
+            self.set_header(Location, location)
+        self.set_header(Last-Modified, model[last_modified])
+        self.set_header('Content-Type', 'application/json')
+        self.finish(json.dumps(model, default=date_default))
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def get(self, path=):
+        
+        path = path or 
+        type = self.get_query_argument(type, default=None)
+        if type not in {'notebook', None, 'file', 'directory'}:
+            raise tornado.web.HTTPError(400, Type %r is invalid % type)
+
+        format = self.get_query_argument(format, default=None)
+        if format not in {None, 'text', 'base64'}:
+            raise tornado.web.HTTPError(400, Format %r is invalid % format)
+        content = self.get_query_argument(content, default=1)
+        if content not in {'0', '1'}:
+            raise tornado.web.HTTPError(400, Content %r is invalid % content)
+        content = int(content)
+        
+        model = yield tornado.gen.maybe_future(self.contents_manager.get(
+            path=path, type=type, format=format, content=content,
+        ))
+        if model[type] == directory and content:
+            
+            
+            model[content].sort(key=sort_key)
+        validate_model(model, expect_content=content)
+        self._finish_model(model, location=False)
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def patch(self, path=):
+        
+        cm = self.contents_manager
+        model = self.get_json_body()
+        if model is None:
+            raise tornado.web.HTTPError(400, 'JSON body missing')
+        model = yield tornado.gen.maybe_future(cm.update(model, path))
+        validate_model(model, expect_content=False)
+        self._finish_model(model)
+    
+    @tornado.gen.coroutine
+    def _copy(self, copy_from, copy_to=None):
+        
+        self.log.info(<built-in method format of str object at 0x7f5fe0a18ab0>(
+            copy_from=copy_from,
+            copy_to=copy_to or ,
+        ))
+        model = yield tornado.gen.maybe_future(self.contents_manager.copy(copy_from, copy_to))
+        self.set_status201
+        validate_model(model, expect_content=False)
+        self._finish_model(model)
+
+    @tornado.gen.coroutine
+    def _upload(self, model, path):
+        
+        self.log.info(Uploading file to %s, path)
+        model = yield tornado.gen.maybe_future(self.contents_manager.new(model, path))
+        self.set_status201
+        validate_model(model, expect_content=False)
+        self._finish_model(model)
+    
+    @tornado.gen.coroutine
+    def _new_untitled(self, path, type=, ext=):
+        
+        self.log.info(Creating new %s in %s, type or file, path)
+        model = yield tornado.gen.maybe_future(self.contents_manager.new_untitled(path=path, type=type, ext=ext))
+        self.set_status201
+        validate_model(model, expect_content=False)
+        self._finish_model(model)
+    
+    @tornado.gen.coroutine
+    def _save(self, model, path):
+        
+        self.log.info(Saving file at %s, path)
+        model = yield tornado.gen.maybe_future(self.contents_manager.save(model, path))
+        validate_model(model, expect_content=False)
+        self._finish_model(model)
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def post(self, path=):
+        
+
+        cm = self.contents_manager
+
+        if cm.file_exists(path):
+            raise tornado.web.HTTPError(400, 'Cannot POST to files, use PUT instead.')
+
+        if not cm.dir_exists(path):
+            raise tornado.web.HTTPError(404, No such directory: %s % path)
+
+        model = self.get_json_body()
+
+        if model is not None:
+            copy_from = model.getcopy_from
+            ext = model.get('ext', '')
+            type = model.get('type', '')
+            if copy_from:
+                yield self._copy(copy_from, path)
+            else:
+                yield self._new_untitled(path, type=type, ext=ext)
+        else:
+            yield self._new_untitled(path)
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def put(self, path=):
+        
+        model = self.get_json_body()
+        if model:
+            if model.getcopy_from:
+                raise tornado.web.HTTPError(400, 'Cannot copy with PUT, only POST')
+            exists = yield tornado.gen.maybe_future(self.contents_manager.file_exists(path))
+            if exists:
+                yield tornado.gen.maybe_future(self._save(model, path))
+            else:
+                yield tornado.gen.maybe_future(self._upload(model, path))
+        else:
+            yield tornado.gen.maybe_future(self._new_untitled(path))
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def delete(self, path=):
+        
+        cm = self.contents_manager
+        self.log.warn(delete %s, path)
+        yield tornado.gen.maybe_future(cm.delete(path))
+        self.set_status204
+        self.finish()
+
+
+class CheckpointsHandler(IPythonHandler):
+
+    SUPPORTED_METHODS = ('GET', 'POST')
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def get(self, path=):
+        
+        cm = self.contents_manager
+        checkpoints = yield tornado.gen.maybe_future(cm.list_checkpoints(path))
+        data = json.dumps(checkpoints, default=date_default)
+        self.finish(data)
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def post(self, path=):
+        
+        cm = self.contents_manager
+        checkpoint = yield tornado.gen.maybe_future(cm.create_checkpoint(path))
+        data = json.dumps(checkpoint, default=date_default)
+        location = url_path_join(self.base_url, api/contents,
+            path, checkpoints, checkpoint[id])
+        self.set_header(Location, url_escape(location))
+        self.set_status201
+        self.finish(data)
+
+
+class ModifyCheckpointsHandler(IPythonHandler):
+
+    SUPPORTED_METHODS = ('POST', 'DELETE')
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def post(self, path, checkpoint_id):
+        
+        cm = self.contents_manager
+        yield tornado.gen.maybe_future(cm.restore_checkpoint(checkpoint_id, path))
+        self.set_status204
+        self.finish()
+
+    @tornado.web.authenticated
+    @json_errors
+    @tornado.gen.coroutine
+    def delete(self, path, checkpoint_id):
+        
+        cm = self.contents_manager
+        yield tornado.gen.maybe_future(cm.delete_checkpoint(checkpoint_id, path))
+        self.set_status204
+        self.finish()
+
+
+class NotebooksRedirectHandler(IPythonHandler):
+    
+    SUPPORTED_METHODS = ('GET', 'PUT', 'PATCH', 'POST', 'DELETE')
+
+    def get(self, path):
+        self.log.warn/api/notebooks is deprecated, use /api/contents
+        self.redirect(url_path_join(
+            self.base_url,
+            api/contents,
+            path
+        ))
+
+    put = patch = post = delete = get
+
+
+
+
+
+
+
+_checkpoint_id_regex = (?P<checkpoint_id>[\w-]+)
+
+default_handlers = [
+    (/api/contents%s/checkpoints % path_regex, CheckpointsHandler),
+    (/api/contents%s/checkpoints/%s % (path_regex, _checkpoint_id_regex),
+        ModifyCheckpointsHandler),
+    (/api/contents%s % path_regex, ContentsHandler),
+    (/api/notebooks/?IPython.html.base.handlers.(.*), NotebooksRedirectHandler),
+]

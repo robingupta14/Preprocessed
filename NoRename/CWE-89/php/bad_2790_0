@@ -1,0 +1,1067 @@
+<?php
+
+
+
+
+
+$action=GETPOST('action','aZ09');
+
+$langs->load("admin");
+$langs->load("companies");
+
+if (! $user->admin) accessforbidden();
+
+$error=0;
+
+
+
+if ( ($action == 'update' && empty($_POST["cancel"]))
+|| ($action == 'updateedit') )
+{
+	$tmparray=getCountry(GETPOST('country_id','int'),'all',$db,$langs,0);
+	if (! empty($tmparray['id']))
+	{
+		$mysoc->country_id   =$tmparray['id'];
+		$mysoc->country_code =$tmparray['code'];
+		$mysoc->country_label=$tmparray['label'];
+
+		$s=$mysoc->country_id.':'.$mysoc->country_code.':'.$mysoc->country_label;
+		dolibarr_set_const($db, "MAIN_INFO_SOCIETE_COUNTRY", $s,'chaine',0,'',$conf->entity);
+	}
+
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_NOM",$_POST["nom"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_ADDRESS",$_POST["address"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_TOWN",$_POST["town"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_ZIP",$_POST["zipcode"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_STATE",$_POST["state_id"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_MONNAIE",$_POST["currency"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_TEL",$_POST["tel"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_FAX",$_POST["fax"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_MAIL",$_POST["mail"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_WEB",$_POST["web"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_NOTE",$_POST["note"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_GENCOD",$_POST["barcode"],'chaine',0,'',$conf->entity);
+	
+	$varforimage='logo'; $dirforimage=$conf->mycompany->dir_output.'/logos/';
+	if ($_FILES[$varforimage]["tmp_name"])
+	{
+		if (preg_match('/([^\\/:]+)$/i',$_FILES[$varforimage]["name"],$reg))
+		{
+			$original_file=$reg[1];
+
+			$isimage=image_format_supported($original_file);
+			if ($isimage >= 0)
+			{
+				dol_syslog("Move file ".$_FILES[$varforimage]["tmp_name"]." to ".$dirforimage.$original_file);
+				if (! is_dir($dirforimage))
+				{
+					dol_mkdir($dirforimage);
+				}
+				$result=dol_move_uploaded_file($_FILES[$varforimage]["tmp_name"],$dirforimage.$original_file,1,0,$_FILES[$varforimage]['error']);
+				if ($result > 0)
+				{
+					dolibarr_set_const($db, "MAIN_INFO_SOCIETE_LOGO",$original_file,'chaine',0,'',$conf->entity);
+
+					
+					if ($isimage > 0)
+					{
+					    
+					    
+					    	
+						
+						$imgThumbSmall = vignette($dirforimage.$original_file, $maxwidthsmall, $maxheightsmall, '_small', $quality);
+						if (image_format_supported($imgThumbSmall) >= 0 && preg_match('/([^\\/:]+)$/i',$imgThumbSmall,$reg))
+						{
+							$imgThumbSmall = $reg[1];    
+							dolibarr_set_const($db, "MAIN_INFO_SOCIETE_LOGO_SMALL",$imgThumbSmall,'chaine',0,'',$conf->entity);
+						}
+						else dol_syslog($imgThumbSmall);
+
+						
+						$imgThumbMini = vignette($dirforimage.$original_file, $maxwidthmini, $maxheightmini, '_mini', $quality);
+						if (image_format_supported($imgThumbMini) >= 0 && preg_match('/([^\\/:]+)$/i',$imgThumbMini,$reg))
+						{
+							$imgThumbMini = $reg[1];     
+							dolibarr_set_const($db, "MAIN_INFO_SOCIETE_LOGO_MINI",$imgThumbMini,'chaine',0,'',$conf->entity);
+						}
+						else dol_syslog($imgThumbMini);
+					}
+					else dol_syslog("ErrorImageFormatNotSupported",LOG_WARNING);
+				}
+				else if (preg_match('/^ErrorFileIsInfectedWithAVirus/',$result))
+				{
+					$error++;
+					$langs->load("errors");
+					$tmparray=explode(':',$result);
+					setEventMessages($langs->trans('ErrorFileIsInfectedWithAVirus',$tmparray[1]), null, 'errors');
+				}
+				else
+				{
+					$error++;
+					setEventMessages($langs->trans("ErrorFailedToSaveFile"), null, 'errors');
+				}
+			}
+			else
+			{
+				$error++;
+				$langs->load("errors");
+				setEventMessages($langs->trans("ErrorBadImageFormat"), null, 'errors');
+			}
+		}
+	}
+	
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_MANAGERS",$_POST["MAIN_INFO_SOCIETE_MANAGERS"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_CAPITAL",$_POST["capital"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_FORME_JURIDIQUE",$_POST["forme_juridique_code"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SIREN",$_POST["siren"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SIRET",$_POST["siret"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_APE",$_POST["ape"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_RCS",$_POST["rcs"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_PROFID5",$_POST["MAIN_INFO_PROFID5"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_PROFID6",$_POST["MAIN_INFO_PROFID6"],'chaine',0,'',$conf->entity);
+
+	dolibarr_set_const($db, "MAIN_INFO_TVAINTRA",$_POST["tva"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "MAIN_INFO_SOCIETE_OBJECT",$_POST["object"],'chaine',0,'',$conf->entity);
+
+	dolibarr_set_const($db, "SOCIETE_FISCAL_MONTH_START",$_POST["fiscalmonthstart"],'chaine',0,'',$conf->entity);
+
+	dolibarr_set_const($db, "FACTURE_TVAOPTION",$_POST["optiontva"],'chaine',0,'',$conf->entity);
+
+	
+	dolibarr_set_const($db, "FACTURE_LOCAL_TAX1_OPTION",$_POST["optionlocaltax1"],'chaine',0,'',$conf->entity);
+	dolibarr_set_const($db, "FACTURE_LOCAL_TAX2_OPTION",$_POST["optionlocaltax2"],'chaine',0,'',$conf->entity);
+
+	if($_POST["optionlocaltax1"]=="localtax1on")
+	{
+		if(!isset($_REQUEST['lt1']))
+		{
+			dolibarr_set_const($db, "MAIN_INFO_VALUE_LOCALTAX1", 0,'chaine',0,'',$conf->entity);
+		}
+		else
+		{
+			dolibarr_set_const($db, "MAIN_INFO_VALUE_LOCALTAX1", GETPOST('lt1'),'chaine',0,'',$conf->entity);
+		}
+		dolibarr_set_const($db,"MAIN_INFO_LOCALTAX_CALC1", $_POST["clt1"],'chaine',0,'',$conf->entity);
+	}
+	if($_POST["optionlocaltax2"]=="localtax2on")
+	{
+		if(!isset($_REQUEST['lt2']))
+		{
+			dolibarr_set_const($db, "MAIN_INFO_VALUE_LOCALTAX2", 0,'chaine',0,'',$conf->entity);
+		}
+		else
+		{
+			dolibarr_set_const($db, "MAIN_INFO_VALUE_LOCALTAX2", GETPOST('lt2'),'chaine',0,'',$conf->entity);
+		}
+		dolibarr_set_const($db,"MAIN_INFO_LOCALTAX_CALC2", $_POST["clt2"],'chaine',0,'',$conf->entity);
+	}
+
+	if ($action != 'updateedit' && ! $error)
+	{
+		header("Location: ".$_SERVER["PHP_SELF"]);
+		exit;
+	}
+}
+
+if ($action == 'addthumb')  
+{
+	if (file_exists($conf->mycompany->dir_output.'/logos/'.$_GET["file"]))
+	{
+		$isimage=image_format_supported($_GET["file"]);
+
+		
+		if ($isimage > 0)
+		{
+		    
+		    
+
+			
+			$imgThumbSmall = vignette($conf->mycompany->dir_output.'/logos/'.$_GET["file"], $maxwidthsmall, $maxheightsmall, '_small',$quality);
+			if (image_format_supported($imgThumbSmall) >= 0 && preg_match('/([^\\/:]+)$/i',$imgThumbSmall,$reg))
+			{
+				$imgThumbSmall = $reg[1];   
+				dolibarr_set_const($db, "MAIN_INFO_SOCIETE_LOGO_SMALL",$imgThumbSmall,'chaine',0,'',$conf->entity);
+			}
+			else dol_syslog($imgThumbSmall);
+
+			
+			$imgThumbMini = vignette($conf->mycompany->dir_output.'/logos/'.$_GET["file"], $maxwidthmini, $maxheightmini, '_mini',$quality);
+			if (image_format_supported($imgThumbSmall) >= 0 && preg_match('/([^\\/:]+)$/i',$imgThumbMini,$reg))
+			{
+				$imgThumbMini = $reg[1];   
+				dolibarr_set_const($db, "MAIN_INFO_SOCIETE_LOGO_MINI",$imgThumbMini,'chaine',0,'',$conf->entity);
+			}
+			else dol_syslog($imgThumbMini);
+
+			header("Location: ".$_SERVER["PHP_SELF"]);
+			exit;
+		}
+		else
+		{
+			$error++;
+			$langs->load("errors");
+			setEventMessages($langs->trans("ErrorBadImageFormat"), null, 'errors');
+			dol_syslog($langs->transnoentities("ErrorBadImageFormat"),LOG_WARNING);
+		}
+	}
+	else
+	{
+		$error++;
+		$langs->load("errors");
+		setEventMessages($langs->trans("ErrorFileDoesNotExists",$_GET["file"]), null, 'errors');
+		dol_syslog($langs->transnoentities("ErrorFileDoesNotExists",$_GET["file"]),LOG_WARNING);
+	}
+}
+
+if ($action == 'removelogo')
+{
+
+	$logofile=$conf->mycompany->dir_output.'/logos/'.$mysoc->logo;
+	dol_delete_file($logofile);
+	dolibarr_del_const($db, "MAIN_INFO_SOCIETE_LOGO",$conf->entity);
+	$mysoc->logo='';
+
+	$logosmallfile=$conf->mycompany->dir_output.'/logos/thumbs/'.$mysoc->logo_small;
+	dol_delete_file($logosmallfile);
+	dolibarr_del_const($db, "MAIN_INFO_SOCIETE_LOGO_SMALL",$conf->entity);
+	$mysoc->logo_small='';
+
+	$logominifile=$conf->mycompany->dir_output.'/logos/thumbs/'.$mysoc->logo_mini;
+	dol_delete_file($logominifile);
+	dolibarr_del_const($db, "MAIN_INFO_SOCIETE_LOGO_MINI",$conf->entity);
+	$mysoc->logo_mini='';
+}
+
+
+
+
+$wikihelp='EN:First_setup|FR:Premiers_paramétrages|ES:Primeras_configuraciones';
+llxHeader('',$langs->trans("Setup"),$wikihelp);
+
+$form=new Form($db);
+$formother=new FormOther($db);
+$formcompany=new FormCompany($db);
+
+$countrynotdefined='<font class="error">'.$langs->trans("ErrorSetACountryFirst").' ('.$langs->trans("SeeAbove").')</font>';
+
+
+
+
+
+
+if ($action == 'edit' || $action == 'updateedit')
+{
+	
+	
+	
+				document.form_index.submit();
+			  });
+		  });';
+	
+
+	
+	
+	
+	$var=true;
+
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+
+	
+	
+	
+
+	
+	
+	
+	
+	
+	if ($user->admin) 
+	
+
+	
+	
+	$formcompany->select_departement($conf->global->MAIN_INFO_SOCIETE_STATE,$mysoc->country_code,'state_id');
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+
+	
+	if (! empty($conf->barcode->enabled)) {
+		
+		
+		
+		
+	}
+
+	
+	
+	
+	
+	
+	
+	if (! empty($mysoc->logo_mini)) {
+		
+		if (file_exists($conf->mycompany->dir_output.'/logos/thumbs/'.$mysoc->logo_mini)) {
+			 ';
+			file='.urlencode('/thumbs/'.$mysoc->logo_mini).'">';
+		}
+	} else {
+		
+	}
+	
+	
+
+	
+	
+	
+	
+	
+
+	
+
+	
+
+	
+	
+	
+	$var=true;
+
+	$langs->load("companies");
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	if ($mysoc->country_code) {
+		
+	} else {
+		
+	}
+	
+
+	
+	if ($langs->transcountry("ProfId1",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($mysoc->country_code))
+		{
+			
+		}
+		else
+		{
+			
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId2",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($mysoc->country_code))
+		{
+			
+		}
+		else
+		{
+			
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId3",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($mysoc->country_code))
+		{
+			
+		}
+		else
+		{
+			
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId4",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($mysoc->country_code))
+		{
+			
+		}
+		else
+		{
+			
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId5",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($mysoc->country_code))
+		{
+			
+		}
+		else
+		{
+			
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId6",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($mysoc->country_code))
+		{
+			
+		}
+		else
+		{
+			
+		}
+		
+	}
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+
+
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+
+	
+
+
+	
+	
+	
+	
+	
+	</td>';
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+
+	
+	if ($mysoc->useLocalTax(1))
+	{
+		
+		
+		
+		
+		
+		</td>';
+		
+		
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax1IsUsedExample",$mysoc->country_code);
+		
+		if(! isOnlyOneLocalTax(1))
+		{
+			
+			$formcompany->select_localtax(1,$conf->global->MAIN_INFO_VALUE_LOCALTAX1, "lt1");
+		    
+		}
+
+		$opcions=array($langs->trans("CalcLocaltax1").' '.$langs->trans("CalcLocaltax1Desc"),$langs->trans("CalcLocaltax2").' - '.$langs->trans("CalcLocaltax2Desc"),$langs->trans("CalcLocaltax3").' - '.$langs->trans("CalcLocaltax3Desc"));
+
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax1IsNotUsedExample",$mysoc->country_code);
+		
+		
+		
+		
+	}
+	if ($mysoc->useLocalTax(2))
+	{
+		
+		
+		
+		
+		
+		</td>';
+		
+
+		
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax2IsUsedExample",$mysoc->country_code);
+		
+		if(! isOnlyOneLocalTax(2))
+		{
+		    
+		    $formcompany->select_localtax(2,$conf->global->MAIN_INFO_VALUE_LOCALTAX2, "lt2");
+			
+		}
+		
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax2IsNotUsedExample",$mysoc->country_code);
+		
+		
+		
+		
+	}
+
+
+	
+	
+	&nbsp;&nbsp;&nbsp;&nbsp;';
+	
+	
+	
+
+	
+}
+else
+{
+	
+
+	
+	
+	
+	
+
+	
+	
+
+	
+	
+	if (! empty($conf->global->MAIN_INFO_SOCIETE_NOM)) 
+	else 
+	
+
+	
+	
+
+	
+	
+
+	
+	
+
+	
+	
+	if ($mysoc->country_code)
+	{
+		$img=picto_from_langcode($mysoc->country_code);
+		
+		
+	}
+	else 
+	
+
+	
+	
+	if (! empty($conf->global->MAIN_INFO_SOCIETE_STATE)) 
+	else ';
+	
+
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+
+	
+	
+
+	
+	
+
+	
+	
+	
+
+	
+	if (! empty($conf->barcode->enabled))
+	{
+		
+		
+	}
+
+	
+	
+	
+
+	$tagtd='tagtd ';
+	if ($conf->browser->layout == 'phone') $tagtd='';
+	
+	
+	
+
+	
+	if (!is_file($conf->mycompany->dir_output.'/logos/thumbs/'.$mysoc->logo_mini) && preg_match('/(\.jpg|\.jpeg|\.png)$/i',$mysoc->logo))
+	{
+		file='.urlencode($mysoc->logo).'">'.img_picto($langs->trans('GenerateThumb'),'refresh').'</a>&nbsp;&nbsp;';
+	}
+	else if ($mysoc->logo_mini && is_file($conf->mycompany->dir_output.'/logos/thumbs/'.$mysoc->logo_mini))
+	{
+		file='.urlencode('/thumbs/'.$mysoc->logo_mini).'">';
+	}
+	else
+	{
+		
+	}
+	
+
+	
+
+	
+	
+
+	
+
+
+	
+
+
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+
+	
+	if ($langs->transcountry("ProfId1",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($conf->global->MAIN_INFO_SIREN))
+		{
+			
+			$s = $mysoc->id_prof_url(1,$mysoc);
+			if ($s) 
+		} else {
+			';
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId2",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($conf->global->MAIN_INFO_SIRET))
+		{
+			
+			$s = $mysoc->id_prof_url(2,$mysoc);
+			if ($s) 
+		} else {
+			';
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId3",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($conf->global->MAIN_INFO_APE))
+		{
+			
+			$s = $mysoc->id_prof_url(3,$mysoc);
+			if ($s) 
+		} else {
+			';
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId4",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($conf->global->MAIN_INFO_RCS))
+		{
+			
+			$s = $mysoc->id_prof_url(4,$mysoc);
+			if ($s) 
+		} else {
+			';
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId5",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($conf->global->MAIN_INFO_PROFID5))
+		{
+			
+			$s = $mysoc->id_prof_url(5,$mysoc);
+			if ($s) 
+		} else {
+			';
+		}
+		
+	}
+
+	
+	if ($langs->transcountry("ProfId6",$mysoc->country_code) != '-')
+	{
+		
+		
+		if (! empty($conf->global->MAIN_INFO_PROFID6))
+		{
+			
+			$s = $mysoc->id_prof_url(6,$mysoc);
+			if ($s) 
+		} else {
+			';
+		}
+		
+	}
+
+	
+	
+	
+	
+	if (! empty($conf->global->MAIN_INFO_TVAINTRA))
+	{
+		$s='';
+		$s.=$conf->global->MAIN_INFO_TVAINTRA;
+		$s.='<input type="hidden" name="tva_intra" size="12" maxlength="20" value="'.$conf->global->MAIN_INFO_TVAINTRA.'">';
+		if (empty($conf->global->MAIN_DISABLEVATCHECK) && $mysoc->isInEEC())
+		{
+			$s.=' - ';
+			if (! empty($conf->use_javascript_ajax))
+			{
+				
+				
+				
+				\n";
+				
+				
+				
+				$s.='<a href="
+				$s = $form->textwithpicto($s,$langs->trans("VATIntraCheckDesc",$langs->trans("VATIntraCheck")),1);
+			}
+			else
+			{
+				$s.='<a href="'.$langs->transcountry("VATIntraCheckURL",$soc->id_country).'" target="_blank">'.img_picto($langs->trans("VATIntraCheckableOnEUSite"),'help').'</a>';
+			}
+		}
+		
+	}
+	else
+	{
+		';
+	}
+	
+	
+	
+	
+	
+
+	
+	
+
+	
+	
+	
+	
+	
+	
+
+	
+	
+	$monthstart=(! empty($conf->global->SOCIETE_FISCAL_MONTH_START)) ? $conf->global->SOCIETE_FISCAL_MONTH_START : 1;
+	
+
+	
+
+	
+	
+	
+	
+	
+	</td>';
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+
+
+	
+	if ($mysoc->useLocalTax(1))    
+	{
+		
+		
+		
+		
+		
+		</td>';
+		
+
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax1IsUsedExample",$mysoc->country_code);
+		
+		if($conf->global->MAIN_INFO_VALUE_LOCALTAX1!=0)
+		{
+			
+		}
+		
+		if($conf->global->MAIN_INFO_LOCALTAX_CALC1==0)
+		{
+			
+		}
+		else if($conf->global->MAIN_INFO_LOCALTAX_CALC1==1)
+		{
+			
+		}
+		else if($conf->global->MAIN_INFO_LOCALTAX_CALC1==2){
+			
+		}
+
+		
+		
+		
+
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax1IsNotUsedExample",$mysoc->country_code);
+		
+		
+		
+
+		
+	}
+	if ($mysoc->useLocalTax(2))    
+	{
+		
+		
+		
+		
+		
+		</td>';
+		
+
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax2IsUsedExample",$mysoc->country_code);
+		
+		if($conf->global->MAIN_INFO_VALUE_LOCALTAX2!=0)
+		{
+			
+		}
+		
+		if($conf->global->MAIN_INFO_LOCALTAX_CALC2==0)
+		{
+			
+		}
+		else if($conf->global->MAIN_INFO_LOCALTAX_CALC2==1)
+		{
+			
+		}
+		else if($conf->global->MAIN_INFO_LOCALTAX_CALC2==2)
+		{
+			
+		}
+
+		
+		
+		
+
+		
+		
+		
+		
+		
+		$example=$langs->transcountry("LocalTax2IsNotUsedExample",$mysoc->country_code);
+		
+		
+		
+
+		
+	}
+
+
+	
+	
+	
+	
+
+	
+}
+
+
+llxFooter();
+
+$db->close();

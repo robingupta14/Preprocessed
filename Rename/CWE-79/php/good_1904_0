@@ -1,0 +1,199 @@
+<?php
+
+
+
+$var_0 = 1;
+
+
+header("Content-Type: text/html; charset=UTF-8");
+Html::header_nocache();
+
+Session::checkLoginUser();
+
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+   
+   $var_1 = file_get_contents('php:
+   parse_str($input, $_REQUEST);
+}
+
+$_REQUEST = Toolbox::clean_cross_side_scripting_deep($_REQUEST);
+
+if (!isset($_REQUEST['var_2'])) {
+   Toolbox::logError("Missing action parameter");
+   http_response_code(400);
+   return;
+}
+$var_2 = $_REQUEST['action'];
+
+$var_3 = ['update', 'bulk_add_item', 'add_item', 'move_item'];
+if (isset($_REQUEST['itemtype'])) {
+   $var_4 = class_uses($_REQUEST['itemtype'], true);
+   if (!in_array($_REQUEST['action'], $var_3) && (!$var_4 || !in_array(var_5\var_6\var_7::var_8, $var_4, true))) {
+      
+      
+      Toolbox::logError("Invalid itemtype parameter");
+      http_response_code(400);
+      return;
+   }
+   
+   $var_9 = $_REQUEST['itemtype'];
+   $var_10 = new $var_9();
+}
+
+
+if (isset($var_9)) {
+   if (in_array($var_2, ['refresh', 'get_switcher_dropdown', 'get_column'])) {
+      if (!$var_10->canView()) {
+         
+         http_response_code(403);
+         return;
+      }
+   }
+   if (in_array($var_2, ['update'])) {
+      $var_10->getFromDB($_REQUEST['items_id']);
+      if (!$var_10->canUpdateItem()) {
+         
+         http_response_code(403);
+         return;
+      }
+   }
+   if (in_array($var_2, ['bulk_add_item', 'add_item'])) {
+      if (!$var_10->canCreate()) {
+         
+         http_response_code(403);
+         return;
+      }
+   }
+}
+
+
+$var_15 = function($var_16) {
+   foreach ($var_16 as $var_17) {
+      if (!isset($_REQUEST[$var_17])) {
+         Toolbox::logError("Missing $var_17 parameter");
+         http_response_code(400);
+         die();
+      }
+   }
+};
+
+
+if ($_REQUEST['action'] == 'update') {
+   $var_15(['column_field', 'column_value']);
+   
+   $var_10->update([
+      'id'                          => $_REQUEST['items_id'],
+      $_REQUEST['column_field']     => $_REQUEST['column_value']
+   ]);
+} else if ($_REQUEST['action'] == 'add_item') {
+   $var_15(['inputs']);
+   $var_10 = new $var_9();
+   $var_19 = [];
+   parse_str($_REQUEST['inputs'], $var_19);
+   $var_10->add($var_19);
+} else if ($_REQUEST['action'] == 'bulk_add_item') {
+   $var_15(['inputs']);
+   $var_10 = new $var_9();
+   $var_19 = [];
+   parse_str($_REQUEST['inputs'], $var_19);
+
+   $var_21 = preg_split('/\r\n|[\r\n]/', $var_19['bulk_item_list']);
+   if (!empty($var_21)) {
+      unset($var_19['bulk_item_list']);
+      foreach ($var_21 as $var_22) {
+         $var_22 = trim($var_22);
+         if (!empty($var_22)) {
+            $var_10->add($var_19 + ['name' => $var_22]);
+         }
+      }
+   }
+} else if ($_REQUEST['action'] == 'move_item') {
+   $var_15(['card', 'column', 'position', 'kanban']);
+   
+   $var_23 = new $_REQUEST['kanban']['itemtype'];
+   $var_24 = $var_23->canOrderKanbanCard($_REQUEST['kanban']['items_id']);
+   if ($var_24) {
+      Item_Kanban::moveCard($_REQUEST['kanban']['itemtype'], $_REQUEST['kanban']['items_id'],
+         $_REQUEST['card'], $_REQUEST['column'], $_REQUEST['position']);
+   }
+} else if ($_REQUEST['action'] == 'show_column') {
+   $var_15(['column', 'kanban']);
+   Item_Kanban::showColumn($_REQUEST['kanban']['itemtype'], $_REQUEST['kanban']['items_id'], $_REQUEST['column']);
+} else if ($_REQUEST['action'] == 'hide_column') {
+   $var_15(['column', 'kanban']);
+   Item_Kanban::hideColumn($_REQUEST['kanban']['itemtype'], $_REQUEST['kanban']['items_id'], $_REQUEST['column']);
+} else if ($_REQUEST['action'] == 'collapse_column') {
+   $var_15(['column', 'kanban']);
+   Item_Kanban::collapseColumn($_REQUEST['kanban']['itemtype'], $_REQUEST['kanban']['items_id'], $_REQUEST['column']);
+} else if ($_REQUEST['action'] == 'expand_column') {
+   $var_15(['column', 'kanban']);
+   Item_Kanban::expandColumn($_REQUEST['kanban']['itemtype'], $_REQUEST['kanban']['items_id'], $_REQUEST['column']);
+} else if ($_REQUEST['action'] == 'move_column') {
+   $var_15(['column', 'kanban', 'position']);
+   Item_Kanban::moveColumn($_REQUEST['kanban']['itemtype'], $_REQUEST['kanban']['items_id'],
+      $_REQUEST['column'], $_REQUEST['position']);
+} else if ($_REQUEST['action'] == 'refresh') {
+   $var_15(['column_field']);
+   
+   header("Content-Type: application/json; charset=UTF-8", true);
+   $var_26 = Item_Kanban::getAllShownColumns($var_9, $_REQUEST['items_id']);
+   $var_27 = $var_9::getKanbanColumns($_REQUEST['items_id'], $_REQUEST['column_field'], $var_26, true);
+   
+} else if ($_REQUEST['action'] == 'get_switcher_dropdown') {
+   $var_28 = $var_9::getAllForKanban();
+   Dropdown::showFromArray('kanban-board-switcher', $var_28, [
+      'value'  => isset($_REQUEST['items_id']) ? $_REQUEST['items_id'] : ''
+   ]);
+} else if ($_REQUEST['action'] == 'get_url') {
+   $var_15(['items_id']);
+   if ($_REQUEST['items_id'] == -1) {
+      
+      return;
+   }
+   $var_10->getFromDB($_REQUEST['items_id']);
+   $var_29 = $var_10->defineTabs();
+   $var_31 = array_search(__('Kanban'), $var_29);
+   if (is_null($var_31) || false === $var_31) {
+      Toolbox::logError("Itemtype does not have a Kanban tab!");
+      http_response_code(400);
+      return;
+   }
+   
+} else if ($_REQUEST['action'] == 'create_column') {
+   $var_15(['column_field', 'items_id', 'column_name']);
+   $var_32 = $_REQUEST['column_field'];
+   $var_33 = getItemtypeForForeignKeyField($var_32);
+   if (!$var_33::canCreate() || !$var_33::canView()) {
+      
+      http_response_code(403);
+      return;
+   }
+   $var_34 = $_REQUEST['params'] ?? [];
+   $var_35 = new $var_33();
+   $var_36 = $var_35->add([
+      'name'   => $_REQUEST['column_name']
+   ] + $var_34);
+   header("Content-Type: application/json; charset=UTF-8", true);
+   $var_37 = $var_9::getKanbanColumns($_REQUEST['items_id'], $var_32, [$var_36]);
+   
+} else if ($_REQUEST['action'] == 'save_column_state') {
+   $var_15(['items_id', 'state']);
+   Item_Kanban::saveStateForItem($_REQUEST['itemtype'], $_REQUEST['items_id'], $_REQUEST['state']);
+} else if ($_REQUEST['action'] == 'load_column_state') {
+   $var_15(['items_id', 'last_load']);
+   header("Content-Type: application/json; charset=UTF-8", true);
+   $var_38 = [
+      'state'     => Item_Kanban::loadStateForItem($_REQUEST['itemtype'], $_REQUEST['items_id'], $_REQUEST['last_load']),
+      'timestamp' => $_SESSION['glpi_currenttime']
+   ];
+   
+} else if ($_REQUEST['action'] == 'list_columns') {
+   $var_15(['column_field']);
+   header("Content-Type: application/json; charset=UTF-8", true);
+   
+} else if ($_REQUEST['action'] == 'get_column') {
+   $var_15(['column_id', 'column_field', 'items_id']);
+   header("Content-Type: application/json; charset=UTF-8", true);
+   $var_37 = $var_9::getKanbanColumns($_REQUEST['items_id'], $_REQUEST['column_field'], [$_REQUEST['column_id']]);
+   
+}

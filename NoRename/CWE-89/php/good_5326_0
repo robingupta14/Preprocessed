@@ -1,0 +1,187 @@
+
+<?php
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+    $param_array = array();
+    $verbose = false;
+    $recur = true;
+    $total_new = 0;
+
+    if (php_sapi_name() == 'cli') {
+        $nl = "\n";
+        if (!empty($_SERVER['argc'])) for ($ac = 1; $ac < $_SERVER['argc']; $ac++) {
+            if ($_SERVER['argv'][$ac] == '-v') {
+                $verbose = true;
+            } elseif (!empty($_SERVER['argv'][$ac])) {
+                $version_title = $_SERVER['argv'][$ac];
+                $version = $db->selectValue('help_version', 'id', 'version="' . $_SERVER['argv'][$ac] . '"');
+            }
+        }
+    } else {
+        $nl = '<br>';
+        if (!empty($_GET['verbose'])) {
+            $verbose = true;
+        }
+        if (!empty($_GET['version'])) {
+            $version_title = $_GET['version'];
+            $version = $db->selectValue('help_version', 'id', 'version="' . expString::escape($_GET['version']) . '"');
+        }
+    }
+    
+    
+    
+    parse_files('..', false);
+    $filelist = array('../cron', '../framework', '../install', '../themes');
+    foreach ($filelist as $file) {
+        parse_files($file);
+    }
+
+    
+    if (empty($version)) {
+        $version = $db->selectValue('help_version', 'id', 'is_current=1');
+        $version_title = 'Current';
+    }
+    
+
+    
+    
+    $pages = array_unique($param_array['page']);
+    sort($pages);
+    foreach ($pages as $page) {
+        if (!$db->selectObject('section', 'sef_name=' . $page)) {
+            
+        }
+    }
+
+    
+    $docs = array_unique(array_merge($param_array['doc'],$param_array['module']));
+    sort($docs);
+    foreach ($docs as $doc) {
+        if (!$db->selectObject('help', 'sef_url=' . $doc . ' AND help_version_id=' . $version)) {
+            
+        }
+    }
+
+    
+
+    
+    function parse_files($filename, $recurse = true) {
+        global $recur, $verbose, $nl;
+
+        if ($verbose) 
+        $recur = $recurse;
+        if (is_dir($filename)) { 
+            do_dir($filename);
+        } else { 
+            $pi = pathinfo($filename);
+            if (empty($pi['extension'])) $pi['extension'] = null;
+            do_file($filename, $pi['extension']);
+        }
+    }
+
+    
+    
+    function do_file($file, $fileext) {
+        if ($fileext == 'tpl') {
+            do_extract($file);
+        }
+    }
+
+    
+    function do_dir($dir) {
+        global $recur;
+
+        $d = dir($dir);
+        while (false !== ($entry = $d->read())) {
+            if ($entry == '.' || $entry == '..') {
+                continue;
+            }
+
+            $entry = $dir . '/' . $entry;
+
+            if (is_dir($entry)) { 
+                if ($recur) do_dir($entry);
+            } else { 
+                $pi = pathinfo($entry);
+                if (empty($pi['extension'])) $pi['extension'] = null;
+                if (isset($pi['extension']) && $pi['extension'] == 'tpl') {
+                    do_file($entry, $pi['extension']);
+                }
+            }
+        }
+
+        $d->close();
+    }
+
+    
+    
+    function do_extract($file) {
+        global $total_new, $param_array, $verbose, $nl;
+
+    
+        $regex_help = '/(?<=help\s)((page=[\'"]|[^\'"])*)([^}]*)(?=\})/';
+    
+        $regex_params = '/([^=\s]+)=["\']([^"\']+)["\']/';
+        $content = @file_get_contents($file);
+        if (empty($content)) {
+            return;
+        }
+        preg_match_all(
+            $regex_help,
+            $content,
+            $matches,
+            PREG_PATTERN_ORDER
+        );
+
+        if ($verbose) 
+        $num_added = 0;
+        $parsed = null;
+
+        for ($i = 0, $iMax = count($matches[0]); $i < $iMax; $i++) {
+    
+
+            
+            preg_match_all(
+                $regex_params,
+                $matches[0][$i],
+                $parsed,
+                PREG_PATTERN_ORDER
+            );
+            
+            foreach ($parsed[0] as $pair) {
+                if (strpos($pair, '=')) {
+                    list($key, $val) = explode('=', $pair, 2);
+                    $param_array[trim($key)][] = trim($val);
+                    $num_added++;
+                }
+            }
+        }
+
+        $total_new += $num_added;
+        if ($verbose) 
+    }
+
+    function output($text) {
+        global $nl;
+
+        if (!is_array($text)) $text = array($text);
+        foreach ($text as $string) {
+            
+        }
+    }
+
+?>

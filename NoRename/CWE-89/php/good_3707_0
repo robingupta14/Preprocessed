@@ -1,0 +1,174 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+class Countries_Api_Object extends Api_Object_Core {
+
+    public function __construct($api_service)
+    {
+        parent::__construct($api_service);
+    }
+    
+    public function perform_task()
+    {
+        if ($this->api_service->verify_array_index($this->request, 'by'))
+        {
+            $this->by = $this->request['by'];
+        }
+        
+        switch ($this->by)
+        {
+            
+            case "countryid":
+                if ( ! $this->api_service->verify_array_index($this->request, 'id'))
+                {
+                    $this->set_error_message(array(
+                        "error" => $this->api_service->get_error_msg(1, 'id')
+                    ));
+                    
+                    return;
+                }
+                else
+                {
+                    $this->response_data = $this->_get_country_by_id(
+                        $this->check_id_value($this->request['id']));
+                }
+            break;
+            
+            
+            case "countryname":
+                if ( ! $this->api_service->verify_array_index($this->request, 'name'))
+                {
+                    $this->set_error_message(array(
+                        "error" => $this->api_service->get_error_msg(1, 'name')
+                    ));
+                    
+                    return;
+                }
+                else
+                {
+                    $this->response_data = $this->_get_country_by_name(
+                            $this->request['name']);
+
+                }
+            break;
+            
+            
+            case "countryiso":
+                if ( ! $this->api_service->verify_array_index($this->request, 'iso'))
+                {
+                    $this->set_error_message(array(
+                        "error" => $this->api_service->get_error_msg(1, 'iso')
+                    ));
+                                        
+                    return;
+                }
+                else
+                {
+                    $this->response_data = $this->_get_country_by_iso($this->request['iso']);
+                }
+            break;
+            
+            default:
+                $this->response_data = $this->_get_countries_by_all();
+        }
+    }
+
+    
+    private function _get_countries($where = array(), $limit = FALSE)
+    {
+
+        
+				$items = ORM::factory('Country')
+						->select('country as name', 'country.*')
+						->where($where)
+						->orderby('id','DESC');
+				
+				if ($limit)
+					$items->limit($limit);
+				
+				$items = $items->find_all();
+				
+        
+        $this->record_count = count($items);
+        
+        $i = 0;
+
+        $json_countries = array();
+        $ret_json_or_xml = '';
+        
+				
+        if ($this->record_count == 0)
+        {
+            return $this->response(4);
+        }
+
+        foreach ($items as $item)
+        {
+
+            
+            if ($this->response_type == 'json')
+            {
+                $json_countries[] = array("country" => $item->as_array());
+            } 
+            else 
+            {
+                $json_countries['country'.$i] = array(
+                        "country" => $item->as_array());
+
+                $this->replar[] = 'country'.$i;
+            }
+
+            $i++;
+        }
+
+        
+        $data = array(
+                "payload" => array(
+                    "domain" => $this->domain,
+                    "countries" => $json_countries
+                ),
+                "error" => $this->api_service->get_error_msg(0)
+        );
+        
+        if ($this->response_type == 'json')
+        {
+            $ret_json_or_xml = $this->array_as_json($data);
+        } 
+        else 
+        {
+            $ret_json_or_xml = $this->array_as_xml($data, $this->replar);
+        }
+
+        return $ret_json_or_xml;
+    }
+
+    
+    private function _get_countries_by_all()
+    {
+        return $this->_get_countries();
+    }
+
+    
+    private function _get_country_by_name($name)
+    {
+				$where = array('country' => $name);
+        
+        return $this->_get_countries($where, $this->list_limit);
+    }
+
+    
+    private function _get_country_by_id($id)
+    {
+        $where = array('id' => $id);
+        
+        return $this->_get_countries($where, $this->list_limit);
+    }
+
+    
+    private function _get_country_by_iso($iso)
+    {
+        $where = array('iso' => $iso);
+        return $this->_get_countries($where, $this->list_limit);
+    }
+}
+

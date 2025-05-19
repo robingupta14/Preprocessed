@@ -1,0 +1,389 @@
+<?php
+
+
+
+
+$var_0->check_user_session();
+
+
+$var_2 = $var_0->var_3->csrf_cookie ("create", "scan");
+
+
+
+
+
+if($var_5->check_permission ($var_0->var_7, $_POST['subnetId']) != 3) 	{ $var_8->show("danger", _('You do not have permissions to modify hosts in this subnet')."!", true, true); }
+
+
+
+if ($var_0->var_10->var_11!="1")           { $var_8->show("danger", _("SNMP module disbled"), true); }
+
+$var_12 = $var_5->fetch_object ("subnets", "id", $_POST['subnetId']);
+if ($var_12===false)                            { $var_8->show("danger", _("Invalid subnet Id"), true);  }
+
+
+$var_14 = $var_15->fetch_object ("vlans", "vlanId", $var_12->var_16);
+if ($var_14===false)                              { $var_8->show("danger", _("Subnet must have VLAN assigned for MAc address query"), true);  }
+
+
+$var_17 = new class_1 ();
+
+
+$var_18 = (array) $var_19->fetch_subnet_addresses ($var_12->var_21);
+
+if (sizeof($var_18)>0) {
+    foreach ($var_18 as $var_22) {
+        $var_44[] = $var_5->transform_address($var_22->var_24, "dotted");
+    }
+}
+
+
+$var_25 = $var_0->var_10->var_26;
+$var_25 = explode(";", $var_25);
+
+
+error_reporting(var_27);
+
+
+$var_28 = $var_15->fetch_multiple_objects ("devices", "snmp_queries", "%get_arp_table%", "id", true, true);
+$var_30 = $var_15->fetch_multiple_objects ("devices", "snmp_queries", "%get_mac_table%", "id", true, true);
+
+
+if ($var_28 !== false) {
+    foreach ($var_28 as $var_31) {
+        
+        $var_32 = explode(";", $var_31->var_33);
+        
+        if (in_array($var_12->var_34, $var_32)) {
+            $var_35[] = $var_31;
+        }
+    }
+}
+
+if ($var_30 !== false) {
+    foreach ($var_30 as $var_31) {
+        
+        $var_32 = explode(";", $var_31->var_33);
+        
+        if (in_array($var_12->var_34, $var_32)) {
+            $var_36[] = $var_31;
+        }
+    }
+}
+
+
+if (!isset($var_35))                 { $var_8->show("danger", _("No devices for SNMP ARP query available"), true); }
+if (!isset($var_36))                 { $var_8->show("danger", _("No devices for SNMP MAC address query available"), true); }
+
+
+
+foreach ($var_35 as $var_31) {
+    
+    $var_17->set_snmp_device ($var_31);
+    
+    try {
+        $var_38 = $var_17->get_query("get_arp_table");
+        
+        if (sizeof($var_38)>0) {
+           
+           $var_79[$var_31->var_49]["get_arp_table"] = $var_38;
+           
+           foreach ($var_38 as $var_40=>$var_41) {
+               
+               if ($var_5->is_subnet_inside_subnet ($var_41['ip']."/32", $var_5->transform_address($var_12->var_12, "dotted")."/".$var_12->var_43)===false) { }
+               
+               elseif (in_array($var_41['ip'], $var_44)) { }
+               
+               else {
+                   $var_47[] = $var_41;
+               }
+           }
+        }
+    } catch (var_45 $var_46) {}
+}
+
+
+if (!isset($var_47))                         { $var_8->show("danger", _("No new hosts found from ARP scan, MAC address scan will not be performed"), true); }
+
+
+
+foreach ($var_36 as $var_31) {
+    
+    $var_17->set_snmp_device ($var_31, $var_14->var_48);
+    
+    try {
+        $var_38 = $var_17->get_query("get_mac_table");
+        
+        if (sizeof($var_38)>0) {
+           
+           $var_79[$var_31->var_49]["get_mac_table"] = $var_38;
+           
+           foreach ($var_38 as $var_41) {
+               $var_41['device'] = $var_31->var_21;
+               $var_41['device_name'] = $var_31->var_49;
+               $var_50[] = $var_41;
+           }
+        }
+    } catch (var_45 $var_46) {}
+}
+
+
+
+if (!isset($var_50))                         { $var_8->show("danger", _("No MAC address found via MAC address scan"), true); }
+
+
+
+
+$var_51=0;
+foreach ($var_50 as $var_52) {
+    foreach ($var_47 as $var_53) {
+        
+        if ($var_52['mac']==$var_53['mac']) {
+            $var_54[$var_51]['ip']     = $var_53['ip'];
+            $var_54[$var_51]['mac']    = $var_52['mac'];
+            $var_54[$var_51]['port']   = $var_52['port'];
+            $var_54[$var_51]['device'] = $var_52['device'];
+            $var_54[$var_51]['device_name'] = $var_52['device_name'];
+            $var_54[$var_51]['port_alias'] = $var_52['port_alias'];
+            
+            $var_51++;
+        }
+    }
+}
+
+
+foreach ($var_54 as $var_55=>$var_56) {
+    foreach ($var_54 as $var_57=>$var_58) {
+        if ($var_55!=$var_57) {
+            if ($var_56['mac']==$var_58['mac'] && $var_56['device']==$var_58['device']) {
+                unset($var_54[$var_55]);
+            }
+        }
+    }
+
+    
+    if(strpos(strtolower($var_56['port']), "port-channel")!==false) {
+        unset($var_54[$var_55]);
+    }
+}
+
+
+
+
+if(sizeof($var_54)==0 && isset($var_59))          {
+    $var_8->show("info", _("No new hosts found"), false);
+    $var_8->show("warning", implode("<hr>", $var_59), false);
+}
+
+elseif(sizeof($var_54)==0) 	                     { $var_8->show("info", _("No new hosts found")."!", false); }
+
+else {
+	
+	$var_60 = $var_12===false ? false : $var_12->var_61;
+
+    
+    $var_15 = new class_0 ($var_62);
+    $var_63 = $var_15->fetch_custom_fields ('ipaddresses');
+    if($var_63!==false) {
+        foreach ($var_63 as $var_51=>$var_56) {
+            if ($var_56['Null']!="NO") {
+                unset($var_63[$var_51]);
+            }
+        }
+    }
+
+    
+	$var_65 = 7 + sizeof(@$var_63);
+	
+	if(in_array('port', $var_25)) { $var_65++; }
+
+    
+    function fn_0($var_66, $var_67) {
+        
+        if ($var_66['ip']==$var_67['ip'])     { return 0; }
+        elseif ($var_66['ip']>$var_67['ip'])  { return 1; }
+        else                        { return -1; }
+    }
+    
+    usort($var_54, "sort_array");
+
+
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+    
+	if (isset($var_63)) {
+		foreach ($var_63 as $var_68) {
+            
+		}
+    }
+	
+	
+
+	
+	$var_69=0;
+	foreach($var_54 as $var_51=>$var_70) {
+            
+    		
+    		$var_49 = $var_71->resolve_address($var_70['ip'], false, true, $var_60);
+
+    		
+    		if ($var_51!=0) {
+        		if ($var_54[$var_51]['ip'] != $var_54[$var_51-1]['ip']) {
+        		    
+        		}
+        		else {
+            		
+        		}
+    		}
+    		else {
+        		
+            }
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		
+    		if(strlen(@$var_70['port_alias'])>0)
+    		
+    		
+    		
+    		if (isset($var_63)) {
+        		foreach ($var_63 as $var_68) {
+        			
+        			$var_68['nameNew'] = str_replace(" ", "___", $var_68['name']);
+
+        			
+
+        			
+        			if(substr($var_68['type'], 0,3) == "set" || substr($var_68['type'], 0,4) == "enum") {
+        				
+        				$var_73 = substr($var_68['type'], 0,3)=="set" ? explode(",", str_replace(array("set(", ")", "'"), "", $var_68['type'])) : explode(",", str_replace(array("enum(", ")", "'"), "", $var_68['type']));
+        				
+        				if($var_68['Null']!="NO") { array_unshift($var_73, ""); }
+
+        				
+        				foreach($var_73 as $var_74) {
+        					if($var_74==@$address[$var_68['name']])	{  }
+        					else								{  }
+        				}
+        				
+        			}
+        			
+        			elseif($var_68['type'] == "date" || $var_68['type'] == "datetime") {
+        				
+        				if($var_75==0) {
+        					
+        					
+        					
+        					
+        					
+        					';
+        					
+        					';
+
+        					
+        					
+        				}
+        				$var_75++;
+
+        				
+        				if($var_68['type'] == "date")	{ $var_76 = 10; $var_77='datepicker';		$var_78 = "yyyy-MM-dd"; }
+        				else							{ $var_76 = 19; $var_77='datetimepicker';	$var_78 = "yyyy-MM-dd"; }
+
+        				
+        				if(!isset($address[$var_68['name']]))	{  }
+        				else									{  }
+        			}
+        			
+        			elseif($var_68['type'] == "tinyint(1)") {
+        				
+        				$var_73 = array(0=>"No",1=>"Yes");
+        				
+        				if($var_68['Null']!="NO") { $var_73[2] = ""; }
+
+        				foreach($var_73 as $var_51=>$var_74) {
+        					if(strlen(@$address[$var_68['name']])==0 && $var_51==2)	{  }
+        					elseif($var_51==@$address[$var_68['name']])				{  }
+        					else												{  }
+        				}
+        				
+        			}
+        			
+        			else {
+        				
+        			}
+
+                    
+        		}
+    		}
+    		
+    		
+    		
+
+    		$var_69++;
+	}
+
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+
+    
+    if (isset($var_59)) {
+        
+        foreach ($var_59 as $var_46) {
+            
+        }
+    }
+}
+
+
+'>";
+
+
+
+foreach ($debug as $k=>$d) {
+     ".$k."<br>";
+}
+
+
+
+
+if($_POST['var_79']==1) 				{  print_r($var_79);  }
+
+?>

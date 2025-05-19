@@ -1,0 +1,237 @@
+<?php
+
+
+
+
+
+
+if ($var_0->SETTINGS['cron'] == 2) {
+}
+
+function fn_0()
+{
+    global $var_0, $var_1;
+    $var_2 = 0;
+    $var_3 = '';
+    foreach ($var_1 as $var_4 => $var_5) {
+        if ($var_2 > 3) {
+            $var_3 .= '<br>';
+            $var_2 = 0;
+        }
+        $var_3 .= '<a href="?lan=' . $var_4 . '"><img vspace="2" hspace="2" src="' . $var_0->SETTINGS['siteurl'] . 'images/flags/' . $var_4 . '.gif" border="0" alt="' . $var_4 . '"></a>';
+        $var_2++;
+    }
+    return $var_3;
+}
+
+
+
+if ($var_0->SETTINGS['catsorting'] == 'alpha') {
+    $var_6 = ' ORDER BY cat_name ASC';
+} else {
+    $var_6 = ' ORDER BY sub_counter DESC';
+}
+
+$var_7 = "SELECT cat_id FROM " . $var_8 . "categories WHERE parent_id = -1";
+$var_9->direct_query($var_7);
+$var_11 = $var_9->result('cat_id');
+
+$var_7 = "SELECT * FROM " . $var_8 . "categories
+			WHERE parent_id = :parent_id
+			" . $var_6 . "
+			LIMIT :limit";
+$var_13 = array();
+$var_13[] = array(':parent_id', $var_11, 'int');
+$var_13[] = array(':limit', $var_0->SETTINGS['catstoshow'], 'int');
+$var_9->query($var_7, $var_13);
+
+$var_14 = [];
+$var_15 = [];
+while ($var_16 = $var_9->fetch()) {
+    $var_14[$var_16['cat_id']] = $category_names[$var_16['cat_id']];
+    $var_15[$var_16['cat_id']] = $var_16;
+}
+
+if ($var_0->SETTINGS['catsorting'] == 'alpha') {
+    asort($var_14);
+}
+foreach ($var_14 as $var_18 => $var_19) {
+    $var_16 = $var_15[$var_18];
+    $var_20->assign_block_vars('cat_list', array(
+            'CATAUCNUM' => ($var_16['sub_counter'] != 0) ? $var_16['sub_counter'] : '',
+            'ID' => $var_16['cat_id'],
+            'IMAGE' => (!empty($var_16['cat_image'])) ? '<img src="' . $var_16['cat_image'] . '" border=0>' : '',
+            'COLOUR' => (empty($var_16['cat_colour'])) ? '
+            'var_22' => $category_names[$var_16['cat_id']]
+            ));
+}
+
+
+$var_7 = "SELECT id, title, current_bid, pict_url, ends, num_bids, minimum_bid, bn_only, buy_now
+		FROM " . $var_8 . "auctions
+		WHERE closed = 0 AND suspended = 0 AND starts <= CURRENT_TIMESTAMP
+		AND featured = 1
+		ORDER BY RAND() DESC LIMIT :limit";
+$var_13 = array();
+$var_13[] = array(':limit', $var_0->SETTINGS['homefeaturednumber'], 'int');
+$var_9->query($var_7, $var_13);
+
+$var_23 = 0;
+while ($var_16 = $var_9->fetch()) {
+    if (strtotime($var_16['ends']) - time() > 0) {
+        $var_24 = new class_0('now', $var_25->var_26);
+        $var_27 = new class_0($var_16['ends'], $var_25->var_26);
+        $var_28 = $var_24->diff($var_27);
+        $var_30 = $var_25->formatTimeLeft($var_28);
+    } else {
+        $var_30 = $MSG['911'];
+    }
+    $var_32 = ($var_16['num_bids'] == 0) ? $var_16['minimum_bid'] : $var_16['current_bid'];
+    $var_32 = ($var_16['bn_only']) ? $var_16['buy_now'] : $var_32;
+    $var_20->assign_block_vars('featured', array(
+            'ENDS' => $var_30,
+            'ID' => $var_16['id'],
+            'BID' => $var_0->print_money($var_32),
+            'IMAGE' => (!empty($var_16['pict_url'])) ? 'getthumb.php?w=' . $var_0->SETTINGS['thumb_show'] . '&auction_id=' . $var_16['id'] . '&fromfile=' . $var_16['pict_url'] : '',
+            'TITLE' => htmlspecialchars($var_16['title'])
+            ));
+    $var_23++;
+}
+
+$var_34 = ($var_23 > 0) ? true : false;
+
+
+$var_7 = "SELECT id, title, starts from " . $var_8 . "auctions
+			WHERE closed = 0 AND suspended = 0
+			AND starts <= CURRENT_TIMESTAMP
+			ORDER BY starts DESC
+			LIMIT :limit";
+$var_13 = array();
+$var_13[] = array(':limit', $var_0->SETTINGS['lastitemsnumber'], 'int');
+$var_9->query($var_7, $var_13);
+
+$var_23 = 0;
+while ($var_16 = $var_9->fetch()) {
+    $var_20->assign_block_vars('auc_last', array(
+            'BGCOLOUR' => (!($var_23 % 2)) ? '' : 'class="alt-row"',
+            'DATE' => $var_25->printDateTz($var_16['starts']),
+            'ID' => $var_16['id'],
+            'TITLE' => htmlspecialchars($var_16['title'])
+            ));
+    $var_23++;
+}
+
+$var_36 = ($var_23 > 0) ? true : false;
+
+$var_7 = "SELECT ends, id, title FROM " . $var_8 . "auctions
+			WHERE closed = 0 AND suspended = 0 AND starts <= CURRENT_TIMESTAMP
+			ORDER BY ends LIMIT :limit";
+$var_13 = array();
+$var_13[] = array(':limit', $var_0->SETTINGS['endingsoonnumber'], 'int');
+$var_9->query($var_7, $var_13);
+
+$var_23 = 0;
+while ($var_16 = $var_9->fetch()) {
+    if (strtotime($var_16['ends']) - time() > 0) {
+        $var_24 = new class_0('now', $var_25->var_26);
+        $var_27 = new class_0($var_16['ends'], $var_25->var_26);
+        $var_28 = $var_24->diff($var_27);
+        $var_30 = $var_25->formatTimeLeft($var_28);
+    } else {
+        $var_30 = $MSG['911'];
+    }
+    $var_20->assign_block_vars('end_soon', array(
+            'BGCOLOUR' => (!($var_23 % 2)) ? '' : 'class="alt-row"',
+            'DATE' => $var_30,
+            'ID' => $var_16['id'],
+            'TITLE' => htmlspecialchars($var_16['title'])
+            ));
+    $var_23++;
+}
+
+$var_37 = ($var_23 > 0) ? true : false;
+
+$var_7 = "SELECT a.id, a.title, a.current_bid, a.pict_url, a.ends, a.num_bids, a.minimum_bid
+		FROM " . $var_8 . "auctions a
+		LEFT JOIN " . $var_8 . "auccounter c ON (a.id = c.auction_id)
+		WHERE closed = 0 AND suspended = 0 AND starts <= CURRENT_TIMESTAMP
+		ORDER BY c.counter DESC LIMIT :limit";
+$var_13 = array();
+$var_13[] = array(':limit', $var_0->SETTINGS['hotitemsnumber'], 'int');
+$var_9->query($var_7, $var_13);
+
+$var_23 = 0;
+while ($var_16 = $var_9->fetch()) {
+    $var_23++;
+    if (strtotime($var_16['ends']) - time() > 0) {
+        $var_24 = new class_0('now', $var_25->var_26);
+        $var_27 = new class_0($var_16['ends'], $var_25->var_26);
+        $var_28 = $var_24->diff($var_27);
+        $var_30 = $var_25->formatTimeLeft($var_28);
+    } else {
+        $var_30 = $MSG['911'];
+    }
+    $var_32 = ($var_16['num_bids'] == 0) ? $var_16['minimum_bid'] : $var_16['current_bid'];
+    $var_20->assign_block_vars('hotitems', array(
+            'ENDS' => $var_30,
+            'ID' => $var_16['id'],
+            'BID' => $var_0->print_money($var_32),
+            'IMAGE' => (!empty($var_16['pict_url'])) ? 'getthumb.php?w=' . $var_0->SETTINGS['thumb_show'] . '&auction_id=' . $var_16['id'] . '&amp;fromfile=' . $var_16['pict_url'] : '',
+            'TITLE' => htmlspecialchars($var_16['title'])
+            ));
+}
+$var_38 = ($var_23 > 0) ? true : false;
+
+
+$var_7 = "SELECT id, category FROM " . $var_8 . "faqscat_translated WHERE lang = :language ORDER BY category ASC";
+$var_13 = array();
+$var_13[] = array(':language', $var_39, 'str');
+$var_9->query($var_7, $var_13);
+
+$var_23 = 0;
+while ($var_40 = $var_9->fetch()) {
+    $var_20->assign_block_vars('helpbox', array(
+            'ID' => $var_40['id'],
+            'TITLE' => $var_40['category']
+            ));
+    $var_23++;
+}
+
+$var_41 = ($var_23 > 0) ? true : false;
+
+if ($var_0->SETTINGS['newsbox'] == 1) {
+    $var_7 = "SELECT n.title As t, n.new_date, t.* FROM " . $var_8 . "news n
+			LEFT JOIN " . $var_8 . "news_translated t ON (t.id = n.id)
+			WHERE t.lang = :language AND n.suspended = 0
+			ORDER BY new_date DESC, id DESC LIMIT :limit";
+    $var_13 = array();
+    $var_13[] = array(':language', $var_39, 'str');
+    $var_13[] = array(':limit', $var_0->SETTINGS['newstoshow'], 'int');
+    $var_9->query($var_7, $var_13);
+    while ($var_42 = $var_9->fetch()) {
+        $var_20->assign_block_vars('newsbox', array(
+                'ID' => $var_42['id'],
+                'DATE' => $var_25->formatDate($var_42['new_date']),
+                'TITLE' => (!empty($var_42['title'])) ? htmlspecialchars($var_42['title']) : htmlspecialchars($var_42['t'])
+                ));
+    }
+}
+
+$var_20->assign_vars(array(
+        'FLAGS' => fn_0(),
+        'B_FEATURED_ITEMS' => $var_34,
+        'B_AUC_LAST' => $var_36,
+        'B_HOT_ITEMS' => $var_38,
+        'B_AUC_ENDSOON' => $var_37,
+        'B_HELPBOX' => ($var_41 && $var_0->SETTINGS['helpbox'] == 1),
+        'B_MULT_LANGS' => (count($var_1) > 1),
+        'B_LOGIN_BOX' => ($var_0->SETTINGS['loginbox'] == 1),
+        'B_NEWS_BOX' => ($var_0->SETTINGS['newsbox'] == 1)
+        ));
+
+$var_20->set_filenames(array(
+        'body' => 'home.tpl'
+        ));
+$var_20->display('body');
+
+unset($_SESSION['loginerror']);

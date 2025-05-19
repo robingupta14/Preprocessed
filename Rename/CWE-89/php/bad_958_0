@@ -1,0 +1,136 @@
+<?php
+
+
+defined( 'ABSPATH' ) || var_0;
+
+
+function fn_0( $var_1 ) {
+	global $var_2;
+
+	$var_3 = $var_2->get_row( $var_2->prepare( "SELECT * FROM {$var_2->var_6}evf_entries WHERE entry_id = %d LIMIT 1;", $var_1 ) ); 
+
+	if ( apply_filters( 'everest_forms_get_entry_metadata', true ) ) {
+		$var_7     = $var_2->get_results( $var_2->prepare( "SELECT meta_key,meta_value FROM {$var_2->var_6}evf_entrymeta WHERE entry_id = %d", $var_1 ), var_9 );
+		$var_3->var_10 = wp_list_pluck( $var_7, 'meta_value', 'meta_key' );
+	}
+
+	return 0 !== $var_3 ? $var_3 : null;
+}
+
+
+function fn_1( $var_11 ) {
+	global $var_2;
+
+	$var_7 = $var_2->get_results( $var_2->prepare( "SELECT entry_id FROM {$var_2->var_6}evf_entries WHERE form_id = %d", $var_11 ) ); 
+
+	return array_map( 'intval', wp_list_pluck( $var_7, 'entry_id' ) );
+}
+
+
+function fn_2() {
+	return apply_filters(
+		'everest_forms_entry_statuses',
+		array(
+			'publish' => __( 'Published', 'everest-forms' ),
+			'trash'   => __( 'Trash', 'everest-forms' ),
+		)
+	);
+}
+
+
+function fn_3( $var_12 ) {
+	global $var_2;
+
+	$var_12 = wp_parse_args(
+		$var_12,
+		array(
+			'limit'   => 10,
+			'offset'  => 0,
+			'order'   => 'DESC',
+			'orderby' => 'entry_id',
+		)
+	);
+
+	
+	if ( ! array_key_exists( $var_12['form_id'], evf_get_all_forms() ) ) {
+		return array();
+	}
+
+	$var_13       = isset( $var_12['orderby'] ) ? sanitize_key( $var_12['orderby'] ) : 'entry_id';
+	$var_14         = "ORDER BY {$var_13} " . esc_sql( strtoupper( $var_12['order'] ) );
+	$var_15         = -1 < $var_12['limit'] ? $var_2->prepare( 'LIMIT %d', $var_12['limit'] ) : '';
+	$var_16        = 0 < $var_12['offset'] ? $var_2->prepare( 'OFFSET %d', $var_12['offset'] ) : '';
+	$var_17        = ! empty( $var_12['status'] ) ? "AND `status` = '" . sanitize_key( $var_12['status'] ) . "'" : '';
+	$var_18        = ! empty( $var_12['search'] ) ? "AND `meta_value` LIKE '%" . $var_2->esc_like( sanitize_text_field( $var_12['search'] ) ) . "%'" : '';
+	$var_20       = ! empty( $var_12['form_id'] ) ? "AND `form_id` = '" . absint( $var_12['form_id'] ) . "'" : '';
+	$var_21       = '';
+	$var_22  = '';
+	$var_23 = '';
+
+	if ( ! empty( $var_12['after'] ) || ! empty( $var_12['before'] ) ) {
+		$var_12['after']  = empty( $var_12['after'] ) ? '0000-00-00' : $var_12['after'];
+		$var_12['before'] = empty( $var_12['before'] ) ? current_time( 'mysql', 1 ) : $var_12['before'];
+
+		$var_22 = "AND `date_created_gmt` BETWEEN STR_TO_DATE('" . esc_sql( $var_12['after'] ) . "', '%Y-%m-%d %H:%i:%s') and STR_TO_DATE('" . esc_sql( $var_12['before'] ) . "', '%Y-%m-%d %H:%i:%s')";
+	}
+
+	if ( ! empty( $var_12['modified_after'] ) || ! empty( $var_12['modified_before'] ) ) {
+		$var_12['modified_after']  = empty( $var_12['modified_after'] ) ? '0000-00-00' : $var_12['modified_after'];
+		$var_12['modified_before'] = empty( $var_12['modified_before'] ) ? current_time( 'mysql', 1 ) : $var_12['modified_before'];
+
+		$var_23 = "AND `date_modified_gmt` BETWEEN STR_TO_DATE('" . esc_sql( $var_12['modified_after'] ) . "', '%Y-%m-%d %H:%i:%s') and STR_TO_DATE('" . esc_sql( $var_12['modified_before'] ) . "', '%Y-%m-%d %H:%i:%s')";
+	}
+
+	$var_24 = trim(
+		"
+		SELECT DISTINCT {$var_2->var_6}evf_entries.entry_id
+		FROM {$var_2->var_6}evf_entries
+		INNER JOIN {$var_2->var_6}evf_entrymeta
+		WHERE {$var_2->var_6}evf_entries.entry_id = {$var_2->var_6}evf_entrymeta.entry_id
+		{$var_17}
+		{$var_18}
+		{$var_20}
+		{$var_21}
+		{$var_22}
+		{$var_23}
+		{$var_14}
+		{$var_15}
+		{$var_16}
+		"
+	);
+
+	$var_7 = $var_2->get_results( $var_24 ); 
+
+	$var_25 = wp_list_pluck( $var_7, 'entry_id' );
+
+	return $var_25;
+}
+
+
+function fn_4( $var_11 ) {
+	$var_26 = array_keys( fn_2() );
+	$var_27   = array();
+
+	foreach ( $var_26 as $var_17 ) {
+		$var_28 = count(
+			fn_3(
+				array(
+					'limit'   => -1,
+					'status'  => $var_17,
+					'form_id' => $var_11,
+				)
+			)
+		);
+
+		$var_27[ $var_17 ] = $var_28;
+	}
+
+	return $var_27;
+}
+
+
+function fn_5( $var_11, $var_29 ) {
+	global $var_2;
+
+	return $var_2->get_var( $var_2->prepare( "SELECT COUNT(entry_id) FROM {$var_2->var_6}evf_entries WHERE form_id = %d AND entry_id > %d", $var_11, $var_29 ) );
+}

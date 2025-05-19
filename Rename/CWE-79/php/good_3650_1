@@ -1,0 +1,304 @@
+<?php 
+
+
+
+
+if (var_0 !== true) {
+    die ("Don't hack!");
+}
+
+header('Content-Type: text/html; charset=' . var_1);
+
+if ($_SESSION['serendipityAuthedUser'] !== true && $serendipity['GET']['step'] != 'showItem')  {
+    die(var_2);
+}
+
+if (!isset($serendipity['GET']['adminModule'])) {
+    $serendipity['GET']['adminModule'] = (isset($serendipity['POST']['adminModule']) ? $serendipity['POST']['adminModule'] : '');
+}
+
+if (!isset($serendipity['GET']['step'])) {
+    $serendipity['GET']['step']        = (isset($serendipity['POST']['step'])        ? $serendipity['POST']['step']        : '');
+}
+
+if (empty($serendipity['GET']['step']) && isset($serendipity['GET']['adminAction'])) {
+    $serendipity['GET']['step'] = $serendipity['GET']['adminAction'];
+}
+
+serendipity_smarty_init();
+if (empty($serendipity['GET']['step']) && $serendipity['GET']['page'] < 1) {
+    $var_3 = array(
+        'GET_STRING' => serendipity_build_query($var_4),
+        'frameset'   => true
+    );
+    $serendipity['smarty']->assign_by_ref('media', $var_3);
+    $serendipity['smarty']->display(serendipity_getTemplateFile('admin/media_choose.tpl', 'serendipityPath'));
+    return;
+}
+
+$var_7 = $serendipity['GET'];
+unset($var_7['step']);
+unset($var_7['only_path']);
+
+$var_8 = 'admin/media_choose.tpl';
+$var_9 = 'serendipityAdminBodyImageSelector';
+if ($serendipity['GET']['step'] === 'tree') {
+    $var_9 = 'serendipityAdminBodyImageSelectorTree';
+}
+
+$var_3 = array(
+    'body_id'    => $var_9,
+    'only_path'  => $serendipity['GET']['only_path'],
+    'css'        => serendipity_rewriteURL('serendipity_admin.css'),
+    'css_tree'   => serendipity_getTemplateFile('treeview/tree.css'),
+    'css_front'  => serendipity_rewriteURL('serendipity.css'),
+    'token_url'  => serendipity_setFormToken('url'),
+    'imgID'      => (int)$serendipity['GET']['image'],
+    'from'       => $serendipity['GET']['from'],
+    'GET_STRING' => serendipity_build_query($var_7, 'serendipity', '&'),
+    'paths'      => serendipity_getMediaPaths()
+);
+
+switch ($serendipity['GET']['step']) {
+    case '1':
+        if (isset($serendipity['GET']['adminAction'])) { 
+            if (!empty($serendipity['POST']['textarea'])) {
+                $serendipity['GET']['textarea'] = $serendipity['POST']['textarea'];
+            }
+
+            if (!empty($serendipity['POST']['htmltarget'])) {
+                $serendipity['GET']['htmltarget'] = $serendipity['POST']['htmltarget'];
+            }
+
+            if (!empty($serendipity['POST']['filename_only'])) {
+                $serendipity['GET']['filename_only'] = $serendipity['POST']['filename_only'];
+            }
+
+            $var_10 = array(
+                'step'          => 1,
+                'textarea'      => (!empty($serendipity['GET']['textarea'])      ? $serendipity['GET']['textarea']      : ''),
+                'htmltarget'    => (!empty($serendipity['GET']['htmltarget'])    ? $serendipity['GET']['htmltarget']    : ''),
+                'filename_only' => (!empty($serendipity['GET']['filename_only']) ? $serendipity['GET']['filename_only'] : '')
+            );
+
+            switch ($serendipity['GET']['adminAction']) {
+                case 'addSelect':
+                    $var_3['case'] = 'external';
+                    ob_start();
+                    $var_3['external'] = ob_get_contents();
+                    ob_end_clean();
+                    break 2;
+
+                case 'add':
+                    $var_3['case'] = 'external';
+                    ob_start();
+                    $var_3['external'] = ob_get_contents();
+                    ob_end_clean();
+                    if (isset($var_11) && isset($var_12)) {
+                        $var_3['is_uploaded'] = true;
+                        $serendipity['GET']['image'] = $var_3['imgID'] = (int)$var_12; 
+                        break;
+                    } else {
+                        break 2;
+                    }
+            }
+        }
+        $var_3['case'] = 'choose';
+
+        $var_13           = serendipity_fetchImageFromDatabase($serendipity['GET']['image']);
+        $var_3['file'] = &$var_13;
+        if (!is_array($var_13)) {
+            $var_3['perm_denied'] = true;
+            break;
+        }
+
+        serendipity_prepareMedia($var_13);
+
+        $var_3['file']['props'] =& serendipity_fetchMediaProperties((int)$serendipity['GET']['image']);
+        serendipity_plugin_api::hook_event('media_getproperties_cached', $var_3['file']['props']['base_metadata'], $var_3['file']['realfile']);
+
+        if ($var_13['is_image']) {
+            $var_13['finishJSFunction'] = $var_13['origfinishJSFunction'] = 'serendipity_imageSelector_done(\'' . htmlspecialchars($serendipity['GET']['textarea']) . '\')';
+
+            if (!empty($serendipity['GET']['filename_only']) && $serendipity['GET']['filename_only'] !== 'true') {
+                $var_13['fast_select'] = true;
+            }
+        }
+        break;
+
+    case 'directoryDoCreate':    
+    case 'directoryDoDelete':        
+        $var_14 = true;        
+        if ($serendipity['GET']['step'] == 'directoryDoDelete') {
+            $var_15 = true;        
+        }
+    case 'directoryCreate':    
+        $serendipity['GET']['adminAction'] = $serendipity['GET']['step'];
+        $var_3['case'] = 'external';
+        ob_start();
+        if ($var_14 || $var_15) {
+            $var_3['is_created'] = $var_14;
+            $var_3['is_deleted'] = $var_15;
+            $var_3['new_dir']    = $var_16;
+        }
+        $var_3['external'] = ob_get_contents();
+        ob_end_clean();
+        break;
+
+    case 'tree':
+        $var_3['case']  = 'tree';
+        break;
+
+    case 'showItem':
+        serendipity_plugin_api::hook_event('frontend_media_showitem_init', $var_3);
+
+        if ($var_3['perm_denied']) {
+            break;
+        }
+        $var_3['case'] = 'showitem';
+        $var_13          = serendipity_fetchImageFromDatabase((int)$serendipity['GET']['image']);
+        $var_3['file'] = &$var_13;
+        $var_17 = $var_18 = '';
+
+        if (!is_array($var_13)) {
+            $var_3['perm_denied'] = true;
+            break;
+        }
+
+        serendipity_prepareMedia($var_13);
+
+        $var_19 = null;
+        if (($serendipity['GET']['resizeWidth'] || $serendipity['GET']['resizeHeight']) && $serendipity['dynamicResize'] && $var_3['file']['is_image']) {
+            $var_20  = (int)$serendipity['GET']['resizeWidth'];
+            $var_21 = (int)$serendipity['GET']['resizeHeight'];
+            if (empty($var_20)) {
+                $var_20 = NULL;
+            }
+            if (empty($var_21)) {
+                $var_21 = NULL;
+            }
+
+            $var_19 = $serendipity['serendipityPath'] . var_22 . '/mediacache/cache_img' . (int)$serendipity['GET']['image'] . '_' . $var_20 . '_' . $var_21;
+
+            if (!file_exists($var_19)) {
+                serendipity_makeThumbnail(
+                    $var_3['file']['realname'],
+                    $var_3['file']['path'],
+                    array(
+                        'width'  => $var_20,
+                        'height' => $var_21
+                    ),
+                    $var_19,
+                    true
+                );
+            }
+        }
+
+        $var_23 = serendipity_db_query("SELECT id
+                                       FROM {$serendipity['dbPrefix']}references
+                                      WHERE link = '" . serendipity_db_escape_string($_SERVER['HTTP_REFERER']) . "'
+                                        AND entry_id = " . (int)$serendipity['GET']['image'] . "
+                                        AND type = 'media'", true, 'assoc');
+        if (!is_array($var_23) || !isset($var_23['id'])) {
+            serendipity_db_query("INSERT INTO {$serendipity['dbPrefix']}references
+                                              (entry_id, link, name, type)
+                                       VALUES (" . (int)$serendipity['GET']['image'] . ", '" . serendipity_db_escape_string($_SERVER['HTTP_REFERER']) . "', 1, 'media')");
+        } else {
+            serendipity_db_query("UPDATE {$serendipity['dbPrefix']}references
+                                     SET name = name + 1
+                                   WHERE id   = " . (int)$var_23['id']);
+        }
+
+        $var_24 = ($_SERVER['HTTPS'] == 'on' ? 'https:
+        switch($serendipity['GET']['show']) {
+            var_27 'redirect':
+                header('Status: 302 Found');
+                header('Location: ' . $var_24 . $var_13['links']['imagelinkurl']);
+                var_25;
+                break;
+
+            case 'redirectThumb':
+                header('Status: 302 Found');
+                header('Location: ' . $var_24 . $var_13['show_thumb']);
+                var_25;
+                break;
+
+            case 'full':
+                $var_19 = $var_13['realfile'];
+                break;
+
+            case 'thumb':
+                $var_19 = $var_13['location'];
+                break;
+        }
+
+        if (!empty($var_19) && file_exists($var_19)) {
+            header('Content-Type: ' . $var_13['displaymime']);
+            header('Content-Length: ' . filesize($var_19));
+            header('Content-Disposition: ' . ($serendipity['GET']['disposition'] == 'attachment' ? 'attachment' : 'inline') . '; filename=' . basename($var_19));
+            $var_26 = fopen($var_19, 'rb');
+            fpassthru($var_26);
+            var_25;
+        }
+
+        $var_3['file']['props'] =& serendipity_fetchMediaProperties((int)$serendipity['GET']['image']);
+        serendipity_plugin_api::hook_event('media_getproperties_cached', $var_3['file']['props']['base_metadata'], $var_3['file']['realfile']);
+
+        serendipity_parseMediaProperties($var_17, $var_18, $var_3['file'], $var_3['file']['props'], 0, false);
+        serendipity_plugin_api::hook_event('frontend_media_showitem', $var_3);
+        if ($var_3['perm_denied']) {
+            unset($var_3['file']);
+            unset($var_13);
+        }
+        $var_8 = 'admin/media_showitem.tpl';
+        break;
+
+    var_27 'start':
+        $var_3['case'] = 'start';
+        break;
+
+    var_27 'default':
+    default:
+        if (!empty($serendipity['GET']['adminAction']) && $serendipity['GET']['adminModule'] == 'images' && $serendipity['GET']['adminAction'] != 'default') {
+            
+            $serendipity['adminFile']          = 'serendipity_admin_image_selector.php';
+            ob_start();
+            $var_3['external'] = ob_get_contents();
+            $var_3['case'] = 'external';
+            ob_end_clean();
+            break;
+        }
+
+        $var_3['case'] = 'default';
+        $var_28 = '';
+        if (!empty($serendipity['GET']['htmltarget'])) {
+            $var_28 .= '&amp;serendipity[htmltarget]=' . htmlspecialchars($serendipity['GET']['htmltarget']);
+        }
+
+        if (!empty($serendipity['GET']['filename_only'])) {
+            $var_28 .= '&amp;serendipity[filename_only]=' . htmlspecialchars($serendipity['GET']['filename_only']);
+        }
+
+        if (!isset($serendipity['thumbPerPage2'])) {
+            $serendipity['thumbPerPage2'] = 3;
+        }
+
+        ob_start();
+        $var_29 = serendipity_displayImageList(
+          isset($serendipity['GET']['page'])   ? $serendipity['GET']['page']   : 1,
+          $serendipity['thumbPerPage2'],
+          ($serendipity['showMediaToolbar'] ? true : false),
+          '?serendipity[step]=1' . $var_28 . '&amp;serendipity[textarea]='. htmlspecialchars($serendipity['GET']['textarea']),
+          true,
+          null,
+          false
+        );
+        $var_3['external'] = ob_get_contents();
+        ob_end_clean();
+        serendipity_smarty_fetch('MEDIA_LIST', $var_29);
+}
+
+$var_3 = array_merge($serendipity['GET'], $var_3);
+$serendipity['smarty']->assign_by_ref('media', $var_3);
+$serendipity['smarty']->display(serendipity_getTemplateFile($var_8, 'serendipityPath'));
+

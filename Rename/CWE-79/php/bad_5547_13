@@ -1,0 +1,226 @@
+<?php
+
+
+elgg_register_event_handler('init', 'system', 'blog_init');
+
+
+function fn_0() {
+
+	elgg_register_library('elgg:blog', elgg_get_plugins_path() . 'blog/lib/blog.php');
+
+	
+	$var_0 = new class_0('blog', elgg_echo('blog:blogs'), 'blog/all');
+	elgg_register_menu_item('site', $var_0);
+
+	elgg_register_event_handler('upgrade', 'upgrade', 'blog_run_upgrades');
+
+	
+	elgg_extend_view('css/elgg', 'blog/css');
+
+	
+	$var_1 = elgg_get_simplecache_url('js', 'blog/save_draft');
+	elgg_register_simplecache_view('js/blog/save_draft');
+	elgg_register_js('elgg.blog', $var_1);
+
+	
+	elgg_register_page_handler('blog', 'blog_page_handler');
+
+	
+	elgg_register_entity_url_handler('object', 'blog', 'blog_url_handler');
+
+	
+	register_notification_object('object', 'blog', elgg_echo('blog:newpost'));
+	elgg_register_plugin_hook_handler('notify:entity:message', 'object', 'blog_notify_message');
+
+	
+	elgg_register_plugin_hook_handler('register', 'menu:owner_block', 'blog_owner_block_menu');
+
+	
+	
+	
+
+	
+	elgg_register_entity_type('object', 'blog');
+
+	
+	add_group_tool_option('blog', elgg_echo('blog:enableblog'), true);
+	elgg_extend_view('groups/tool_latest', 'blog/group_module');
+
+	
+	elgg_register_widget_type('blog', elgg_echo('blog'), elgg_echo('blog:widget:description'));
+
+	
+	$var_2 = elgg_get_plugins_path() . 'blog/actions/blog';
+	elgg_register_action('blog/save', "$var_2/save.php");
+	elgg_register_action('blog/auto_save_revision', "$var_2/auto_save_revision.php");
+	elgg_register_action('blog/delete', "$var_2/delete.php");
+
+	
+	elgg_register_plugin_hook_handler('register', 'menu:entity', 'blog_entity_menu_setup');
+
+	
+	elgg_register_plugin_hook_handler('get_views', 'ecml', 'blog_ecml_views_hook');
+}
+
+
+function fn_1($var_3) {
+
+	elgg_load_library('elgg:blog');
+
+	
+	blog_url_forwarder($var_3);
+
+	
+	elgg_push_breadcrumb(elgg_echo('blog:blogs'), "blog/all");
+
+	if (!isset($var_3[0])) {
+		$var_3[0] = 'all';
+	}
+
+	$var_4 = $var_3[0];
+	switch ($var_4) {
+		case 'owner':
+			$var_5 = get_user_by_username($var_3[1]);
+			$var_6 = blog_get_page_content_list($var_5->var_7);
+			break;
+		case 'friends':
+			$var_5 = get_user_by_username($var_3[1]);
+			$var_6 = blog_get_page_content_friends($var_5->var_7);
+			break;
+		case 'archive':
+			$var_5 = get_user_by_username($var_3[1]);
+			$var_6 = blog_get_page_content_archive($var_5->var_7, $var_3[2], $var_3[3]);
+			break;
+		case 'view':
+		case 'read': 
+			$var_6 = blog_get_page_content_read($var_3[1]);
+			break;
+		case 'add':
+			gatekeeper();
+			$var_6 = blog_get_page_content_edit($var_4, $var_3[1]);
+			break;
+		case 'edit':
+			gatekeeper();
+			$var_6 = blog_get_page_content_edit($var_4, $var_3[1], $var_3[2]);
+			break;
+		case 'group':
+			if ($var_3[2] == 'all') {
+				$var_6 = blog_get_page_content_list($var_3[1]);
+			} else {
+				$var_6 = blog_get_page_content_archive($var_3[1], $var_3[3], $var_3[4]);
+			}
+			break;
+		case 'all':
+			$var_6 = blog_get_page_content_list();
+			break;
+		default:
+			return false;
+	}
+
+	if (isset($var_6['sidebar'])) {
+		$var_6['sidebar'] .= elgg_view('blog/sidebar', array('page' => $var_4));
+	} else {
+		$var_6['sidebar'] = elgg_view('blog/sidebar', array('page' => $var_4));
+	}
+
+	$var_8 = elgg_view_layout('content', $var_6);
+
+	
+	return true;
+}
+
+
+function fn_2($var_9) {
+	if (!$var_9->getOwnerEntity()) {
+		
+		return FALSE;
+	}
+
+	$var_11 = elgg_get_friendly_title($var_9->var_12);
+
+	return "blog/view/{$var_9->var_7}/$var_11";
+}
+
+
+function fn_3($var_13, $var_14, $var_15, $var_6) {
+	if (elgg_instanceof($var_6['entity'], 'user')) {
+		$var_16 = "blog/owner/{$var_6['entity']->var_17}";
+		$var_0 = new class_0('blog', elgg_echo('blog'), $var_16);
+		$var_15[] = $var_0;
+	} else {
+		if ($var_6['entity']->var_18 != "no") {
+			$var_16 = "blog/group/{$var_6['entity']->var_7}/all";
+			$var_0 = new class_0('blog', elgg_echo('blog:group'), $var_16);
+			$var_15[] = $var_0;
+		}
+	}
+
+	return $var_15;
+}
+
+
+function fn_4($var_13, $var_14, $var_15, $var_6) {
+	if (elgg_in_context('widgets')) {
+		return $var_15;
+	}
+
+	$var_9 = $var_6['entity'];
+	$var_19 = elgg_extract('handler', $var_6, false);
+	if ($var_19 != 'blog') {
+		return $var_15;
+	}
+
+	if ($var_9->canEdit() && $var_9->var_21 != 'published') {
+		$var_22 = elgg_echo("blog:status:{$var_9->var_21}");
+		$var_23 = array(
+			'name' => 'published_status',
+			'text' => "<span>$var_22</span>",
+			'href' => false,
+			'priority' => 150,
+		);
+		$var_15[] = class_0::factory($var_23);
+	}
+
+	return $var_15;
+}
+
+
+function fn_5($var_13, $var_14, $var_24, $var_6) {
+	$var_9 = $var_6['entity'];
+	$var_25 = $var_6['to_entity'];
+	$var_26 = $var_6['method'];
+	if (elgg_instanceof($var_9, 'object', 'blog')) {
+		$var_27 = $var_9->var_28;
+		$var_12 = $var_9->var_12;
+		$var_29 = $var_9->getOwnerEntity();
+		return elgg_echo('blog:notification', array(
+			$var_29->var_30,
+			$var_12,
+			$var_27,
+			$var_9->getURL()
+		));
+	}
+	return null;
+}
+
+
+function fn_6($var_13, $var_32, $var_33, $var_6) {
+	$var_33['object/blog'] = elgg_echo('blog:blogs');
+
+	return $var_33;
+}
+
+
+function fn_7($var_34, $var_14, $var_35) {
+	$var_36 = elgg_get_plugin_setting('upgrade_version', 'blogs');
+
+	if (!$var_36) {
+		 
+		 
+		if (!update_subtype('object', 'blog', 'ElggBlog')) {
+			add_subtype('object', 'blog', 'ElggBlog');
+		}
+
+		elgg_set_plugin_setting('upgrade_version', 1, 'blogs');
+	}
+}

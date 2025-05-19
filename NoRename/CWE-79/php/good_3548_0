@@ -1,0 +1,776 @@
+<?php
+
+class SSViewer {
+	
+	
+	protected static $source_file_comments = false;
+	
+	
+	static function set_source_file_comments($val) {
+		self::$source_file_comments = $val;
+	}
+	
+	
+	static function get_source_file_comments() {
+		return self::$source_file_comments;
+	}
+	
+	
+	private $chosenTemplates = array();
+	
+	
+	protected $rewriteHashlinks = true;
+	
+	
+	protected static $current_theme = null;
+	
+	
+	protected static $current_custom_theme = null;
+	
+	
+	static function fromString($content) {
+		return new SSViewer_FromString($content);
+	}
+	
+	
+	static function set_theme($theme) {
+		self::$current_theme = $theme;
+		
+		if(!is_null($theme))
+			self::$current_custom_theme=$theme;
+	}
+	
+	
+	static function current_theme() {
+		return self::$current_theme;
+	}
+	
+	
+	static function current_custom_theme(){
+		return self::$current_custom_theme;
+	}
+	
+	
+	public function __construct($templateList) {
+		global $_TEMPLATE_MANIFEST;
+
+		
+		if (isset($_GET['flush']) && $_GET['flush'] == 'all') {
+			if(Director::isDev() || Director::is_cli() || Permission::check('ADMIN')) {
+				self::flush_template_cache();
+			} else {
+				return Security::permissionFailure(null, 'Please log in as an administrator to flush the template cache.');
+			}
+		}
+		
+		if(substr((string) $templateList,-3) == '.ss') {
+			$this->chosenTemplates['main'] = $templateList;
+		} else {
+			if(!is_array($templateList)) $templateList = array($templateList);
+			
+			if(isset($_GET['debug_request'])) Debug::message("Selecting templates from the following list: " . implode(", ", $templateList));
+
+			foreach($templateList as $template) {
+				
+				if(strpos($template,'/') !== false) list($templateFolder, $template) = explode('/', $template, 2);
+				else $templateFolder = null;
+
+				
+				if(self::current_theme() && isset($_TEMPLATE_MANIFEST[$template]['themes'][self::current_theme()])) {
+					$this->chosenTemplates = array_merge(
+						$_TEMPLATE_MANIFEST[$template]['themes'][self::current_theme()], 
+						$this->chosenTemplates
+					);
+					
+					if(isset($_GET['debug_request'])) Debug::message("Found template '$template' from main theme '" . self::current_theme() . "': " . var_export($_TEMPLATE_MANIFEST[$template]['themes'][self::current_theme()], true));
+				}
+				
+				
+				if(isset($_TEMPLATE_MANIFEST[$template]) && (array_keys($_TEMPLATE_MANIFEST[$template]) != array('themes'))) {
+					$this->chosenTemplates = array_merge(
+						$_TEMPLATE_MANIFEST[$template], 
+						$this->chosenTemplates
+					);
+					
+					if(isset($_GET['debug_request'])) Debug::message("Found template '$template' from main template archive, containing the following items: " . var_export($_TEMPLATE_MANIFEST[$template], true));
+					
+					unset($this->chosenTemplates['themes']);
+				}
+
+				if($templateFolder) {
+					$this->chosenTemplates['main'] = $this->chosenTemplates[$templateFolder];
+					unset($this->chosenTemplates[$templateFolder]);
+				}
+			}
+
+			if(isset($_GET['debug_request'])) Debug::message("Final template selections made: " . var_export($this->chosenTemplates, true));
+
+		}
+
+		if(!$this->chosenTemplates) user_error("None of these templates can be found in theme '"
+			. self::current_theme() . "': ". implode(".ss, ", $templateList) . ".ss", E_USER_WARNING);
+			
+	}
+	
+	
+	static function hasTemplate($templateList) {
+		if(!is_array($templateList)) $templateList = array($templateList);
+	
+		global $_TEMPLATE_MANIFEST;
+		foreach($templateList as $template) {
+			if(strpos($template,'/') !== false) list($templateFolder, $template) = explode('/', $template, 2);
+			if(isset($_TEMPLATE_MANIFEST[$template])) return true;
+		}
+		
+		return false;
+	}
+	
+	
+	public static function setOption($optionName, $optionVal) {
+		SSViewer::$options[$optionName] = $optionVal;
+	}
+	
+	
+	static function getOption($optionName) {
+		return SSViewer::$options[$optionName];
+	}
+	
+	protected static $options = array(
+		'rewriteHashlinks' => true,
+	);
+    
+	protected static $topLevel = array();
+	public static function topLevel() {
+		if(SSViewer::$topLevel) {
+			return SSViewer::$topLevel[sizeof(SSViewer::$topLevel)-1];
+		}
+	}
+	
+	
+	public function dontRewriteHashlinks() {
+		$this->rewriteHashlinks = false;
+		self::$options['rewriteHashlinks'] = false;
+		return $this;
+	}
+	
+	public function exists() {
+		return $this->chosenTemplates;
+	}
+	
+	
+	public static function getTemplateFile($identifier) {
+		global $_TEMPLATE_MANIFEST;
+		
+		$includeTemplateFile = self::getTemplateFileByType($identifier, 'Includes');
+		if($includeTemplateFile) return $includeTemplateFile;
+		
+		$mainTemplateFile = self::getTemplateFileByType($identifier, 'main');
+		if($mainTemplateFile) return $mainTemplateFile;
+		
+		return false;
+	}
+	
+	
+	public static function getTemplateFileByType($identifier, $type) {
+		global $_TEMPLATE_MANIFEST;
+		if(self::current_theme() && isset($_TEMPLATE_MANIFEST[$identifier]['themes'][self::current_theme()][$type])) {
+			return $_TEMPLATE_MANIFEST[$identifier]['themes'][self::current_theme()][$type];
+		} else if(isset($_TEMPLATE_MANIFEST[$identifier][$type])){
+			return $_TEMPLATE_MANIFEST[$identifier][$type];
+		} else {
+			return false;
+		}
+	}
+	
+	
+	public static function getTemplateContent($identifier) {
+		if(!SSViewer::getTemplateFile($identifier)) {
+			return null;
+		}
+		
+		$content = file_get_contents(SSViewer::getTemplateFile($identifier));
+
+		
+		
+		
+		
+		$content = ereg_replace('<' . '% +_t\((\'([^\.\']*)\'|"([^\."]*)")(([^)]|\)[^ ]|\) +[^% ])*)\) +%' . '>', '<?= _t(\''. $identifier . '.ss' . '.\\2\\3\'\\4) ?>', $content);
+
+		
+		
+		if(substr($content, 0,3) == pack("CCC", 0xef, 0xbb, 0xbf)) {
+			$content = substr($content, 3);
+		}
+
+		return $content;
+	}
+	
+	
+	static private $flushed = false;
+	
+	
+	static function flush_template_cache() {
+		if (!self::$flushed) {
+			$dir = dir(TEMP_FOLDER);
+			while (false !== ($file = $dir->read())) {
+				if (strstr($file, '.cache')) { unlink(TEMP_FOLDER.'/'.$file); }
+			}
+			self::$flushed = true;
+		}
+	}
+	
+	
+	public function process($item, $cache = null) {
+		SSViewer::$topLevel[] = $item;
+		
+		if (!$cache) $cache = SS_Cache::factory('cacheblock');
+		
+		if(isset($this->chosenTemplates['main'])) {
+			$template = $this->chosenTemplates['main'];
+		} else {
+			$template = $this->chosenTemplates[ reset($dummy = array_keys($this->chosenTemplates)) ];
+		}
+		
+		if(isset($_GET['debug_profile'])) Profiler::mark("SSViewer::process", " for $template");
+		$cacheFile = TEMP_FOLDER . "/.cache" . str_replace(array('\\','/',':'), '.', Director::makeRelative(realpath($template)));
+
+		$lastEdited = filemtime($template);
+
+		if(!file_exists($cacheFile) || filemtime($cacheFile) < $lastEdited || isset($_GET['flush'])) {
+			if(isset($_GET['debug_profile'])) Profiler::mark("SSViewer::process - compile", " for $template");
+			
+			$content = file_get_contents($template);
+			$content = SSViewer::parseTemplateContent($content, $template);
+			
+			$fh = fopen($cacheFile,'w');
+			fwrite($fh, $content);
+			fclose($fh);
+
+			if(isset($_GET['debug_profile'])) Profiler::unmark("SSViewer::process - compile", " for $template");
+		}
+	
+		
+		if(isset($_GET['showtemplate']) && !Director::isLive()) {
+			$lines = file($cacheFile);
+			
+			
+			foreach($lines as $num => $line) {
+				
+			}
+			
+		}
+		
+		
+		
+		foreach(array('Content', 'Layout') as $subtemplate) {
+			if(isset($this->chosenTemplates[$subtemplate])) {
+				$subtemplateViewer = new SSViewer($this->chosenTemplates[$subtemplate]);
+				$item = $item->customise(array(
+					$subtemplate => $subtemplateViewer->process($item, $cache)
+				));
+			}
+		}
+		
+		$itemStack = array();
+		$val = "";
+		$valStack = array();
+		
+
+		$output = $val;		
+		$output = Requirements::includeInHTML($template, $output);
+		
+		array_pop(SSViewer::$topLevel);
+
+		if(isset($_GET['debug_profile'])) Profiler::unmark("SSViewer::process", " for $template");
+		
+		
+		if($this->rewriteHashlinks && self::$options['rewriteHashlinks']) {
+			if(strpos($output, '<base') !== false) {
+				if(SSViewer::$options['rewriteHashlinks'] === 'php') { 
+					
+					$thisURLRelativeToBase = "<?php ','&quot;','&
+				} else { 
+					$thisURLRelativeToBase = Convert::raw2att($_SERVER['REQUEST_URI']); 
+				}
+				$output = preg_replace('/(<a[^>]+href *= *)"
+			}
+		}
+
+		return $output;
+	}
+
+	static function parseTemplateContent($content, $template="") {			
+		
+		
+		if(substr($content, 0,3) == pack("CCC", 0xef, 0xbb, 0xbf)) {
+			$content = substr($content, 3);
+		}
+
+		
+		if(Director::isDev() && self::$source_file_comments && $template && stripos($content, "<?xml") === false) {
+			
+			if(stripos($content, "<html") !== false) {
+				$content = preg_replace('/(<html[^>]*>)/i', "\\1<!-- template $template -->", $content);
+				$content = preg_replace('/(<\/html[^>]*>)/i', "\\1<!-- end template $template -->", $content);
+			} else {
+				$content = "<!-- template $template -->\n" . $content . "\n<!-- end template $template -->";
+			}
+		}
+		
+		while(true) {
+			$oldContent = $content;
+			
+			
+			if(Director::isDev() && self::$source_file_comments) $replacementCode = 'return "<!-- include " . SSViewer::getTemplateFile($matches[1]) . " -->\n" 
+				. SSViewer::getTemplateContent($matches[1]) 
+				. "\n<!-- end include " . SSViewer::getTemplateFile($matches[1]) . " -->";';
+			else $replacementCode = 'return SSViewer::getTemplateContent($matches[1]);';
+			
+			$content = preg_replace_callback('/<' . '% include +([A-Za-z0-9_]+) +%' . '>/', create_function(
+				'$matches', $replacementCode
+				), $content);
+			if($oldContent == $content) break;
+		}
+		
+		
+		$replacements = array(
+			'/<%--.*--%>/U' =>  '',
+			'/\$Iteration/' =>  '<?= {dlr}key ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+), *([^),]+)\\)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)}/' => '<?= {dlr}item->obj("\\1",array("\\2","\\3"),true)->obj("\\4",null,true)->XML_val("\\5",null,true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+), *([^),]+)\\)\\.([A-Za-z0-9_]+)}/' => '<?= {dlr}item->obj("\\1",array("\\2","\\3"),true)->XML_val("\\4",null,true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+), *([^),]+)\\)}/' => '<?= {dlr}item->XML_val("\\1",array("\\2","\\3"),true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+)\\)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)}/' => '<?= {dlr}item->obj("\\1",array("\\2"),true)->obj("\\3",null,true)->XML_val("\\4",null,true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+)\\)\\.([A-Za-z0-9_]+)}/' => '<?= {dlr}item->obj("\\1",array("\\2"),true)->XML_val("\\3",null,true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+)\\)}/' => '<?= {dlr}item->XML_val("\\1",array("\\2"),true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)}/' => '<?= {dlr}item->obj("\\1",null,true)->obj("\\2",null,true)->XML_val("\\3",null,true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z0-9_]+)}/' => '<?= {dlr}item->obj("\\1",null,true)->XML_val("\\2",null,true) ?>',
+			'/{\\$([A-Za-z_][A-Za-z0-9_]*)}/' => '<?= {dlr}item->XML_val("\\1",null,true) ?>\\2',
+
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z0-9_]+)\\(([^),]+)\\)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1")->XML_val("\\2",array("\\3"),true) ?>\\4',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z0-9_]+)\\(([^),]+), *([^),]+)\\)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1")->XML_val("\\2",array("\\3", "\\4"),true) ?>\\5',
+
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+), *([^),]+)\\)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1",array("\\2","\\3"),true)->obj("\\4",null,true)->XML_val("\\5",null,true) ?>\\6',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+), *([^),]+)\\)\\.([A-Za-z0-9_]+)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1",array("\\2","\\3"),true)->XML_val("\\4",null,true) ?>\\5',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+), *([^),]+)\\)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->XML_val("\\1",array("\\2","\\3"),true) ?>\\4',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+)\\)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1",array("\\2"),true)->obj("\\3",null,true)->XML_val("\\4",null,true) ?>\\5',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+)\\)\\.([A-Za-z0-9_]+)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1",array("\\2"),true)->XML_val("\\3",null,true) ?>\\4',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^),]+)\\)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->XML_val("\\1",array("\\2"),true) ?>\\3',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1",null,true)->obj("\\2",null,true)->XML_val("\\3",null,true) ?>\\4',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z0-9_]+)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->obj("\\1",null,true)->XML_val("\\2",null,true) ?>\\3',
+			'/\\$([A-Za-z_][A-Za-z0-9_]*)([^A-Za-z0-9]|$)/' => '<?= {dlr}item->XML_val("\\1",null,true) ?>\\2',
+		);
+		
+		$content = preg_replace(array_keys($replacements), array_values($replacements), $content);
+		$content = str_replace('{dlr}','$',$content);
+
+		
+		$content = SSViewer_PartialParser::process($template, $content);
+
+		
+		$content = ereg_replace('<!-- +pc +([A-Za-z0-9_(),]+) +-->', '<' . '% control \\1 %' . '>', $content);
+		$content = ereg_replace('<!-- +pc_end +-->', '<' . '% end_control %' . '>', $content);
+		
+		
+		$content = ereg_replace('<' . '% +control +([A-Za-z0-9_]+) +%' . '>', '<? array_push($itemStack, $item); if($loop = $item->obj("\\1")) foreach($loop as $key => $item) { ?>', $content);
+		
+		$content = ereg_replace('<' . '% +control +([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+) +%' . '>', '<? array_push($itemStack, $item); if(($loop = $item->obj("\\1")) && ($loop = $loop->obj("\\2"))) foreach($loop as $key => $item) { ?>', $content);
+		
+		$content = ereg_replace('<' . '% +control +([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)\\(([^),]+)\\) +%' . '>', '<? array_push($itemStack, $item); if(($loop = $item->obj("\\1")) && ($loop = $loop->obj("\\2", array("\\3")))) foreach($loop as $key => $item) { ?>', $content);
+		
+		$content = ereg_replace('<' . '% +control +([A-Za-z0-9_]+)\\(([^),]+)\\) +%' . '>', '<? array_push($itemStack, $item); if($loop = $item->obj("\\1", array("\\2"))) foreach($loop as $key => $item) { ?>', $content);
+		
+		$content = ereg_replace('<' . '% +control +([A-Za-z0-9_]+)\\(([^),]+), *([^),]+)\\) +%' . '>', '<? array_push($itemStack, $item); if($loop = $item->obj("\\1", array("\\2","\\3"))) foreach($loop as $key => $item) { ?>', $content);
+		
+		$content = ereg_replace('<' . '% +control +([A-Za-z0-9_]+)\\(([^),]+), *([^),]+), *([^),]+)\\) +%' . '>', '<? array_push($itemStack, $item); if($loop = $item->obj("\\1", array("\\2", "\\3", "\\4"))) foreach($loop as $key => $item) { ?>', $content);
+		$content = ereg_replace('<' . '% +end_control +%' . '>', '<? } $item = array_pop($itemStack); ?>', $content);
+		$content = ereg_replace('<' . '% +debug +%' . '>', '<? Debug::show($item) ?>', $content);
+		$content = ereg_replace('<' . '% +debug +([A-Za-z0-9_]+) +%' . '>', '<? Debug::show($item->cachedCall("\\1")) ?>', $content);
+
+		
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+) +%' . '>', '<? if($item->obj("\\1",null,true)->hasValue("\\2")) {  ?>', $content);
+		
+		
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+)\\(([A-Za-z0-9_-]+)\\) +%' . '>', '<? if($item->hasValue("\\1",array("\\2"))) {  ?>', $content);
+
+		
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+) +%' . '>', '<? if($item->hasValue("\\1")) {  ?>', $content);
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+) +%' . '>', '<? } else if($item->hasValue("\\1")) {  ?>', $content);
+
+		
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+) *\\|\\|? *([A-Za-z0-9_]+) +%' . '>', '<? if($item->hasValue("\\1") || $item->hasValue("\\2")) { ?>', $content);
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+) *\\|\\|? *([A-Za-z0-9_]+) +%' . '>', '<? else_if($item->hasValue("\\1") || $item->hasValue("\\2")) { ?>', $content);
+
+		
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+) *&&? *([A-Za-z0-9_]+) +%' . '>', '<? if($item->hasValue("\\1") && $item->hasValue("\\2")) { ?>', $content);
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+) *&&? *([A-Za-z0-9_]+) +%' . '>', '<? else_if($item->hasValue("\\1") && $item->hasValue("\\2")) { ?>', $content);
+
+		
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+) *==? *"?([A-Za-z0-9_-]+)"? +%' . '>', '<? if($item->XML_val("\\1",null,true) == "\\2") {  ?>', $content);
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+) *==? *"?([A-Za-z0-9_-]+)"? +%' . '>', '<? } else if($item->XML_val("\\1",null,true) == "\\2") {  ?>', $content);
+		
+		
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+) *!= *"?([A-Za-z0-9_-]+)"? +%' . '>', '<? if($item->XML_val("\\1",null,true) != "\\2") {  ?>', $content);
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+) *!= *"?([A-Za-z0-9_-]+)"? +%' . '>', '<? } else if($item->XML_val("\\1",null,true) != "\\2") {  ?>', $content);
+
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+) +%' . '>', '<? } else if(($test = $item->cachedCall("\\1")) && ((!is_object($test) && $test) || ($test && $test->exists()) )) {  ?>', $content);
+
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+) +%' . '>', '<? $test = $item->obj("\\1",null,true)->cachedCall("\\2"); if((!is_object($test) && $test) || ($test && $test->exists())) {  ?>', $content);
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+) +%' . '>', '<? } else if(($test = $item->obj("\\1",null,true)->cachedCall("\\2")) && ((!is_object($test) && $test) || ($test && $test->exists()) )) {  ?>', $content);
+
+		$content = ereg_replace('<' . '% +if +([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+) +%' . '>', '<? $test = $item->obj("\\1",null,true)->obj("\\2",null,true)->cachedCall("\\3"); if((!is_object($test) && $test) || ($test && $test->exists())) {  ?>', $content);
+		$content = ereg_replace('<' . '% +else_if +([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+) +%' . '>', '<? } else if(($test = $item->obj("\\1",null,true)->obj("\\2",null,true)->cachedCall("\\3")) && ((!is_object($test) && $test) || ($test && $test->exists()) )) {  ?>', $content);
+		
+		$content = ereg_replace('<' . '% +else +%' . '>', '<? } else { ?>', $content);
+		$content = ereg_replace('<' . '% +end_if +%' . '>', '<? }  ?>', $content);
+
+		
+		
+		ereg('.*[\/](.*)',$template,$path);
+		
+		
+		
+		
+		
+		$content = ereg_replace('<' . '% +_t\((\'([^\.\']*)\'|"([^\."]*)")(([^)]|\)[^ ]|\) +[^% ])*)\) +%' . '>', '<?= _t(\''. $path[1] . '.\\2\\3\'\\4) ?>', $content);
+		
+		$content = ereg_replace('<' . '% +_t\((\'([^\']*)\'|"([^"]*)")(([^)]|\)[^ ]|\) +[^% ])*)\) +%' . '>', '<?= _t(\'\\2\\3\'\\4) ?>', $content);
+
+		
+		$content = ereg_replace('<' . '% +sprintf\(_t\((\'([^\.\']*)\'|"([^\."]*)")(([^)]|\)[^ ]|\) +[^% ])*)\),\<\?= +([^\?]*) +\?\>) +%' . '>', '<?= sprintf(_t(\''. $path[1] . '.\\2\\3\'\\4),\\6) ?>', $content);
+		
+		$content = ereg_replace('<' . '% +sprintf\(_t\((\'([^\']*)\'|"([^"]*)")(([^)]|\)[^ ]|\) +[^% ])*)\),\<\?= +([^\?]*) +\?\>) +%' . '>', '<?= sprintf(_t(\'\\2\\3\'\\4),\\6) ?>', $content);
+
+		
+		$content = ereg_replace('<' . '% +base_tag +%' . '>', '<?= SSViewer::get_base_tag($val); ?>', $content);
+
+		$content = ereg_replace('<' . '% +current_page +%' . '>', '<?= $_SERVER[SCRIPT_URL] ?>', $content);
+		
+		
+		$content = preg_replace('/<% +require +([a-zA-Z]+)(?:\(([^),]+)\))? +%>/', '<? Requirements::\\1("\\2"); ?>', $content);
+		$content = preg_replace('/<% +require +([a-zA-Z]+)\(([^),]+), *([^),]+)\) +%>/', '<? Requirements::\\1("\\2", "\\3"); ?>', $content);
+		
+		
+		$content = ereg_replace('<!-- +if +([A-Za-z0-9_]+) +-->', '<? if($item->cachedCall("\\1")) { ?>', $content);
+		$content = ereg_replace('<!-- +else +-->', '<? } else { ?>', $content);
+		$content = ereg_replace('<!-- +if_end +-->', '<? }  ?>', $content);
+			
+		
+		$content = ereg_replace('href *= *"
+	
+		
+		$content = ereg_replace('<\?xml([^>]+)\?' . '>', '<
+
+		
+		$content = str_replace('<?=',"\nSSVIEWER;\n\$val .= ", $content);
+		$content = str_replace('<?',"\nSSVIEWER;\n", $content);
+		$content = str_replace('?>',";\n \$val .= <<<SSVIEWER\n", $content);
+		
+		$output  = "<?php\n";
+		$output .= '$val .= <<<SSVIEWER' . "\n" . $content . "\nSSVIEWER;\n"; 
+		
+		
+		$output = ereg_replace('<
+	
+		return $output;
+	}
+
+	
+	public function templates() {
+		return $this->chosenTemplates;
+	}
+	
+	
+	public function setTemplateFile($type, $file) {
+		$this->chosenTemplates[$type] = $file;
+	}
+	
+	
+	static function get_base_tag($contentGeneratedSoFar) {
+		$base = Director::absoluteBaseURL();
+		
+		
+		if(preg_match('/<!DOCTYPE[^>]+xhtml/i', $contentGeneratedSoFar)) {
+			return "<base href=\"$base\" />";
+		} else {
+			return "<base href=\"$base\"><!--[if lte IE 6]></base><![endif]-->";
+		}
+	}
+}
+
+
+class SSViewer_FromString extends SSViewer {
+	protected $content;
+	
+	public function __construct($content) {
+		$this->content = $content;
+	}
+	
+	public function process($item, $cache = null) {
+		$template = SSViewer::parseTemplateContent($this->content, "string sha1=".sha1($this->content));
+
+		$tmpFile = tempnam(TEMP_FOLDER,"");
+		$fh = fopen($tmpFile, 'w');
+		fwrite($fh, $template);
+		fclose($fh);
+
+		if(isset($_GET['showtemplate']) && $_GET['showtemplate']) {
+			$lines = file($tmpFile);
+			
+			
+			foreach($lines as $num => $line) {
+				
+			}
+			
+		}
+
+		$itemStack = array();
+		$val = "";
+		$valStack = array();
+		
+		$cache = SS_Cache::factory('cacheblock');
+		
+		unlink($tmpFile);
+		
+
+		return $val;
+	}
+}
+
+
+class SSViewer_PartialParser {
+ 	
+	static $tag = '/< % [ \t]+ (cached|cacheblock|uncached|end_cached|end_cacheblock|end_uncached) [ \t]+ ([^%]+ [ \t]+)? % >/xS';
+	
+	static $argument_splitter = '/^\s*
+		
+		(
+			(?P<conditional> if | unless ) |                     
+			(?P<property> (?P<identifier> \w+) \s*               
+				( \( (?P<arguments> [^\)]*) \) )?
+			) |
+			(?P<sqstring> \' (\\\'|[^\'])+ \' ) |                
+			(?P<dqstring> " (\\"|[^"])+ " )                      
+		)
+		
+		(
+			\s*(?P<comma>,)\s* |                                 
+			(?P<fullstop>\.)                                     
+		)?
+	/xS';
+	
+	static function process($template, $content) {
+		$parser = new SSViewer_PartialParser($template, $content, 0);
+		$parser->parse();
+		return $parser->generate();
+	}
+	
+	function __construct($template, $content, $offset) {
+		$this->template = $template;
+		$this->content = $content;
+		$this->offset = $offset;
+
+		$this->blocks = array();
+	}
+
+	function controlcheck($text) {
+		
+	}
+
+	function parse() {
+		$current_tag_offset = 0;
+		
+		while (preg_match(self::$tag, $this->content, $matches, PREG_OFFSET_CAPTURE, $this->offset)) {
+			$tag = $matches[1][0];
+
+			$startpos = $matches[0][1];
+			$endpos = $matches[0][1] + strlen($matches[0][0]);
+
+			switch($tag) {
+				case 'cached':
+				case 'uncached':
+				case 'cacheblock':
+
+					$pretext = substr($this->content, $this->offset, $startpos - $this->offset);
+					$this->controlcheck($pretext);
+					$this->blocks[] = $pretext;
+
+					if ($tag == 'cached' || $tag == 'cacheblock') {
+						list($keyparts, $conditional, $condition) = $this->parseargs(@$matches[2][0]);
+						$parser = new SSViewer_Cached_PartialParser($this->template, $this->content, $endpos, $keyparts, $conditional, $condition);
+					}
+					else {
+						$parser = new SSViewer_PartialParser($this->template, $this->content, $endpos);
+					}
+
+					$parser->parse();
+					$this->blocks[] = $parser;
+					$this->offset = $parser->offset;
+					break;
+
+				case 'end_cached':
+				case 'end_cacheblock':
+				case 'end_uncached':
+					$this->blocks[] = substr($this->content, $this->offset, $startpos - $this->offset);
+					$this->content = null;
+
+					$this->offset = $endpos;
+					return $this;
+			}
+		}
+
+		$this->blocks[] = substr($this->content, $this->offset);
+		$this->content = null;
+	}
+
+	function parseargs($string) {
+		preg_match_all(self::$argument_splitter, $string, $matches, PREG_SET_ORDER);
+
+		$parts = array();
+		$conditional = null; $condition = null;
+
+		$current = '$item->';
+
+		while (strlen($string) && preg_match(self::$argument_splitter, $string, $match)) {
+
+			$string = substr($string, strlen($match[0]));
+
+			
+			if (@$match['conditional']) {
+				$conditional = $match['conditional'];
+				continue;
+			}
+
+			
+			if (@$match['property']) {
+				
+				$what = $match['identifier'];
+				$args = array();
+
+				
+				if (@$match['arguments']) {
+					foreach (explode(',', $match['arguments']) as $arg) {
+						$args[] = is_numeric($arg) ? (string)$arg : '"'.$arg.'"';
+					}
+				}
+
+				$args = empty($args) ? 'null' : 'array('.implode(',',$args).')';
+
+				
+				if (@$match['fullstop']) {
+					$current .= "obj('$what', $args, true)->";
+				}
+				
+				else {
+					$accessor = $current . "XML_val('$what', $args, true)"; $current = '$item->';
+
+					
+					if ($conditional) {
+						$condition = $accessor;
+						break;
+					}
+					
+					else $parts[] = $accessor;
+				}
+			}
+
+			
+			else if (@$match['sqstring']) $parts[] = $match['sqstring'];
+			else if (@$match['dqstring']) $parts[] = $match['dqstring'];
+		}
+
+		if ($conditional && !$condition) {
+			throw new Exception();
+		}
+
+		return array($parts, $conditional, $condition);
+	}
+
+	function generate() {
+		$res = array();
+
+		foreach ($this->blocks as $i => $block) {
+			if ($block instanceof SSViewer_PartialParser)
+				$res[] = $block->generate();
+			else {
+				$res[] = $block;
+			}
+		}
+
+		return implode('', $res);
+	}
+}
+
+
+class SSViewer_Cached_PartialParser extends SSViewer_PartialParser {
+
+	function __construct($template, $content, $offset, $keyparts, $conditional, $condition) {
+		$this->keyparts = $keyparts;
+		$this->conditional = $conditional;
+		$this->condition = $condition;
+
+		parent::__construct($template, $content, $offset);
+	}
+
+	function controlcheck($text) {
+		$ifs = preg_match_all('/<'.'% +if +/', $text, $matches);
+		$end_ifs = preg_match_all('/<'.'% +end_if +/', $text, $matches);
+
+		if ($ifs != $end_ifs) throw new Exception('You can\'t have cached or uncached blocks within condition structures');
+
+		$controls = preg_match_all('/<'.'% +control +/', $text, $matches);
+		$end_controls = preg_match_all('/<'.'% +end_control +/', $text, $matches);
+
+		if ($controls != $end_controls) throw new Exception('You can\'t have cached or uncached blocks within control structures');
+	}
+
+	function key() {
+		if (empty($this->keyparts)) return "''";
+		return 'sha1(' . implode(".'_'.", $this->keyparts) . ')';
+	}
+
+	function generate() {
+		$res = array();
+		$key = $this->key();
+
+		$condition = "";
+
+		switch ($this->conditional) {
+			case 'if':
+				$condition = "{$this->condition} && ";
+				break;
+			case 'unless':
+				$condition = "!({$this->condition}) && ";
+				break;
+		}
+
+		
+
+		foreach ($this->blocks as $i => $block) {
+			if ($block instanceof SSViewer_PartialParser)
+				$res[] = $block->generate();
+			else {
+				
+				
+				$partialkey = "'".sha1($this->template . $block)."_'.$key.'_$i'";
+
+				
+				$res[] = "<?\n".'if ('.$condition.' ($partial = $cache->load('.$partialkey.'))) $val .= $partial;'."\n";
+
+				
+				$res[] = "else {\n";
+				$res[] = '$oldval = $val; $val = "";'."\n";
+				$res[] = "\n?>" . $block . "<?\n";
+				$res[] = $condition . ' $cache->save($val); $val = $oldval . $val ;'."\n";
+				$res[] = "}\n?>";
+			}
+		}
+
+		return implode('', $res);
+	}
+}
+
+function supressOutput() {
+	return "";
+}
+
+?>

@@ -1,0 +1,915 @@
+<?php
+
+
+
+
+
+class Thread
+{
+    
+    const STATE_QUEUE = 0;
+    
+    const STATE_WAITING = 1;
+    
+    const STATE_CHATTING = 2;
+    
+    const STATE_CLOSED = 3;
+    
+    const STATE_LOADING = 4;
+    
+    const STATE_LEFT = 5;
+    
+    const STATE_INVITED = 6;
+
+    
+    const INVITATION_NOT_INVITED = 0;
+    
+    const INVITATION_WAIT = 1;
+    
+    const INVITATION_ACCEPTED = 2;
+    
+    const INVITATION_REJECTED = 3;
+    
+    const INVITATION_IGNORED = 4;
+
+    
+    const KIND_USER = 1;
+    
+    const KIND_AGENT = 2;
+    
+    const KIND_FOR_AGENT = 3;
+    
+    const KIND_INFO = 4;
+    
+    const KIND_CONN = 5;
+    
+    const KIND_EVENTS = 6;
+    
+    const KIND_PLUGIN = 7;
+
+    
+    public $id;
+
+    
+    public $lastRevision;
+
+    
+    public $state;
+
+    
+    public $invitationState;
+
+    
+    public $lastToken;
+
+    
+    public $nextAgent;
+
+    
+    public $groupId;
+
+    
+    public $shownMessageId;
+
+    
+    public $messageCount;
+
+    
+    public $created;
+
+    
+    public $modified;
+
+    
+    public $closed;
+
+    
+    public $chatStarted;
+
+    
+    public $agentId;
+
+    
+    public $agentName;
+
+    
+    public $agentTyping;
+
+    
+    public $lastPingAgent;
+
+    
+    public $locale;
+
+    
+    public $userId;
+
+    
+    public $userName;
+
+    
+    public $userTyping;
+
+    
+    public $lastPingUser;
+
+    
+    public $remote;
+
+    
+    public $referer;
+
+    
+    public $userAgent;
+
+    
+    public static function createFromDbInfo($thread_info)
+    {
+        
+        $thread = new self();
+        $thread->populateFromDbFields($thread_info);
+
+        return $thread;
+    }
+
+    
+    public static function load($id, $last_token = null)
+    {
+        
+        if (empty($id)) {
+            return false;
+        }
+
+        
+        $thread_info = Database::getInstance()->query(
+            "SELECT * FROM {thread} WHERE threadid = :threadid",
+            array(':threadid' => $id),
+            array('return_rows' => Database::RETURN_ONE_ROW)
+        );
+
+        
+        if (!$thread_info) {
+            return;
+        }
+
+        
+        $thread = new self();
+        $thread->populateFromDbFields($thread_info);
+
+        
+        if (!is_null($last_token)) {
+            if ($thread->lastToken != $last_token) {
+                return false;
+            }
+        }
+
+        return $thread;
+    }
+
+    
+    public static function reopen($id)
+    {
+        
+        $thread = self::load($id);
+
+        
+        $user_gone = abs($thread->lastPingUser - time()) > Settings::get('thread_lifetime');
+        $agent_gone = abs($thread->lastPingAgent - time()) > Settings::get('thread_lifetime');
+        if (Settings::get('thread_lifetime') != 0 && $user_gone && $agent_gone) {
+            unset($thread);
+
+            return false;
+        }
+
+        
+        if ($thread->state == self::STATE_CLOSED || $thread->state == self::STATE_LEFT) {
+            unset($thread);
+
+            return false;
+        }
+
+        
+        if ($thread->state == self::STATE_WAITING) {
+            $thread->nextAgent = 0;
+            $thread->save();
+        }
+
+        
+        $thread->postMessage(
+            self::KIND_EVENTS,
+            getlocal('Visitor joined chat again', null, $thread->locale, true)
+        );
+
+        return $thread;
+    }
+
+    
+    public static function closeOldThreads()
+    {
+        if (Settings::get('thread_lifetime') == 0) {
+            
+            return;
+        }
+
+        
+        $lock = new ProcessLock('threads_close_old');
+
+        if ($lock->get()) {
+            $query = "SELECT * FROM {thread} "
+                . "WHERE istate <> :state_closed "
+                    . "AND istate <> :state_left "
+                    
+                    . "AND ABS(:now - dtmcreated) > :thread_lifetime "
+                    
+                    . "AND ( "
+                        . "( "
+                            
+                            
+                            . "lastpingagent <> 0 "
+                            . "AND lastpinguser <> 0 "
+                            . "AND ABS(:now - lastpinguser) > :thread_lifetime "
+                            . "AND ABS(:now - lastpingagent) > :thread_lifetime "
+                        . ") OR ( "
+                            
+                            
+                            . "lastpingagent = 0 "
+                            . "AND lastpinguser <> 0 "
+                            . "AND ABS(:now - lastpinguser) > :thread_lifetime "
+                        . ") OR ( "
+                            
+                            
+                            . "lastpinguser = 0 "
+                            . "AND lastpingagent <> 0 "
+                            . "AND ABS(:now - lastpingagent) > :thread_lifetime "
+                        . ") OR ( "
+                            
+                            
+                            . "lastpinguser = 0 "
+                            . "AND lastpingagent = 0 "
+                        . ") "
+                    . ")";
+
+            
+            $now = time();
+            $rows = Database::getInstance()->query(
+                $query,
+                array(
+                    ':now' => $now,
+                    ':state_closed' => self::STATE_CLOSED,
+                    ':state_left' => self::STATE_LEFT,
+                    ':thread_lifetime' => Settings::get('thread_lifetime'),
+                ),
+                array('return_rows' => Database::RETURN_ALL_ROWS)
+            );
+
+            
+            if (count($rows) > 0) {
+                $revision = self::nextRevision();
+                foreach ($rows as $row) {
+                    $thread = Thread::createFromDbInfo($row);
+                    $thread->lastRevision = $revision;
+                    $thread->modified = $now;
+                    $thread->closed = $now;
+                    $thread->state = self::STATE_CLOSED;
+                    $thread->save(false);
+                    unset($thread);
+                }
+            }
+
+            
+            $lock->release();
+        }
+    }
+
+    
+    public static function connectionLimitReached($remote)
+    {
+        if (Settings::get('max_connections_from_one_host') == 0) {
+            return false;
+        }
+
+        $result = Database::getInstance()->query(
+            "SELECT COUNT(*) AS opened FROM {thread} WHERE remote = ? AND istate <> ? AND istate <> ?",
+            array(
+                $remote,
+                Thread::STATE_CLOSED,
+                Thread::STATE_LEFT,
+            ),
+            array('return_rows' => Database::RETURN_ONE_ROW)
+        );
+
+        if ($result && isset($result['opened'])) {
+            return $result['opened'] >= Settings::get('max_connections_from_one_host');
+        }
+
+        return false;
+    }
+
+    
+    public function __construct()
+    {
+        
+        $this->id = false;
+        $this->userName = '';
+        $this->agentId = 0;
+        $this->created = time();
+        $this->modified = time();
+        $this->chatStarted = 0;
+        $this->closed = 0;
+        $this->lastRevision = 0;
+        $this->state = self::STATE_QUEUE;
+        $this->invitationState = self::INVITATION_NOT_INVITED;
+        $this->lastToken = self::nextToken();
+        $this->nextAgent = 0;
+        $this->lastPingAgent = 0;
+        $this->lastPingUser = 0;
+        $this->userTyping = 0;
+        $this->agentTyping = 0;
+        $this->shownMessageId = 0;
+        $this->messageCount = 0;
+        $this->groupId = 0;
+    }
+
+    
+    public function delete()
+    {
+        Database::getInstance()->query(
+            "DELETE FROM {thread} WHERE threadid = :id LIMIT 1",
+            array(':id' => $this->id)
+        );
+
+        $args = array('id' => $this->id);
+        Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::THREAD_DELETE, $args);
+    }
+
+    
+    public function ping($is_user, $is_typing)
+    {
+        
+        
+        
+        $update_revision = false;
+        
+        $last_ping_other_side = 0;
+        
+        if ($is_user) {
+            $last_ping_other_side = $this->lastPingAgent;
+            $this->lastPingUser = time();
+            $this->userTyping = $is_typing ? "1" : "0";
+        } else {
+            $last_ping_other_side = $this->lastPingUser;
+            $this->lastPingAgent = time();
+            $this->agentTyping = $is_typing ? "1" : "0";
+        }
+
+        
+        if ($this->state == self::STATE_LOADING && $is_user) {
+            $this->state = self::STATE_QUEUE;
+            $this->save();
+            return;
+        }
+
+        
+        if ($last_ping_other_side > 0 && abs(time() - $last_ping_other_side) > Settings::get('connection_timeout')) {
+            
+            if ($is_user) {
+                
+                
+                $this->lastPingAgent = 0;
+
+                
+                if ($this->state == self::STATE_CHATTING) {
+                    
+                    $message_to_post = getlocal(
+                        'Your operator has connection issues. We have moved you to a priorty position in the queue. Sorry for keeping you waiting.',
+                        null,
+                        $this->locale,
+                        true
+                    );
+                    $this->postMessage(
+                        self::KIND_CONN,
+                        $message_to_post,
+                        array('created' => $last_ping_other_side + Settings::get('connection_timeout'))
+                    );
+
+                    
+                    $this->state = self::STATE_WAITING;
+                    $this->nextAgent = 0;
+
+                    
+                    
+                    $update_revision = true;
+                }
+            } else {
+                
+                
+                $this->lastPingUser = 0;
+
+                
+                if ($this->state == self::STATE_CHATTING) {
+                    $message_to_post = getlocal(
+                        'Visitor closed chat window',
+                        null,
+                        $this->locale,
+                        true
+                    );
+                    $this->postMessage(
+                        self::KIND_FOR_AGENT,
+                        $message_to_post,
+                        array('created' => $last_ping_other_side + Settings::get('connection_timeout'))
+                    );
+                }
+            }
+        }
+
+        $this->save($update_revision);
+    }
+
+    
+    public function save($update_revision = true)
+    {
+        
+        if ($update_revision) {
+            $this->lastRevision = $this->nextRevision();
+            $this->modified = time();
+        }
+
+        $db = Database::getInstance();
+        if (!$this->id) {
+            $db->query(
+                ('INSERT INTO {thread} ('
+                    . 'username, userid, agentname, agentid, '
+                    . 'dtmcreated, dtmchatstarted, dtmmodified, dtmclosed, '
+                    . 'lrevision, istate, invitationstate, ltoken, remote, '
+                    . 'referer, nextagent, locale, lastpinguser, '
+                    . 'lastpingagent, usertyping, agenttyping, '
+                    . 'shownmessageid, useragent, messagecount, groupid'
+                . ') VALUES ('
+                    . ':user_name, :user_id, :agent_name, :agent_id, '
+                    . ':created, :chat_started, :modified, :closed, '
+                    . ':revision, :state, :invitation_state, :token, :remote, '
+                    . ':referer, :next_agent, :locale, :last_ping_user, '
+                    . ':last_ping_agent, :user_typing, :agent_typing, '
+                    . ':shown_message_id, :user_agent, :message_count, :group_id '
+                . ')'),
+                array(
+                    ':user_name' => $this->userName,
+                    ':user_id' => $this->userId,
+                    ':agent_name' => $this->agentName,
+                    ':agent_id' => $this->agentId,
+                    ':created' => $this->created,
+                    ':chat_started' => $this->chatStarted,
+                    ':modified' => $this->modified,
+                    ':closed' => $this->closed,
+                    ':revision' => $this->lastRevision,
+                    ':state' => $this->state,
+                    ':invitation_state' => $this->invitationState,
+                    ':token' => $this->lastToken,
+                    ':remote' => $this->remote,
+                    ':referer' => $this->referer,
+                    ':next_agent' => $this->nextAgent,
+                    ':locale' => $this->locale,
+                    ':last_ping_user' => $this->lastPingUser,
+                    ':last_ping_agent' => $this->lastPingAgent,
+                    ':user_typing' => $this->userTyping,
+                    ':agent_typing' => $this->agentTyping,
+                    ':shown_message_id' => $this->shownMessageId,
+                    ':user_agent' => $this->userAgent,
+                    ':message_count' => $this->messageCount,
+                    ':group_id' => $this->groupId,
+                )
+            );
+            $this->id = $db->insertedId();
+
+            $args = array('thread' => $this);
+            Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::THREAD_CREATE, $args);
+        } else {
+            
+            $original_thread = Thread::load($this->id);
+
+            $db->query(
+                ('UPDATE {thread} SET '
+                    . 'username = :user_name, userid = :user_id, '
+                    . 'agentname = :agent_name, agentid = :agent_id, '
+                    . 'dtmcreated = :created, dtmchatstarted = :chat_started, '
+                    . 'dtmmodified = :modified, dtmclosed = :closed, '
+                    . 'lrevision = :revision, istate = :state, '
+                    . 'invitationstate = :invitation_state, ltoken = :token, '
+                    . 'remote = :remote, referer = :referer, '
+                    . 'nextagent = :next_agent, locale = :locale, '
+                    . 'lastpinguser = :last_ping_user, '
+                    . 'lastpingagent = :last_ping_agent, '
+                    . 'usertyping = :user_typing, agenttyping = :agent_typing, '
+                    . 'shownmessageid = :shown_message_id, '
+                    . 'useragent = :user_agent, messagecount = :message_count, '
+                    . 'groupid = :group_id '
+                . 'WHERE threadid = :thread_id'),
+                array(
+                    ':thread_id' => $this->id,
+                    ':user_name' => $this->userName,
+                    ':user_id' => $this->userId,
+                    ':agent_name' => $this->agentName,
+                    ':agent_id' => $this->agentId,
+                    ':created' => $this->created,
+                    ':chat_started' => $this->chatStarted,
+                    ':modified' => $this->modified,
+                    ':closed' => $this->closed,
+                    ':revision' => $this->lastRevision,
+                    ':state' => $this->state,
+                    ':invitation_state' => $this->invitationState,
+                    ':token' => $this->lastToken,
+                    ':remote' => $this->remote,
+                    ':referer' => $this->referer,
+                    ':next_agent' => $this->nextAgent,
+                    ':locale' => $this->locale,
+                    ':last_ping_user' => $this->lastPingUser,
+                    ':last_ping_agent' => $this->lastPingAgent,
+                    ':user_typing' => $this->userTyping,
+                    ':agent_typing' => $this->agentTyping,
+                    ':shown_message_id' => $this->shownMessageId,
+                    ':user_agent' => $this->userAgent,
+                    ':message_count' => $this->messageCount,
+                    ':group_id' => $this->groupId,
+                )
+            );
+
+            $args = array(
+                'thread' => $this,
+                'original_thread' => $original_thread,
+            );
+            Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::THREAD_UPDATE, $args);
+        }
+    }
+
+    
+    public function checkForReassign($operator)
+    {
+        $operator_name = ($this->locale == get_home_locale())
+            ? $operator['vclocalename']
+            : $operator['vccommonname'];
+
+        $is_operator_correct = $this->nextAgent == $operator['operatorid']
+            || $this->agentId == $operator['operatorid'];
+
+        if ($this->state == self::STATE_WAITING && $is_operator_correct) {
+            
+            if ($this->nextAgent == $operator['operatorid']) {
+                $message_to_post = getlocal(
+                    "Operator <strong>{0}</strong> changed operator <strong>{1}</strong>",
+                    array(safe_htmlspecialchars($operator_name), safe_htmlspecialchars($this->agentName)),
+                    $this->locale,
+                    true
+                );
+            } else {
+                $message_to_post = getlocal(
+                    "Operator {0} is back",
+                    array(safe_htmlspecialchars($operator_name)),
+                    $this->locale,
+                    true
+                );
+            }
+
+            
+            $this->state = self::STATE_CHATTING;
+            $this->nextAgent = 0;
+            $this->agentId = $operator['operatorid'];
+            $this->agentName = $operator_name;
+            $this->save();
+
+            
+            $this->postMessage(self::KIND_EVENTS, $message_to_post);
+        }
+    }
+
+    
+    public function getMessages($is_user, &$last_id)
+    {
+        $db = Database::getInstance();
+
+        
+        $query = "SELECT messageid AS id, ikind AS kind, dtmcreated AS created, "
+                . " tname AS name, tmessage AS message, plugin, data "
+            . "FROM {message} "
+            . "WHERE threadid = :threadid AND messageid > :lastid "
+                . ($is_user ? "AND ikind <> " . self::KIND_FOR_AGENT : "")
+            . " ORDER BY messageid";
+
+        $messages = $db->query(
+            $query,
+            array(
+                ':threadid' => $this->id,
+                ':lastid' => $last_id,
+            ),
+            array('return_rows' => Database::RETURN_ALL_ROWS)
+        );
+
+        foreach ($messages as $key => $msg) {
+            
+            if (!empty($messages[$key]['data'])) {
+                $messages[$key]['data'] = unserialize(
+                    $messages[$key]['data']
+                );
+            } else {
+                $messages[$key]['data'] = array();
+            }
+        }
+
+        
+        $args = array(
+            'messages' => $messages,
+            'thread' => $this,
+        );
+        Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::THREAD_GET_MESSAGES_ALTER, $args);
+        $altered_messages = $args['messages'];
+
+        
+        foreach ($altered_messages as $msg) {
+            if ($msg['id'] > $last_id) {
+                $last_id = $msg['id'];
+            }
+        }
+
+        return $altered_messages;
+    }
+
+    
+    public function postMessage($kind, $message, $options = array())
+    {
+        $event_args = array(
+            'thread' => $this,
+            'message_kind' => $kind,
+            'message_body' => $message,
+            'message_options' => (is_array($options) ? $options : array()),
+        );
+        Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::THREAD_POST_MESSAGE, $event_args);
+
+        
+        return $this->saveMessage(
+            $event_args['message_kind'],
+            $event_args['message_body'],
+            $event_args['message_options']
+        );
+    }
+
+    
+    public function close($is_user)
+    {
+        
+        if ($is_user) {
+            $this->postMessage(
+                self::KIND_EVENTS,
+                getlocal(
+                    "Visitor {0} left the chat",
+                    array(safe_htmlspecialchars($this->userName)),
+                    $this->locale,
+                    true
+                )
+            );
+        } else {
+            if ($this->state == self::STATE_INVITED) {
+                $this->postMessage(
+                    self::KIND_FOR_AGENT,
+                    getlocal(
+                        'Operator canceled invitation',
+                        null,
+                        $this->locale,
+                        true
+                    )
+                );
+            } else {
+                $this->postMessage(
+                    self::KIND_EVENTS,
+                    getlocal(
+                        "Operator {0} left the chat",
+                        array(safe_htmlspecialchars($this->agentName)),
+                        $this->locale,
+                        true
+                    )
+                );
+            }
+        }
+
+        
+        $db = Database::getInstance();
+
+        list($message_count) = $db->query(
+            ("SELECT COUNT(*) FROM {message} "
+                . "WHERE {message}.threadid = :threadid AND ikind = :kind_user"),
+            array(
+                ':threadid' => $this->id,
+                ':kind_user' => Thread::KIND_USER,
+            ),
+            array(
+                'return_rows' => Database::RETURN_ONE_ROW,
+                'fetch_type' => Database::FETCH_NUM,
+            )
+        );
+
+        
+        if ($this->state != self::STATE_CLOSED) {
+            $this->state = self::STATE_CLOSED;
+            $this->closed = time();
+            $this->messageCount = $message_count;
+            $this->save();
+
+            $args = array('thread' => $this);
+            Mibew\EventDispatcher\EventDispatcher::getInstance()->triggerEvent(Mibew\EventDispatcher\Events::THREAD_CLOSE, $args);
+        }
+    }
+
+    
+    public function take($operator)
+    {
+        
+        
+        $forbidden_states = array(
+            self::STATE_CLOSED,
+            self::STATE_LEFT,
+            self::STATE_INVITED,
+        );
+        if (in_array($this->state, $forbidden_states)) {
+            return false;
+        }
+
+        $is_operator_changed = ($operator['operatorid'] != $this->agentId)
+            
+            
+            
+            && ($this->state == self::STATE_WAITING || $this->state == self::STATE_CHATTING);
+
+        
+        
+        
+        $is_operator_joined = ($this->state == self::STATE_LOADING)
+            || ($this->state == self::STATE_QUEUE);
+
+        $is_operator_back = ($this->state == self::STATE_WAITING)
+            && ($operator['operatorid'] == $this->agentId);
+
+        $message = '';
+        $operator_name = ($this->locale == get_home_locale())
+            ? $operator['vclocalename']
+            : $operator['vccommonname'];
+
+        if ($is_operator_changed) {
+            $message = getlocal(
+                "Operator <strong>{0}</strong> changed operator <strong>{1}</strong>",
+                array(safe_htmlspecialchars($operator_name), safe_htmlspecialchars($this->agentName)),
+                $this->locale,
+                true
+            );
+        } elseif ($is_operator_joined) {
+            $message = getlocal(
+                "Operator {0} joined the chat",
+                array(safe_htmlspecialchars($operator_name)),
+                $this->locale,
+                true
+            );
+        } elseif ($is_operator_back) {
+            $message = getlocal(
+                "Operator {0} is back",
+                array(safe_htmlspecialchars($operator_name)),
+                $this->locale,
+                true
+            );
+        }
+
+        
+        $this->state = self::STATE_CHATTING;
+        $this->nextAgent = 0;
+        $this->agentId = $operator['operatorid'];
+        $this->agentName = $operator_name;
+        if (empty($this->chatStarted)) {
+            
+            
+            $this->chatStarted = time();
+        }
+        $this->save();
+
+        
+        if ($message) {
+            $this->postMessage(self::KIND_EVENTS, $message);
+        }
+
+        return true;
+    }
+
+    
+    public function renameUser($new_name)
+    {
+        
+        if ($this->userName != $new_name) {
+            
+            $old_name = $this->userName;
+            
+            $this->userName = $new_name;
+            $this->save();
+
+            
+            $message = getlocal(
+                "The visitor changed their name <strong>{0}</strong> to <strong>{1}</strong>",
+                array(safe_htmlspecialchars($old_name), safe_htmlspecialchars($new_name)),
+                $this->locale,
+                true
+            );
+            $this->postMessage(self::KIND_EVENTS, $message);
+        }
+    }
+
+    
+    protected function populateFromDbFields($db_fields)
+    {
+        $this->id = (int)$db_fields['threadid'];
+        $this->userName = $db_fields['username'];
+        $this->userId = $db_fields['userid'];
+        $this->agentName = $db_fields['agentname'];
+        $this->agentId = (int)$db_fields['agentid'];
+        $this->created = (int)$db_fields['dtmcreated'];
+        $this->chatStarted = (int)$db_fields['dtmchatstarted'];
+        $this->modified = (int)$db_fields['dtmmodified'];
+        $this->closed = (int)$db_fields['dtmclosed'];
+        $this->lastRevision = (int)$db_fields['lrevision'];
+        $this->state = (int)$db_fields['istate'];
+        $this->invitationState = (int)$db_fields['invitationstate'];
+        $this->lastToken = (int)$db_fields['ltoken'];
+        $this->remote = $db_fields['remote'];
+        $this->referer = $db_fields['referer'];
+        $this->nextAgent = (int)$db_fields['nextagent'];
+        $this->locale = $db_fields['locale'];
+        $this->lastPingUser = (int)$db_fields['lastpinguser'];
+        $this->lastPingAgent = (int)$db_fields['lastpingagent'];
+        $this->userTyping = $db_fields['usertyping'];
+        $this->agentTyping = $db_fields['agenttyping'];
+        $this->shownMessageId = (int)$db_fields['shownmessageid'];
+        $this->userAgent = $db_fields['useragent'];
+        $this->messageCount = $db_fields['messagecount'];
+        $this->groupId = (int)$db_fields['groupid'];
+    }
+
+    
+    protected function saveMessage($kind, $message, $options = array())
+    {
+        $db = Database::getInstance();
+
+        
+        
+        $options += array(
+            'name' => null,
+            'operator_id' => 0,
+            'created' => time(),
+            'plugin' => '',
+            'data' => array(),
+        );
+
+        
+        $options['data'] = serialize((array) $options['data']);
+
+        
+        $query = "INSERT INTO {message} ("
+                . "threadid, ikind, tmessage, tname, agentid, "
+                . "dtmcreated, plugin, data"
+            . ") VALUES ("
+                . ":threadid, :kind, :message, :name, :agentid, "
+                . ":created, :plugin, :data"
+            . ")";
+
+        $values = array(
+            ':threadid' => $this->id,
+            ':kind' => $kind,
+            ':message' => $message,
+            ':name' => $options['name'],
+            ':agentid' => $options['operator_id'],
+            ':created' => $options['created'],
+            ':plugin' => $options['plugin'],
+            ':data' => $options['data'],
+        );
+
+        
+        $db->query($query, $values);
+
+        return $db->insertedId();
+    }
+
+    
+    protected static function nextRevision()
+    {
+        $db = Database::getInstance();
+        $db->query("UPDATE {revision} SET id=LAST_INSERT_ID(id+1)");
+        $val = $db->insertedId();
+
+        return $val;
+    }
+
+    
+    protected static function nextToken()
+    {
+        if (function_exists('openssl_random_pseudo_bytes')) {
+            $token_arr = unpack('N', "\x0" . openssl_random_pseudo_bytes(3));
+            $token = $token_arr[1];
+        } else {
+            $token = mt_rand(99999, 99999999);
+        }
+
+        return $token;
+    }
+}

@@ -1,0 +1,811 @@
+<?
+	
+
+	class BigTreeCMS {
+	
+		var $iplCache = array();
+
+		
+		
+		function __construct() {
+			
+			if (file_exists(SERVER_ROOT."cache/module-class-list.btc")) {
+				$items = json_decode(file_get_contents(SERVER_ROOT."cache/module-class-list.btc"),true);
+			} else {
+				
+				$q = sqlquery("SELECT * FROM bigtree_modules");
+				$items = array();
+				while ($f = sqlfetch($q)) {
+					$items[$f["class"]] = $f["route"];
+				}
+				
+				
+				file_put_contents(SERVER_ROOT."cache/module-class-list.btc",json_encode($items));
+			}
+			
+			$this->ModuleClassList = $items;
+		}
+
+		
+
+		function cacheGet($identifier,$key,$max_age = false) {
+			$identifier = sqlescape($identifier);
+			$key = sqlescape($key);
+			if ($max_age) {
+				$f = sqlfetch(sqlquery("SELECT * FROM bigtree_caches WHERE `identifier` = '$identifier' AND `key` = '$key' AND timestamp >= '".date("Y-m-d H:i:s",time() - $max_age)."'"));
+			} else {
+				$f = sqlfetch(sqlquery("SELECT * FROM bigtree_caches WHERE `identifier` = '$identifier' AND `key` = '$key'"));
+			}
+			if (!$f) {
+				return false;
+			}
+			return json_decode($f["value"],true);
+		}
+
+		
+
+		function cachePut($identifier,$key,$value,$replace = true) {
+			$identifier = sqlescape($identifier);
+			$key = sqlescape($key);
+			$f = sqlfetch(sqlquery("SELECT * FROM bigtree_caches WHERE `identifier` = '$identifier' AND `key` = '$key'"));
+			if ($f && !$replace) {
+				return false;
+			}
+
+			
+			if (strnatcmp(phpversion(),'5.3') >= 0) {
+				$value = sqlescape(json_encode($value,JSON_FORCE_OBJECT));			
+			} else {
+				$value = sqlescape(json_encode($value));
+			}
+			
+			if ($f) {
+				sqlquery("UPDATE bigtree_caches SET `value` = '$value' WHERE `identifier` = '$identifier' AND `key` = '$key'");
+			} else {
+				sqlquery("INSERT INTO bigtree_caches (`identifier`,`key`,`value`) VALUES ('$identifier','$key','$value')");
+			}
+			return true;
+		}
+		
+		
+		
+		function catch404() {
+			global $cms,$bigtree;
+			
+			if ($this->handle404(str_ireplace(WWW_ROOT,"",BigTree::currentURL()))) {
+				$bigtree["layout"] = "default";
+				ob_start();
+				$bigtree["content"] = ob_get_clean();
+				ob_start();
+				die();
+			}
+		}
+		
+		
+		
+		function checkOldRoutes($path) {
+			$found = false;
+			$x = count($path);
+			while ($x) {
+				$f = sqlfetch(sqlquery("SELECT * FROM bigtree_route_history WHERE old_route = '".implode("/",array_slice($path,0,$x))."'"));
+				if ($f) {
+					$old = $f["old_route"];
+					$new = $f["new_route"];
+					$found = true;
+					break;
+				}
+				$x--;
+			}
+			
+			if ($found) {
+				$new_url = $new.substr($_GET["bigtree_htaccess_url"],strlen($old));
+				BigTree::redirect(WWW_ROOT.$new_url,"301");
+			}
+		}
+		
+			
+			
+		function decodeCallouts($data) {
+			$parsed = array();
+			if (!is_array($data)) {
+				$data = json_decode($data,true);
+			}
+			
+			if (is_array($data)) {
+				foreach ($data as $key => $d) {
+					$p = array();
+					foreach ($d as $kk => $dd) {
+						if (is_array($dd)) {
+							
+							$p[$kk] = BigTree::untranslateArray($dd);
+						} elseif (is_array(json_decode($dd,true))) {
+							
+							$p[$kk] = BigTree::untranslateArray(json_decode($dd,true));
+						} else {
+							
+							$p[$kk] = $this->replaceInternalPageLinks($dd);
+						}
+					}
+					$parsed[$key] = $p;
+				}
+			}
+			return $parsed;
+		}
+		
+		
+
+		function decodeResources($data) {
+			if (!is_array($data)) {
+				$data = json_decode($data,true);
+			}
+			if (is_array($data)) {
+				foreach ($data as $key => $val) {
+					if (is_array($val)) {
+						
+						$val = BigTree::untranslateArray($val);
+					} elseif (is_array(json_decode($val,true))) {
+						
+						$val = BigTree::untranslateArray(json_decode($val,true));
+					} else {
+						
+						$val = $this->replaceInternalPageLinks($val);				
+					}
+					$data[$key] = $val;
+				}
+			}
+			return $data;
+		}
+		
+		
+		
+		function drawXMLSitemap() {
+			header("Content-type: text/xml");
+			
+			
+
+			while ($f = sqlfetch($q)) {
+				if ($f["template"] || strpos($f["external"],$GLOBALS["domain"])) {	
+					if (!$f["template"]) {
+						$link = $this->getInternalPageLink($f["external"]);
+					} else {
+						$link = WWW_ROOT.$f["path"].(($f["id"] > 0) ? "/" : ""); 
+					}
+					
+					
+					
+					
+					$tf = sqlfetch(sqlquery("SELECT bigtree_modules.class AS module_class FROM bigtree_templates JOIN bigtree_modules ON bigtree_modules.id = bigtree_templates.module WHERE bigtree_templates.id = '".$f["template"]."'"));
+					if ($tf["module_class"]) {
+						$mod = new $tf["module_class"];
+						if (method_exists($mod,"getSitemap")) {
+							$subnav = $mod->getSitemap($f);
+							foreach ($subnav as $s) {
+								
+							}
+						}
+						$mod = $subnav = null;
+					}
+				}
+			}
+			
+			die();
+		}
+		
+		
+		
+		function getBreadcrumb($ignore_trunk = false) {
+			global $bigtree;
+			return $this->getBreadcrumbByPage($bigtree["page"],$ignore_trunk);
+		}
+		
+		
+		
+		function getBreadcrumbByPage($page,$ignore_trunk = false) {
+			$bc = array();
+			
+			
+			$pieces = explode("/",$page["path"]);
+			$paths = array();
+			$path = "";
+			foreach ($pieces as $piece) {
+				$path = $path.$piece."/";
+				$paths[] = "path = '".sqlescape(trim($path,"/"))."'";
+			}
+			
+			
+			$q = sqlquery("SELECT id,nav_title,path,trunk FROM bigtree_pages WHERE (".implode(" OR ",$paths).") ORDER BY LENGTH(path) DESC");
+			$trunk_hit = false;
+			while ($f = sqlfetch($q)) {
+				if ($f["trunk"]) {
+					$trunk_hit = true;
+					$this->BreadcrumbTrunk = $f;
+				}
+				
+				if (!$trunk_hit || $ignore_trunk) {
+					$bc[] = array("title" => stripslashes($f["nav_title"]),"link" => WWW_ROOT.$f["path"]."/","id" => $f["id"]);
+				}
+			}
+			
+			$bc = array_reverse($bc);
+			
+			
+			$mod = sqlfetch(sqlquery("SELECT bigtree_modules.class FROM bigtree_modules JOIN bigtree_templates ON bigtree_modules.id = bigtree_templates.module WHERE bigtree_templates.id = '".$page["template"]."'"));
+			if ($mod["class"]) {
+				if (class_exists($mod["class"])) {
+					@eval('$module = new '.$mod["class"].';');
+					if (method_exists($module, "getBreadcrumb")) {
+						$bc = array_merge($bc,$module->getBreadcrumb($page));
+					}
+				}
+			}
+			
+			return $bc;
+		}
+		
+		
+		
+		function getFeed($item) {
+			if (!is_array($item)) {
+				$item = sqlescape($item);
+				$item = sqlfetch(sqlquery("SELECT * FROM bigtree_feeds WHERE id = '$item'"));
+			}
+			if (!$item) {
+				return false;
+			}
+			$item["options"] = json_decode($item["options"],true);
+			if (is_array($item["options"])) {
+				foreach ($item["options"] as &$option) {
+					$option = $this->replaceRelativeRoots($option);
+				}
+			}
+			$item["fields"] = json_decode($item["fields"],true);
+			return $item;
+		}
+		
+		
+		
+		function getFeedByRoute($route) {
+			$route = sqlescape($route);
+			$item = sqlfetch(sqlquery("SELECT * FROM bigtree_feeds WHERE route = '$route'"));
+			return $this->getFeed($item);
+		}
+		
+		
+		
+		function getHiddenNavByParent($parent = 0) {
+			return $this->getNavByParent($parent,1,false,true);
+		}
+		
+		
+		
+		function getInternalPageLink($ipl) {
+			if (substr($ipl,0,6) != "ipl:
+				return $this->replaceRelativeRoots($ipl);
+			}
+			$ipl = explode("
+			$navid = $ipl[1];
+			
+			
+			$c = json_decode(base64_decode($ipl[2]));
+			
+			if (!is_array($c)) {
+				$c = unserialize(base64_decode($ipl[2]));
+			}
+			
+			if (is_array($c)) {
+				$commands = implode("/",$c);
+			} else {
+				$commands = "";
+			}
+			
+			if ($commands && strpos($commands,"?") === false) {
+				$commands .= "/";
+			}
+			
+			
+			if (isset($this->iplCache[$navid])) {
+				return $this->iplCache[$navid].$commands;
+			} else {
+				
+				$f = sqlfetch(sqlquery("SELECT path FROM bigtree_pages WHERE id = '".sqlescape($navid)."'"));
+				
+				$this->iplCache[$navid] = WWW_ROOT.$f["path"]."/";
+				return WWW_ROOT.$f["path"]."/".$commands;
+			}
+		}
+		
+		
+		
+		function getLink($id) {
+			global $bigtree;
+			
+			if ($id == 0) {
+				return WWW_ROOT;
+			}
+			
+			if ($bigtree["page"]["id"] == $id) {
+				return WWW_ROOT.$bigtree["page"]["path"]."/";
+			}
+			
+			$f = sqlfetch(sqlquery("SELECT path FROM bigtree_pages WHERE id = '".sqlescape($id)."'"));
+			return WWW_ROOT.$f["path"]."/";
+		}
+		
+		
+			
+		function getNavByParent($parent = 0,$levels = 1,$follow_module = true,$only_hidden = false) {
+			static $module_nav_count = 0;
+			$nav = array();
+			$find_children = array();
+			
+			
+			
+			if (is_array($parent)) {
+				$where_parent = array();
+				foreach ($parent as $p) {
+					$where_parent[] = "parent = '".sqlescape($p)."'";
+				}
+				$where_parent = "(".implode(" OR ",$where_parent).")";
+			
+			} else {
+				$parent = sqlescape($parent);
+				$where_parent = "parent = '$parent'";
+			}
+			
+			$in_nav = $only_hidden ? "" : "on";
+			$sort = $only_hidden ? "nav_title ASC" : "position DESC, id ASC";
+			
+			$q = sqlquery("SELECT id,nav_title,parent,external,new_window,template,route,path FROM bigtree_pages WHERE $where_parent AND in_nav = '$in_nav' AND archived != 'on' AND (publish_at <= NOW() OR publish_at IS NULL) AND (expire_at >= NOW() OR expire_at IS NULL) ORDER BY $sort");
+			
+			
+			while ($f = sqlfetch($q)) {
+				$link = WWW_ROOT.$f["path"]."/";
+				$new_window = false;
+				
+				
+				if ($f["external"] && $f["template"] == "") {
+					$link = $this->getInternalPageLink($f["external"]);
+					if ($f["new_window"] == "Yes") {
+						$new_window = true;
+					}
+				}
+				
+				
+				$nav[$f["id"]] = array("id" => $f["id"], "parent" => $f["parent"], "title" => $f["nav_title"], "route" => $f["route"], "link" => $link, "new_window" => $new_window, "children" => array());
+				
+				
+				if ($levels > 1) {
+					$find_children[] = $f["id"];
+				}
+			}
+			
+			
+			if (count($find_children)) {
+				$subnav = $this->getNavByParent($find_children,$levels - 1,$follow_module);
+				foreach ($subnav as $item) {
+					
+					$nav[$item["parent"]]["children"][$item["id"]] = $item;
+				}
+			}
+			
+			
+			if ($follow_module) {
+				
+				if (is_array($parent)) {
+					$where_parent = array();
+					foreach ($parent as $p) {
+						$where_parent[] = "bigtree_pages.id = '".sqlescape($p)."'";
+					}
+					$q = sqlquery("SELECT bigtree_modules.class,bigtree_templates.routed,bigtree_templates.module,bigtree_pages.id,bigtree_pages.path,bigtree_pages.template FROM bigtree_modules JOIN bigtree_templates JOIN bigtree_pages ON bigtree_templates.id = bigtree_pages.template WHERE bigtree_modules.id = bigtree_templates.module AND (".implode(" OR ",$where_parent).")");
+					while ($f = sqlfetch($q)) {
+						
+						if ($f["class"] && class_exists($f["class"])) {
+							@eval('$module = new '.$f["class"].';');
+							if (method_exists($module,"getNav")) {
+								$modNav = $module->getNav($f);
+								
+								$module_nav = array();
+								foreach ($modNav as $item) {
+									$item["parent"] = $f["id"];
+									$item["id"] = "module_nav_".$module_nav_count;
+									$module_nav[] = $item;
+									$module_nav_count++;
+								}
+								if ($module->NavPosition == "top") {
+									$nav = array_merge($module_nav,$nav);
+								} else {
+									$nav = array_merge($nav,$module_nav);
+								}
+							}
+						}
+					}
+				
+				} else {
+					$f = sqlfetch(sqlquery("SELECT bigtree_modules.class,bigtree_templates.routed,bigtree_templates.module,bigtree_pages.id,bigtree_pages.path,bigtree_pages.template FROM bigtree_modules JOIN bigtree_templates JOIN bigtree_pages ON bigtree_templates.id = bigtree_pages.template WHERE bigtree_modules.id = bigtree_templates.module AND bigtree_pages.id = '$parent'"));
+					
+					if ($f["class"] && class_exists($f["class"])) {
+						@eval('$module = new '.$f["class"].';');
+						if (method_exists($module,"getNav")) {
+							if ($module->NavPosition == "top") {
+								$nav = array_merge($module->getNav($f),$nav);
+							} else {
+								$nav = array_merge($nav,$module->getNav($f));
+							}
+						}
+					}
+				}
+			}
+			
+			return $nav;
+		}
+		
+		
+		
+		function getNavId($path,$previewing = false) {
+			$commands = array();
+			
+			if (!$previewing) {
+				$publish_at = "AND (publish_at <= NOW() OR publish_at IS NULL) AND (expire_at >= NOW() OR expire_at IS NULL)";
+			} else {
+				$publish_at = "";
+			}
+			
+			
+			$spath = sqlescape(implode("/",$path));
+			$f = sqlfetch(sqlquery("SELECT bigtree_pages.id,bigtree_templates.routed FROM bigtree_pages LEFT JOIN bigtree_templates ON bigtree_pages.template = bigtree_templates.id WHERE path = '$spath' AND archived = '' $publish_at"));
+			if ($f) {
+				return array($f["id"],$commands,$f["routed"]);
+			}
+			
+			
+			$x = 0;
+			while ($x < count($path)) {
+				$x++;
+				$commands[] = $path[count($path)-$x];
+				$spath = sqlescape(implode("/",array_slice($path,0,-1 * $x)));
+				
+				$f = sqlfetch(sqlquery("SELECT bigtree_pages.id FROM bigtree_pages JOIN bigtree_templates ON bigtree_pages.template = bigtree_templates.id WHERE bigtree_pages.path = '$spath' AND bigtree_pages.archived = '' AND bigtree_templates.routed = 'on' $publish_at"));
+				if ($f) {
+					return array($f["id"],array_reverse($commands),"on");
+				}
+			}
+			
+			return array(false,false,false);
+		}
+		
+		
+		
+		function getPage($child,$decode = true) {
+			$f = sqlfetch(sqlquery("SELECT * FROM bigtree_pages WHERE id = '$child'"));
+			if (!$f) {
+				return false;
+			}
+			if ($f["external"] && $f["template"] == "") {
+				$f["external"] = $this->getInternalPageLink($f["external"]);
+			}
+			if ($decode) {
+				$f["resources"] = $this->decodeResources($f["resources"]);
+				$f["callouts"] = $this->decodeCallouts($f["callouts"]);
+			}
+			return $f;
+		}
+		
+		
+		
+		function getPendingPage($id,$decode = true,$return_tags = false) {
+			
+			if (is_numeric($id)) {
+				$page = $this->getPage($id);
+				if (!$page) {
+					return false;
+				}
+				
+				if ($return_tags) {
+					$page["tags"] = $this->getTagsForPage($id);
+				}
+				
+				$f = sqlfetch(sqlquery("SELECT * FROM bigtree_pending_changes WHERE `table` = 'bigtree_pages' AND item_id = '".$page["id"]."'"));
+
+			
+			} else {
+				
+				$page = array();
+				
+				$f = sqlfetch(sqlquery("SELECT * FROM bigtree_pending_changes WHERE `id` = '".sqlescape(substr($id,1))."'"));
+				if ($f) {
+					$f["id"] = $id;
+				} else {
+					return false;
+				}
+			}
+
+			
+			if ($f) {
+				$page["changes_applied"] = true;
+				$page["updated_at"] = $f["date"];
+				$changes = json_decode($f["changes"],true);
+				foreach ($changes as $key => $val) {
+					if ($key == "external") {
+						$val = $this->getInternalPageLink($val);
+					}
+					$page[$key] = $val;
+				}
+				if ($return_tags) {
+					
+					$tags = array();
+					$tags_changes = json_decode($f["tags_changes"],true);
+					if (is_array($tags_changes)) {
+						foreach ($tags_changes as $tag) {
+							$tags[] = sqlfetch(sqlquery("SELECT * FROM bigtree_tags WHERE id = '$tag'"));
+						}
+					}
+					$page["tags"] = $tags;
+				}
+			}
+			
+			
+			if ($decode) {
+				if (isset($page["resources"]) && is_array($page["resources"])) {
+					$page["resources"] = $this->decodeResources($page["resources"]);	
+				}
+				if (isset($page["callouts"]) && is_array($page["callouts"])) {
+					$page["callouts"] = $this->decodeCallouts($page["callouts"]);
+				}
+			}
+
+			return $page;
+		}
+		
+		
+		
+		function getPreviewLink($id) {
+			if (substr($id,0,1) == "p") {
+				return WWW_ROOT."_preview-pending/$id/";
+			} elseif ($id == 0) {
+				return WWW_ROOT."_preview/";
+			} else {
+				$f = sqlfetch(sqlquery("SELECT path FROM bigtree_pages WHERE id = '".sqlescape($id)."'"));
+				return WWW_ROOT."_preview/".$f["path"]."/";
+			}
+		}
+		
+		
+		
+		function getRelatedPagesByTags($tags = array()) {
+			$results = array();
+			$relevance = array();
+			foreach ($tags as $tag) {
+				$tdat = sqlfetch(sqlquery("SELECT * FROM bigtree_tags WHERE tag = '".sqlescape($tag)."'"));
+				if ($tdat) {
+					$q = sqlquery("SELECT * FROM bigtree_tags_rel WHERE tag = '".$tdat["id"]."' AND `table` = 'bigtree_pages'");
+					while ($f = sqlfetch($q)) {
+						$id = $f["entry"];
+						if (in_array($id,$results)) {
+							$relevance[$id]++;
+						} else {
+							$results[] = $id;
+							$relevance[$id] = 1;
+						}
+					}
+				}
+			}
+			array_multisort($relevance,SORT_DESC,$results);
+			$items = array();
+			foreach ($results as $result) {
+				$items[] = $this->getPage($result);
+			}
+			return $items;
+		}
+		
+		
+		
+		function getSetting($id) {
+			global $bigtree;
+			$id = sqlescape($id);
+			$f = sqlfetch(sqlquery("SELECT * FROM bigtree_settings WHERE id = '$id'"));
+			
+			if ($f["encrypted"]) {
+				$f = sqlfetch(sqlquery("SELECT AES_DECRYPT(`value`,'".sqlescape($bigtree["config"]["settings_key"])."') AS `value`, system FROM bigtree_settings WHERE id = '$id'"));
+			}
+			$value = json_decode($f["value"],true);
+
+			
+			if ($f["system"]) {
+				return $value;
+			}
+			
+			if (is_array($value)) {
+				return BigTree::untranslateArray($value);
+			} else {
+				return $this->replaceInternalPageLinks($value);
+			}
+		}
+		
+		
+		
+		
+		function getSettings($ids) {
+			global $bigtree;
+			if (!is_array($ids)) {
+				$ids = array($ids);
+			}
+			$parts = array();
+			foreach ($ids as $id) {
+				$parts[] = "id = '".sqlescape($id)."'";
+			}
+			$settings = array();
+			$q = sqlquery("SELECT * FROM bigtree_settings WHERE (".implode(" OR ",$parts).") ORDER BY id ASC");
+			while ($f = sqlfetch($q)) {
+				
+				if ($f["encrypted"]) {
+					$f = sqlfetch(sqlquery("SELECT AES_DECRYPT(`value`,'".sqlescape($bigtree["config"]["settings_key"])."') AS `value` FROM bigtree_settings WHERE id = '".$f["id"]."'"));
+				}
+				$value = json_decode($f["value"],true);
+				if (is_array($value)) {
+					$settings[$f["id"]] = BigTree::untranslateArray($value);
+				} else {
+					$settings[$f["id"]] = $this->replaceInternalPageLinks($value);
+				}
+			}
+			return $settings;
+		}
+		
+		
+		
+		function getTag($id) {
+			$id = sqlescape($id);
+			return sqlfetch(sqlquery("SELECT * FROM bigtree_tags WHERE id = '$id'"));
+		}
+		
+		
+		
+		function getTagByRoute($route) {
+			$route = sqlescape($route);
+			return sqlfetch(sqlquery("SELECT * FROM bigtree_tags WHERE route = '$route'"));
+		}
+		
+		
+		
+		function getTagsForPage($page) {
+			if (!is_numeric($page)) {
+				$page = $page["id"];
+			}
+			$q = sqlquery("SELECT bigtree_tags.* FROM bigtree_tags JOIN bigtree_tags_rel ON bigtree_tags.id = bigtree_tags_rel.tag WHERE bigtree_tags_rel.`table` = 'bigtree_pages' AND bigtree_tags_rel.entry = '".sqlescape($page)."' ORDER BY bigtree_tags.tag");
+			$tags = array();
+			while ($f = sqlfetch($q)) {
+				$tags[] = $f;
+			}
+			return $tags;
+		}
+		
+		
+		
+		function getTemplate($id) {
+			$id = sqlescape($id);
+			$template = sqlfetch(sqlquery("SELECT * FROM bigtree_templates WHERE id = '$id'"));
+			if (!$template) {
+				return false;
+			}
+			$template["resources"] = json_decode($template["resources"],true);
+			return $template;
+		}
+		
+		
+		
+		function getTopLevelNavigationId($trunk_as_toplevel = false) {
+			global $bigtree;
+			return $this->getTopLevelNavigationIdForPage($bigtree["page"],$trunk_as_toplevel);
+		}
+		
+		
+		
+		function getTopLevelNavigationIdForPage($page,$trunk_as_toplevel = false) {
+			$paths = array();
+			$path = "";
+			$parts = explode("/",$page["path"]);
+			foreach ($parts as $part) {
+				$path .= "/".$part;
+				$path = ltrim($path,"/");
+				$paths[] = "path = '".sqlescape($path)."'";
+			}
+			
+			$f = sqlfetch(sqlquery("SELECT id,trunk,path FROM bigtree_pages WHERE (".implode(" OR ",$paths).") AND (trunk = 'on' OR parent = '0') ORDER BY LENGTH(path) DESC LIMIT 1"));
+			if ($f["trunk"] && !$trunk_as_toplevel) {
+				
+				$g = sqlfetch(sqlquery("SELECT id FROM bigtree_pages WHERE (".implode(" OR ",$paths).") AND LENGTH(path) < ".strlen($f["path"])." ORDER BY LENGTH(path) ASC LIMIT 1"));
+				if ($g) {
+					$f = $g;
+				}
+			}
+			return $f["id"];
+		}
+		
+		
+		
+		function handle404($url) {
+			$url = sqlescape(htmlspecialchars(strip_tags(rtrim($url,"/"))));
+			$f = sqlfetch(sqlquery("SELECT * FROM bigtree_404s WHERE broken_url = '$url'"));
+			if (!$url) {
+				return true;
+			}
+
+			if ($f["redirect_url"]) {
+				if ($f["redirect_url"] == "/") {
+					$f["redirect_url"] = "";
+				}
+				
+				if (substr($f["redirect_url"],0,7) == "http:
+					$redirect = $f["redirect_url"];
+				} else {
+					$redirect = WWW_ROOT.str_replace(WWW_ROOT,"",$f["redirect_url"]);
+				}
+				
+				sqlquery("UPDATE bigtree_404s SET requests = (requests + 1) WHERE = '".$f["id"]."'");
+				BigTree::redirect($redirect,"301");
+				return false;
+			} else {
+				header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found");
+				if ($f) {
+					sqlquery("UPDATE bigtree_404s SET requests = (requests + 1) WHERE id = '".$f["id"]."'");
+				} else {
+					sqlquery("INSERT INTO bigtree_404s (`broken_url`,`requests`) VALUES ('$url','1')");
+				}
+				define("BIGTREE_DO_NOT_CACHE",true);
+				return true;
+			}
+		}
+		
+		
+		
+		function makeSecure() {
+			if (!$_SERVER["HTTPS"]) {
+				BigTree::redirect("https:
+			}
+			$this->Secure = true;
+		}
+		
+		
+
+		function replaceHardRoots($string) {
+			return str_replace(array(ADMIN_ROOT,WWW_ROOT,STATIC_ROOT),array("{adminroot}","{wwwroot}","{staticroot}"),$string);
+		}
+
+		
+		
+		function replaceInternalPageLinks($html) {
+			$drop_count = 0;
+			if (!trim($html)) {
+				return "";
+			}
+			
+			if (substr($html,0,6) == "ipl:
+				$html = $this->getInternalPageLink($html);
+			} else {
+				$html = $this->replaceRelativeRoots($html);
+				$html = preg_replace_callback('^="(ipl:\/\/[a-zA-Z0-9\:\/\.\?\=\-]*)"^',create_function('$matches','global $cms; return \'="\'.$cms->getInternalPageLink($matches[1]).\'"\';'),$html);
+			}
+
+			return $html;
+		}
+		
+		
+
+		function replaceRelativeRoots($string) {
+			return str_replace(array("{adminroot}","{wwwroot}","{staticroot}"),array(ADMIN_ROOT,WWW_ROOT,STATIC_ROOT),$string);
+		}
+
+		
+
+		function urlify($title) {
+			$accent_match = array('Â', 'Ã', 'Ä', 'À', 'Á', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë', 'Ì', 'Í', 'Î', 'Ï', 'Ð', 'Ñ', 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', 'Ø', 'Ù', 'Ú', 'Û', 'Ü', 'Ý', 'ß', 'à', 'á', 'â', 'ã', 'ä', 'å', 'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ð', 'ñ', 'ò', 'ó', 'ô', 'õ', 'ö', 'ø', 'ù', 'ú', 'û', 'ü', 'ý', 'ÿ');
+			$accent_replace = array('A', 'A', 'A', 'A', 'A', 'A', 'AE', 'C', 'E', 'E', 'E', 'E', 'I', 'I', 'I', 'I', 'D', 'N', 'O', 'O', 'O', 'O', 'O', 'O', 'U', 'U', 'U', 'U', 'Y', 'B', 'a', 'a', 'a', 'a', 'a', 'a', 'ae', 'c', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i', 'o', 'n', 'o', 'o', 'o', 'o', 'o', 'o', 'u', 'u', 'u', 'u', 'y', 'y');
+
+			$title = str_replace($accent_match, $accent_replace, $title);
+			$title = htmlspecialchars_decode($title);
+			$title = strtolower(preg_replace('/\s/', '-',preg_replace('/[^a-zA-Z0-9\s\-\_]+/', '',trim($title))));
+			$title = str_replace("--","-",$title);
+	
+			return $title;
+		}
+	}
+?>

@@ -1,0 +1,454 @@
+<?php
+
+
+$var_0 = "haproxy";
+
+$var_1 = "Services: HAProxy: Frontends";
+
+haproxy_config_init();
+
+$var_2 = &getarraybyref($var_3, 'installedpackages', 'haproxy', 'ha_backends', 'item');
+
+function fn_0(&$var_4, $var_5, $var_6) {
+	
+
+	$var_7 = array();
+	
+	for ($var_8 = 0; $var_8 < $var_5; $var_8++) {
+		if (!in_array($var_8, $var_6)) {
+			$var_7[] = $var_4[$var_8];
+		}
+	}
+	
+	for ($var_8 = 0; $var_8 < count($var_4); $var_8++) {
+		if ($var_8 == $var_5) {
+			continue;
+		}
+		if (in_array($var_8, $var_6)) {
+			$var_7[] = $var_4[$var_8];
+		}
+	}
+	
+	if ($var_5 < count($var_4)) {
+		$var_7[] = $var_4[$var_5];
+	}
+	
+	for ($var_8 = $var_5+1; $var_8 < count($var_4); $var_8++) {
+		if (!in_array($var_8, $var_6)) {
+			$var_7[] = $var_4[$var_8];
+		}
+	}
+	if (count($var_7) > 0) {
+		$var_4 = $var_7;
+	}
+}
+
+if($_GET['action'] == "toggle") {
+	$var_9 = $_GET['id'];
+	
+	if (isset($var_2[get_frontend_id($var_9)])) {
+		$var_10 = &$var_2[get_frontend_id($var_9)];
+		if ($var_10['status'] != "disabled"){
+			$var_10['status'] = 'disabled';
+			
+		}else{
+			$var_10['status'] = 'active';
+			
+		}
+		$var_1 .= " set frontend '$var_9' status to: {$var_10['status']}";
+
+		touch($var_11);
+		write_config($var_1);
+	}
+	
+	var_12;
+}
+
+if ($var_13) {
+	$var_14 = $var_13;
+
+	if ($var_13['apply']) {
+		$var_15 = haproxy_check_and_run($var_16, true);
+		if ($var_15) {
+			unlink_if_exists($var_11);
+		}
+	} elseif ($var_13['del_x']) {
+		
+		$var_17 = false;
+		if (is_array($var_13['rule']) && count($var_13['rule'])) {
+			$var_6 = array();
+			foreach($var_13['rule'] as $var_18) {
+				$var_6[] = get_frontend_id($var_18);
+			}
+			foreach ($var_6 as $var_19) {
+				unset($var_2[$var_19]);
+				$var_17 = true;
+			}
+			if ($var_17) {
+				if (write_config("HAProxy, deleting frontend(s)")) {
+					
+					touch($var_11);
+				}
+			}
+			header("Location: haproxy_listeners.php");
+			var_12;
+		}
+	} else {
+
+		
+		
+		
+		unset($var_20, $var_21, $var_22, $var_23, $var_24, $var_25);
+		foreach ($var_13 as $var_26 => $var_27) {
+			
+			if (preg_match("/move_(.+)/", $var_26, $var_28)) {
+				$var_22 = substr($var_27, 5);
+			}
+		}
+		
+
+		
+		if (isset($var_22) && is_array($var_13['rule']) && count($var_13['rule'])) {
+			$var_29 = get_frontend_id($var_22);
+			$var_6 = array();
+			foreach($var_13['rule'] as $var_18) {
+				$var_6[] = get_frontend_id($var_18);
+			}
+			fn_0($var_2, $var_29, $var_6);
+
+			touch($var_11);
+			write_config($var_1);
+		}
+	}
+} else {
+	$var_15 = haproxy_check_config($var_30);
+	if ($var_15) {
+		$var_16 = gettext($var_15);
+	}
+}
+
+if ($_GET['act'] == "del") {
+	$var_9 = $_GET['id'];
+	$var_9 = get_frontend_id($var_9);
+	if (isset($var_2[$var_9])) {
+		if (!$var_31) {
+			unset($var_2[$var_9]);
+			$var_1 .= " Frontend delete";
+			write_config($var_1);
+			touch($var_11);
+		}
+		header("Location: haproxy_listeners.php");
+		var_12;
+	}
+}
+
+function fn_1($var_32) {
+	
+	global $var_33;
+	$var_34 = "";
+	$var_35 = get_backend($var_32);
+	if ($var_35){
+		$var_36 = getarraybyref($var_35, 'ha_servers', 'item');
+		if (count($var_36) == 0) {
+			$var_34 = sprintf(gettext("There are no servers in \"%s\" pool"), $var_32);
+		} else {
+			$var_34 = sprintf(gettext("Servers in \"%s\" pool:"), $var_32);
+			foreach($var_36 as $var_37){
+				$var_38 = $var_37['status'];
+				$var_39 = $var_33[$var_38]['sign'];
+				if (isset($var_37['forwardto']) && $var_37['forwardto'] != "") {
+					$var_34 .= "\n{$var_39}[{$var_37['forwardto']}]";
+				} else {
+					$var_34 .= "\n{$var_39}{$var_37['address']}:{$var_37['port']}";
+				}
+			}
+		}
+	}
+	return $var_34;
+}
+
+$var_40 = array("Services", "HAProxy", "Frontend");
+if ($var_31) {
+	print_input_errors($var_31);
+}
+if ($var_16) {
+	print_info_box($var_16);
+}
+
+$var_41 = file_exists($var_11) ? "" : "none";
+'>";
+print_apply_box(sprintf(gettext("The haproxy configuration has been changed.%sYou must apply the changes in order for them to take effect."), "<br/>"));
+
+
+haproxy_display_top_tabs_active($haproxy_tab_array['var_42'], "var_43");
+
+?>
+<form action="haproxy_listeners.php" method="post">
+<script type="text/javascript">
+function set_content(elementid, image) {
+	var item = document.getElementById(elementid);
+	item.innerHTML = image;
+}
+function toggleFrontend(frontendname) {
+	$.ajax({
+		url: "",
+		data: {id: frontendname, action:"toggle"},
+		success: function(data){
+			js_callback(data);
+		}
+	})
+}
+function js_callback(req) {
+	showapplysettings.style.display = 'block';
+
+	if(req !== '') {
+		var itemsplit = req.split("|");
+		buttonid = itemsplit[0];
+		enabled = itemsplit[1];
+		if (enabled === "1"){
+			img = "<?=haproxyicon("enabled", gettext("click to toggle enable/disable this frontend"))?>";
+		} else {
+			img = "<?=haproxyicon("disabled", gettext("click to toggle enable/disable this frontend"))?>";
+		}
+		set_content('btn_'+buttonid, img);
+	}
+}
+</script>
+<?php
+
+	function fn_2(&$var_44, &$var_45) {
+		
+		if ($var_44['secondary'] != $var_45['secondary']) {
+			return $var_44['secondary'] > $var_45['secondary'] ? 1 : -1;
+		}
+		if ($var_44['name'] != $var_45['name']) {
+			return $var_44['name'] > $var_45['name'] ? 1 : -1;
+		}
+		return 0;
+	}
+
+	$var_46 = array();
+	foreach($var_2 as &$var_47) {
+		getarraybyref($var_47);
+		$var_48 = get_primaryfrontend($var_47);
+		$var_49 = $var_48['name'];
+		$var_50 = get_frontend_ipport($var_47, true);
+		$var_47['ipport'] = $var_50;
+		$var_47['type'] = $var_48['type'];
+		$var_46[$var_49][] = $var_47;
+	}
+?>
+
+	<div class="panel panel-default">
+		<div class="panel-heading">
+			<h2 class="panel-title">Frontends</h2>
+		</div>
+		<div id="mainarea" class="table-responsive panel-body">
+			<table class="table table-hover table-striped table-condensed">
+				<thead>
+					<tr>
+						<th>Primary</th>
+						<th>Shared</th>
+						<th>On</th>
+						<th>Advanced</th>
+						<th>Name</th>
+						<th>Description</th>
+						<th>Address</th>
+						<th>Type</th>
+						<th>Backend</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody class="user-entries">
+<?php
+		$var_51 = "";
+		$var_52 = true;
+		$var_53 = false;
+		$var_8 = 0;
+		foreach ($var_46 as $var_2) {
+			
+			if ((count($var_2) > 1 || $var_53) && !$var_52) {
+				?> <tr class="<?=$var_51?>"><td colspan="10">&nbsp;</td></tr> <?
+			}
+			$var_52 = false;
+			$var_53 = count($var_2) > 1;
+			foreach ($var_2 as $var_43) {
+				$var_54 = $var_43['name'];
+				$var_55 = $var_43['status'] != 'active';
+				?>
+					<tr id="fr<?=$var_54;?>" <?=$var_56?> onClick="fr_toggle('<?=$var_54;?>')" ondblclick="document.location='haproxy_listeners_edit.php?id=<?=$var_54;?>';" <?=($var_55 ? ' class="disabled"' : '')?>>
+						<td>
+						<?if($var_43['secondary'] != 'yes'):?>
+							<input type="checkbox" id="frc<?=$var_54;?>" onClick="fr_toggle('<?=$var_54;?>')" name="rule[]" value="<?=$var_54;?>"/>
+							<a class="fa fa-anchor" id="Xmove_<?=$var_54?>" title="<?=gettext("Move checked entries to here")?>"></a>
+						<?endif?>
+						</td>
+				  <td>
+				  <?if($var_43['secondary'] == 'yes'):?>
+					<input type="checkbox" id="frc<?=$var_54;?>" onClick="fr_toggle('<?=$var_54;?>')" name="rule[]" value="<?=$var_54;?>"/>
+					<a class="fa fa-anchor" id="Xmove_<?=$var_54?>" title="<?=gettext("Move checked entries to here")?>"></a>
+				  <?endif?>
+				  </td>
+				  <td>
+					<?php
+						if ($var_43['status']=='disabled'){
+							$var_57 = "disabled";
+						} else {
+							$var_57 = "enabled";
+						}?>
+					<a id="btn_<?=$var_54;?>" href='javascript:toggleFrontend("<?=$var_54;?>");'>
+						<?=haproxyicon($var_57, gettext("click to toggle enable/disable this frontend"))?>
+					</a>
+				  </td>
+				  <td>
+					<?php
+					$var_58 = get_frontend_acls($var_43);
+					$var_59 = "";
+					foreach ($var_58 as $var_60) {
+						$var_59 .= "\n" . htmlspecialchars($var_60['descr']);
+					}
+					if ($var_59) {
+						
+					}
+
+					if (get_frontend_uses_ssl($var_43)) {
+						$var_61 = lookup_cert($var_43['ssloffloadcert']);
+						$var_62 = htmlspecialchars($var_61['descr']);
+						$var_63 = getarraybyref($var_43, 'ha_certificates', 'item');
+						if (count($var_63) > 0){
+							foreach($var_63 as $var_64){
+								$var_61 = lookup_cert($var_64['ssl_certificate']);
+								$var_62 .= "\n".htmlspecialchars($var_61['descr']);
+							}
+						}
+						
+					}
+
+					$var_65 = "";
+					if ($var_43['advanced_bind']) {
+						$var_65 .= "Advanced bind: ".htmlspecialchars($var_43['advanced_bind'])."\r\n";
+					}
+					if ($var_43['advanced']) {
+						$var_65 .= "Advanced pass thru setting used\r\n";
+					}
+					if ($var_65) {
+						
+					}
+					?>
+				  </td>
+				  <td>
+					<?=$var_43['name'];?>
+				  </td>
+				  <td>
+					<?=$var_43['desc'];?>
+				  </td>
+				  <td>
+				    <?php
+						$var_52 = true;
+						foreach($var_43['ipport'] as $var_66) {
+							
+							
+							'>";
+							
+							if ($addr['var_67'] == 'yes') {
+								
+							}
+							
+							$var_52 = false;
+						}
+					?>
+				  </td>
+				  <td>
+				  <?php
+					if ($var_43['type'] == 'http') {
+						$var_48 = get_primaryfrontend($var_43);
+						$var_68 = get_frontend_uses_ssl($var_48);
+						$var_69 = !get_frontend_uses_ssl_only($var_43);
+						if ($var_69) {
+							
+						}
+						if ($var_68) {
+							
+						}
+					} else {
+						
+					}
+				  ?>
+				  </td>
+				  <td>
+					<?php
+					$var_70 = getarraybyref($var_43, 'a_actionitems', 'item');
+					foreach ($var_70 as $var_71) {
+						if ($var_71['action'] == "use_backend") {
+							$var_35 = $var_71['use_backendbackend'];
+							$var_72 = fn_1($var_35);
+							
+							
+							if (!empty($var_71['acl'])) {
+								if(var_73{$var_71['acl']})";
+							}
+							
+						}
+					}
+					$var_72 = haproxy_userlist_backend_servers($var_43['var_74']);
+					$var_35 = $var_43['var_74'];
+					if (!empty($var_35)) {
+						
+						
+						
+					}
+					?>
+				  </td>
+				  <td class="var_75-var_76">
+					<var_77 var_78="var_56: var_79;" class="var_80 var_80-var_81 var_80-var_82" var_83="var_84" var_9="var_85<?=$var_54?>" name="move_<?=$var_54?>" value="move_<?=$var_54?>"></button>
+					<a href="haproxy_listeners_edit.php?id=<?=$var_54;?>">
+						<?=haproxyicon("edit", gettext("edit frontend"))?>
+					</a>
+					<a href="haproxy_listeners.php?act=del&amp;id=<?=$var_54;?>">
+						<?=haproxyicon("delete", gettext("delete frontend"))?>
+					</a>
+					<a href="haproxy_listeners_edit.php?dup=<?=$var_54;?>">
+						<?=haproxyicon("clone", gettext("clone frontend"))?>
+					</a>
+				  </td>
+				</tr><?php
+			}
+		}
+?>
+				</tbody>
+			</table>
+		</div>
+	</div>
+	<nav class="action-buttons">
+		<a href="haproxy_listeners_edit.php" role="button" class="btn btn-sm btn-success" title="<?=gettext('Add frontend to the end of the list')?>">
+			<i class="fa fa-level-down icon-embed-btn"></i>
+			<?=gettext("Add");?>
+		</a>
+		<button name="del_x" type="submit" class="btn btn-danger btn-sm no-confirm" value="<?=gettext("Delete selected frontends"); ?>" title="<?=gettext('Delete selected frontends')?>">
+			<i class="fa fa-trash icon-embed-btn"></i>
+			<?=gettext("Delete"); ?>
+		</button>
+		<button type="submit" id="order-store" name="order-store" class="btn btn-sm btn-primary no-confirm" value="store changes" disabled title="<?=gettext('Save backend order')?>">
+			<i class="fa fa-save icon-embed-btn"></i>
+			<?=gettext("Save")?>
+		</button>
+	</nav>
+</form>
+
+<script type="text/javascript">
+
+events.push(function() {
+	$('[id^=Xmove_]').click(function (event) {
+		$('[id="'+event.target.id.slice(1)+'"]').click();
+		return false;
+	});
+	$('[id^=Xmove_]').css('cursor', 'pointer');
+
+	
+	$('
+	   $('[id^=frc]').prop('checked', true);
+	});
+});
+
+</script>
+<?php include("foot.inc");

@@ -1,0 +1,748 @@
+<?php
+class var_0 extends var_1 {
+	public function fn_0() {
+		$var_2->var_3->model('extension/event');
+
+		$var_2->var_5->addEvent('openbaypro_amazon', 'catalog/model/checkout/order/addOrderHistory/before', 'openbay/amazon/eventAddOrderHistory');
+
+		$var_2->var_7->query("
+			CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_order` (
+			  `order_id` int(11) NOT NULL ,
+			  `amazon_order_id` char(19) NOT NULL ,
+			  `courier_id` varchar(255) NOT NULL ,
+			  `courier_other` tinyint(1) NOT NULL,
+			  `tracking_no` varchar(255) NOT NULL ,
+			  PRIMARY KEY (`order_id`, `amazon_order_id`)
+		) DEFAULT COLLATE=utf8_general_ci;");
+
+		$var_2->var_7->query("
+			CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_order_product` (
+				`order_product_id` int(11) NOT NULL ,
+				`amazon_order_item_id` varchar(255) NOT NULL,
+				PRIMARY KEY(`order_product_id`, `amazon_order_item_id`)
+		);");
+
+		$var_2->var_7->query("
+			CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_product_unshipped` (
+				`order_id` int(11) NOT NULL,
+				`product_id` int(11) NOT NULL,
+				`quantity` int(11) NOT NULL DEFAULT '0',
+				PRIMARY KEY (`order_id`,`product_id`)
+			) DEFAULT COLLATE=utf8_general_ci;");
+
+		$var_2->var_7->query("
+		CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_product` (
+		  `version` int(11) NOT NULL DEFAULT 2,
+		  `product_id`  int(11) NOT NULL ,
+		  `category`  varchar(255) NOT NULL ,
+		  `sku`  varchar(255) NOT NULL ,
+		  `insertion_id` varchar(255) NOT NULL ,
+		  `data`  text NOT NULL ,
+		  `status` enum('saved','uploaded','ok','error') NOT NULL ,
+		  `price`  decimal(15,4) NOT NULL COMMENT 'Price on Amazon' ,
+		  `var` char(100) NOT NULL DEFAULT '',
+		  `marketplaces` text NOT NULL ,
+		  `messages` text NOT NULL,
+		  PRIMARY KEY (`product_id`, `var`)
+		);");
+
+		$var_2->var_7->query("
+		CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_product_error` (
+		  `error_id` int(11) NOT NULL AUTO_INCREMENT,
+		  `sku` varchar(255) NOT NULL ,
+		  `insertion_id` varchar(255) NOT NULL ,
+		  `error_code` int(11) NOT NULL ,
+		  `message` text NOT NULL ,
+		  PRIMARY KEY (`error_id`)
+		);");
+
+		$var_2->var_7->query("
+		CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_product_link` (
+		  `id` int(11) NOT NULL AUTO_INCREMENT,
+		  `amazon_sku` varchar(255) NOT NULL,
+		  `var` char(100) NOT NULL DEFAULT '',
+		  `product_id` int(11) NOT NULL,
+		  PRIMARY KEY (`id`)
+		) DEFAULT COLLATE=utf8_general_ci;");
+
+		$var_2->var_7->query("
+		CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_product_search` (
+			`product_id` int(11) NOT NULL,
+			`marketplace` enum('uk','de','es','it','fr') NOT NULL,
+			`status` enum('searching','finished') NOT NULL,
+			`matches` int(11) DEFAULT NULL,
+			`data` text,
+			PRIMARY KEY (`product_id`,`marketplace`)
+		) DEFAULT COLLATE=utf8_general_ci;");
+
+		$var_2->var_7->query("
+			CREATE TABLE IF NOT EXISTS `" . var_9 . "amazon_listing_report` (
+				`marketplace` enum('uk','de','fr','es','it') NOT NULL,
+				`sku` varchar(255) NOT NULL,
+				`quantity` int(10) unsigned NOT NULL,
+				`asin` varchar(255) NOT NULL,
+				`price` decimal(10,4) NOT NULL,
+				PRIMARY KEY (`marketplace`,`sku`)
+			) DEFAULT COLLATE=utf8_general_ci;");
+	}
+
+	public function fn_1() {
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_order`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_order_product`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_product2`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_product`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_product_link`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_product_unshipped`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_product_error`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_process`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_product_unshipped`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_product_search`");
+		$var_2->var_7->query("DROP TABLE IF EXISTS `" . var_9 . "amazon_listing_report`");
+
+		$var_2->var_7->query("DELETE FROM `" . var_9 . "setting` WHERE `code` = 'openbay_amazon'");
+
+		$var_2->var_3->model('extension/event');
+		$var_2->var_5->deleteEvent('openbaypro_amazon');
+	}
+
+	public function fn_2() {
+		if ($var_2->var_11->get('openbay_amazon_status') == 1) {
+
+		}
+	}
+
+	public function fn_3($var_13) {
+		$var_14 = new class_0('amazon.log');
+
+		$var_15 = '<Request>
+  <ResponseURL>' . var_16 . 'index.php?route=openbay/amazon/order</ResponseURL>
+  <MarketplaceIDs>';
+
+		foreach ($var_13['openbay_amazon_orders_marketplace_ids'] as $var_17) {
+			$var_15 .= '    <MarketplaceID>' . $var_17 . '</MarketplaceID>';
+		}
+
+		$var_15 .= '
+  </MarketplaceIDs>
+</Request>';
+
+		$var_18 = $var_2->var_19->var_20->call('order/scheduleOrders', $var_15, false);
+
+		libxml_use_internal_errors(true);
+		$var_22 = simplexml_load_string($var_18);
+		libxml_use_internal_errors(false);
+
+		if ($var_22 && $var_22->var_23 == '0') {
+			$var_14->write('Scheduling orders call was successful');
+			return true;
+		}
+
+		$var_14->write('Failed to schedule orders. Response: ' . $var_18);
+
+		return false;
+	}
+
+	public function fn_4($var_25, $var_26) {
+		if (isset($var_26['fields']['item-price'])) {
+			$var_27 = $var_26['fields']['item-price'];
+		} else if (isset($var_26['fields']['price'])) {
+			$var_27 = $var_26['fields']['price'];
+		} else if (isset($var_26['fields']['StandardPrice'])) {
+			$var_27 = $var_26['fields']['StandardPrice'];
+		}   else {
+			$var_27 = 0;
+		}
+
+		$var_28 = (isset($var_26['category'])) ? $var_26['category'] : "";
+		$var_29 = (isset($var_26['fields']['sku'])) ? $var_26['fields']['sku'] : "";
+		if (isset($var_26['fields']['sku'])) {
+			$var_29 = $var_26['fields']['sku'];
+		} else if (isset($var_26['fields']['SKU'])) {
+			$var_29 = $var_26['fields']['SKU'];
+		}
+
+		$var_30 = isset($var_26['optionVar']) ? $var_26['optionVar'] : '';
+
+		$var_31 = isset($var_26['marketplace_ids']) ? serialize($var_26['marketplace_ids']) : serialize(array());
+
+		$var_32 = json_encode(array('fields' => $var_26['fields']));
+
+		$var_2->var_7->query("
+			REPLACE INTO `" . var_9 . "amazon_product`
+			SET `product_id` = '" . (int)$var_25 . "',
+				`sku` = '" . $var_2->var_7->escape($var_29) . "',
+				`category` = '" . $var_2->var_7->escape($var_28) . "',
+				`data` = '" . $var_2->var_7->escape($var_32) . "',
+				`status` = 'saved',
+				`insertion_id` = '',
+				`price` = '" . $var_27 . "',
+				`var` = '" . $var_2->var_7->escape($var_30) . "',
+				`marketplaces` = '" . $var_2->var_7->escape($var_31) . "'");
+	}
+
+	public function fn_5($var_25, $var_30 = '') {
+		$var_2->var_7->query("DELETE FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND `var` = '" . $var_2->var_7->escape($var_30) . "'");
+	}
+
+	public function fn_6() {
+		return $var_2->var_7->query("
+			SELECT `ap`.`status`, `ap`.`product_id`, `ap`.`sku` as `amazon_sku`, `pd`.`name` as `product_name`, `p`.`model` as `product_model`, `p`.`sku` as `product_sku`, `ap`.`var` as `var`
+			FROM `" . var_9 . "amazon_product` as `ap`
+			LEFT JOIN `" . var_9 . "product_description` as `pd`
+			ON `ap`.`product_id` = `pd`.`product_id`
+			LEFT JOIN `" . var_9 . "product` as `p`
+			ON `ap`.`product_id` = `p`.`product_id`
+			WHERE `ap`.`status` = 'saved'
+			AND `pd`.`language_id` = '" . (int)$var_2->var_11->get('config_language_id') . "'")->var_34;
+	}
+
+	public function fn_7() {
+		return $var_2->var_7->query("
+			SELECT * FROM `" . var_9 . "amazon_product`
+			WHERE `status` = 'saved' AND `version` = 2")->var_34;
+	}
+
+	public function fn_8($var_25, $var_30 = '') {
+		return $var_2->var_7->query("
+			SELECT * FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND `var` = '" . $var_2->var_7->escape($var_30) . "' AND `version` = 2")->var_36;
+	}
+
+	public function fn_9($var_25, $var_30 = '') {
+		$var_36 = $var_2->var_7->query("
+			SELECT `category` FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND `var` = '" . $var_2->var_7->escape($var_30) . "' AND `version` = 2")->var_36;
+		if (isset($var_36['category'])) {
+			return $var_36['category'];
+		} else {
+			return "";
+		}
+	}
+
+	public function fn_10($var_25, $var_37, $var_30 = '') {
+		$var_2->var_7->query(
+			"UPDATE `" . var_9 . "amazon_product`
+			SET `status` = 'uploaded', `insertion_id` = '" . $var_2->var_7->escape($var_37) . "'
+			WHERE `product_id` = '" . (int)$var_25 . "' AND `var` = '" . $var_2->var_7->escape($var_30) . "' AND `version` = 2");
+	}
+
+	public function fn_11($var_37) {
+		$var_2->var_7->query(
+			"UPDATE `" . var_9 . "amazon_product`
+			SET `status` = 'saved', `insertion_id` = ''
+			WHERE `insertion_id` = '" . $var_2->var_7->escape($var_37) . "' AND `version` = 2");
+	}
+
+	public function fn_12($var_25) {
+
+		$var_38 = $var_2->var_7->query("
+			SELECT COUNT(*) count
+			FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND status = 'uploaded'")->var_36;
+		$var_38 = $var_38['count'];
+
+		$var_39 = $var_2->var_7->query("
+			SELECT COUNT(*) count
+			FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND status = 'ok'")->var_36;
+		$var_39 = $var_39['count'];
+
+		$var_40 = $var_2->var_7->query("
+			SELECT COUNT(*) count
+			FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND status = 'error'")->var_36;
+		$var_40 = $var_40['count'];
+
+		$var_41 = $var_2->var_7->query("
+			SELECT COUNT(*) count
+			FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND status = 'saved'")->var_36;
+		$var_41 = $var_41['count'];
+
+		$var_42 = $var_38 + $var_39 + $var_40 + $var_41;
+
+		$var_43 = $var_2->var_7->query("
+			SELECT COUNT(*) as count
+			FROM `" . var_9 . "amazon_product_link`
+			WHERE `product_id` = '" . (int)$var_25 . "'")->var_36;
+		$var_43 = $var_43['count'];
+
+		if ($var_42 === 0 && $var_43 > 0) {
+			return 'linked';
+		} else if ($var_42 == 0) {
+			return false;
+		}
+
+		if ($var_38 > 0) {
+			return 'processing';
+		}
+
+		if ($var_38 == 0 && $var_39 > 0 && $var_40 == 0) {
+			return 'ok';
+		}
+
+		if ($var_41 > 0) {
+			return 'saved';
+		}
+
+		if ($var_38 == 0 && $var_40 > 0 && $var_39 == 0) {
+			$var_44 = $var_2->var_7->query("SELECT * FROM `" . var_9 . "amazon_product` WHERE `product_id` = " . (int)$var_25 . " AND `version` = 3")->var_36;
+
+			if ($var_44) {
+				return 'error_quick';
+			} else {
+				return 'error_advanced';
+			}
+		} else {
+			return 'error_few';
+		}
+
+		return false;
+	}
+
+	public function fn_13($var_25, $var_45 = 2) {
+		if ($var_45 == 3) {
+			$var_46 = $var_2->var_7->query("SELECT `messages` FROM `" . var_9 . "amazon_product` WHERE `product_id` = '" . (int)$var_25 . "' AND `version` = 3")->var_36;
+
+			return json_decode($var_46['messages']);
+		}
+
+		$var_47 = array();
+
+		$var_48 = $var_2->var_7->query("SELECT `sku`, `insertion_id` FROM `" . var_9 . "amazon_product` WHERE `product_id` = '" . (int)$var_25 . "' AND `version` = 2")->var_34;
+
+		if (!empty($var_48)) {
+			foreach($var_48 as $var_49) {
+				$var_50 = $var_2->var_7->query("SELECT * FROM `" . var_9 . "amazon_product_error` WHERE `sku` = '" . $var_2->var_7->escape($var_49['sku']) . "' AND `insertion_id` = '" . $var_2->var_7->escape($var_49['insertion_id']) . "'")->var_34;
+
+				foreach($var_50 as $var_51) {
+					$var_47[] = $var_51;
+				}
+			}
+		}
+		return $var_47;
+	}
+
+	public function fn_14() {
+		return $var_2->var_7->query("
+			SELECT `product_id`, `sku` FROM `" . var_9 . "amazon_product`
+			WHERE `status` = 'error' AND `version` = 2")->var_34;
+	}
+
+	public function fn_15($var_25) {
+		$var_2->var_7->query(
+			"DELETE FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "'");
+	}
+
+	public function fn_16($var_52, $var_25, $var_30 = '') {
+		$var_53 = $var_2->var_7->query("SELECT COUNT(*) as 'count' FROM `" . var_9 . "amazon_product_link` WHERE `product_id` = '" . (int)$var_25 . "' AND `amazon_sku` = '" . $var_2->var_7->escape($var_52) . "' AND `var` = '" . $var_2->var_7->escape($var_30) . "' LIMIT 1")->var_36;
+		if ($var_53['count'] == 0) {
+			$var_2->var_7->query("INSERT INTO `" . var_9 . "amazon_product_link` SET `product_id` = '" . (int)$var_25 . "', `amazon_sku` = '" . $var_2->var_7->escape($var_52) . "', `var` = '" . $var_2->var_7->escape($var_30) . "'");
+		}
+	}
+
+	public function fn_17($var_52) {
+		$var_2->var_7->query(
+			"DELETE FROM `" . var_9 . "amazon_product_link`
+			WHERE `amazon_sku` = '" . $var_2->var_7->escape($var_52) . "'");
+	}
+
+	public function fn_18($var_25) {
+		$var_54 = $var_2->var_7->query("
+			SELECT `insertion_id` FROM `" . var_9 . "amazon_product`
+			WHERE `product_id` = '" . (int)$var_25 . "' AND `version` = 2")->var_34;
+
+		foreach ($var_54 as $var_55) {
+			$var_2->var_7->query(
+				"DELETE FROM `" . var_9 . "amazon_product_error`
+				WHERE `insertion_id` = '" . $var_2->var_7->escape($var_55['insertion_id']) . "'");
+		}
+
+		$var_2->var_7->query(
+			"UPDATE `" . var_9 . "amazon_product`
+			SET `status` = 'saved', `insertion_id` = ''
+			WHERE `product_id` = '" . (int)$var_25 . "' AND `status` = 'error' AND `version` = 2");
+	}
+
+	public function fn_19($var_25 = 'all') {
+		$var_8 = "
+			SELECT `apl`.`product_id`, `pd`.`name` as `product_name`, `p`.`model`, `apl`.`amazon_sku`, `p`.`sku`, `apl`.`var`, '' as `combination`
+			FROM `" . var_9 . "amazon_product_link` as `apl`
+			LEFT JOIN `" . var_9 . "product_description` as `pd`
+			ON `apl`.`product_id` = `pd`.`product_id`
+			LEFT JOIN `" . var_9 . "product` as `p`
+			ON `apl`.`product_id` = `p`.`product_id`";
+
+		if ($var_25 != 'all') {
+			$var_8 .= " WHERE `apl`.`product_id` = '" . (int)$var_25 . "' AND `pd`.`language_id` = '" . (int)$var_2->var_11->get('config_language_id') . "'";
+		} else {
+			$var_8 .= "WHERE `pd`.`language_id` = '" . (int)$var_2->var_11->get('config_language_id') . "'";
+		}
+
+		$var_56 = $var_2->var_7->query($var_8)->var_34;
+
+		if ($var_2->var_19->addonLoad('openstock')) {
+			$var_2->var_3->model('module/openstock');
+			$var_2->var_3->model('tool/image');
+
+			foreach ($var_56 as $var_58 => $var_59) {
+				$var_60 = $var_2->var_61->getVariants($var_59['product_id']);
+
+				if (!empty($var_60)) {
+					foreach($var_60 as $var_63) {
+						if ($var_63['sku'] == $var_59['var']) {
+							$var_56[$var_58]['combination'] = $var_63['combination'];
+							break;
+						}
+					}
+				}
+			}
+
+			return $var_56;
+		} else {
+			return $var_56;
+		}
+	}
+
+	public function fn_20() {
+		if ($var_2->var_19->addonLoad('openstock')) {
+			$var_34 = $var_2->var_7->query("
+				SELECT `p`.`product_id`, `p`.`model`, `p`.`sku`, `pd`.`name` as `product_name`, '' as `var`, '' as `combination`, `p`.`has_option`
+				FROM `" . var_9 . "product` as `p`
+				LEFT JOIN `" . var_9 . "product_description` as `pd`
+				ON `p`.`product_id` = `pd`.`product_id`
+				AND `pd`.`language_id` = '" . (int)$var_2->var_11->get('config_language_id') . "'")->var_34;
+
+			$var_47 = array();
+			$var_2->var_3->model('module/openstock');
+			$var_2->var_3->model('tool/image');
+			foreach($var_34 as $var_36) {
+				if ($var_36['has_option'] == 1) {
+					$var_64 = $var_2->var_61->getVariants($var_36['product_id']);
+					foreach($var_64 as $var_65) {
+						if ($var_2->fn_21($var_36['product_id'], $var_65['sku'])) {
+							continue;
+						}
+						$var_36['combination'] = $var_65['combination'];
+						$var_36['sku'] = $var_65['sku'];
+						$var_47[] = $var_36;
+					}
+				} else {
+					if (!$var_2->fn_21($var_36['product_id'], $var_36['sku'])) {
+						$var_47[] = $var_36;
+					}
+				}
+			}
+		} else {
+			$var_47 = $var_2->var_7->query("
+				SELECT `p`.`product_id`, `p`.`model`, `p`.`sku`, `pd`.`name` as `product_name`, '' as `var`, '' as `combination`
+				FROM `" . var_9 . "product` as `p`
+				LEFT JOIN `" . var_9 . "product_description` as `pd`
+				ON `p`.`product_id` = `pd`.`product_id`
+				LEFT JOIN `" . var_9 . "amazon_product_link` as `apl`
+				ON `apl`.`product_id` = `p`.`product_id`
+				WHERE `apl`.`amazon_sku` IS NULL
+				AND `pd`.`language_id` = '" . (int)$var_2->var_11->get('config_language_id') . "'")->var_34;
+		}
+
+		return $var_47;
+	}
+
+	private function fn_21($var_25, $var_30) {
+		$var_67 = $var_2->var_7->query("SELECT * FROM `" . var_9 . "amazon_product_link` WHERE `product_id` = " . (int)$var_25 . " AND var = '" . $var_2->var_7->escape($var_30) . "'")->var_36;
+
+		if (empty($var_67)) {
+			return false;
+		} else {
+			return true;
+		}
+	}
+
+	public function fn_22($var_68) {
+		$var_36 = $var_2->var_7->query("
+			SELECT `s`.`key`
+			FROM `" . var_9 . "order` `o`
+			JOIN `" . var_9 . "setting` `s` ON `o`.`order_id` = " . (int)$var_68 . " AND `s`.`value` = `o`.`order_status_id`
+			WHERE `s`.`key` = 'openbay_amazon_order_status_shipped' OR `s`.`key` = 'openbay_amazon_order_status_canceled'
+			LIMIT 1")->var_36;
+
+		if (!isset($var_36['key']) || empty($var_36['key'])) {
+			return null;
+		}
+
+		$var_58 = $var_36['key'];
+
+		switch ($var_58) {
+			case 'openbay_amazon_order_status_shipped':
+				$var_69 = 'shipped';
+				break;
+			case 'openbay_amazon_order_status_canceled':
+				$var_69 = 'canceled';
+				break;
+
+			default:
+				$var_69 = null;
+				break;
+		}
+
+		return $var_69;
+	}
+
+	public function fn_23($var_68, $var_70, $var_71, $var_72) {
+		$var_2->var_7->query("
+			UPDATE `" . var_9 . "amazon_order`
+			SET `courier_id` = '" . $var_70 . "',
+				`courier_other` = " . (int)!$var_71 . ",
+				`tracking_no` = '" . $var_72 . "'
+			WHERE `order_id` = " . (int)$var_68 . "");
+	}
+
+	public function fn_24($var_68) {
+		$var_36 = $var_2->var_7->query("
+			SELECT `amazon_order_id`
+			FROM `" . var_9 . "amazon_order`
+			WHERE `order_id` = " . (int)$var_68 . "
+			LIMIT 1")->var_36;
+
+		if (isset($var_36['amazon_order_id']) && !empty($var_36['amazon_order_id'])) {
+			return $var_36['amazon_order_id'];
+		}
+
+		return null;
+	}
+
+	public function fn_25($var_68) {
+		return $var_2->var_7->query("
+			SELECT `aop`.`amazon_order_item_id`, `op`.`quantity`
+			FROM `" . var_9 . "amazon_order_product` `aop`
+			JOIN `" . var_9 . "order_product` `op` ON `op`.`order_product_id` = `aop`.`order_product_id`
+				AND `op`.`order_id` = " . (int)$var_68)->var_34;
+	}
+
+	public function fn_26($var_25, $var_30 = '') {
+		$var_47 = null;
+
+		if ($var_30 !== '' && $var_2->var_19->addonLoad('openstock')) {
+			$var_2->var_3->model('tool/image');
+			$var_2->var_3->model('module/openstock');
+			$var_73 = $var_2->var_61->getVariants($var_25);
+
+			$var_74 = null;
+			foreach ($var_73 as $var_75) {
+				if ($var_75['sku'] === $var_30) {
+					$var_74 = $var_75;
+					break;
+				}
+			}
+
+			if ($var_74 != null) {
+				$var_47 = $var_74['stock'];
+			}
+		} else {
+			$var_2->var_3->model('catalog/product');
+			$var_76 = $var_2->var_77->fn_8($var_25);
+
+			if (isset($var_76['quantity'])) {
+				$var_47 = $var_76['quantity'];
+			}
+		}
+		return $var_47;
+	}
+
+	public function fn_27($var_13 = array()) {
+		$var_78 = "
+			SELECT COUNT(*) AS product_total
+			FROM " . var_9 . "product p
+			LEFT JOIN " . var_9 . "amazon_product_search aps ON p.product_id = aps.product_id AND aps.marketplace = '" . $var_2->var_7->escape($var_13['filter_marketplace']) . "'
+			LEFT JOIN " . var_9 . "amazon_product_link apl ON p.product_id = apl.product_id
+			LEFT JOIN " . var_9 . "amazon_product ap ON p.product_id = ap.product_id
+			WHERE apl.product_id IS NULL AND ap.product_id IS NULL ";
+
+		if (!empty($var_13['status'])) {
+			$var_78 .= " AND aps.status = '" . $var_2->var_7->escape($var_13['status']) . "'";
+		}
+
+		return $var_2->var_7->query($var_78)->var_36['product_total'];
+	}
+
+	public function fn_28($var_13 = array()) {
+		$var_78 = "
+			SELECT p.product_id, marketplace, aps.status, aps.data, aps.matches
+			FROM " . var_9 . "product p
+			LEFT JOIN " . var_9 . "amazon_product_search aps ON p.product_id = aps.product_id AND aps.marketplace = '" . $var_2->var_7->escape($var_13['filter_marketplace']) . "'
+			LEFT JOIN " . var_9 . "amazon_product_link apl ON p.product_id = apl.product_id
+			LEFT JOIN " . var_9 . "amazon_product ap ON p.product_id = ap.product_id
+			WHERE apl.product_id IS NULL AND ap.product_id IS NULL ";
+
+		if (!empty($var_13['status'])) {
+			$var_78 .= " AND aps.status = '" . $var_2->var_7->escape($var_13['status']) . "'";
+		}
+
+		$var_78 .= " LIMIT " . (int)$var_13['start'] . ", " . (int)$var_13['limit'];
+
+		$var_79 = array();
+
+		$var_34 = $var_2->var_7->query($var_78)->var_34;
+
+		foreach ($var_34 as $var_36) {
+			$var_79[] = array(
+				'product_id' => $var_36['product_id'],
+				'marketplace' => $var_36['marketplace'],
+				'status' => $var_36['status'],
+				'matches' => $var_36['matches'],
+				'data' => json_decode($var_36['data'], 1),
+			);
+		}
+
+		return $var_79;
+	}
+
+	public function fn_29($var_80) {
+		$var_81 = array();
+
+		foreach ($var_80 as $var_29) {
+			$var_81[] = "'" . $var_2->var_7->escape($var_29) . "'";
+		}
+
+		if ($var_2->var_19->addonLoad('openstock')) {
+			$var_34 = $var_2->var_7->query("SELECT apl.amazon_sku, if (pov.product_id IS NULL, p.quantity, pov.stock) AS 'quantity' FROM " . var_9 . "amazon_product_link apl JOIN " . var_9 . "product p ON apl.product_id = p.product_id LEFT JOIN " . var_9 . "product_option_variant pov ON apl.product_id = pov.product_id AND apl.var = pov.sku WHERE apl.amazon_sku IN (" . implode(',', $var_81) . ")")->var_34;
+		} else {
+			$var_34 = $var_2->var_7->query("SELECT apl.amazon_sku, p.quantity FROM " . var_9 . "amazon_product_link apl JOIN " . var_9 . "product p ON apl.product_id = p.product_id WHERE apl.amazon_sku IN (" . implode(',', $var_81) . ")")->var_34;
+		}
+
+		$var_82 = array();
+
+		foreach ($var_34 as $var_36) {
+			$var_82[$var_36['amazon_sku']] = $var_36['quantity'];
+		}
+
+		$var_2->var_19->var_20->updateQuantities($var_82);
+	}
+
+	public function fn_30($var_84) {
+		$var_2->var_7->query("DELETE FROM " . var_9 . "amazon_listing_report WHERE marketplace = '" . $var_2->var_7->escape($var_84) . "'");
+	}
+
+	public function fn_31($var_84) {
+		if ($var_2->var_19->addonLoad('openstock')) {
+
+			$var_78 = "
+				SELECT alr.sku AS 'amazon_sku', alr.quantity AS 'amazon_quantity', alr.asin, alr.price AS 'amazon_price', oc_sku.product_id, pd.name, oc_sku.sku, oc_sku.var, oc_sku.quantity, oc_sku.pov_id
+				FROM " . var_9 . "amazon_listing_report alr
+				LEFT JOIN (
+				  SELECT p.product_id, if (por.product_id IS NULL, p.sku, por.sku) AS 'sku', if (por.product_id IS NULL, NULL, por.sku) AS 'var', if (por.product_id IS NULL, p.quantity, por.stock) AS 'quantity', por.product_option_variant_id AS pov_id
+				  FROM " . var_9 . "product p
+				  LEFT JOIN " . var_9 . "product_option_variant por USING(product_id)
+				) AS oc_sku ON alr.sku = oc_sku.sku
+				LEFT JOIN " . var_9 . "amazon_product_link apl ON (oc_sku.var IS NULL AND oc_sku.product_id = apl.product_id) OR (oc_sku.var IS NOT NULL AND oc_sku.product_id = apl.product_id AND oc_sku.var = apl.var)
+				LEFT JOIN " . var_9 . "product_description pd ON oc_sku.product_id = pd.product_id AND pd.language_id = " . (int)$var_2->var_11->get('config_language_id') . "
+				WHERE apl.product_id IS NULL AND alr.marketplace = '" . $var_2->var_7->escape($var_84) . "'
+				ORDER BY alr.sku
+			";
+
+			$var_47 = $var_2->var_7->query($var_78);
+		} else {
+			$var_47 = $var_2->var_7->query("
+				SELECT alr.sku AS 'amazon_sku', alr.quantity AS 'amazon_quantity', alr.asin, alr.price AS 'amazon_price', oc_sku.product_id, pd.name, oc_sku.sku, oc_sku.var, oc_sku.quantity
+				FROM " . var_9 . "amazon_listing_report alr
+				LEFT JOIN (
+					SELECT p.product_id, p.sku, NULL AS 'var', p.quantity
+					FROM " . var_9 . "product p
+				) AS oc_sku ON alr.sku = oc_sku.sku
+				LEFT JOIN " . var_9 . "amazon_product_link apl ON (oc_sku.var IS NULL AND oc_sku.product_id = apl.product_id) OR (oc_sku.var IS NOT NULL AND oc_sku.product_id = apl.product_id AND oc_sku.var = apl.var)
+				LEFT JOIN " . var_9 . "product_description pd ON oc_sku.product_id = pd.product_id AND pd.language_id = " . (int)$var_2->var_11->get('config_language_id') . "
+				WHERE apl.product_id IS NULL AND alr.marketplace = '" . $var_2->var_7->escape($var_84) . "'
+				ORDER BY alr.sku
+			");
+		}
+
+		return (int)$var_47->var_85;
+	}
+
+	public function fn_32($var_84, $var_86 = 100, $var_87 = 1) {
+		$var_88 = $var_86 * ($var_87 - 1);
+
+		if ($var_2->var_19->addonLoad('openstock')) {
+			$var_2->var_3->model('module/openstock');
+			$var_34 = $var_2->var_7->query("
+				SELECT alr.sku AS 'amazon_sku', alr.quantity AS 'amazon_quantity', alr.asin, alr.price AS 'amazon_price', oc_sku.product_id, pd.name, oc_sku.sku, oc_sku.var, oc_sku.quantity, oc_sku.pov_id
+				FROM " . var_9 . "amazon_listing_report alr
+				LEFT JOIN (
+				  SELECT p.product_id, if (por.product_id IS NULL, p.sku, por.sku) AS 'sku', if (por.product_id IS NULL, NULL, por.sku) AS 'var', if (por.product_id IS NULL, p.quantity, por.stock) AS 'quantity', por.product_option_variant_id AS pov_id
+				  FROM " . var_9 . "product p
+				  LEFT JOIN " . var_9 . "product_option_variant por USING(product_id)
+				) AS oc_sku ON alr.sku = oc_sku.sku
+				LEFT JOIN " . var_9 . "amazon_product_link apl ON (oc_sku.var IS NULL AND oc_sku.product_id = apl.product_id) OR (oc_sku.var IS NOT NULL AND oc_sku.product_id = apl.product_id AND oc_sku.var = apl.var)
+				LEFT JOIN " . var_9 . "product_description pd ON oc_sku.product_id = pd.product_id AND pd.language_id = " . (int)$var_2->var_11->get('config_language_id') . "
+				WHERE apl.product_id IS NULL AND alr.marketplace = '" . $var_2->var_7->escape($var_84) . "'
+				ORDER BY alr.sku
+				LIMIT " . (int)$var_88 . "," . (int)$var_86)->var_34;
+		} else {
+			$var_34 = $var_2->var_7->query("
+				SELECT alr.sku AS 'amazon_sku', alr.quantity AS 'amazon_quantity', alr.asin, alr.price AS 'amazon_price', oc_sku.product_id, pd.name, oc_sku.sku, oc_sku.var, oc_sku.quantity
+				FROM " . var_9 . "amazon_listing_report alr
+				LEFT JOIN (
+					SELECT p.product_id, p.sku, NULL AS 'var', p.quantity
+					FROM " . var_9 . "product p
+				) AS oc_sku ON alr.sku = oc_sku.sku
+				LEFT JOIN " . var_9 . "amazon_product_link apl ON (oc_sku.var IS NULL AND oc_sku.product_id = apl.product_id) OR (oc_sku.var IS NOT NULL AND oc_sku.product_id = apl.product_id AND oc_sku.var = apl.var)
+				LEFT JOIN " . var_9 . "product_description pd ON oc_sku.product_id = pd.product_id AND pd.language_id = " . (int)$var_2->var_11->get('config_language_id') . "
+				WHERE apl.product_id IS NULL AND alr.marketplace = '" . $var_2->var_7->escape($var_84) . "'
+				ORDER BY alr.sku
+				LIMIT " . (int)$var_88 . "," . (int)$var_86)->var_34;
+		}
+
+		$var_89 = array();
+
+		foreach ($var_34 as $var_36) {
+			$var_90 = array();
+
+			if (isset($var_36['pov_id']) && !empty($var_36['pov_id'])) {
+				$var_60 = (isset($var_36['pov_id']) ? $var_2->var_61->getVariant($var_36['pov_id']) : '');
+
+				foreach ($var_60 as $var_63) {
+					$var_90[] =  $var_63['option_value_name'];
+				}
+			}
+
+			$var_89[] = array(
+				'product_id' => $var_36['product_id'],
+				'name' => $var_36['name'],
+				'sku' => $var_36['sku'],
+				'var' => $var_36['var'],
+				'quantity' => $var_36['quantity'],
+				'amazon_sku' => $var_36['amazon_sku'],
+				'amazon_quantity' => $var_36['amazon_quantity'],
+				'amazon_price' => number_format($var_36['amazon_price'], 2, '.', ''),
+				'asin' => $var_36['asin'],
+				'combination' => implode(' > ', $var_90),
+			);
+		}
+
+		return $var_89;
+	}
+
+	public function var_92($var_93, $var_84) {
+		switch ($var_84) {
+			case 'uk':
+				$var_67 = 'https:
+				break;
+			case 'var_94':
+				$var_67 = 'https:
+				break;
+			case 'var_95':
+				$var_67 = 'https:
+				break;
+			case 'var_96':
+				$var_67 = 'https:
+				break;
+			case 'var_97':
+				$var_67 = 'https:
+				break;
+		}
+
+		return $link;
+	}
+}

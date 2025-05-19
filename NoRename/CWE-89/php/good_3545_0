@@ -1,0 +1,442 @@
+<?php
+
+
+
+
+
+$langs->load("admin");
+
+$id=GETPOST('rowid','int');
+
+if (!$user->admin) accessforbidden();
+
+
+$pos_array = array(0);                             
+$pos_name = array(0=>$langs->trans("Home"));       
+$boxes = array();
+
+
+if ((isset($_POST["action"]) && $_POST["action"] == 'addconst'))
+{
+    dolibarr_set_const($db, "MAIN_BOXES_MAXLINES",$_POST["MAIN_BOXES_MAXLINES"],'',0,'',$conf->entity);
+}
+
+if ($_POST["action"] == 'add')
+{
+	$sql = "SELECT rowid";
+	$sql.= " FROM ".MAIN_DB_PREFIX."boxes";
+	$sql.= " WHERE fk_user = 0";
+	$sql.= " AND box_id = ".$_POST["boxid"];
+	$sql.= " AND position = ".$_POST["pos"];
+
+	$resql = $db->query($sql);
+	dol_syslog("boxes.php::search if box active sql=".$sql);
+	if ($resql)
+	{
+		$num = $db->num_rows($resql);
+		if ($num == 0)
+		{
+			$db->begin();
+
+			
+			$sql = "INSERT INTO ".MAIN_DB_PREFIX."boxes (";
+			$sql.= "box_id";
+			$sql.= ", position";
+			$sql.= ", box_order";
+			$sql.= ", fk_user";
+			$sql.= ") values (";
+			$sql.= $_POST["boxid"];
+			$sql.= ", ".$_POST["pos"];
+			$sql.= ", ''";
+			$sql.= ", 0";
+			$sql.= ")";
+
+			dol_syslog("boxes.php activate box sql=".$sql);
+			$resql = $db->query($sql);
+
+			
+			$sql = "DELETE FROM ".MAIN_DB_PREFIX."user_param";
+			$sql.= " WHERE param LIKE 'MAIN_BOXES_%'";
+			dol_syslog("boxes.php delete user_param sql=".$sql);
+			$resql = $db->query($sql);
+
+			$db->commit();
+		}
+
+		Header("Location: boxes.php");
+		exit;
+	}
+	else
+	{
+		dol_print_error($db);
+	}
+}
+
+if ($_GET["action"] == 'delete')
+{
+	$db->begin();
+
+	$sql = "DELETE FROM ".MAIN_DB_PREFIX."boxes";
+	$sql.= " WHERE rowid=".$id;
+	$resql = $db->query($sql);
+
+	
+	$sql = "DELETE FROM ".MAIN_DB_PREFIX."user_param";
+	$sql.= " WHERE param LIKE 'MAIN_BOXES_%'";
+	$resql = $db->query($sql);
+
+	$db->commit();
+}
+
+if ($_GET["action"] == 'switch')
+{
+	
+	$db->begin();
+
+	$objfrom=new ModeleBoxes($db);
+	$objfrom->fetch($_GET["switchfrom"]);
+
+	$objto=new ModeleBoxes($db);
+	$objto->fetch($_GET["switchto"]);
+
+	if (is_object($objfrom) && is_object($objto))
+	{
+		$sql="UPDATE ".MAIN_DB_PREFIX."boxes set box_order='".$objto->box_order."' WHERE rowid=".$objfrom->rowid;
+		
+		$resultupdatefrom = $db->query($sql);
+		if (! $resultupdatefrom) { dol_print_error($db); }
+		$sql="UPDATE ".MAIN_DB_PREFIX."boxes set box_order='".$objfrom->box_order."' WHERE rowid=".$objto->rowid;
+		
+		$resultupdateto = $db->query($sql);
+		if (! $resultupdateto) { dol_print_error($db); }
+	}
+
+	if ($resultupdatefrom && $resultupdateto)
+	{
+		$db->commit();
+	}
+	else
+	{
+		$db->rollback();
+	}
+}
+
+
+llxHeader();
+
+print_fiche_titre($langs->trans("Boxes"),'','setup');
+
+
+
+
+
+$actives = array();
+
+$sql = "SELECT b.rowid, b.box_id, b.position, b.box_order,";
+$sql.= " bd.rowid as boxid";
+$sql.= " FROM ".MAIN_DB_PREFIX."boxes as b, ".MAIN_DB_PREFIX."boxes_def as bd";
+$sql.= " WHERE b.box_id = bd.rowid";
+$sql.= " AND bd.entity = ".$conf->entity;
+$sql.= " AND b.fk_user=0";
+$sql.= " ORDER by b.position, b.box_order";
+
+$resql = $db->query($sql);
+if ($resql)
+{
+	$num = $db->num_rows($resql);
+	$i = 0;
+	$decalage=0;
+	while ($i < $num)
+	{
+		$var = ! $var;
+		$obj = $db->fetch_object($resql);
+		$boxes[$obj->position][$obj->box_id]=1;
+		$i++;
+
+		array_push($actives,$obj->box_id);
+
+		if ($obj->box_order == '' || $obj->box_order == '0' || $decalage) $decalage++;
+		
+		
+		if ($decalage)
+		{
+			$sql="UPDATE ".MAIN_DB_PREFIX."boxes set box_order=".$decalage." WHERE rowid=".$obj->rowid;
+			$db->query($sql);
+		}
+	}
+
+	if ($decalage)
+	{
+		
+		
+		$sql = "SELECT box_order";
+		$sql.= " FROM ".MAIN_DB_PREFIX."boxes";
+		$sql.= " WHERE length(box_order) <= 2";
+		$result = $db->query($sql);
+
+		if ($result)
+		{
+			while ($record = $db->fetch_array($result))
+			{
+				if (dol_strlen($record['box_order']) == 1)
+				{
+					if (preg_match("/[13579]{1}/",substr($record['box_order'],-1)))
+					{
+						$box_order = "A0".$record['box_order'];
+						$sql="update llx_boxes set box_order = '".$box_order."' where box_order = ".$record['box_order'];
+						$resql = $db->query($sql);
+					}
+					else if (preg_match("/[02468]{1}/",substr($record['box_order'],-1)))
+					{
+						$box_order = "B0".$record['box_order'];
+						$sql="update llx_boxes set box_order = '".$box_order."' where box_order = ".$record['box_order'];
+						$resql = $db->query($sql);
+					}
+				}
+				else if (dol_strlen($record['box_order']) == 2)
+				{
+					if (preg_match("/[13579]{1}/",substr($record['box_order'],-1)))
+					{
+						$box_order = "A".$record['box_order'];
+						$sql="update llx_boxes set box_order = '".$box_order."' where box_order = ".$record['box_order'];
+						$resql = $db->query($sql);
+					}
+					else if (preg_match("/[02468]{1}/",substr($record['box_order'],-1)))
+					{
+						$box_order = "B".$record['box_order'];
+						$sql="update llx_boxes set box_order = '".$box_order."' where box_order = ".$record['box_order'];
+						$resql = $db->query($sql);
+					}
+				}
+			}
+		}
+	}
+	$db->free($resql);
+}
+
+
+
+
+print_titre($langs->trans("BoxesAvailable"));
+
+
+
+
+
+
+
+
+
+$sql = "SELECT rowid, file, note, tms";
+$sql.= " FROM ".MAIN_DB_PREFIX."boxes_def";
+$sql.= " WHERE entity = ".$conf->entity;
+$resql = $db->query($sql);
+$var=True;
+
+if ($resql)
+{
+	$html=new Form($db);
+
+	$num = $db->num_rows($resql);
+	$i = 0;
+
+	
+	while ($i < $num)
+	{
+		$obj = $db->fetch_object($resql);
+
+		if (preg_match('/^([^@]+)@([^@]+)$/i',$obj->file,$regs))
+		{
+			$boxname = $regs[1];
+			$module = $regs[2];
+			$sourcefile = "/".$module."/includes/boxes/".$boxname.".php";
+		}
+		else
+		{
+			$boxname=preg_replace('/.php$/i','',$obj->file);
+			$sourcefile = "/includes/boxes/".$boxname.".php";
+		}
+
+		dol_include_once($sourcefile);
+		$box=new $boxname($db,$obj->note);
+
+		$enabled=true;
+		if ($box->depends && sizeof($box->depends) > 0)
+		{
+			foreach($box->depends as $module)
+			{
+				if (empty($conf->$module->enabled)) $enabled=false;
+			}
+		}
+
+		if ($enabled)
+		{
+			
+			if (in_array($obj->rowid, $actives))
+			{
+				
+			}
+			else
+			{
+				$var=!$var;
+
+				if (preg_match('/^([^@]+)@([^@]+)$/i',$box->boximg))
+				{
+					$logo = $box->boximg;
+				}
+				else
+				{
+					$logo=preg_replace("/^object_/i","",$box->boximg);
+				}
+
+				
+				
+				
+				
+				') . '</td>';
+				
+
+				
+				
+				
+				
+				
+				
+				
+				
+
+				
+			}
+		}
+
+		$i++;
+	}
+
+	$db->free($resql);
+}
+
+
+
+
+
+
+print_titre($langs->trans("BoxesActivated"));
+
+
+
+
+
+
+
+
+
+
+$sql = "SELECT b.rowid, b.box_id, b.position,";
+$sql.= " bd.file, bd.note, bd.tms";
+$sql.= " FROM ".MAIN_DB_PREFIX."boxes as b, ".MAIN_DB_PREFIX."boxes_def as bd";
+$sql.= " WHERE b.box_id = bd.rowid";
+$sql.= " AND bd.entity = ".$conf->entity;
+$sql.= " AND b.fk_user=0";
+$sql.= " ORDER by b.position, b.box_order";	
+
+$resql = $db->query($sql);
+
+if ($resql)
+{
+	$num = $db->num_rows($resql);
+	$i = 0;
+	$var=true;
+
+	$box_order=1;
+	$foundrupture=1;
+
+	
+	$obj = $db->fetch_object($resql);
+
+	while ($obj && $i < $num)
+	{
+		$var = ! $var;
+		$objnext = $db->fetch_object($resql);
+
+		if (preg_match('/^([^@]+)@([^@]+)$/i',$obj->file,$regs))
+		{
+			$boxname = $regs[1];
+			$module = $regs[2];
+			$sourcefile = "/".$module."/includes/boxes/".$boxname.".php";
+		}
+		else
+		{
+			$boxname=preg_replace('/.php$/i','',$obj->file);
+			$sourcefile = "/includes/boxes/".$boxname.".php";
+		}
+
+		dol_include_once($sourcefile);
+		$box=new $boxname($db,$obj->note);
+
+		if (preg_match('/^([^@]+)@([^@]+)$/i',$box->boximg))
+		{
+			$logo = $box->boximg;
+		}
+		else
+		{
+			$logo=preg_replace("/^object_/i","",$box->boximg);
+		}
+
+		
+		
+		') . '</td>';
+		
+		$hasnext=true;
+		$hasprevious=true;
+		if ($foundrupture) { $hasprevious=false; $foundrupture=0; }
+		if (! $objnext || $obj->position != $objnext->position) { $hasnext=false; $foundrupture=1; }
+		
+		
+		':'');
+		
+		
+		
+		action=delete">'.img_delete().'</a>';
+		
+
+		
+		$i++;
+
+		$box_order++;
+
+		if (! $foundrupture) $objprevious = $obj;
+		else $box_order=1;
+		$obj=$objnext;
+	}
+
+	$db->free($resql);
+}
+
+
+
+
+
+print_titre($langs->trans("Other"));
+
+
+$var=false;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$db->close();
+
+llxFooter('$Date: 2011/08/1 13:26:22 $ - $Revision: 1.73 $');
+?>

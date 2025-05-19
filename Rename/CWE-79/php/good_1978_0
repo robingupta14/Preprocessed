@@ -1,0 +1,111 @@
+<?php
+
+
+
+
+$var_0 = isset($_GET['action']) ? Security::remove_XSS($_GET['action']) : 'calendar_list';
+
+$var_1 = [
+    'tool' => var_2,
+    'action' => $var_0,
+];
+Event::registerLog($var_1);
+
+$var_3 = ['personal', 'course', 'admin', 'platform'];
+$var_4 = isset($_REQUEST['type']) && in_array($_REQUEST['type'], $var_3, true) ? $_REQUEST['type'] : null;
+
+$interbreadcrumb[] = [
+    'url' => api_get_path(var_5).'calendar/agenda_js.php?type='.Security::remove_XSS($var_4),
+    'name' => get_lang('Agenda'),
+];
+
+$var_6 = api_get_course_int_id();
+$var_7 = api_get_group_id();
+
+if (!empty($var_7)) {
+    $var_8 = GroupManager::get_group_properties($var_7);
+    $var_7 = $var_8['iid'];
+    $interbreadcrumb[] = [
+        'url' => api_get_path(var_5)."group/group.php?".api_get_cidreq(),
+        'name' => get_lang('Groups'),
+    ];
+    $interbreadcrumb[] = [
+        'url' => api_get_path(var_5)."group/group_space.php?".api_get_cidreq(),
+        'name' => get_lang('GroupSpace').' '.$var_8['name'],
+    ];
+}
+
+$var_9 = new class_0($var_4);
+$var_10 = $var_9->getEvents(
+    null,
+    null,
+    $var_6,
+    $var_7,
+    null,
+    'array'
+);
+
+$var_12 = var_13;
+
+if (!empty($var_6) && $var_6 != -1) {
+    
+    $var_14 = api_get_self().'?'.api_get_cidreq();
+    $var_12 = var_15;
+
+    
+    usort($var_10, function ($var_16, $var_17) {
+        $var_18 = strtotime($var_16['start']);
+        $var_19 = strtotime($var_17['start']);
+
+        return $var_18 > $var_19;
+    });
+} else {
+    
+
+    
+    usort($var_10, function ($var_16, $var_17) {
+        $var_18 = strtotime($var_16['start']);
+        $var_19 = strtotime($var_17['start']);
+
+        return $var_18 - $var_19;
+    });
+
+    $var_14 = false;
+    if (!empty($var_10)) {
+        foreach ($var_10 as &$var_20) {
+            $var_21 = isset($var_20['course_id']) ? $var_20['course_id'] : '';
+            $var_20['url'] = api_get_self().'?cid='.$var_21.'&type='.$var_20['type'];
+        }
+    }
+}
+
+$var_22 = $var_9->displayActions('list');
+
+$var_24 = new class_1(get_lang('Events'));
+$var_24->assign('agenda_events', $var_10);
+$var_24->assign('url', $var_14);
+$var_24->assign('show_action', in_array($var_4, ['course', 'session']));
+$var_24->assign('agenda_actions', $var_22);
+$var_24->assign('is_allowed_to_edit', api_is_allowed_to_edit());
+
+if (api_is_allowed_to_edit()) {
+    if ($var_0 == 'change_visibility') {
+        $var_26 = api_get_course_info();
+        $var_27 = '';
+        
+        if (($var_4 == 'course' || $var_4 == 'session' && !empty($var_26))) {
+            
+            
+            $var_9->changeVisibility($_GET['id'], $_GET['visibility'], $var_26);
+        } else {
+            $var_27 = '&'.api_get_cidreq();
+        }
+        header('Location: '.api_get_self().'?type='.$var_9->var_4.$var_27);
+        var_29;
+    }
+}
+
+$var_30 = $var_24->get_template('agenda/event_list.tpl');
+$var_32 = $var_24->fetch($var_30);
+$var_24->assign('content', $var_32);
+$var_24->display_one_col_template();

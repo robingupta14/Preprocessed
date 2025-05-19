@@ -1,0 +1,504 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class class_0 extends var_0 {
+	public $var_1 = array(
+        'showall'=>'Show all',
+        'select_version'=>'Select Help Version'
+    );
+    public $var_2 = array(
+        'categories',
+        'comments',
+        'ealerts',
+        'facebook',
+        'files',
+        'pagination',
+        'rss',
+        'tags',
+        'twitter',
+    );  
+
+    static function fn_0() { return gt("Help"); }
+    static function fn_1() { return gt("Manage Exponent CMS help files."); }
+    static function fn_2() { return true; }
+
+    function fn_3($var_3=null, $var_4=array()) {
+        parent::fn_3($var_3,$var_4);
+        
+        if (!expSession::is_set('help-version')) {
+            $var_5 = class_1::getCurrentHelpVersion();
+            if (empty($var_5)) {
+                
+                $var_6 = new class_1();
+           	    $var_8 = $var_6->find('first','1');
+                if (!empty($var_8)) {
+                    $var_10->var_4['is_current'] = 1;
+             	    $var_8->update($var_10->var_4);
+                    $var_5 = $var_8->var_5;
+                }
+            }
+            if(!empty($var_4['version'])) {
+                $var_5 = isset($var_4['version']) ? (($var_4['version'] == 'current') ? $var_5 : $var_4['version']) : $var_5;
+            }
+            expSession::set('help-version',$var_5);
+        }
+        $var_10->var_7 = expSession::get('help-version');
+	}
+
+    
+	public function fn_4() {
+	    expHistory::set('viewable', $var_10->var_4);
+	    $var_6 = new class_1();
+	    
+	    $var_12 = $var_6->find('first', 'version=\''.$var_10->var_7.'\'');
+
+        
+		$var_13 = $var_10->aggregateWhereClause();
+	    $var_13 .= 'AND help_version_id='.(empty($var_12->var_15)?'0':$var_12->var_15);
+        if (empty($var_10->var_4['parent'])) {
+            $var_13 .= ' AND (parent=0 OR parent IS NULL)';
+        } else {
+            $var_13 .= ' AND parent=' . intval($var_10->var_4['parent']);
+        }
+
+	    $var_16 = isset($var_10->var_26['order']) ? $var_10->var_26['order'] : 'rank';
+
+	    
+		$var_17 = new class_2(array(
+            'model'=>'help',
+            'where'=> $var_13,
+
+            'order'=>$var_16,
+            'dir'=>'ASC',
+            'page'=>(isset($var_10->var_4['page']) ? $var_10->var_4['page'] : 1),
+            'controller'=>$var_10->var_18,
+            'action'=>$var_10->var_4['action'],
+            'src'=>$var_10->var_19->var_3,
+            'columns'=>array(
+                gt('Title')=>'title',
+                gt('Details')=>'body',
+                gt('Version')=>'help_version_id'
+            ),
+        ));
+        $var_20 = new class_3();
+	    foreach ($var_17->var_21 as $var_22=>$var_23) {
+            $var_17->var_21[$var_22]->var_24 = $var_20->find('count','parent='.$var_23->var_15);
+        }
+	    assign_to_template(array(
+            'current_version'=>$var_12,
+            'page'=>$var_17,
+            'rank'=>($var_16==='rank')?1:0
+        ));
+	}
+
+    
+	public function fn_5() {
+	    expHistory::set('viewable', $var_10->var_4);
+	    $var_20 = new class_3();
+        if (empty($var_10->var_4['version']) || $var_10->var_4['version'] == 'current') {
+            $var_25 = class_1::getCurrentHelpVersionId();
+	    } else {
+            $var_25 = class_1::getHelpVersionId($var_10->var_4['version']);
+            if (empty($var_25)) {
+                $var_25 = class_1::getCurrentHelpVersionId();
+            }
+	    }
+	    $var_10->var_4['title'] = expString::escape($var_10->var_4['title']);  
+	    $var_23 = $var_20->find('first', 'help_version_id='.$var_25.' AND sef_url="'.$var_10->var_4['title'].'"');
+        $var_24 = $var_20->find('count','parent='.$var_23->var_15);
+        if (empty($var_23)) {
+            redirect_to(array('controller'=>'notfound','action'=>'page_not_found','title'=>$var_10->var_4['title']));
+        }
+        $var_26 = expConfig::getConfig($var_23->var_27);
+
+	    assign_to_template(array(
+            'doc'=>$var_23,
+            'children'=>$var_24,
+            "hv"=>$var_10->var_7,
+            'config'=>$var_26
+        ));
+	}
+
+    
+	public function fn_6() {
+        global $var_28;
+
+	    expHistory::set('editable', $var_10->var_4);
+	    $var_15 = empty($var_10->var_4['id']) ? null : $var_10->var_4['id'];
+	    $var_20 = new class_3($var_15);
+        if (!empty($var_10->var_4['copy'])) $var_20->var_15 = null;
+
+	    
+        if (expSession::is_set('help-version')) {
+            $var_25 = class_1::getHelpVersionId(expSession::get('help-version'));  
+        } else {
+            $var_25 = class_1::getCurrentHelpVersionId();
+        }
+	    if (empty($var_20->var_29)) $var_20->var_29 = $var_25;
+
+        $var_30 = array('0'=>'-- '.gt('Top Level Help Doc').' --');
+        $var_16 = isset($var_10->var_26['order']) ? $var_10->var_26['order'] : 'rank';
+        $var_31 = $var_20->find('all',"help_version_id=".$var_20->var_29." AND location_data='".serialize($var_20->var_19)."'",$var_16);
+        foreach ($var_31 as $var_32) {
+            $var_30[$var_32->var_15] = $var_32->var_33;
+        }
+
+		$var_34 = array();
+
+
+
+
+
+
+
+
+
+        $var_35 = $var_20->findValue('all', 'location_data', "help_version_id=" . $var_25, null, true);
+        foreach ($var_35 as $var_37) {
+            if (!empty($var_37)) {
+                $var_38 = expUnserialize($var_37);
+                $var_34[$var_38->var_3] = $var_28->selectValue('sectionref', 'section', 'module = "help" AND source="' . $var_38->var_3 . '"');
+            }
+        }
+        $var_34[$var_10->var_19->var_3] .= ' '.gt("(current section)");
+
+	    assign_to_template(array(
+            'record'=>$var_20,
+            'parents'=>$var_30,
+            "current_section"=>$var_10->var_19->var_3,
+            "sections"=>$var_34
+        ));
+	}
+
+    
+	public function fn_7() {
+	    expHistory::set('manageable', $var_10->var_4);
+	    global $var_28;
+
+	    $var_6 = new class_1();
+	    $var_40 = $var_6->find('first', 'is_current=1');
+
+	    if (empty($var_40)) {
+	        flash('error', gt("You don't have any software versions created yet.  Please do so now."));
+	        redirect_to(array('controller'=>'help', 'action'=>'edit_version'));
+
+	    }
+
+        $var_41 = array();
+        foreach ($var_28->selectObjects('sectionref','module="help"') as $var_43) {
+            if (!empty($var_43->var_44) && empty($var_41[$var_43->var_44])) {
+                $var_41[$var_43->var_44] = $var_28->selectValue('section', 'name', 'id="' . $var_43->var_45 .'"');
+            }
+        }
+
+	    $var_13 = empty($var_10->var_4['version']) ? 1 : 'help_version_id='.intval($var_10->var_4['version']);
+	    $var_17 = new class_2(array(
+            'model'=>'help',
+            'where'=>$var_13,
+            'limit'=>30,
+            'order'      => (isset($var_10->var_4['order']) ? $var_10->var_4['order'] : 'help_version_id'),
+            'dir'        => (isset($var_10->var_4['dir']) ? $var_10->var_4['dir'] : 'DESC'),
+            'page'=>(isset($var_10->var_4['page']) ? $var_10->var_4['page'] : 1),
+            'controller'=>$var_10->var_18,
+            'action'=>$var_10->var_4['action'],
+            'src'=>$var_10->var_19->var_3,
+            'columns'=>array(
+                gt('Title')=>'title',
+                gt('Version')=>'help_version_id',
+                gt('Section')=>'section',
+
+            ),
+        ));
+
+	    assign_to_template(array(
+            'current_version'=>$var_40,
+            'page'=>$var_17,
+            'sections'=>$var_41
+        ));
+	}
+
+    
+	private static function fn_8($var_46, $var_47) {
+	    $var_20 = new class_3();
+        $var_16 = 'rank DESC';
+        $var_48 = $var_20->getHelpParents($var_46);
+        $var_50 = array();
+
+        
+	    $var_51 = $var_20->find('all', 'help_version_id='.$var_46.' AND parent=0',$var_16);
+	    foreach ($var_51 as $var_23) {
+            $var_52 = $var_23->var_15;
+	        unset($var_23->var_15);
+	        $var_23->var_29 = $var_47;
+
+
+
+
+
+
+	        $var_23->save();
+            if (in_array($var_52, $var_48)) {
+                $var_50[$var_52] = $var_23->var_15;
+            }
+
+
+
+
+	        foreach($var_23->var_54 as $var_55=>$var_56) {
+	            foreach($var_56 as $var_57) {
+	                $var_23->attachItem($var_57, $var_55);
+	            }
+	        }
+	    }
+
+        
+        $var_51 = $var_20->find('all', 'help_version_id='.$var_46.' AND parent!=0',$var_16);
+   	    foreach ($var_51 as $var_22=>$var_23) {
+   	        unset($var_23->var_15);
+            $var_23->var_59 = $var_50[$var_23->var_59];
+   	        $var_23->var_29 = $var_47;
+   	        $var_23->save();
+   	        foreach($var_23->var_54 as $var_55=>$var_56) {
+   	            foreach($var_56 as $var_57) {
+   	                $var_23->attachItem($var_57, $var_55);
+   	            }
+
+   	        }
+   	    }
+
+	    
+        $var_60 = class_1::getHelpVersion($var_46);
+        $var_61 = class_1::getHelpVersion($var_47);
+
+	    
+	    flash('message', gt('Copied all docs from version').' '.$var_60.' '.gt('to new version').' '.$var_61);
+	    return true;
+	}
+
+    
+	public function fn_9() {
+	    expHistory::set('manageable', $var_10->var_4);
+
+	    $var_6 = new class_1();
+	    $var_40 = $var_6->find('first', 'is_current=1');
+
+	    $var_62  = 'SELECT hv.*, COUNT(h.title) AS num_docs FROM '.var_63.'_help h ';
+	    $var_62 .= 'RIGHT JOIN '.var_63.'_help_version hv ON h.help_version_id=hv.id GROUP BY hv.version';
+
+	    $var_17 = new class_2(array(
+            'sql'=>$var_62,
+            'limit'=>30,
+            'order'      => (isset($var_10->var_4['order']) ? $var_10->var_4['order'] : 'version'),
+            'dir'        => (isset($var_10->var_4['dir']) ? $var_10->var_4['dir'] : 'DESC'),
+            'page'=>(isset($var_10->var_4['page']) ? $var_10->var_4['page'] : 1),
+            'controller'=>$var_10->var_18,
+            'action'=>$var_10->var_4['action'],
+            'src'=>$var_10->var_19->var_3,
+            'columns'=>array(
+                gt('Version')=>'version',
+                gt('Title')=>'title',
+                gt('Current')=>'is_current',
+                gt('
+            ),
+        ));
+
+	    assign_to_template(array(
+            'var_40'=>$var_40,
+            'page'=>$var_17
+        ));
+	}
+
+    
+	public function fn_10() {
+	    expHistory::set('editable', $var_10->var_4);
+	    $var_15 = empty($var_10->var_4['id']) ? null : $var_10->var_4['id'];
+	    $var_5 = new class_1($var_15);
+	    assign_to_template(array(
+            'record'=>$var_5
+        ));
+	}
+
+    
+	public function fn_11() {
+	    if (empty($var_10->var_4['id'])) {
+	        flash('error', gt('The version you are trying to delete could not be found'));
+	    }
+
+	    
+	    $var_5 = new class_1($var_10->var_4['id']);
+	    if (empty($var_5->var_15)) {
+	        flash('error', gt('The version you are trying to delete could not be found'));
+	    }
+
+	    
+	    if (!expQueue::isQueueEmpty('error')) expHistory::back();
+
+	    
+	    $var_5->delete();
+
+	    expSession::un_set('help-version');
+
+	    flash('message', gt('Deleted version').' '.$var_5->var_5.' '.gt('and all documents in that version.'));
+	    expHistory::back();
+	}
+
+    
+	public function fn_12() {
+	    
+	    $var_6 = new class_1();
+	    $var_40 = $var_6->find('first', 'is_current=1');
+
+	    
+	    if (!empty($var_10->var_4['is_current'])) {
+
+            class_1::clearHelpVersion();
+	    }
+	    expSession::un_set('help-version');
+
+	    
+	    $var_15 = empty($var_10->var_4['id']) ? null : $var_10->var_4['id'];
+	    $var_5 = new class_1();
+	    
+	    if (empty($var_40->var_15)) $var_10->var_4['is_current'] = 1;
+	    $var_5->update($var_10->var_4);
+
+	    
+	    if (empty($var_15)) {
+	        self::fn_8($var_40->var_15, $var_5->var_15);
+	    }
+        
+        searchController::spider();
+
+	    flash('message', gt('Saved help version').' '.$var_5->var_5);
+	    expHistory::back();
+	}
+
+    
+	public function fn_13() {
+	    
+        class_1::clearHelpVersion();
+	    expSession::un_set('help-version');
+
+		$var_15 = $var_10->var_4['id'];
+	    $var_5 = new class_1($var_15);
+	    $var_10->var_4['is_current'] = 1;
+	    $var_5->update($var_10->var_4);
+        
+        searchController::spider();
+
+	    flash('message', gt('Changed active help version to').' '.$var_5->var_5);
+	    expHistory::back();
+	}
+
+    
+	public function fn_14() {
+  	    $var_6 = expSession::get('help-version');
+        $var_65 = class_1::getHelpVersionId($var_6);
+        $var_66 = class_1::getHelpVersionsDropdown();
+   	    assign_to_template(array(
+               'current_version'=>$var_6,
+               'selected'=>$var_65,
+               'versions'=>$var_66
+           ));
+	}
+
+    
+	public function fn_15() {
+	    
+	    expSession::un_set('help-version');
+        
+        $var_5 = class_1::getHelpVersion($var_10->var_4['version']);
+        expSession::set('help-version',$var_5);
+	    flash('message', gt('Now displaying Help version').' '.$var_5);
+        expHistory::back();
+	}
+
+    
+   	function fn_16() {
+        global $var_28;
+
+       $var_67 = 0;
+       $var_20 = new class_3();
+       $var_13 = 'help_version_id="'.class_1::getCurrentHelpVersionId().'"';
+       $var_13 .= (!empty($var_10->var_4['id'])) ? ' AND id='.$var_10->var_4['id'] : null;
+       $var_68 = $var_28->selectArrays($var_20->var_70,$var_13);
+       foreach ($var_68 as $var_71) {
+           $var_52 = $var_71['id'];
+           unset($var_71['id']);
+
+           
+
+
+
+           
+           $var_62 = "original_id=" . $var_52 . " AND ref_module='" . $var_10->var_18 . "'";
+           $var_72 = $var_28->selectObject('search', $var_62);
+           if (!empty($var_72)) {
+               $var_74 = new class_5($var_72->var_15, false, false);
+               $var_74->update($var_71);
+           } else {
+               $var_74 = new class_5($var_71, false, false);
+           }
+
+           $var_74->var_75 = $var_52;
+           $var_74->var_76 = empty($var_71['created_at']) ? null : $var_71['created_at'];
+
+           $var_77 = str_replace(var_78,'', makeLink(array('controller'=>$var_10->var_18, 'action'=>'show', 'title'=>$var_71['sef_url'])));
+
+           $var_74->var_79 = $var_77;
+
+           $var_74->var_80 = $var_10->var_18;
+           $var_74->var_81 = $var_10->searchName();
+           $var_74->var_83 = $var_10->searchCategory();
+           $var_74->save();
+           $var_67++;
+        }
+
+        return $var_67;
+   }
+
+    
+	public static function fn_17($var_4) {
+	    global $var_28;
+
+        $var_20 = new class_3();
+        if (empty($var_4['version']) || $var_4['version']=='current') {
+            $var_25 = class_1::getCurrentHelpVersionId();
+        } else {
+            $var_25 = class_1::getHelpVersionId($var_4['version']);
+            if (empty($var_25)) {
+                $var_25 = class_1::getCurrentHelpVersionId();
+            }
+        }
+        $var_23 = $var_20->find('first','help_version_id='.$var_25.' and sef_url="'.$var_4['title'].'"');
+	    $var_85 = expSession::get('last_section') ? expSession::get('last_section') : 1 ;
+        $var_86 = $var_28->selectObject('sectionref','module="help" AND source="'. expUnserialize($var_23->var_27)->var_3.'"');
+        $var_87 = !empty($var_86) ? $var_86->var_45 : (($var_23->var_45!=0) ? $var_23->var_45 : $var_85);
+        if (!expSession::get('last_section')) {
+            expSession::set('last_section',$var_87);
+        }
+
+        $var_45 = new class_4(intval($var_87));
+	    return $var_45;
+	}
+
+}
+
+?>

@@ -1,0 +1,141 @@
+<?php
+
+ session_start();
+
+ 
+ $var_0 = new class_0();
+ $var_1 = new class_1($var_0);
+ 
+
+ $var_2 = '';
+ $var_3 = 7;
+ $var_4 = '';
+ $var_5 = array();
+ $var_6 = array();
+ $var_7 = array();
+ $var_8 = array();
+
+ $var_4 = new class_2();
+ 
+ 
+ $var_0->assign('clients_list', $var_4->getClients());
+
+ 
+ $var_11 = array( '7' => "Last week", '14' => "Last 2 weeks", '30' => "Last month");
+ $var_0->assign('periods_list', $var_11);
+
+ $var_12 = array(
+      'D' => 'Differential',
+      'I' => 'Incremental',
+      'F' => 'Full',
+      'V' => 'InitCatalog',
+      'C' => 'Catalog',
+      'O' => 'VolumeToCatalog',
+      'd' => 'DiskToCatalog',
+      'A' => 'Data'
+ );
+
+ try {
+    
+    if (!is_null(CHttpRequest::get_Value('client_id'))) {
+       
+       $var_2 = CHttpRequest::get_Value('client_id');
+
+       
+       if( !filter_var( $var_2, var_13)) {
+          throw new class_3('Critical: provided parameter (client_id) is not valid');
+       }
+
+       $var_3 = CHttpRequest::get_Value('period');
+
+       
+       if(!array_key_exists( $var_3, $var_11)) {
+          throw new class_3('Critical: provided value for (period) is unknown or not valid');
+       }
+
+       if(!filter_var($var_3, var_13)) {
+          throw new class_3('Critical: provided value for (period) is unknown or not valid');
+       }
+
+       $var_0->assign( 'no_report_options', 'false');
+       
+       
+       $var_15  = $var_4->getClientInfos($var_2);
+       $var_0->assign('client_name', $var_15['name']);
+       $var_0->assign('client_os', $var_15['os']);
+       $var_0->assign('client_arch', $var_15['arch']);
+       $var_0->assign('client_version', $var_15['version']);
+       
+       
+       $var_17 = new class_4();
+       
+       foreach ($var_17->get_Jobs_List($var_2) as $var_19) {
+          
+          $var_20  = 'SELECT Job.Name, Job.Jobid, Job.Level, Job.Endtime, Job.Jobbytes, Job.Jobfiles, Status.JobStatusLong FROM Job ';
+          $var_20 .= "LEFT JOIN Status ON Job.JobStatus = Status.JobStatus ";
+          $var_20 .= "WHERE Job.Name = '$var_19' AND Job.JobStatus = 'T' AND Job.Type = 'B' ";
+          $var_20 .= 'ORDER BY Job.EndTime DESC ';
+          $var_20 .= 'LIMIT 1';
+
+          $var_21 = $var_17->run_query($var_20);
+          
+          foreach ($var_21->fetchAll() as $var_24) {
+             $var_24['level']     = $var_12[$var_24['level']];
+             $var_24['jobfiles']  = CUtils::format_Number($var_24['jobfiles']);
+             $var_24['jobbytes']  = CUtils::Get_Human_Size($var_24['jobbytes']);
+             $var_24['endtime']   = date( $var_1->var_25, strtotime($var_24['endtime']));
+             
+             $var_6[] = $var_24;
+          } 
+       } 
+       
+       $var_0->assign('backup_jobs', $var_6);
+       
+       
+       $var_26 = DateTimeUtil::getLastDaysIntervals($var_3);
+       
+       
+       foreach ($var_26 as $var_27) {
+          $var_28 = $var_17->getStoredBytes(array($var_27['start'], $var_27['end']), 'ALL', $var_2);
+          $var_7[] = array(date("m-d", $var_27['start']), $var_28);
+       } 
+       
+       $var_30 = new class_5( array( 'type' => 'bar', 
+          'name' => 'chart_storedbytes',
+          'data' => $var_7, 
+          'ylabel' => 'Bytes', 
+          'uniformize_data' => true ) );
+       
+       $var_0->assign('stored_bytes_chart_id', $var_30->var_31);
+       $var_0->assign('stored_bytes_chart', $var_30->render());
+       
+       unset($var_30);
+       
+       
+       foreach ($var_26 as $var_27) {
+          $var_33 = $var_17->getStoredFiles(array($var_27['start'], $var_27['end']), 'ALL', $var_2);
+          $var_8[] = array(date("m-d", $var_27['start']), $var_33);
+       }
+       
+       $var_35 = new class_5( array( 'type' => 'bar', 
+          'name' => 'chart_storedfiles', 
+          'data' => $var_8, 
+          'ylabel' => 'Files' ) );
+       
+       $var_0->assign('stored_files_chart_id', $var_35->var_31);
+       $var_0->assign('stored_files_chart', $var_35->render());
+       
+       unset($var_35);
+    }else {
+       $var_0->assign( 'no_report_options', 'true');
+    }
+
+} catch (var_14 $var_36) {}
+
+ $var_0->assign('period', $var_3);
+
+ 
+ $var_0->assign('page_name', 'Client report');
+
+ 
+ $var_0->render('client-report.tpl');

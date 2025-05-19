@@ -1,0 +1,120 @@
+<?php
+
+
+	if (!isset($var_0))
+		exit();
+
+	$var_1 = "./include/options/accessLists/reloadACL/";
+
+
+
+	if (isset($_GET["o"]) && $_GET["o"] == "r"){
+		$var_2->query("UPDATE session SET update_acl = '1' WHERE session_id = '".$var_2->escape($_GET["session_id"])."'");
+		$var_2->query("UPDATE acl_resources SET changed = '1'");
+		$var_5 = new class_0();
+		$var_5->setTextStyle("bold");
+		$var_5->setText(_("ACL reloaded"));
+		$var_5->setTimeOut("3");
+		passthru("php " . $var_9 . "/cron/centAcl.php");
+	} elseif (isset($_POST["o"]) && $_POST["o"] == "u") {
+		isset($_GET["select"]) ? $var_10 = $_GET["select"] : $var_10 = NULL;
+		isset($_POST["select"]) ? $var_10 = $_POST["select"] : $var_10;
+
+		$var_2->query("UPDATE acl_resources SET changed = '1'");
+		$var_3 = "UPDATE session SET update_acl = '1' WHERE user_id IN (";
+		$var_11 = 0;
+		if (isset($var_10))
+			foreach ($var_10 as $var_12 => $var_13) {
+				if ($var_11)
+					$var_3 .= ", ";
+				$var_3 .= "'".$var_12."'";
+				$var_11++;
+			}
+		if (!$var_11) {
+			$var_3 .= "'')";
+		} else {
+			$var_3 .= ")";
+		}
+
+		$var_2->query($var_3);
+		$var_5->setTextStyle("bold");
+		$var_5->setText(_("ACL reloaded"));
+		$var_5->setTimeOut("3");
+		passthru("php " . $var_9 . "/cron/centAcl.php");
+	}
+
+	
+	$var_14 = new class_1();
+	$var_14 = initSmartyTpl($var_1, $var_14);
+
+	$var_15 = $var_2->query("SELECT DISTINCT * FROM session");
+	$var_16 = array();
+	$var_17 = 0;
+	$var_18 = new class_2('select_form', 'POST', "?p=".$var_19);
+
+	while ($var_20 = $var_15->fetchRow()){
+		$var_22 = $var_2->query("SELECT contact_name, contact_admin FROM contact WHERE contact_id = '".$var_20["user_id"]."'");
+		$var_23 = $var_22->fetchRow();
+		if ($var_23["contact_admin"] != "1") {
+			$var_16[$var_17] = array();
+			if ($var_17 % 2) {
+				$var_16[$var_17]["class"] = "list_one";
+			} else {
+				$var_16[$var_17]["class"] = "list_two";
+			}
+			$var_16[$var_17]["user_id"] = $var_20["user_id"];
+			$var_16[$var_17]["user_alias"] = $var_23["contact_name"];
+			$var_16[$var_17]["admin"] = $var_23["contact_admin"];
+			$var_24 = $var_2->query("SELECT topology_name, topology_icone, topology_page, topology_url_opt FROM topology WHERE topology_page = '".$var_20["current_page"]."'");
+			$var_25 = $var_24->fetchRow();
+			$var_16[$var_17]["ip_address"] = $var_20["ip_address"];
+			$var_16[$var_17]["current_page"] = $var_20["current_page"].$var_25["topology_url_opt"];
+			$var_16[$var_17]["topology_name"] = _($var_25["topology_name"]);
+			$var_16[$var_17]["actions"] = "<a href='./main.php?p=$var_19&o=r&session_id=".$var_20["session_id"]."'><img src='./img/icones/16x16/refresh.gif' border='0' alt='"._("Reload ACL")."' title='"._("Reload ACL")."'></a>";
+			$var_26 = $var_18->addElement('checkbox', "select[".$var_20['user_id']."]");
+			$var_16[$var_17]["checkbox"] = $var_26->toHtml();
+			$var_17++;
+		}
+	}
+	if (isset($var_5)) {
+		$var_14->assign("msg", $var_5);
+	}
+
+	$var_14->assign("session_data", $var_16);
+	$var_14->assign("wi_user", _("Connected users"));
+	$var_14->assign("wi_where", _("Position"));
+	$var_14->assign("actions", _("Reload ACL"));
+	$var_14->assign("distant_location", _("IP Address"));
+	?>
+	<script type="text/javascript">
+	function setO(_i) {
+		document.forms['form'].elements['o'].value = _i;
+	}
+	</script>
+	<?php
+	$var_30 = array(
+			'onchange'=>"javascript: " .
+				"if (this.form.elements['o1'].selectedIndex == 1) {" .
+				" 	setO(this.form.elements['o1'].value); submit();} this.form.elements['o1'].selectedIndex = 0");
+    $var_18->addElement('select', 'o1', NULL, array(NULL=>_("More actions..."), "u"=>_("Reload ACL")), $var_30);
+
+
+	$var_30 = array(
+			'onchange'=>"javascript: " .
+				"if (this.form.elements['o2'].selectedIndex == 1) {" .
+				" 	setO(this.form.elements['o2'].value); submit();} this.form.elements['o1'].selectedIndex = 0");
+    $var_18->addElement('select', 'o2', NULL, array(NULL=>_("More actions..."), "u"=>_("Reload ACL")), $var_30);
+
+
+	$var_31 = $var_18->getElement('o1');
+	$var_31->setValue(NULL);
+
+	$var_34 = $var_18->getElement('o2');
+	$var_34->setValue(NULL);
+
+	$var_35 = new class_3($var_14);
+	$var_18->accept($var_35);
+	$var_14->assign('form', $var_35->toArray());
+	$var_14->assign('p', $var_19);
+	$var_14->display("reloadACL.ihtml");
+?>

@@ -1,0 +1,429 @@
+<?php
+
+
+
+
+$var_0 = true;
+
+
+api_block_anonymous_users();
+
+if (api_get_configuration_value('disable_gdpr')) {
+    api_not_allowed(true);
+}
+
+$var_1 = api_get_user_id();
+$var_2 = api_get_user_info($var_1);
+
+if (empty($var_2)) {
+    api_not_allowed(true);
+}
+
+$var_3 = [
+    'password' => get_lang('EncryptedData'),
+    'salt' => get_lang('RandomData'),
+    'empty' => get_lang('NoData'),
+];
+
+$var_4 = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
+$var_5 = '';
+
+if (api_get_setting('allow_terms_conditions') === 'true') {
+    $var_6 = new class_0('delete_term', 'post', api_get_self().'?action=delete_legal&user_id='.$var_1);
+    $var_6->addHtml(Display::return_message(get_lang('WhyYouWantToDeleteYourLegalAgreement'), 'normal', false));
+    $var_6->addTextarea('explanation', [get_lang('DeleteLegal'), get_lang('ExplanationDeleteLegal')], [], true);
+    $var_6->addHidden('action', 'delete_legal');
+    $var_6->addButtonSave(get_lang('DeleteLegal'));
+    $var_5 = $var_6->returnForm();
+
+    $var_12 = new class_0('delete_account', 'post', api_get_self().'?action=delete_account&user_id='.$var_1);
+    $var_12->addTextarea(
+        'explanation',
+        [get_lang('DeleteAccount'), get_lang('ExplanationDeleteAccount')],
+        [],
+        true
+    );
+    $var_12->addHidden('action', 'delete_account');
+    $var_12->addButtonDelete(get_lang('DeleteAccount'));
+    $var_5 .= $var_12->returnForm();
+}
+switch ($var_4) {
+    case 'send_legal':
+        $var_14 = api_get_interface_language();
+        $var_14 = api_get_language_id($var_14);
+        $var_15 = LegalManager::get_last_condition($var_14);
+        if (!$var_15) {
+            
+            $var_14 = api_get_setting('platformLanguage');
+            $var_14 = api_get_language_id($var_14);
+            $var_15 = LegalManager::get_last_condition($var_14);
+        }
+
+        $var_16 = $var_15['version'].':'.$var_15['language_id'].':'.time();
+        UserManager::update_extra_field_value(
+            $var_1,
+            'legal_accept',
+            $var_16
+        );
+
+        Event::addEvent(
+            var_17,
+            var_18,
+            api_get_user_info($var_1),
+            api_get_utc_datetime()
+        );
+
+        $var_19 = UserManager::getStudentBossList($var_1);
+        if (!empty($var_19)) {
+            $var_19 = array_column($var_19, 'boss_id');
+            $var_20 = api_get_user_info($var_1);
+            foreach ($var_19 as $var_21) {
+                $var_22 = sprintf(
+                    get_lang('UserXSignedTheAgreement'),
+                    $var_20['complete_name']
+                );
+                $var_23 = sprintf(
+                    get_lang('UserXSignedTheAgreementTheDateY'),
+                    $var_20['complete_name'],
+                    api_get_local_time($var_24)
+                );
+
+                MessageManager::send_message_simple(
+                    $var_21,
+                    $var_22,
+                    $var_23,
+                    $var_25
+                );
+            }
+        }
+        Display::addFlash(Display::return_message(get_lang('Saved')));
+        header('Location: '.api_get_self());
+        var_26;
+        break;
+    case 'delete_account':
+        if ($var_12->validate()) {
+            $var_28 = $var_12->getSubmitValue('explanation');
+            UserManager::createDataPrivacyExtraFields();
+
+            UserManager::update_extra_field_value(
+                $var_1,
+                'request_for_delete_account',
+                1
+            );
+            UserManager::update_extra_field_value(
+                $var_1,
+                'request_for_delete_account_justification',
+                $var_28
+            );
+
+            Display::addFlash(Display::return_message(get_lang('Saved')));
+            Event::addEvent(
+                var_30,
+                var_18,
+                $var_2
+            );
+
+            $var_31 = api_get_path(var_32).'admin/user_list_consent.php';
+            $var_33 = Display::url($var_31, $var_31);
+            $var_34 = get_lang('RequestForAccountDeletion');
+            $var_35 = sprintf(
+                get_lang('TheUserXAskedForAccountDeletionWithJustificationXGoHereX'),
+                $var_2['complete_name'],
+                $var_28,
+                $var_33
+            );
+
+            $var_36 = api_get_configuration_value('data_protection_officer_email');
+            if (!empty($var_36)) {
+                api_mail_html('', $var_36, $var_34, $var_35);
+            } else {
+                MessageManager::sendMessageToAllAdminUsers(api_get_user_id(), $var_34, $var_35);
+            }
+            header('Location: '.api_get_self());
+            var_26;
+        }
+        break;
+    case 'delete_legal':
+        if ($var_6->validate()) {
+            $var_28 = $var_6->getSubmitValue('explanation');
+
+            UserManager::createDataPrivacyExtraFields();
+
+            UserManager::update_extra_field_value(
+                $var_1,
+                'request_for_legal_agreement_consent_removal',
+                1
+            );
+
+            UserManager::update_extra_field_value(
+                $var_1,
+                'request_for_legal_agreement_consent_removal_justification',
+                $var_28
+            );
+
+            Display::addFlash(Display::return_message(get_lang('Sent')));
+
+            Event::addEvent(
+                var_37,
+                var_18,
+                $var_2
+            );
+
+            $var_31 = api_get_path(var_32).'admin/user_list_consent.php';
+            $var_33 = Display::url($var_31, $var_31);
+            $var_34 = get_lang('RequestForLegalConsentWithdrawal');
+            $var_35 = sprintf(
+                get_lang('TheUserXAskedLegalConsentWithdrawalWithJustificationXGoHereX'),
+                $var_2['complete_name'],
+                $var_28,
+                $var_33
+            );
+
+            $var_36 = api_get_configuration_value('data_protection_officer_email');
+            if (!empty($var_36)) {
+                api_mail_html('', $var_36, $var_34, $var_35);
+            } else {
+                MessageManager::sendMessageToAllAdminUsers(api_get_user_id(), $var_34, $var_35);
+            }
+            header('Location: '.api_get_self());
+            var_26;
+        }
+        break;
+}
+
+$var_38 = UserManager::getRepository()->getPersonalDataToJson($var_1, $var_3);
+
+if (!empty($_GET['export'])) {
+    $var_40 = md5(mt_rand(0, 1000000)).'.json';
+    $var_41 = api_get_path(var_42).$var_40;
+    $var_43 = file_put_contents($var_41, $var_38);
+    if ($var_43 !== false) {
+        DocumentManager::file_send_for_download($var_41, true, $var_40);
+        var_26;
+    }
+}
+
+$var_44 = api_get_setting('allow_social_tool') === 'true';
+
+$var_45 = get_lang('PersonalDataReport');
+$var_46 = null;
+
+if ($var_44) {
+    $var_47 = var_48;
+    $interbreadcrumb[] = [
+        'url' => api_get_path(var_49).'main/social/home.php',
+        'name' => get_lang('SocialNetwork'),
+    ];
+} else {
+    $var_47 = var_50;
+    $interbreadcrumb[] = [
+        'url' => api_get_path(var_49).'main/auth/profile.php',
+        'name' => get_lang('Profile'),
+    ];
+}
+
+$interbreadcrumb[] = ['url' => '
+
+
+$socialMenuBlock = '';
+if ($var_44) {
+    
+    $var_51 = SocialManager::show_social_menu('personal-data');
+}
+
+
+$var_52 = '<ul>';
+$var_53 = json_decode($var_38);
+$var_54 = api_get_path(var_55);
+$var_56 = false;
+foreach ($var_53 as $var_57 => $var_58) {
+    if (is_array($var_58) || is_object($var_58)) {
+        switch ($var_57) {
+            case 'classes':
+                foreach ($var_58 as $var_59 => $var_60) {
+                    $var_61 = 'Social group';
+                    if ($var_59 == 0) {
+                        $var_61 = 'Class';
+                    }
+                    $var_52 .= '<li class="advanced_options" id="personal-data-list-'.$var_59.'">';
+                    $var_52 .= '<u>'.$var_61.'</u> &gt;</li>';
+                    $var_52 .= '<ul id="personal-data-list-'.$var_59.'_options" style="display:none;">';
+                    if (empty($var_60)) {
+                        $var_52 .= '<li>'.get_lang('NoData').'</li>';
+                    } else {
+                        foreach ($var_60 as $var_62) {
+                            $var_52 .= '<li>'.$var_62.'</li>';
+                        }
+                    }
+                    $var_52 .= '</ul>';
+                }
+                break;
+            case 'extraFields':
+                $var_52 .= '<li>'.$var_57.': </li><ul>';
+                if (empty($var_58)) {
+                    $var_52 .= '<li>'.get_lang('NoData').'</li>';
+                } else {
+                    foreach ($var_58 as $var_60) {
+                        $var_52 .= '<li>'.$var_60->var_63.': '.$var_60->var_58.'</li>';
+                    }
+                }
+                $var_52 .= '</ul>';
+                break;
+            case 'dropBoxSentFiles':
+                foreach ($var_58 as $var_59 => $var_60) {
+                    $var_52 .= '<li class="advanced_options" id="personal-data-list-'.$var_59.'">';
+                    $var_52 .= '<u>'.get_lang($var_59).'</u> &gt;</li>';
+                    $var_52 .= '<ul id="personal-data-list-'.$var_59.'_options" style="display:none;">';
+                    if (empty($var_60)) {
+                        $var_52 .= '<li>'.get_lang('NoData').'</li>';
+                    } else {
+                        if (count($var_60) === 1000) {
+                            $var_56 = true;
+                        }
+                        foreach ($var_60 as $var_62) {
+                            if ($var_59 === 'DocumentsAdded') {
+                                $var_64 = Display::url(
+                                    $var_62->var_65,
+                                    $var_54.$var_62->var_66.'/document'.$var_62->var_41
+                                );
+                                $var_52 .= '<li>'.$var_64.'</li>';
+                            } else {
+                                $var_52 .= '<li>'.$var_62.'</li>';
+                            }
+                        }
+                    }
+                    $var_52 .= '</ul>';
+                }
+
+                break;
+            case 'portals':
+            case 'roles':
+            case 'achievedSkills':
+            case 'sessionAsGeneralCoach':
+            case 'courses':
+            case 'groupNames':
+            case 'groups':
+                $var_52 .= '<li>'.$var_57.': </li><ul>';
+                if (empty($var_60)) {
+                    $var_52 .= '<li>'.get_lang('NoData').'</li>';
+                } else {
+                    foreach ($var_58 as $var_60) {
+                        $var_52 .= '<li>'.$var_60.'</li>';
+                    }
+                }
+                $var_52 .= '</ul>';
+                break;
+            case 'sessionCourseSubscriptions':
+                $var_52 .= '<li>'.$var_57.': </li><ul>';
+                foreach ($var_58 as $var_67 => $var_68) {
+                    $var_52 .= '<li>'.$var_67.'<ul>';
+                    if (empty($var_68)) {
+                        $var_52 .= '<li>'.get_lang('NoData').'</li>';
+                    } else {
+                        foreach ($var_68 as $var_69) {
+                            $var_52 .= '<li>'.$var_69.'</li>';
+                        }
+                    }
+                    $var_52 .= '</ul>';
+                }
+                $var_52 .= '</ul>';
+                break;
+            default:
+                
+                break;
+        }
+
+        
+        
+        
+    } else {
+        $var_52 .= '<li>'.$var_57.': '.$var_58.'</li>';
+    }
+}
+$var_52 .= '</ul>';
+
+
+$var_70 = '';
+if (api_get_setting('allow_terms_conditions') === 'true') {
+    $var_71 = new class_1('user');
+    $var_58 = $var_71->get_values_by_handler_and_field_variable(
+        $var_1,
+        'legal_accept'
+    );
+    $var_70 .= Display::return_icon('accept_na.png', get_lang('NotAccepted'));
+    if (isset($var_58['value']) && !empty($var_58['value'])) {
+        list($var_73, $var_74, $var_75) = explode(':', $var_58['value']);
+        $var_70 = '<h4>'.get_lang('CurrentStatus').'</h4>'.
+            get_lang('LegalAgreementAccepted').' '.Display::return_icon('accept.png', get_lang('LegalAgreementAccepted'), [], var_76).
+            '<br />';
+        $var_70 .= get_lang('Date').': '.api_get_local_time($var_75).'<br /><br />';
+        $var_70 .= $var_5;
+
+    
+    } else {
+        
+        $var_70 .= Display::url(
+            get_lang('SendLegal'),
+            api_get_self().'?action=send_legal&user_id='.$var_1,
+            ['class' => 'btn btn-primary btn-xs']
+        );
+    }
+} else {
+    $var_70 .= get_lang('NoTermsAndConditionsAvailable');
+}
+
+
+$var_77 = [];
+$var_77['data'] = $var_52;
+
+
+$var_78 = Database::getManager();
+
+$var_79 = $var_78->getRepository('ChamiloCoreBundle:Legal');
+
+$var_81 = LegalManager::getTreatmentTypeList();
+
+
+
+$var_82 = api_get_configuration_value('data_protection_officer_name');
+$var_83 = api_get_configuration_value('data_protection_officer_role');
+$var_84 = api_get_configuration_value('data_protection_officer_email');
+if (!empty($var_82)) {
+    $var_77['officer_name'] = $var_82;
+    $var_77['officer_role'] = $var_83;
+    $var_77['officer_email'] = $var_84;
+}
+
+$var_85 = new class_2(null);
+
+$var_86 = Display::url(
+    Display::return_icon('excel.png', get_lang('Export'), [], var_87),
+    api_get_path(var_32).'social/personal_data.php?export=1'
+);
+
+$var_85->assign('actions', Display::toolbarAction('toolbar', [$var_86]));
+
+$var_89 = '';
+if (api_get_setting('allow_terms_conditions') === 'true') {
+    $var_31 = api_get_path(var_32).'social/terms.php';
+    $var_89 = Display::url(get_lang('ReadTermsAndConditions'), $var_31);
+}
+
+if ($var_56) {
+    Display::addFlash(Display::return_message(get_lang('MoreDataAvailableInTheDatabaseButTrunkedForEfficiencyReasons')));
+}
+
+
+SocialManager::setSocialUserBlock($var_85, api_get_user_id(), 'messages');
+if (api_get_setting('allow_social_tool') === 'true') {
+    $var_85->assign('social_menu_block', $var_51);
+} else {
+    $var_85->assign('social_menu_block', '');
+    $var_85->assign('personal_data_block', $var_52);
+}
+
+$var_85->assign('personal_data', $var_77);
+$var_85->assign('permission', $var_70);
+$var_85->assign('term_link', $var_89);
+$var_90 = $var_85->get_template('social/personal_data.tpl');
+$var_85->display($var_90);

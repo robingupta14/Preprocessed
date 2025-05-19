@@ -1,0 +1,902 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+class actioner {
+
+	protected $db;
+
+	protected $data;
+
+	protected $qualifiers;
+
+	protected $action_id;
+
+	
+	public function __construct()
+	{
+		$this->db = new Database();
+
+		
+		Event::add('system.pre_controller', array($this, 'add'));
+	}
+
+	
+	public function add()
+	{
+		Event::add('ushahidi_action.report_add', array($this, '_report_add'));
+		Event::add('ushahidi_action.checkin_recorded', array($this, '_checkin_recorded'));
+		Event::add('ushahidi_action.message_twitter_add', array($this, '_message_twitter_add'));
+		Event::add('ushahidi_action.feed_item_add', array($this, '_feed_item_add'));
+	}
+
+	
+
+	
+	public function _message_twitter_add()
+	{
+		$this->_message_add('message_twitter_add');
+	}
+
+	
+	public function _message_add($message_action)
+	{
+		$this->data = Event::$data;
+
+		
+		
+
+		
+		$actions = $this->_get_actions($message_action);
+
+		
+		if($actions->count() <= 0) return false;
+
+		foreach ($actions as $action)
+		{
+			
+			$this->action_id = $action->action_id;
+			$trigger = $action->action;
+			$this->qualifiers = unserialize($action->qualifiers);
+			$response = $action->response;
+			$response_vars = unserialize($action->response_vars);
+
+			
+			
+			if( ! isset($this->qualifiers['geometry'])) $this->qualifiers['geometry'] = FALSE;
+
+			
+
+			
+
+			
+			if ( isset($this->data->latitude) AND $this->data->latitude != NULL
+				AND isset($this->data->longitude) AND $this->data->longitude != NULL)
+			{
+				$point = array('lat' => $this->data->latitude, 'lon' => $this->data->longitude);
+			}
+			else
+			{
+				$point = array('lat'=>FALSE,'lon'=>FALSE);
+			}
+
+			if( ! $this->__check_location($this->qualifiers['location'],$this->qualifiers['geometry'],$point))
+			{
+				
+				continue;
+			}
+			
+			
+
+			if( ! $this->__check_from($this->qualifiers['from'],$this->data->message_from))
+			{
+				
+				continue;
+			}
+
+			
+			
+
+			if( ! $this->__check_keywords($this->qualifiers['keyword'],$this->data->message) AND
+				! $this->__check_keywords($this->qualifiers['keyword'],$this->data->message_detail)
+				)
+			{
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_between_times(strtotime($this->data->message_date)))
+			{
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_specific_days(strtotime($this->data->message_date)))
+			{
+				
+				continue;
+			}
+
+			
+
+			
+			$this->__record_log($this->action_id,$this->data->user_id);
+
+			
+			$this->__perform_response($response,$response_vars);
+		}
+	}
+
+	
+	public function _feed_item_add()
+	{
+		$this->data = Event::$data;
+
+		
+		
+
+		
+		$actions = $this->_get_actions('feed_item_add');
+
+		
+		if($actions->count() <= 0) return false;
+
+		foreach ($actions as $action)
+		{
+			
+			$this->action_id = $action->action_id;
+			$trigger = $action->action;
+			$this->qualifiers = unserialize($action->qualifiers);
+			$response = $action->response;
+			$response_vars = unserialize($action->response_vars);
+
+			
+			
+			if( ! isset($this->qualifiers['geometry'])) $this->qualifiers['geometry'] = FALSE;
+
+			
+
+			
+
+			
+			if ( isset($this->data->latitude) AND $this->data->latitude != NULL
+				AND isset($this->data->longitude) AND $this->data->longitude != NULL)
+			{
+				$point = array('lat' => $this->data->location->latitude, 'lon' => $this->data->location->longitude);
+			}
+			else
+			{
+				$point = array('lat'=>FALSE,'lon'=>FALSE);
+			}
+
+			if( ! $this->__check_location($this->qualifiers['location'],$this->qualifiers['geometry'],$point))
+			{
+				
+				continue;
+			}
+
+
+			if( ! $this->__check_feed_id($this->qualifiers['feed_id'],$this->data->feed_id))
+			{
+				
+				continue;
+			}
+			
+			
+			
+
+			if( ! $this->__check_keywords($this->qualifiers['keyword'],$this->data->item_description) AND
+				! $this->__check_keywords($this->qualifiers['keyword'],$this->data->item_title)
+				)
+			{
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_between_times(strtotime($this->data->item_date)))
+			{
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_specific_days(strtotime($this->data->item_date)))
+			{
+				
+				continue;
+			}
+
+			
+
+			
+			$this->__record_log($this->action_id, 0);
+
+			
+			$this->__perform_response($response, $response_vars);
+		}
+	}
+
+
+	
+	public function _report_add()
+	{
+		$this->data = Event::$data;
+
+		
+		$actions = $this->_get_actions('report_add');
+
+		
+		if($actions->count() <= 0) return false;
+
+		foreach ($actions as $action)
+		{
+			
+			$this->action_id = $action->action_id;
+			$trigger = $action->action;
+			$this->qualifiers = unserialize($action->qualifiers);
+			$response = $action->response;
+			$response_vars = unserialize($action->response_vars);
+
+			
+			
+			if( ! isset($this->qualifiers['geometry'])) $this->qualifiers['geometry'] = FALSE;
+
+			
+
+			
+
+			
+			
+			if( ! $this->__check_user($this->qualifiers['user'],$this->data->user_id)){
+				
+				continue;
+			}
+
+			
+			if( isset($this->qualifiers['category'])
+				AND ! $this->__check_category($this->qualifiers['category']) ){
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_location($this->qualifiers['location'],$this->qualifiers['geometry']))
+			{
+				
+				continue;
+			}
+
+			
+			
+
+			if( ! $this->__check_keywords($this->qualifiers['keyword'],$this->data->incident_title)
+				AND ! $this->__check_keywords($this->qualifiers['keyword'],$this->data->incident_description))
+			{
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_between_times(strtotime($this->data->incident_date)))
+			{
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_specific_days(strtotime($this->data->incident_date)))
+			{
+				
+				continue;
+			}
+
+			
+
+			
+			$this->__record_log($this->action_id,$this->data->user_id);
+
+			
+			$this->__perform_response($response,$response_vars);
+		}
+	}
+
+	
+	public function _checkin_recorded()
+	{
+		$this->data = Event::$data;
+
+		
+		$actions = $this->_get_actions('checkin_recorded');
+
+		
+		if($actions->count() <= 0) return false;
+
+		foreach ($actions as $action)
+		{
+			
+			$this->action_id = $action->action_id;
+			$trigger = $action->action;
+			$this->qualifiers = unserialize($action->qualifiers);
+			$response = $action->response;
+			$response_vars = unserialize($action->response_vars);
+
+			
+			
+			if( ! isset($this->qualifiers['geometry'])) $this->qualifiers['geometry'] = FALSE;
+
+			
+
+			
+			
+			if( ! $this->__check_user($this->qualifiers['user'],$this->data->user_id)){
+				
+				continue;
+			}
+
+			
+
+			
+			if( ! $this->__check_location($this->qualifiers['location'],$this->qualifiers['geometry']))
+			{
+				
+				continue;
+			}
+
+			
+
+			
+			if( ! $this->__check_keywords($this->qualifiers['keyword'],$this->data->checkin_description))
+			{
+				
+				continue;
+			}
+
+			
+
+			
+			if( ! $this->__check_between_times(strtotime($this->data->checkin_date)))
+			{
+				
+				continue;
+			}
+
+			
+			if( ! $this->__check_specific_days(strtotime($this->data->checkin_date)))
+			{
+				
+				continue;
+			}
+
+			
+			$this->__record_log($this->action_id,$this->data->user_id);
+
+			
+			$this->__perform_response($response,$response_vars);
+		}
+	}
+
+	
+
+	
+	public function __check_user($user,$user_check_against)
+	{
+		if(($user != 0) AND ($user != $user_check_against)){
+			return false;
+		}
+		return true;
+	}
+
+	
+	public function __check_feed_id($feeds, $feed_check_against)
+	{
+		
+		if ($feeds == 0 || count($feeds) == 0) return TRUE;
+		
+		
+		if (! is_array($feeds)) $feeds = array($feeds);
+		
+		foreach ($feeds as $feed_id)
+		{
+			if($feed_id == $feed_check_against)
+			{
+				
+				return TRUE;
+			}
+		}
+
+		
+		return FALSE;
+	}
+
+	
+	public function __check_category($categories)
+	{
+		$data_id = $this->data->id;
+
+		$report_categories = $this->db->from('incident_category')->where(array('incident_id' => $data_id))->get();
+
+		
+		if($report_categories->count() <= 0) return FALSE;
+
+		foreach ($report_categories as $report_category)
+		{
+			if(in_array($report_category->category_id,$categories))
+			{
+				
+				return TRUE;
+			}
+		}
+
+		
+		return FALSE;
+	}
+
+	
+	public function __check_specific_days($time)
+	{
+
+		if( ! isset($this->qualifiers['specific_days'])
+			OR ! is_array($this->qualifiers['specific_days']))
+		{
+			
+			return TRUE;
+		}
+
+		$time = date('Y-m-d',$time);
+		foreach($this->qualifiers['specific_days'] as $day){
+			
+			$day = date('Y-m-d',$day);
+			if($time == $day)
+			{
+				
+				return TRUE;
+			}
+		}
+
+		
+		return FALSE;
+	}
+
+	
+	public function __check_days_of_the_week($time)
+	{
+
+		if( ! isset($this->qualifiers['days_of_the_week'])
+			OR ! is_array($this->qualifiers['days_of_the_week']))
+		{
+			
+			return TRUE;
+		}
+
+		$days_of_the_week = $this->qualifiers['days_of_the_week'];
+
+		
+		array_walk($days_of_the_week,'strtolower');
+
+		$day = strtolower(date('D'),$time);
+
+		if(in_array($day,$days_of_the_week))
+		{
+			
+			return TRUE;
+		}
+
+		
+		return FALSE;
+	}
+
+	
+	public function __check_between_times($time)
+	{
+
+		if( ! isset($this->qualifiers['between_times']) OR $this->qualifiers['between_times'] != 1)
+		{
+			
+			return TRUE;
+		}
+
+		
+		$time_at_beginning_of_today = mktime(0,0,0,date('n'),date('j'),date('Y'));
+
+		$seconds_from_start_of_day = $time - $time_at_beginning_of_today;
+
+		if($this->qualifiers['between_times_1'] <= $seconds_from_start_of_day
+			AND $this->qualifiers['between_times_2'] >= $seconds_from_start_of_day)
+		{
+			return TRUE;
+		}
+
+		
+		return FALSE;
+	}
+
+
+	
+	public function __check_location($location,$m_geometry,$point=FALSE)
+	{
+
+		if($location == 'specific')
+		{
+			
+			
+
+			$pointLocation = new pointinpoly();
+
+			foreach($m_geometry as $geometry)
+			{
+				
+
+				$geometry = str_ireplace('{"geometry":"POLYGON((','',$geometry);
+				$geometry = str_ireplace('))"}','',$geometry);
+				$polygon = explode(',',(string)$geometry);
+
+				
+
+				if ( ! isset($point['lat']) OR ! isset($point['lon']) )
+				{
+					$location = ORM::factory('location',$this->data->location_id);
+					$point = $location->longitude.' '.$location->latitude;
+				}
+				else
+				{
+					
+					if ($point['lat'] == FALSE OR $point['lon'] == FALSE)
+					{
+						
+						
+						return false;
+					}
+
+					
+					$point = $point['lon'].' '.$point['lat'];
+				}
+
+				if($pointLocation->pointInPolygon($point, $polygon)){
+					
+					return true;
+				}
+			}
+
+			
+			return false;
+
+		}
+
+		return true;
+	}
+
+	
+	public function __check_keywords($keywords,$string)
+	{
+		if($keywords != '')
+		{
+			
+			$exploded_kw = explode(',',$keywords);
+			foreach($exploded_kw as $kw){
+				
+				if(stripos($string,$kw) !== FALSE) {
+					return TRUE;
+				}
+			}
+		}else{
+			
+			return TRUE;
+		}
+	}
+
+	
+	public function __check_from($from,$string)
+	{
+		if($from != '')
+		{
+			
+			$exploded_author = explode(',',$from);
+			foreach($exploded_author as $author) {
+				
+				if(strtolower($string) == strtolower($author)) {
+					return TRUE;
+				}
+			}
+			return FALSE;
+		} else {
+			
+			return TRUE;
+		}
+		return FALSE;
+	}
+
+	
+
+	
+	public function __pre_response_on_specific_count()
+	{
+		if( ! isset($this->qualifiers['on_specific_count'])
+			OR $this->qualifiers['on_specific_count'] == ''
+			OR $this->qualifiers['on_specific_count'] == 0)
+		{
+			
+			return TRUE;
+		}
+
+		
+		$count = $this->qualifiers['on_specific_count'];
+
+		
+		$collective = FALSE;
+		if(isset($this->qualifiers['on_specific_count_collective'])
+			AND $this->qualifiers['on_specific_count_collective'] == 1)
+		{
+			$collective = TRUE;
+		}
+
+		
+		if($collective)
+		{
+			
+			$check_count = $this->db->where(array('action_id' => $this->action_id))->count_records('actions_log');
+		}else{
+			
+			$check_count = $this->db->where(array('action_id' => $this->action_id, 'user_id' => $this->data->user_id))->count_records('actions_log');
+		}
+
+		
+		if($check_count == $count) return TRUE;
+
+		
+		return FALSE;
+	}
+
+	
+
+	
+	public function __perform_response($response,$response_vars)
+	{
+		
+
+		
+		if( ! $this->__pre_response_on_specific_count()) return FALSE;
+		
+		
+
+		
+		switch ($response) {
+			case 'email':
+				return $this->__response_email($response_vars);
+			case 'approve_report':
+				return $this->__response_approve_report($response_vars);
+			case 'log_it':
+				
+				
+				return TRUE;
+			case 'assign_badge':
+				return $this->__response_assign_badge($response_vars);
+			case 'create_report':
+				return $this->__response_create_report($response_vars);
+			default:
+				return FALSE;
+		}
+
+		return FALSE;
+
+	}
+
+	
+	public function __record_log($action_id,$user_id)
+	{
+		$actions_log = new Actions_Log_Model();
+		$actions_log->action_id = $action_id;
+		$actions_log->user_id = $user_id;
+		$actions_log->time = time();
+		$actions_log->save();
+
+		return TRUE;
+	}
+
+	
+	public function __response_approve_report($vars)
+	{
+		$incident_id = $this->data->id;
+
+		$categories = array();
+		if( isset($vars['add_category']))
+		{
+			$categories = $vars['add_category'];
+		}
+
+		$verify = 0;
+		if( isset($vars['verify']))
+		{
+			$verify = (int)$vars['verify'];
+		}
+
+		foreach($categories as $category_id)
+		{
+			
+			Incident_Category_Model::assign_category_to_incident($incident_id,$category_id);
+		}
+
+		
+		Incident_Model::set_approve($incident_id,1);
+
+		
+		Incident_Model::set_verification($incident_id,$verify);
+
+		return TRUE;
+	}
+
+	
+	public function __response_create_report($vars)
+	{
+		$categories = array();
+		if( isset($vars['add_category']))
+		{
+			$categories = $vars['add_category'];
+		}
+
+		$verify = 0;
+		if( isset($vars['verify']))
+		{
+			$verify = (int)$vars['verify'];
+		}
+
+		$approve = 0;
+		if( isset($vars['approve']))
+		{
+			$approve = (int)$vars['approve'];
+		}
+
+		
+		$location_id = 0;
+		if ( isset($this->data->location_id))
+		{
+			$location_id = $this->data->location_id;
+		}
+		elseif ( isset($this->data->latitude) AND isset($this->data->longitude))
+		{
+			$location_name = map::reverse_geocode($this->data->latitude,$this->data->longitude);
+
+			
+			$location_name = substr_replace($location_name, '', 250);
+
+			$location_data = (object) array('location_name' => $location_name,
+									'latitude' => $this->data->latitude,
+									'longitude' => $this->data->longitude);
+			$location = new Location_Model();
+			reports::save_location($location_data, $location);
+			$location_id = $location->id;
+		}
+
+		
+		if ($location_id == FALSE OR $location_id == 0)
+		{
+			return false;
+		}
+		
+		
+		
+		
+		
+		
+		if (isset($this->data->message))
+		{
+			$incident_title = $this->data->message;
+			$incident_description = $this->data->message;
+			$incident_date = $this->data->message_date;
+			
+			if ( ! empty($message->message_detail))
+			{
+				$incident_description = $this->data->message_detail;
+			}
+		}
+		
+		elseif (isset($this->data->item_title))
+		{
+			$incident_title = html::strip_tags(html_entity_decode(html_entity_decode($this->data->item_title, ENT_QUOTES)));
+			$incident_description = html::clean(html_entity_decode($this->data->item_description, ENT_QUOTES));
+			$incident_date = $this->data->item_date;
+		}
+		
+		
+		
+		if (! empty($vars['report_title']))
+		{
+			$incident_title = $vars['report_title'];
+		}
+
+		
+		$incident = new Incident_Model();
+		$incident->location_id = $location_id;
+		$incident->incident_title = $incident_title;
+		$incident->incident_description = $incident_description;
+		$incident->incident_date = $incident_date;
+		$incident->incident_active = $approve;
+		$incident->incident_verified = $verify;
+		$incident->incident_dateadd = date("Y-m-d H:i:s",time());
+		$incident->save();
+
+		
+		
+		
+		
+		if (isset($this->data->item_title))
+		{
+			$news = new Media_Model();
+			$news->location_id = $incident->location_id;
+			$news->incident_id = $incident->id;
+			$news->media_type = 4; 
+			$news->media_link = $this->data->item_link;
+			$news->media_date = $this->data->item_date;
+			$news->save();
+		}
+
+		$incident_id = $incident->id;
+
+		foreach($categories as $category_id)
+		{
+			
+			Incident_Category_Model::assign_category_to_incident($incident_id,$category_id);
+		}
+
+		
+		if ( isset($this->data->message) AND isset($this->data->id))
+		{
+			$message = new Message_Model($this->data->id);
+			$message->incident_id = $incident_id;
+			$message->save();
+		}
+		
+		elseif ( isset($this->data->item_title) AND isset($this->data->id))
+		{
+			$item = new Feed_Item_Model($this->data->id);
+			$item->incident_id = $incident_id;
+			$item->save();
+		}
+
+		return TRUE;
+	}
+
+	
+	public function __response_assign_badge($vars)
+	{
+		$count = ORM::factory('badge_user')->where(array('badge_id' => (int)$vars['badge'], 'user_id' => (int)$this->data->user_id))->count_all();
+		if($count == 0)
+		{
+			$badge_user = new Badge_User_Model();
+			$badge_user->badge_id = $vars['badge']; 
+			$badge_user->user_id = $this->data->user_id;
+			$badge_user->save();
+		}
+		return TRUE;
+	}
+
+	
+	public function __response_email($vars)
+	{
+		$settings = kohana::config('settings');
+
+		if($vars['email_send_address'] == '0')
+		{
+			
+			
+			$to = User_Model::get_email($this->data->user_id);
+		}else{
+			$to = $vars['email_send_address'];
+		}
+
+		$from = array($settings['site_email'], $settings['site_name']);
+		$subject = $vars['email_subject'];
+		$message = $vars['email_body'];
+
+		return email::send($to, $from, $subject, $message, FALSE);
+	}
+
+	
+	public function _get_actions($activity)
+	{
+		return $this->db->from('actions')->where(array('action' => $activity, 'active' => 1))->get();
+	}
+}
+
+new actioner;

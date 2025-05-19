@@ -1,0 +1,258 @@
+<?php
+
+
+
+
+
+
+
+class Index extends FrontendBaseBlock
+{
+    
+    private $cacheFile;
+
+    
+    private $items;
+
+    
+    private $limit;
+
+    
+    private $offset;
+
+    
+    protected $pagination = array(
+        'limit' => 20,
+        'offset' => 0,
+        'requested_page' => 1,
+        'num_items' => null,
+        'num_pages' => null
+    );
+
+    
+    private $requestedPage;
+
+    
+    private $term = '';
+
+    
+    private $statistics;
+
+    
+    private function display()
+    {
+        
+        $this->requestedPage = $this->URL->getParameter('page', 'int', 1);
+        $this->limit = Frontend\Core\Engine\Model::getModuleSetting('Search', 'overview_num_items', 20);
+        $this->offset = ($this->requestedPage * $this->limit) - $this->limit;
+        $this->cacheFile = FRONTEND_CACHE_PATH . '/' . $this->getModule() . '/' .
+                           FRONTEND_LANGUAGE . '_' . md5($this->term) . '_' .
+                           $this->offset . '_' . $this->limit . '.php';
+
+        
+        if (!$this->getCachedData()) {
+            
+            $this->getRealData();
+        }
+
+        
+        $this->parse();
+    }
+
+    
+    public function execute()
+    {
+        parent::execute();
+        $this->loadTemplate();
+        $this->loadForm();
+        $this->validateForm();
+        $this->display();
+        $this->saveStatistics();
+    }
+
+    
+    private function getCachedData()
+    {
+        
+        if (!$this->term) {
+            return false;
+        }
+
+        
+        if (SPOON_DEBUG) {
+            return false;
+        }
+
+        
+        if (!is_file($this->cacheFile)) {
+            return false;
+        }
+
+        
+        $cacheInfo = @filemtime($this->cacheFile);
+
+        
+        if (!$cacheInfo || $cacheInfo < strtotime('-1 hour')) {
+            return false;
+        }
+
+        
+
+        
+        $this->pagination = $pagination;
+        $this->items = $items;
+
+        return true;
+    }
+
+    
+    private function getRealData()
+    {
+        
+        if (!$this->term) {
+            return;
+        }
+
+        
+        $this->pagination['url'] = Frontend\Core\Engine\Navigation::getURLForBlock('Search') . '?form=search&q=' . $this->term;
+
+        
+        $this->pagination['limit'] = $this->limit;
+        $this->pagination['offset'] = $this->offset;
+        $this->pagination['requested_page'] = $this->requestedPage;
+
+        
+        $this->items = Frontend\Modules\Search\Engine\Model::search(
+            $this->term,
+            $this->pagination['limit'],
+            $this->pagination['offset']
+        );
+
+        
+        
+        
+        $this->pagination['num_items'] = Frontend\Modules\Search\Engine\Model::getTotal($this->term);
+        $this->pagination['num_pages'] = (int) ceil($this->pagination['num_items'] / $this->pagination['limit']);
+
+        
+        if ($this->pagination['num_pages'] == 0) {
+            $this->pagination['num_pages'] = 1;
+        }
+
+        
+        if ($this->requestedPage > $this->pagination['num_pages'] || $this->requestedPage < 1) {
+            $this->redirect(
+                Frontend\Core\Engine\Navigation::getURL(404)
+            );
+        }
+
+        
+        if (!SPOON_DEBUG) {
+            
+            $fs = new Filesystem();
+            $fs->dumpFile(
+                $this->cacheFile,
+                "<?php\n" . '$pagination = ' . var_export($this->pagination, true) . ";\n" . '$items = ' . var_export(
+                    $this->items,
+                    true
+                ) . ";\n?>"
+            );
+        }
+    }
+
+    
+    private function loadForm()
+    {
+        
+        $this->frm = new FrontendForm('search', null, 'get', null, false);
+
+        
+        if (!\SpoonFilter::getGetValue('q', null, '')) {
+            $_GET['q'] = \SpoonFilter::getGetValue('q_widget', null, '');
+        }
+
+        
+        $this->frm->addText(
+            'q',
+            null,
+            255,
+            'inputText liveSuggest autoComplete',
+            'inputTextError liveSuggest autoComplete'
+        );
+
+        
+        $canonicalUrl = SITE_URL . Frontend\Core\Engine\Navigation::getURLForBlock('Search');
+        if (isset($_GET['q']) && $_GET['q'] != '') {
+            $canonicalUrl .= '?q=' . $_GET['q'];
+        }
+        $this->header->setCanonicalUrl($canonicalUrl);
+    }
+
+    
+    private function parse()
+    {
+        
+        $this->frm->parse($this->tpl);
+
+        
+        if (!$this->term) {
+            return;
+        }
+
+        
+        $this->tpl->assign('searchResults', $this->items);
+        $this->tpl->assign('searchTerm', $this->term);
+
+        
+        $this->parsePagination();
+    }
+
+    
+    private function saveStatistics()
+    {
+        
+        if (!$this->term) {
+            return;
+        }
+
+        
+        $previousTerm = \SpoonSession::exists('searchTerm') ? \SpoonSession::get('searchTerm') : '';
+        \SpoonSession::set('searchTerm', '');
+
+        
+        if ($previousTerm != $this->term) {
+            
+            $this->statistics = array();
+            $this->statistics['term'] = $this->term;
+            $this->statistics['language'] = FRONTEND_LANGUAGE;
+            $this->statistics['time'] = Frontend\Core\Engine\Model::getUTCDate();
+            $this->statistics['data'] = serialize(array('server' => $_SERVER));
+            $this->statistics['num_results'] = $this->pagination['num_items'];
+
+            
+            Frontend\Modules\Search\Engine\Model::save($this->statistics);
+        }
+
+        
+        \SpoonSession::set('searchTerm', $this->term);
+    }
+
+    
+    private function validateForm()
+    {
+        
+        if ($this->frm->isSubmitted()) {
+            
+            $this->frm->cleanupFields();
+
+            
+            $this->frm->getField('q')->isFilled(Frontend\Core\Engine\Language::err('TermIsRequired'));
+
+            
+            if ($this->frm->isCorrect()) {
+                
+                $this->term = $this->frm->getField('q')->getValue();
+            }
+        }
+    }
+}

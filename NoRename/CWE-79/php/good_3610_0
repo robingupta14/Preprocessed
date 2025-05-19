@@ -1,0 +1,618 @@
+<?php
+
+
+
+
+class BackendBaseAction
+{
+	
+	protected $action;
+
+	
+	protected $parameters = array();
+
+	
+	protected $header;
+
+	
+	protected $module;
+
+	
+	public $tpl;
+
+	
+	public $URL;
+
+	
+	public function __construct()
+	{
+		
+		$this->tpl = Spoon::get('template');
+		$this->URL = Spoon::get('url');
+		$this->header = Spoon::get('header');
+
+		
+		$this->setModule($this->URL->getModule());
+		$this->setAction($this->URL->getAction());
+
+		
+		foreach((array) $_GET as $key => $value) $this->parameters[$key] = $value;
+	}
+
+	
+	public function display($template = null)
+	{
+		
+		$this->header->parse();
+
+		
+		if($template === null)
+		{
+			$template = BACKEND_MODULE_PATH . '/layout/templates/' . $this->URL->getAction() . '.tpl';
+		}
+
+		$this->tpl->display($template);
+	}
+
+	
+	public function execute()
+	{
+		
+		$this->header->addJS('jquery/jquery.js', 'core', false);
+		$this->header->addJS('jquery/jquery.ui.js', 'core', false);
+		$this->header->addJS('jquery/jquery.ui.dialog.patch.js', 'core');
+		$this->header->addJS('jquery/jquery.tools.js', 'core', false);
+		$this->header->addJS('jquery/jquery.backend.js', 'core');
+
+		
+		$this->header->addJS('utils.js', 'core');
+		$this->header->addJS('backend.js', 'core', false, true);
+
+		
+		if(SpoonFile::exists(BACKEND_MODULE_PATH . '/js/' . $this->getModule() . '.js'))
+		{
+			$this->header->addJS($this->getModule() . '.js', null, false, true);
+		}
+
+		
+		if(SpoonFile::exists(BACKEND_MODULE_PATH . '/js/' . $this->getAction() . '.js'))
+		{
+			$this->header->addJS($this->getAction() . '.js', null, false, true);
+		}
+
+		
+		$this->header->addCSS('reset.css', 'core');
+		$this->header->addCSS('jquery_ui/fork/jquery_ui.css', 'core', false, false);
+		$this->header->addCSS('screen.css', 'core');
+		$this->header->addCSS('debug.css', 'core');
+
+		
+		if(SpoonFile::exists(BACKEND_MODULE_PATH . '/layout/css/' . $this->getModule() . '.css'))
+		{
+			$this->header->addCSS($this->getModule() . '.css');
+		}
+
+		
+		$var = $this->getParameter('var', 'array');
+
+		
+		if($this->getParameter('report') !== null)
+		{
+			
+			$this->tpl->assign('report', true);
+
+			
+			$messageName = strip_tags(SpoonFilter::toCamelCase($this->getParameter('report'), '-'));
+
+			
+			if(!empty($var)) $this->tpl->assign('reportMessage', vsprintf(BL::msg($messageName), $var));
+			else $this->tpl->assign('reportMessage', BL::msg($messageName));
+
+			
+			if($this->getParameter('highlight'))
+			{
+				$this->tpl->assign('highlight', strip_tags($this->getParameter('highlight')));
+			}
+		}
+
+		
+		if($this->getParameter('error') !== null)
+		{
+			
+			$errorName = strip_tags(SpoonFilter::toCamelCase($this->getParameter('error'), '-'));
+
+			
+			if(!empty($var)) $this->tpl->assign('errorMessage', vsprintf(BL::err($errorName), $var));
+			else $this->tpl->assign('errorMessage', BL::err($errorName));
+		}
+	}
+
+	
+	public function getAction()
+	{
+		return $this->action;
+	}
+
+	
+	public function getModule()
+	{
+		return $this->module;
+	}
+
+	
+	public function getParameter($key, $type = 'string', $defaultValue = null)
+	{
+		$key = (string) $key;
+
+		
+		if(isset($this->parameters[$key]) && $this->parameters[$key] != '')
+		{
+			return SpoonFilter::getValue($this->parameters[$key], null, null, $type);
+		}
+
+		return $defaultValue;
+	}
+
+	
+	protected function parse()
+	{
+
+	}
+
+	
+	public function redirect($URL)
+	{
+		SpoonHTTP::redirect(str_replace('&amp;', '&', (string) $URL));
+	}
+
+	
+	private function setAction($action)
+	{
+		$this->action = (string) $action;
+	}
+
+	
+	private function setModule($module)
+	{
+		$this->module = (string) $module;
+	}
+}
+
+
+class BackendBaseActionIndex extends BackendBaseAction
+{
+	
+	protected $dataGrid;
+
+	
+	public function execute()
+	{
+		parent::execute();
+	}
+
+	
+	protected function parse()
+	{
+		parent::parse();
+	}
+}
+
+
+class BackendBaseActionAdd extends BackendBaseAction
+{
+	
+	protected $frm;
+
+	
+	protected $meta;
+
+	
+	protected function parse()
+	{
+		parent::parse();
+
+		if($this->frm) $this->frm->parse($this->tpl);
+	}
+}
+
+
+class BackendBaseActionEdit extends BackendBaseAction
+{
+	
+	protected $dgRevisions;
+
+	
+	protected $frm;
+
+	
+	protected $id;
+
+	
+	protected $meta;
+
+	
+	protected $record;
+
+	
+	protected function parse()
+	{
+		parent::parse();
+
+		if($this->frm) $this->frm->parse($this->tpl);
+	}
+}
+
+
+class BackendBaseActionDelete extends BackendBaseAction
+{
+	
+	protected $id;
+
+	
+	protected $record;
+
+	
+	public function execute()
+	{
+		parent::parse();
+	}
+}
+
+
+class BackendBaseAJAXAction
+{
+	const OK = 200;
+	const BAD_REQUEST = 400;
+	const FORBIDDEN = 403;
+	const ERROR = 500;
+
+	
+	protected $action;
+
+	
+	protected $module;
+
+	
+	public function __construct($action, $module)
+	{
+		$this->setModule($module);
+		$this->setAction($action);
+	}
+
+	
+	public function execute()
+	{
+		
+	}
+
+	
+	public function getAction()
+	{
+		return $this->action;
+	}
+
+	
+	public function getModule()
+	{
+		return $this->module;
+	}
+
+	
+	public function output($statusCode, $data = null, $message = null)
+	{
+		
+		$statusCode = (int) $statusCode;
+		if($message !== null) $message = (string) $message;
+
+		
+		$response = array('code' => $statusCode, 'data' => $data, 'message' => $message);
+
+		
+		SpoonHTTP::setHeadersByCode($statusCode);
+		SpoonHTTP::setHeaders('content-type: application/json');
+
+		
+		
+		exit;
+	}
+
+	
+	protected function setAction($action)
+	{
+		$this->action = (string) $action;
+	}
+
+	
+	protected function setModule($module)
+	{
+		$this->module = (string) $module;
+	}
+}
+
+
+class BackendBaseConfig
+{
+	
+	protected $defaultAction = 'index';
+
+	
+	protected $disabledActions = array();
+
+	
+	protected $disabledAJAXActions = array();
+
+	
+	protected $module;
+
+	
+	protected $possibleActions = array();
+
+	
+	protected $possibleAJAXActions = array();
+
+	
+	public function __construct($module)
+	{
+		$this->module = (string) $module;
+
+		
+		if(SpoonFile::exists(BACKEND_MODULES_PATH . '/' . $this->getModule() . '/engine/model.php'))
+		{
+		}
+
+		
+		$this->setPossibleActions();
+	}
+
+	
+	public function getDefaultAction()
+	{
+		return $this->defaultAction;
+	}
+
+	
+	public function getModule()
+	{
+		return $this->module;
+	}
+
+	
+	public function getPossibleActions()
+	{
+		return $this->possibleActions;
+	}
+
+	
+	public function getPossibleAJAXActions()
+	{
+		return $this->possibleAJAXActions;
+	}
+
+	
+	protected function setPossibleActions()
+	{
+		
+		$actionFiles = (array) SpoonFile::getList(BACKEND_MODULE_PATH . '/actions', '/(.*).php/');
+
+		
+		foreach($actionFiles as $file)
+		{
+			
+			$action = strtolower(str_replace('.php', '', $file));
+
+			
+			if(!in_array($action, $this->disabledActions)) $this->possibleActions[$file] = $action;
+		}
+
+		
+		$AJAXActionFiles = (array) SpoonFile::getList(BACKEND_MODULE_PATH . '/ajax', '/(.*).php/');
+
+		
+		foreach($AJAXActionFiles as $file)
+		{
+			
+			$action = strtolower(str_replace('.php', '', $file));
+
+			
+			if(!in_array($action, $this->disabledAJAXActions)) $this->possibleAJAXActions[$file] = $action;
+		}
+	}
+}
+
+
+class BackendBaseCronjob
+{
+	
+	protected $action;
+
+	
+	protected $id;
+
+	
+	protected $module;
+
+	
+	public function __construct($action, $module)
+	{
+		
+		$this->setModule($module);
+		$this->setAction($action);
+	}
+
+	
+	protected function clearBusyFile()
+	{
+		
+		$path = BACKEND_CACHE_PATH . '/cronjobs/' . $this->getId() . '.busy';
+
+		
+		SpoonFile::delete($path);
+	}
+
+	
+	public function execute()
+	{
+		
+		if(SpoonFile::exists(BACKEND_MODULES_PATH . '/' . $this->getModule() . '/engine/model.php'))
+		{
+			
+		}
+	}
+
+	
+	public function getAction()
+	{
+		return $this->action;
+	}
+
+	
+	public function getId()
+	{
+		return strtolower($this->getModule() . '_' . $this->getAction());
+	}
+
+	
+	public function getModule()
+	{
+		return $this->module;
+	}
+
+	
+	protected function setAction($action)
+	{
+		$this->action = (string) $action;
+	}
+
+	
+	protected function setBusyFile()
+	{
+		
+		if(SPOON_DEBUG) return;
+
+		
+		$path = BACKEND_CACHE_PATH . '/cronjobs/' . $this->getId() . '.busy';
+
+		
+		$isBusy = false;
+
+		
+		if(SpoonFile::exists($path))
+		{
+			$isBusy = true;
+
+			
+			$counter = (int) SpoonFile::getContent($path);
+
+			
+			if($counter > 9)
+			{
+				
+				$className = 'Backend' . SpoonFilter::toCamelCase($this->getModule() . '_cronjob_' . $this->getAction());
+
+				
+				throw new BackendException('Cronjob (' . $className . ') is still busy after 10 runs, check it out!');
+			}
+		}
+
+		
+		else $counter = 0;
+
+		
+		$counter++;
+
+		
+		SpoonFile::setContent($path, $counter, true, false);
+
+		
+		if($isBusy) exit;
+	}
+
+	
+	protected function setModule($module)
+	{
+		$this->module = (string) $module;
+	}
+}
+
+
+class BackendBaseWidget
+{
+	
+	private $column = 'left';
+
+	
+	protected $header;
+
+	
+	private $position;
+
+	
+	protected $rights = array();
+
+	
+	private $templatePath;
+
+	
+	public $tpl;
+
+	
+	public function __construct()
+	{
+		$this->tpl = Spoon::get('template');
+		$this->header = Spoon::get('header');
+	}
+
+	
+	protected function display($template = null)
+	{
+		if($template !== null) $this->templatePath = (string) $template;
+	}
+
+	
+	public function getColumn()
+	{
+		return $this->column;
+	}
+
+	
+	public function getPosition()
+	{
+		return $this->position;
+	}
+
+	
+	public function getTemplatePath()
+	{
+		return $this->templatePath;
+	}
+
+	
+	public function isAllowed()
+	{
+		foreach($this->rights as $rights)
+		{
+			list($module, $action) = explode('/', $rights);
+
+			
+			if(isset($module) && isset($action))
+			{
+				if(!BackendAuthentication::isAllowedAction($action, $module)) return false;
+			}
+		}
+
+		return true;
+	}
+
+	
+	protected function setColumn($column)
+	{
+		$allowedColumns = array('left', 'middle', 'right');
+		$this->column = SpoonFilter::getValue((string) $column, $allowedColumns, 'left');
+	}
+
+	
+	protected function setPosition($position)
+	{
+		$this->position = (int) $position;
+	}
+}

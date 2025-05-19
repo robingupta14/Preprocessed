@@ -1,0 +1,316 @@
+<?php
+
+
+
+
+class Paginator
+{
+    
+    private $container;
+
+    
+    private $total = 0;
+
+    
+    private $page = 1;
+
+    
+    private $offset = 0;
+
+    
+    private $limit = 0;
+
+    
+    private $order = '';
+
+    
+    private $direction = 'ASC';
+
+    
+    private $items = array();
+
+    
+    private $query = null;
+
+    
+    private $controller = '';
+
+    
+    private $action = '';
+
+    
+    private $anchor = '';
+
+    
+    private $params = array();
+
+    
+    protected $formatter = null;
+
+    
+    public function __construct(Container $container)
+    {
+        $this->container = $container;
+    }
+
+    
+    public function setQuery(Table $query)
+    {
+        $this->query = $query;
+        $this->total = $this->query->count();
+        return $this;
+    }
+
+    
+    public function setFormatter(FormatterInterface $formatter)
+    {
+        $this->formatter = $formatter;
+        return $this;
+    }
+
+    
+    public function executeQuery()
+    {
+        if ($this->query !== null) {
+            $this->query
+                ->offset($this->offset)
+                ->limit($this->limit)
+                ->orderBy($this->order, $this->direction);
+
+            if ($this->formatter !== null) {
+                return $this->formatter->withQuery($this->query)->format();
+            } else {
+                return $this->query->findAll();
+            }
+        }
+
+        return array();
+    }
+
+    
+    public function setUrl($controller, $action, array $params = array(), $anchor = '')
+    {
+        $this->controller = $controller;
+        $this->action = $action;
+        $this->params = $params;
+        $this->anchor = $anchor;
+        return $this;
+    }
+
+    
+    public function setCollection(array $items)
+    {
+        $this->items = $items;
+        return $this;
+    }
+
+    
+    public function getCollection()
+    {
+        return $this->items ?: $this->executeQuery();
+    }
+
+    
+    public function setTotal($total)
+    {
+        $this->total = $total;
+        return $this;
+    }
+
+    
+    public function getTotal()
+    {
+        return $this->total;
+    }
+
+    
+    public function setPage($page)
+    {
+        $this->page = $page;
+        return $this;
+    }
+
+    
+    public function getPage()
+    {
+        return $this->page;
+    }
+
+    
+    public function setOrder($order)
+    {
+        $this->order = $order;
+        return $this;
+    }
+
+    
+    public function setDirection($direction)
+    {
+        $this->direction = $direction;
+        return $this;
+    }
+
+    
+    public function setMax($limit)
+    {
+        $this->limit = $limit;
+        return $this;
+    }
+
+    
+    public function getMax()
+    {
+        return $this->limit;
+    }
+
+    
+    public function isEmpty()
+    {
+        return $this->total === 0;
+    }
+
+    
+    public function calculateOnlyIf($condition)
+    {
+        if ($condition) {
+            $this->calculate();
+        }
+
+        return $this;
+    }
+
+    
+    public function calculate()
+    {
+        $this->page = $this->container['request']->getIntegerParam('page', 1);
+        $this->direction = $this->container['request']->getStringParam('direction', $this->direction);
+        $this->order = $this->container['request']->getStringParam('order', $this->order);
+
+        if ($this->page < 1) {
+            $this->page = 1;
+        }
+
+        $this->offset = (int) (($this->page - 1) * $this->limit);
+
+        return $this;
+    }
+
+    
+    public function getUrlParams($page, $order, $direction)
+    {
+        $params = array(
+            'page' => $page,
+            'order' => $order,
+            'direction' => $direction,
+        );
+
+        return array_merge($this->params, $params);
+    }
+
+    
+    public function generatePreviousLink()
+    {
+        $html = '<span class="pagination-previous">';
+
+        if ($this->offset > 0) {
+            $html .= $this->container['helper']->url->link(
+                '&larr; '.t('Previous'),
+                $this->controller,
+                $this->action,
+                $this->getUrlParams($this->page - 1, $this->order, $this->direction),
+                false,
+                'js-modal-replace',
+                t('Previous'),
+                false,
+                $this->anchor
+            );
+        } else {
+            $html .= '&larr; '.t('Previous');
+        }
+
+        $html .= '</span>';
+
+        return $html;
+    }
+
+    
+    public function generateNextLink()
+    {
+        $html = '<span class="pagination-next">';
+
+        if (($this->total - $this->offset) > $this->limit) {
+            $html .= $this->container['helper']->url->link(
+                t('Next').' &rarr;',
+                $this->controller,
+                $this->action,
+                $this->getUrlParams($this->page + 1, $this->order, $this->direction),
+                false,
+                'js-modal-replace',
+                t('Next'),
+                false,
+                $this->anchor
+            );
+        } else {
+            $html .= t('Next').' &rarr;';
+        }
+
+        $html .= '</span>';
+
+        return $html;
+    }
+
+    
+    public function generatePageShowing()
+    {
+        return '<span class="pagination-showing">'.t('Showing %d-%d of %d', (($this->getPage() - 1) * $this->getMax() + 1), min($this->getTotal(), $this->getPage() * $this->getMax()), $this->getTotal()).'</span>';
+    }
+
+    
+    public function hasNothingToShow()
+    {
+        return $this->offset === 0 && ($this->total - $this->offset) <= $this->limit;
+    }
+
+    
+    public function toHtml()
+    {
+        $html = '';
+
+        if (! $this->hasNothingToShow()) {
+            $html .= '<div class="pagination">';
+            $html .= $this->generatePageShowing();
+            $html .= $this->generatePreviousLink();
+            $html .= $this->generateNextLink();
+            $html .= '</div>';
+        }
+
+        return $html;
+    }
+
+    
+    public function __toString()
+    {
+        return $this->toHtml();
+    }
+
+    
+    public function order($label, $column)
+    {
+        $prefix = '';
+        $direction = 'ASC';
+
+        if ($this->order === $column) {
+            $prefix = $this->direction === 'DESC' ? '&
+            $direction = $this->direction === 'DESC' ? 'ASC' : 'DESC';
+        }
+
+        return $prefix.$this->container['helper']->url->link(
+            $label,
+            $this->controller,
+            $this->action,
+            $this->getUrlParams($this->page, $column, $direction),
+            false,
+            'js-modal-replace'
+        );
+    }
+}

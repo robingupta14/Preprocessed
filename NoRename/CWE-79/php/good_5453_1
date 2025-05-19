@@ -1,0 +1,114 @@
+<?php
+
+
+
+
+
+
+class ImageExportPluginTest extends TestCase {
+
+	
+	private $response;
+	
+	private $request;
+	
+	private $plugin;
+	
+	private $server;
+	
+	private $tree;
+	
+	private $logger;
+
+	function setUp() {
+		parent::setUp();
+
+		$this->request = $this->getMockBuilder('Sabre\HTTP\RequestInterface')->getMock();
+		$this->response = $this->getMockBuilder('Sabre\HTTP\ResponseInterface')->getMock();
+		$this->server = $this->getMockBuilder('Sabre\DAV\Server')->getMock();
+		$this->tree = $this->getMockBuilder('Sabre\DAV\Tree')->disableOriginalConstructor()->getMock();
+		$this->server->tree = $this->tree;
+		$this->logger = $this->getMockBuilder('\OCP\ILogger')->getMock();
+
+		$this->plugin = $this->getMock('OCA\DAV\CardDAV\ImageExportPlugin', ['getPhoto'], [$this->logger]);
+		$this->plugin->initialize($this->server);
+	}
+
+	
+	public function testQueryParams($param) {
+		$this->request->expects($this->once())->method('getQueryParameters')->willReturn($param);
+		$result = $this->plugin->httpGet($this->request, $this->response);
+		$this->assertTrue($result);
+	}
+
+	public function providesQueryParams() {
+		return [
+			[[]],
+			[['1']],
+			[['foo' => 'bar']],
+		];
+	}
+
+	public function testNotACard() {
+		$this->request->expects($this->once())->method('getQueryParameters')->willReturn(['photo' => true]);
+		$this->request->expects($this->once())->method('getPath')->willReturn('/files/welcome.txt');
+		$this->tree->expects($this->once())->method('getNodeForPath')->with('/files/welcome.txt')->willReturn(null);
+		$result = $this->plugin->httpGet($this->request, $this->response);
+		$this->assertTrue($result);
+	}
+
+	
+	public function testCardWithOrWithoutPhoto($expectedContentType, $getPhotoResult) {
+		$this->request->expects($this->once())->method('getQueryParameters')->willReturn(['photo' => true]);
+		$this->request->expects($this->once())->method('getPath')->willReturn('/files/welcome.txt');
+
+		$card = $this->getMockBuilder('Sabre\CardDAV\Card')->disableOriginalConstructor()->getMock();
+		$this->tree->expects($this->once())->method('getNodeForPath')->with('/files/welcome.txt')->willReturn($card);
+
+		$this->plugin->expects($this->once())->method('getPhoto')->willReturn($getPhotoResult);
+
+		if (is_string($expectedContentType)) {
+			$this->response->expects($this->exactly(2))->method('setHeader')->withConsecutive(
+				['Content-Type', $expectedContentType],
+				['Content-Disposition', 'attachment']);
+			$this->response->expects($this->once())->method('setStatus')->with(200);
+			$this->response->expects($this->once())->method('setBody');
+		}
+
+		$result = $this->plugin->httpGet($this->request, $this->response);
+		$this->assertEquals(!is_string($expectedContentType), $result);
+	}
+
+	public function providesCardWithOrWithoutPhoto() {
+		return [
+			[true, null],
+			['image/jpeg', ['Content-Type' => 'image/jpeg', 'body' => '1234']],
+		];
+	}
+
+	
+	public function testGetPhoto($expected, $cardData) {
+		
+		$card = $this->getMockBuilder('Sabre\CardDAV\Card')->disableOriginalConstructor()->getMock();
+		$card->expects($this->once())->method('get')->willReturn($cardData);
+
+		$this->plugin = new ImageExportPlugin($this->logger);
+		$this->plugin->initialize($this->server);
+
+		$result = $this->plugin->getPhoto($card);
+		$this->assertEquals($expected, $result);
+	}
+
+	public function providesPhotoData() {
+		return [
+			'empty vcard' => [false, ''],
+			'vcard without PHOTO' => [false, "BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-
+			'vcard 3 with PHOTO' => [['Content-Type' => 'image/jpeg', 'body' => '12345'], "BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-
+			'vcard 3 with PHOTO URL' => [false, "BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-
+			'vcard 4 with PHOTO' => [['Content-Type' => 'image/jpeg', 'body' => '12345'], "BEGIN:VCARD\r\nVERSION:4.0\r\nPRODID:-
+			'vcard 4 with PHOTO URL' => [false, "BEGIN:VCARD\r\nVERSION:4.0\r\nPRODID:-
+			'vcard 3 with bad PHOTO' => [['Content-Type' => 'application/octet-stream', 'body' => '12345'], "BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-
+			'vcard 4 with bad PHOTO' => [['Content-Type' => 'application/octet-stream', 'body' => '12345'], "BEGIN:VCARD\r\nVERSION:4.0\r\nPRODID:-
+		];
+	}
+}

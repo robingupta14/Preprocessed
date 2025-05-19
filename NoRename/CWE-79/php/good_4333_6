@@ -1,0 +1,86 @@
+<?php
+
+
+
+trait CompileWithContentArgumentAndRenderStatic
+{
+    
+    protected $contentArgumentName;
+
+    
+    public function render()
+    {
+        return static::renderStatic(
+            $this->arguments,
+            $this->buildRenderChildrenClosure(),
+            $this->renderingContext
+        );
+    }
+
+    
+    public function compile(
+        $argumentsName,
+        $closureName,
+        &$initializationPhpCode,
+        ViewHelperNode $node,
+        TemplateCompiler $compiler
+    ) {
+        list ($initialization, $execution) = TYPO3Fluid\Fluid\Core\Compiler\ViewHelperCompiler::getInstance()->compileWithCallToStaticMethod(
+            $this,
+            $argumentsName,
+            $closureName,
+            TYPO3Fluid\Fluid\Core\Compiler\ViewHelperCompiler::RENDER_STATIC,
+            static::class
+        );
+        $contentArgumentName = $this->resolveContentArgumentName();
+        $initializationPhpCode .= sprintf(
+            '%s = (%s[\'%s\'] !== null) ? function() use (%s) { return %s[\'%s\']; } : %s;',
+            $closureName,
+            $argumentsName,
+            $contentArgumentName,
+            $argumentsName,
+            $argumentsName,
+            $contentArgumentName,
+            $closureName
+        );
+        $initializationPhpCode .= $initialization;
+        return $execution;
+    }
+
+    
+    protected function buildRenderChildrenClosure()
+    {
+        $argumentName = $this->resolveContentArgumentName();
+        $arguments = $this->arguments;
+        if (!empty($argumentName) && isset($arguments[$argumentName])) {
+            $renderChildrenClosure = function () use ($arguments, $argumentName) {
+                return $arguments[$argumentName];
+            };
+        } else {
+            $self = clone $this;
+            $renderChildrenClosure = function () use ($self) {
+                return $self->renderChildren();
+            };
+        }
+        return $renderChildrenClosure;
+    }
+
+    
+    public function resolveContentArgumentName()
+    {
+        if (empty($this->contentArgumentName)) {
+            $registeredArguments = call_user_func_array([$this, 'prepareArguments'], []);
+            foreach ($registeredArguments as $registeredArgument) {
+                if (!$registeredArgument->isRequired()) {
+                    $this->contentArgumentName = $registeredArgument->getName();
+                    return $this->contentArgumentName;
+                }
+            }
+            throw new Exception(
+                sprintf('Attempting to compile %s failed. Chosen compile method requires that ViewHelper has ' .
+                'at least one registered and optional argument', __CLASS__)
+            );
+        }
+        return $this->contentArgumentName;
+    }
+}

@@ -1,0 +1,349 @@
+<?php
+
+
+
+
+
+	if (permission_exists('fax_file_view')) {
+		
+	}
+	else {
+		
+		var_0;
+	}
+
+
+	$var_1 = new class_0;
+	$var_2 = $var_1->get();
+
+
+	$var_4 = $_GET["order_by"];
+	$var_5 = $_GET["order"];
+
+
+	if (is_uuid($_GET["id"])) {
+		$var_6 = $_GET["id"];
+		if (if_group("superadmin") || if_group("admin")) {
+			
+			$var_7 = "select fax_name, fax_extension from v_fax ";
+			$var_7 .= "where domain_uuid = :domain_uuid ";
+			$var_7 .= "and fax_uuid = :fax_uuid ";
+			$var_11['domain_uuid'] = $_SESSION['domain_uuid'];
+			$var_11['fax_uuid'] = $var_6;
+		}
+		else {
+			
+			$var_7 = "select fax_name, fax_extension from v_fax as f, v_fax_users as u ";
+			$var_7 .= "where f.fax_uuid = u.fax_uuid ";
+			$var_7 .= "and f.domain_uuid = :domain_uuid ";
+			$var_7 .= "and f.fax_uuid = :fax_uuid ";
+			$var_7 .= "and u.user_uuid = :user_uuid ";
+			$var_11['domain_uuid'] = $_SESSION['domain_uuid'];
+			$var_11['fax_uuid'] = $var_6;
+			$var_11['user_uuid'] = $_SESSION['user_uuid'];
+		}
+		$var_8 = new class_1;
+		$var_9 = $var_8->select($var_7, $var_11, 'row');
+		if (is_array($var_9) && @sizeof($var_9) != 0) {
+			
+				$var_12 = $var_9["fax_name"];
+				$var_13 = $var_9["fax_extension"];
+		}
+		else {
+			if (!if_group("superadmin") && !if_group("admin")) {
+				
+				var_0;
+			}
+		}
+		unset($var_7, $var_11, $var_9);
+	}
+
+
+	$var_14 = $_SESSION['switch']['storage']['dir'].'/fax/'.$_SESSION['domain_name'];
+
+
+	if ($_GET['a'] == "download") {
+		session_cache_limiter('public');
+		
+		if ($_GET['type'] == "fax_inbox") {
+			if (file_exists($var_14.'/'.$_GET['ext'].'/inbox/'.$_GET['filename'])) {
+				$var_15 = $var_14.'/'.$_GET['ext'].'/inbox/'.$_GET['filename'];
+			}
+		}
+		else if ($_GET['type'] == "fax_sent") {
+			if  (file_exists($var_14.'/'.$_GET['ext'].'/sent/'.$_GET['filename'])) {
+				$var_15 = $var_14.'/'.$_GET['ext'].'/sent/'.$_GET['filename'];
+			}
+		}
+		
+		if (strlen($var_15) > 0) {
+			$var_16 = fopen($var_15, "rb");
+			if ($_GET['t'] == "bin") {
+				header("Content-Type: application/force-download");
+				header("Content-Type: application/octet-stream");
+				header("Content-Description: File Transfer");
+				header('Content-Disposition: attachment; filename="'.$_GET['filename'].'"');
+			}
+			else {
+				$var_17 = substr($_GET['filename'], -3);
+				if ($var_17 == "tif") {
+					header("Content-Type: image/tiff");
+				}
+				else if ($var_17 == "png") {
+					header("Content-Type: image/png");
+				}
+				else if ($var_17 == "jpg") {
+					header('Content-Type: image/jpeg');
+				}
+				else if ($var_17 == "pdf") {
+					header("Content-Type: application/pdf");
+				}
+			}
+			header('Accept-Ranges: bytes');
+			header("Cache-Control: no-cache, must-revalidate"); 
+			header("Expires: Sat, 26 Jul 1997 05:00:00 GMT"); 
+			header("Content-Length: ".filesize($var_15));
+			fpassthru($var_16);
+		}
+		else {
+			
+		}
+		var_0;
+	}
+
+
+	if (strlen($var_13) > 0) {
+		
+			$var_18 = $var_14.'/'.$var_13.'/inbox';
+			$var_19 = $var_14.'/'.$var_13.'/sent';
+			$var_20 = $var_14.'/'.$var_13.'/temp';
+
+		
+			if (!is_dir($_SESSION['switch']['storage']['dir'])) {
+				event_socket_mkdir($_SESSION['switch']['storage']['dir']);
+			}
+			if (!is_dir($var_14.'/'.$var_13)) {
+				event_socket_mkdir($var_14.'/'.$var_13);
+			}
+			if (!is_dir($var_18)) {
+				event_socket_mkdir($var_18);
+			}
+			if (!is_dir($var_19)) {
+				event_socket_mkdir($var_19);
+			}
+			if (!is_dir($var_20)) {
+				event_socket_mkdir($var_20);
+			}
+	}
+
+
+
+
+	$var_7 = "select count(*) from v_fax_files ";
+	$var_7 .= "where fax_uuid = :fax_uuid ";
+	$var_7 .= "and domain_uuid = :domain_uuid ";
+	if ($_REQUEST['box'] == 'inbox') {
+		$var_7 .= "and fax_mode = 'rx' ";
+	}
+	if ($_REQUEST['box'] == 'sent') {
+		$var_7 .= "and fax_mode = 'tx' ";
+	}
+	$var_11['fax_uuid'] = $var_6;
+	$var_11['domain_uuid'] = $var_21;
+	$var_8 = new class_1;
+	$var_22 = $var_8->select($var_7, $var_11, 'column');
+
+
+	$var_23 = ($_SESSION['domain']['paging']['numeric'] != '') ? $_SESSION['domain']['paging']['numeric'] : 50;
+	$var_24 = "&id=".$_GET['id']."&box=".$_GET['box']."&order_by=".$_GET['order_by']."&order=".$_GET['order'];
+	$var_25 = $_GET['page'];
+	if (strlen($var_25) == 0) { $var_25 = 0; $_GET['page'] = 0; }
+	list($var_26, $var_23, $var_27) = paging($var_22, $var_24, $var_23);
+	$var_28 = $var_23 * $var_25;
+
+
+	$var_7 = str_replace('count(*)', '*', $var_7);
+	$var_7 .= order_by($var_4, $var_5, 'fax_date', 'desc');
+	$var_7 .= limit_offset($var_23, $var_28);
+	$var_8 = new class_1;
+	$var_29 = $var_8->select($var_7, $var_11, 'all');
+	unset($var_7, $var_11, $var_22);
+
+
+	
+	
+	
+	if ($_REQUEST['box'] == 'inbox' && permission_exists('fax_inbox_view')) {
+		
+	}
+	if ($_REQUEST['box'] == 'sent' && permission_exists('fax_sent_view')) {
+		
+	}
+	
+	
+	
+	
+	
+	
+	
+
+
+	$var_30 = 0;
+	$row_style["0"] = "row_style0";
+	$row_style["1"] = "row_style1";
+
+
+	
+	
+	
+	
+	if ($_REQUEST['box'] == 'sent') {
+		
+	}
+	
+	
+	
+	' class='var_31'>&var_32;</var_33>\var_34";
+	
+	if (is_array($var_29) && @sizeof($var_29) != 0) {
+		foreach($var_29 as $var_9) {
+			$var_35 = basename($var_9['var_36']);
+			if (strtolower(substr($var_35, -3)) == "var_37" || strtolower(substr($var_35, -3)) == "pdf") {
+				$var_38 = substr($var_35, 0, (strlen($var_35) -4));
+			}
+			$var_17 = $var_9['fax_file_type'];
+
+			
+			if (strlen($var_9['fax_base64']) > 0) {
+				if ($_REQUEST['box'] == 'inbox' && permission_exists('fax_inbox_view')) {
+					if (!file_exists($var_18.'/'.$var_35)) {
+						file_put_contents($var_18.'/'.$var_35, base64_decode($var_9['fax_base64']));
+					}
+				}
+				if ($_REQUEST['box'] == 'sent' && permission_exists('fax_sent_view')) {
+					if (!file_exists($var_19.'/'.$var_35)) {
+						
+						file_put_contents($var_19.'/'.$var_35, base64_decode($var_9['fax_base64']));
+					}
+				}
+			}
+
+			
+			unset($var_39);
+			if ($_REQUEST['box'] == 'inbox' && permission_exists('fax_inbox_view')) {
+				if (!file_exists($var_18.'/'.$var_38.".pdf")) {
+					$var_39 = $var_18;
+				}
+			}
+			if ($_REQUEST['box'] == 'sent' && permission_exists('fax_sent_view')) {
+				if (!file_exists($var_19.'/'.$var_38.".pdf")) {
+					$var_39 = $var_19;
+				}
+			}
+			if ($var_39 != '') {
+				chdir($var_39);
+				
+					$var_40 = exec("tiffinfo ".$var_38.".tif | grep 'Resolution:'");
+					$var_41 = explode(' ', trim($var_40));
+					$var_42 = (int) $var_41[1];
+					$var_43 = (int) $var_41[2];
+					unset($var_41);
+					$var_44 = $var_42.'x'.$var_43; 
+				
+					$var_40 = exec("tiffinfo ".$var_38.".tif | grep 'Image Width:'");
+					$var_41 = explode(' ', trim($var_40));
+					$var_45 = $var_41[2];
+					$var_46 = $var_41[5];
+					unset($var_41);
+					$var_47 = $var_45.'x'.$var_46; 
+					$var_48 = $var_45 / $var_42;
+					$var_49 = $var_46 / $var_43;
+					if ($var_48 > 8.4 && $var_49 > 13) {
+						$var_48 = 8.5;
+						$var_49 = 14;
+						$var_50 = 'legal';
+					}
+					else if ($var_48 > 8.4 && $var_49 < 12) {
+						$var_48 = 8.5;
+						$var_49 = 11;
+						$var_50 = 'letter';
+					}
+					else if ($var_48 < 8.4 && $var_49 > 11) {
+						$var_48 = 8.3;
+						$var_49 = 11.7;
+						$var_50 = 'a4';
+					}
+				
+					$var_51 = "tiff2pdf -i -u i -p ".$var_50." -w ".$var_48." -l ".$var_49." -f -o ".$var_20.'/'.$var_38.".pdf ".$var_39.'/'.$var_38.".tif";
+					
+					exec($var_51);
+					chdir($var_20);
+					$var_52 = "gs -q -sDEVICE=tiffg3 -r".$var_44." -g".$var_47." -dNOPAUSE -sOutputFile=".$var_38."_temp.tif -- ".$var_38.".pdf -c quit";
+					
+					exec($var_52); 
+					@unlink($var_20.'/'.$var_38.".pdf");
+					$var_51 = "tiff2pdf -i -u i -p ".$var_50." -w ".$var_48." -l ".$var_49." -f -o ".$var_39.'/'.$var_38.".pdf ".$var_20.'/'.$var_38."_temp.tif";
+					
+					exec($var_51);
+					@unlink($var_20.'/'.$var_38."_temp.tif");
+			}
+			
+			
+			</var_33>\var_34";
+			</td>\n";
+			if ($_REQUEST['box'] == 'sent') {
+				</var_33>\var_34";
+			}
+			
+			if ($_REQUEST['box'] == 'inbox' && permission_exists('fax_inbox_view')) {
+				
+			}
+			if ($_REQUEST['box'] == 'sent' && permission_exists('fax_sent_view')) {
+				
+			}
+			
+			
+			
+			
+			if ($_REQUEST['box'] == 'inbox') {
+				$var_39 = $var_18;
+			}
+			if ($_REQUEST['box'] == 'sent') {
+				$var_39 = $var_19;
+			}
+			if (file_exists($var_39.'/'.$var_38.".pdf")) {
+				if ($_REQUEST['box'] == 'inbox' && permission_exists('fax_inbox_view')) {
+					
+				}
+				if ($_REQUEST['box'] == 'sent' && permission_exists('fax_sent_view')) {
+					
+				}
+			}
+			else {
+				\var_34";
+			}
+			$var_53 = ($_SESSION['domain']['time_format']['text'] == '12h') ? date("F d Y H:i", $var_9['fax_epoch']) : date("F d Y H:i", $var_9['fax_epoch']);
+			
+			
+			</var_33>\var_34";
+			' class='list_control_icons'>";
+			if (permission_exists('fax_file_delete')) {
+				
+			}
+			
+			
+			$var_30 = ($var_30) ? 0 : 1;
+		}
+	}
+	unset($var_29, $var_9);
+
+
+	
+	
+
+	
+	
+
+
+
+?>

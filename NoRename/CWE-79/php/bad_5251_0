@@ -1,0 +1,207 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if( file_exists( 'mantis_offline.php' ) && !isset( $_GET['mbadmin'] ) ) {
+	exit;
+}
+
+$g_request_time = microtime( true );
+
+ob_start();
+
+
+
+
+
+
+if( file_exists( $g_config_path . 'custom_constants_inc.php' ) ) {
+}
+
+
+$t_config_inc_found = file_exists( $g_config_path . 'config_inc.php' );
+
+if( $t_config_inc_found ) {
+}
+
+
+
+function require_api( $p_api_name ) {
+	static $s_api_included;
+	global $g_core_path;
+	if( !isset( $s_api_included[$p_api_name] ) ) {
+		$t_new_globals = array_diff_key( get_defined_vars(), $GLOBALS, array( 't_new_globals' => 0 ) );
+		foreach ( $t_new_globals as $t_global_name => $t_global_value ) {
+			$GLOBALS[$t_global_name] = $t_global_value;
+		}
+		$s_api_included[$p_api_name] = 1;
+	}
+}
+
+
+function require_lib( $p_library_name ) {
+	static $s_libraries_included;
+	global $g_library_path;
+	if( !isset( $s_libraries_included[$p_library_name] ) ) {
+		$t_library_file_path = $g_library_path . $p_library_name;
+		if( !file_exists( $t_library_file_path ) ) {
+			
+			exit;
+		}
+
+		$t_new_globals = array_diff_key( get_defined_vars(), $GLOBALS, array( 't_new_globals' => 0 ) );
+		foreach ( $t_new_globals as $t_global_name => $t_global_value ) {
+			$GLOBALS[$t_global_name] = $t_global_value;
+		}
+		$s_libraries_included[$p_library_name] = 1;
+	}
+}
+
+
+function __autoload( $p_class ) {
+	global $g_class_path;
+	global $g_library_path;
+
+	$t_require_path = $g_class_path . $p_class . '.class.php';
+
+	if( file_exists( $t_require_path ) ) {
+		return;
+	}
+
+	$t_require_path = $g_library_path . 'rssbuilder' . DIRECTORY_SEPARATOR . 'class.' . $p_class . '.inc.php';
+
+	if( file_exists( $t_require_path ) ) {
+		return;
+	}
+}
+
+
+spl_autoload_register( '__autoload' );
+
+
+define( 'UTF8', $g_library_path . 'utf8' );
+
+
+
+
+if( !php_version_at_least( PHP_MIN_VERSION ) ) {
+	@ob_end_clean();
+	
+	die();
+}
+
+
+
+if( ( $t_output = ob_get_contents() ) != '' ) {
+	
+	var_dump( $t_output );
+	die;
+}
+unset( $t_output );
+
+
+compress_start_handler();
+
+
+
+if( false === $t_config_inc_found ) {
+	if( php_sapi_name() == 'cli' ) {
+		 ensure MantisBT is properly setup.\n";
+		exit(1);
+	}
+
+	if( !( isset( $_SERVER['SCRIPT_NAME'] ) && ( 0 < strpos( $_SERVER['SCRIPT_NAME'], 'admin' ) ) ) ) {
+		header( 'Content-Type: text/html' );
+		
+		header( 'Location: admin/install.php', true, 307 );
+		
+		header( 'Cache-Control: no-store, no-cache, must-revalidate' );
+		exit;
+	}
+}
+
+
+crypto_init();
+
+
+
+if( !defined( 'MANTIS_MAINTENANCE_MODE' ) ) {
+	if( OFF == $g_use_persistent_connections ) {
+		db_connect( config_get_global( 'dsn', false ), $g_hostname, $g_db_username, $g_db_password, $g_database_name, config_get_global( 'db_schema' ) );
+	} else {
+		db_connect( config_get_global( 'dsn', false ), $g_hostname, $g_db_username, $g_db_password, $g_database_name, config_get_global( 'db_schema' ), true );
+	}
+}
+
+
+shutdown_functions_register();
+
+
+if( !defined( 'PLUGINS_DISABLED' ) && !defined( 'MANTIS_MAINTENANCE_MODE' ) ) {
+	plugin_init_installed();
+}
+
+
+if( config_get_global( 'wiki_enable' ) == ON ) {
+	wiki_init();
+}
+
+if( !isset( $g_login_anonymous ) ) {
+	$g_login_anonymous = true;
+}
+
+
+if( !defined( 'MANTIS_MAINTENANCE_MODE' ) ) {
+
+	
+	
+	
+	@date_default_timezone_set( config_get_global( 'default_timezone' ) );
+	$t_tz = @date_default_timezone_get();
+	config_set_global( 'default_timezone', $t_tz, true );
+
+	if( auth_is_user_authenticated() ) {
+		
+		$t_tz = user_pref_get_pref( auth_get_current_user_id(), 'timezone' );
+		@date_default_timezone_set( $t_tz );
+	}
+	unset( $t_tz );
+}
+
+
+if( !defined( 'MANTIS_MAINTENANCE_MODE' ) ) {
+	collapse_cache_token();
+}
+
+
+
+if( file_exists( $g_config_path . 'custom_functions_inc.php' ) ) {
+}
+
+
+http_all_headers();
+
+
+if( !defined( 'LANG_LOAD_DISABLED' ) ) {
+	lang_push( lang_get_default() );
+}
+
+
+if( !defined( 'PLUGINS_DISABLED' ) && !defined( 'MANTIS_MAINTENANCE_MODE' ) ) {
+	event_signal( 'EVENT_CORE_READY' );
+}

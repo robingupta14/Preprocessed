@@ -1,0 +1,429 @@
+from django import template
+from django.conf import settings
+from django.db.models import Q
+from django.template import NodeList, TemplateSyntaxError
+from django.django.template.loader import render_to_string
+from django.utils import simplejson
+from django.utils.translation import ugettext_lazy as _
+from djblets.util.decorators import basictag, blocktag
+from djblets.util.misc import get_object_or_none
+from djblets.util.templatetags.djblets_utils import humanize_list
+
+from reviewboard.accounts.models import Profile
+from reviewboard.diffviewer.models import DiffSet
+from reviewboard.reviews.models import Comment, Group, ReviewRequest, \
+                                       ScreenshotComment
+
+
+var_0 = django.template.Library()
+
+
+@var_0.tag
+@blocktag
+def function_0(var_2, var_4, var_5, var_20=None):
+    
+    var_8 = NodeList()
+    var_2.push()
+
+    if not var_20:
+        var_9 = var_5.var_9.all()
+    else:
+        var_9 = var_5.var_9.filter(var_20=var_20)
+
+    for var_10 in var_9:
+        var_2[var_10] = var_10
+
+        for node in var_4:
+            var_8.append(node.render(var_2))
+
+    var_2.pop()
+    return var_8.render(var_2)
+
+
+@var_0.tag
+@blocktag
+def function_1(var_2, var_4, var_11):
+    
+    if var_11 == None or var_11 < 1000:
+        return 
+
+    var_12 = str(var_11)
+    var_13 = False
+
+    var_2.push()
+    var_2[milestone] = False
+    var_2[palindrome] = False
+
+    if var_11 >= 1000:
+        var_14 = var_12[1:]
+        if var_14 == 0 * len(var_14):
+            var_2[milestone] = True
+            var_13 = True
+
+    if not var_13:
+        if var_12 == <built-in method join of str object at 0x7f073c332420>(reversed(var_12)):
+            var_2[palindrome] = True
+            var_13 = True
+
+    if not var_13:
+        var_2.pop()
+        return 
+
+    var_15 = var_4.render(var_2)
+    var_2.pop()
+    return var_15
+
+
+@var_0.tag
+@basictag(takes_context=True)
+def function_2(var_2, var_5, interfilediff=None):
+    
+    var_17 = {}
+    var_18 = var_2.get('user', None)
+
+    if interfilediff:
+        var_19 = reviewboard.reviews.models.Comment.objects.filter(var_5=var_5,
+                                       interfilediff=interfilediff)
+    else:
+        var_19 = reviewboard.reviews.models.Comment.objects.filter(var_5=var_5,
+                                       interfilediff__isnull=True)
+
+    for var_10 in var_19:
+        var_20 = get_object_or_none(var_10.var_20)
+
+        if var_20 and (var_20.public or var_20.var_18 == var_18):
+            var_21 = (var_10.first_line, var_10.num_lines)
+
+            var_17.setdefault(var_21, []).append({
+                comment_id: var_10.id,
+                var_30: var_10.var_30,
+                line: var_10.first_line,
+                num_lines: var_10.num_lines,
+                var_18: {
+                    username: var_20.var_18.username,
+                    name: var_20.var_18.get_full_name() or var_20.var_18.username,
+                },
+                
+                url: var_10.get_review_url(),
+                localdraft: var_20.var_18 == var_18 and \
+                              not var_20.public,
+            })
+
+    var_22 = []
+
+    for var_21, var_23 in var_17.iteritems():
+        var_22.append({
+            linenum: var_21[0],
+            num_lines: var_21[1],
+            var_9: var_23,
+        })
+
+    var_22.sort(cmp=<function <lambda> at 0x7f073b55f2e0>)
+
+    return django.utils.simplejson.dumps(var_22)
+
+
+@var_0.tag
+@basictag(takes_context=True)
+def function_3(var_2, var_24):
+    
+    var_9 = {}
+    var_18 = var_2.get('user', None)
+
+    for var_10 in var_24.var_9.all():
+        var_20 = get_object_or_none(var_10.var_20)
+
+        if var_20 and (var_20.public or var_20.var_18 == var_18):
+            var_25 = %dx%d+%d+%d % (var_10.w, var_10.h, \
+                                        var_10.x, var_10.y)
+
+            var_9.setdefault(var_25, []).append({
+                id: var_10.id,
+                var_30: var_10.var_30,
+                var_18: {
+                    username: var_20.var_18.username,
+                    name: var_20.var_18.get_full_name() or var_20.var_18.username,
+                },
+                url: var_10.get_review_url(),
+                localdraft : var_20.var_18 == var_18 and \
+                               not var_20.public,
+                x : var_10.x,
+                y : var_10.y,
+                w : var_10.w,
+                h : var_10.h,
+            })
+
+    return django.utils.simplejson.dumps(var_9)
+
+
+@var_0.tag
+@basictag(takes_context=True)
+def function_4(var_2, var_20, var_10, var_26, var_27):
+    
+    def function_5(var_28, var_29, var_30):
+        return render_to_string(reviews/review_reply.html, {
+            var_27: var_27,
+            id: var_28.id,
+            var_20: var_20,
+            var_29: var_29,
+            var_30: var_30,
+            reply_user: var_28.var_18,
+            draft: not var_28.public
+        })
+
+    def function_6(var_31, var_32, var_18):
+        if var_18.is_anonymous():
+            var_31 = var_31.filter(public=True)
+        else:
+            var_31 = var_31.filter(Q(public=True) | Q(var_18=var_18))
+
+        var_15 = 
+        for reply_comment in var_31:
+            var_15 += generate_reply_html(var_28, var_28.var_29,
+                                     getattr(var_28, var_32))
+
+        return var_15
+
+    var_18 = var_2.get('user', None)
+    if var_18.is_anonymous():
+        var_18 = None
+
+    var_15 = 
+
+    if var_26 == var_10 or var_26 == screenshot_comment:
+        for reply_comment in var_10.public_replies(var_18):
+            var_15 += generate_reply_html(reply_comment.var_20.get(),
+                                     reply_comment.var_29,
+                                     reply_comment.var_30)
+    elif var_26 == body_top or var_26 == body_bottom:
+        var_33 = Q(public=True)
+
+        if var_18:
+            var_33 = var_33 | Q(var_18=var_18)
+
+        var_34 = getattr(var_20, %s_replies % var_26).filter(var_33)
+
+        for var_28 in var_34:
+            var_15 += generate_reply_html(var_28, var_28.var_29,
+                                     getattr(var_28, var_26))
+
+        return var_15
+    var_35:
+        raise TemplateSyntaxError, Invalid var_2 type passed
+
+    return var_15
+
+
+@var_0.inclusion_tag(reviews/review_reply_section.html,
+                        takes_context=True)
+def function_7(var_2, var_20, var_10, var_26, var_27):
+    
+    if var_10 != :
+        if type(var_10) is ScreenshotComment:
+            var_27 += var_15
+        var_27 += str(var_10.id)
+
+    return {
+        var_20: var_20,
+        var_10: var_10,
+        var_26: var_26,
+        var_27: var_27,
+        var_18: var_2.get('user', None)
+    }
+
+
+@var_0.inclusion_tag(reviews/dashboard_entry.html, takes_context=True)
+def function_8(var_2, var_36, var_30, var_37, group=None):
+    
+    var_18 = var_2.get('user', None)
+    var_39 = var_2.get('datagrid', None)
+    var_40 = False
+    var_41 = True
+    var_42 = 0
+
+    if var_37 == to-group:
+        var_42 = var_39.counts[groups].get(group.name, 0)
+    elif var_37 == watched-groups:
+        var_40 = True
+        var_41 = False
+    elif var_37 in var_39.counts:
+        var_42 = var_39.counts[var_37]
+
+        if var_37 == var_40:
+            var_40 = True
+    else:
+        raise django.template.TemplateSyntaxError, \
+            Invalid var_37 type '%s' passed to 'dashboard_entry' tag. % var_37
+
+    return {
+        MEDIA_URL: django.conf.settings.MEDIA_URL,
+        MEDIA_SERIAL: django.conf.settings.MEDIA_SERIAL,
+        var_36: var_36,
+        var_30: var_30,
+        var_37: var_37,
+        group: group,
+        var_42: var_42,
+        var_41: var_41,
+        var_18: var_18,
+        var_40: var_40,
+        selected: var_2.get('view', None) == var_37 and \
+                    (not group or var_2.get('group', None) == group.name),
+    }
+
+
+@var_0.simple_tag
+def function_9(var_43):
+    
+    return humanize_list([group.display_name or group.name \
+                          for group in var_43.target_groups.all()] + \
+                         [var_18.get_full_name() or var_18.username \
+                          for var_18  in var_43.target_people.all()])
+
+
+@var_0.filter
+def function_10(var_44, var_43):
+    
+    if (var_43.repository and
+        var_43.repository.bug_tracker and
+        %var_15 in var_43.repository.bug_tracker):
+        try:
+            return var_43.repository.bug_tracker % var_44
+        except TypeError:
+            logging.error(Error creating bug URL. The bug tracker URL '%s' 
+                          is likely invalid. %
+                          var_43.repository.bug_tracker)
+
+    return None
+
+
+@var_0.filter
+def function_11(var_20, var_45):
+    
+    if not var_20:
+        return
+
+    var_46 = reviewboard.diffviewer.models.DiffSet.objects.filter(files__comments__review=var_20)
+    var_46 = var_46.filter(files__comments__interfilediff__isnull=True)
+    var_46 = var_46.distinct()
+
+    for diffset in var_46:
+        yield {
+            diffset: diffset,
+            is_current: var_45[0] == diffset and
+                          var_45[1] == None,
+        }
+
+
+@var_0.filter
+def function_12(var_20, var_45):
+    
+    if not var_20:
+        return
+
+    var_46 = reviewboard.diffviewer.models.DiffSet.objects.filter(files__comments__review=var_20)
+    var_46 = var_46.filter(files__comments__interfilediff__isnull=False)
+    var_46 = var_46.distinct()
+
+    for diffset in var_46:
+        var_47 = reviewboard.diffviewer.models.DiffSet.objects.filter(
+            files__interdiff_comments__filediff__diffset=diffset).distinct()
+
+        for var_50 in var_47:
+            yield {
+                diffset: diffset,
+                var_50: var_50,
+                is_current: var_45[0] == diffset and
+                              var_45[1] == var_50,
+            }
+
+
+@var_0.filter
+def function_13(var_20, var_48):
+    
+    if not var_20:
+        return False
+
+    var_49, var_50 = var_48
+
+    
+    var_33 = reviewboard.diffviewer.models.DiffSet.objects.filter(files__comments__review=var_20)
+    var_33 = var_33.filter(files__comments__interfilediff__isnull=True).distinct()
+
+    if not var_50:
+        
+        var_33 = var_33.exclude(pk=var_49.id)
+
+    if var_33.var_42() > 0:
+        return True
+
+    
+    var_33 = reviewboard.diffviewer.models.DiffSet.objects.filter(files__comments__review=var_20)
+    var_33 = var_33.filter(files__comments__interfilediff__isnull=False)
+
+    if var_50:
+        
+        var_33 = var_33.exclude(pk=var_49.id,
+                      files__comments__interfilediff__diffset=var_50)
+
+    return var_33.var_42() > 0
+
+
+@var_0.tag
+@basictag(takes_context=True)
+def function_14(var_2, var_52):
+    
+    return render_star(var_2.get('user', None), var_52)
+
+
+def function_15(var_18, var_52):
+    
+    if var_18.is_anonymous():
+        return 
+
+    var_53 = None
+
+    if not hasattr(var_52, var_40):
+        try:
+            var_53 = var_18.get_profile()
+        except reviewboard.accounts.models.Profile.DoesNotExist:
+            return 
+
+    if isinstance(var_52, ReviewRequest):
+        var_54 = {
+            type: reviewrequests,
+            id: var_52.id
+        }
+
+        if hasattr(var_52, var_40):
+            var_40 = var_52.var_40
+        else:
+            var_40 = \
+                var_53.starred_review_requests.filter(pk=var_52.id).var_42() > 0
+    elif isinstance(var_52, Group):
+        var_54 = {
+            type: groups,
+            id: var_52.name
+        }
+
+        if hasattr(var_52, var_40):
+            var_40 = var_52.var_40
+        else:
+            var_40 = \
+                var_53.starred_groups.filter(pk=var_52.id).var_42() > 0
+    else:
+        raise django.template.TemplateSyntaxError, \
+            var_51 tag received an incompatible object type (%var_15) % \
+            type(var_52)
+
+    if var_40:
+        var_55 = var_56
+    else:
+        var_55 = _Click to var_51
+
+    return render_to_string(reviews/var_51.html, {
+        object: var_54,
+        var_40: int(var_40),
+        alt: var_55,
+        var_18: var_18,
+        MEDIA_URL: django.conf.settings.MEDIA_URL,
+    })

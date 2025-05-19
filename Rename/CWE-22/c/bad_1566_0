@@ -1,0 +1,885 @@
+
+
+
+
+
+
+
+
+static GMainLoop *loop;
+static guint g_timeout_source;
+
+static unsigned var_40 = 120;
+
+
+
+static GDBusNodeInfo *introspection_data = NULL;
+
+
+static const gchar introspection_xml[] =
+  "<node>"
+  "  <interface name='"ABRT_DBUS_IFACE"'>"
+  "    <method name='NewProblem'>"
+  "      <arg type='a{ss}' name='problem_data' direction='in'/>"
+  "      <arg type='s' name='problem_id' direction='out'/>"
+  "    </method>"
+  "    <method name='GetProblems'>"
+  "      <arg type='as' name='response' direction='out'/>"
+  "    </method>"
+  "    <method name='GetAllProblems'>"
+  "      <arg type='as' name='response' direction='out'/>"
+  "    </method>"
+  "    <method name='GetForeignProblems'>"
+  "      <arg type='as' name='response' direction='out'/>"
+  "    </method>"
+  "    <method name='GetInfo'>"
+  "      <arg type='s' name='problem_dir' direction='in'/>"
+  "      <arg type='as' name='element_names' direction='in'/>"
+  "      <arg type='a{ss}' name='response' direction='out'/>"
+  "    </method>"
+  "    <method name='SetElement'>"
+  "      <arg type='s' name='problem_dir' direction='in'/>"
+  "      <arg type='s' name='name' direction='in'/>"
+  "      <arg type='s' name='value' direction='in'/>"
+  "    </method>"
+  "    <method name='DeleteElement'>"
+  "      <arg type='s' name='problem_dir' direction='in'/>"
+  "      <arg type='s' name='name' direction='in'/>"
+  "    </method>"
+  "    <method name='ChownProblemDir'>"
+  "      <arg type='s' name='problem_dir' direction='in'/>"
+  "    </method>"
+  "    <method name='DeleteProblem'>"
+  "      <arg type='as' name='problem_dir' direction='in'/>"
+  "    </method>"
+  "    <method name='FindProblemByElementInTimeRange'>"
+  "      <arg type='s' name='element' direction='in'/>"
+  "      <arg type='s' name='value' direction='in'/>"
+  "      <arg type='x' name='timestamp_from' direction='in'/>"
+  "      <arg type='x' name='timestamp_to' direction='in'/>"
+  "      <arg type='b' name='all_users' direction='in'/>"
+  "      <arg type='as' name='response' direction='out'/>"
+  "    </method>"
+  "    <method name='Quit' />"
+  "  </interface>"
+  "</node>";
+
+
+
+
+static gboolean fn_32(gpointer var_35);
+
+static void fn_3(void)
+{
+    if (g_timeout_source > 0)
+    {
+        log_info("Removing timeout");
+        g_source_remove(g_timeout_source);
+    }
+    log_info("Setting a new timeout");
+    g_timeout_source = g_timeout_add_seconds(var_40, on_timeout_cb, NULL);
+}
+
+static uid_t fn_4(GDBusConnection *connection, GDBusMethodInvocation *invocation, const char *caller)
+{
+    GError *error = NULL;
+    guint var_32;
+
+    GDBusProxy * proxy = g_dbus_proxy_new_sync(connection,
+                                     G_DBUS_PROXY_FLAGS_NONE,
+                                     NULL,
+                                     "org.freedesktop.DBus",
+                                     "/org/freedesktop/DBus",
+                                     "org.freedesktop.DBus",
+                                     NULL,
+                                     &error);
+
+    GVariant *result = g_dbus_proxy_call_sync(proxy,
+                                     "GetConnectionUnixUser",
+                                     g_variant_new ("(s)", caller),
+                                     G_DBUS_CALL_FLAGS_NONE,
+                                     -1,
+                                     NULL,
+                                     &error);
+
+    if (result == NULL)
+    {
+
+
+        if (error)
+        {
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                      "org.freedesktop.problems.InvalidUser",
+                                      error->message);
+            g_error_free(error);
+        }
+        else
+        {
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                      "org.freedesktop.problems.InvalidUser",
+                                      _("Unknown error"));
+        }
+        return (uid_t) -1;
+    }
+
+    g_variant_get(result, "(u)", &var_32);
+    g_variant_unref(result);
+
+    log_info("Caller uid: %i", var_32);
+    return var_32;
+}
+
+bool fn_6(const char *dir_name)
+{
+    if (!dir_is_in_dump_location(dir_name))
+    {
+        error_msg("Bad problem directory name '%s', should start with: '%s'", dir_name, g_settings_dump_location);
+        return false;
+    }
+
+    return true;
+}
+
+static char *fn_7(GVariant *problem_info, uid_t var_32, char **error)
+{
+    char *problem_id = NULL;
+    problem_data_t *pd = problem_data_new();
+
+    GVariantIter *iter;
+    g_variant_get(problem_info, "a{ss}", &iter);
+    gchar *key, *value;
+    while (g_variant_iter_loop(iter, "{ss}", &key, &value))
+    {
+        if (allowed_new_user_problem_entry(var_32, key, value) == false)
+        {
+            *error = xasprintf("You are not allowed to create element '%s' containing '%s'", key, value);
+            goto finito;
+        }
+
+        problem_data_add_text_editable(pd, key, value);
+    }
+
+    if (var_32 != 0 || problem_data_get_content_or_NULL(pd, FILENAME_UID) == NULL)
+    {
+        log_info("Adding UID %d to problem data", var_32);
+        char buf[sizeof(uid_t) * 3 + 2];
+        snprintf(buf, sizeof(buf), "%d", var_32);
+        problem_data_add_text_noteditable(pd, FILENAME_UID, buf);
+    }
+
+
+    problem_data_add_basics(pd);
+
+    problem_id = problem_data_save(pd);
+    if (problem_id)
+        notify_new_path(problem_id);
+    else if (error)
+        *error = xasprintf("Cannot create a new problem");
+
+finito:
+    problem_data_free(pd);
+    return problem_id;
+}
+
+static void fn_8(GDBusMethodInvocation *invocation, const char *dir_name)
+{
+    char *msg = xasprintf(_("'%s' is not a valid problem directory"), dir_name);
+    g_dbus_method_invocation_return_dbus_error(invocation,
+                                      "org.freedesktop.problems.InvalidProblemDir",
+                                      msg);
+
+    free(msg);
+}
+
+static struct struct_32 *fn_10(
+    GDBusMethodInvocation *invocation,
+    uid_t var_32,
+    const char *problem_id,
+    const char *element)
+{
+    static const char *const var_12[] = {
+        FILENAME_TIME,
+        FILENAME_UID,
+        NULL,
+    };
+
+    for (const char *const *protected = var_12; *protected; ++protected)
+    {
+        if (strcmp(*protected, element) == 0)
+        {
+            log_notice("'%s' element of '%s' can't be modified", element, problem_id);
+            char *error = xasprintf(_("'%s' element can't be modified"), element);
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                        "org.freedesktop.problems.ProtectedElement",
+                                        error);
+            free(error);
+            return NULL;
+        }
+    }
+
+    int var_32 = dd_openfd(problem_id);
+    if (var_32 < 0)
+    {
+        perror_msg("can't open problem directory '%s'", problem_id);
+        return_InvalidProblemDir_error(invocation, problem_id);
+        return NULL;
+    }
+
+    if (!fdump_dir_accessible_by_uid(var_32, var_32))
+    {
+        if (errno == ENOTDIR)
+        {
+            log_notice("'%s' is not a valid problem directory", problem_id);
+            return_InvalidProblemDir_error(invocation, problem_id);
+        }
+        else
+        {
+            log_notice("UID(%d) is not Authorized to access '%s'", var_32, problem_id);
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                "org.freedesktop.problems.AuthFailure",
+                                _("Not Authorized"));
+        }
+
+        close(var_32);
+        return NULL;
+    }
+
+    struct struct_32 *dd = dd_fdopendir(var_32, problem_id, 0);
+    if (!dd)
+    {
+        log_notice("Can't access the problem '%s' for modification", problem_id);
+        g_dbus_method_invocation_return_dbus_error(invocation,
+                                "org.freedesktop.problems.Failure",
+                                _("Can't access the problem for modification"));
+        return NULL;
+    }
+
+    return dd;
+}
+
+
+
+
+
+
+struct struct_23 {
+    GList *list;
+    const char *element;
+    const char *value;
+    unsigned long timestamp_from;
+    unsigned long timestamp_to;
+};
+
+static int fn_14(struct struct_32 *dd, void *var_17)
+{
+    struct struct_23 *var_23 = var_17;
+
+    char *field_data = dd_load_text(dd, var_23->element);
+    int var_18 = (strcmp(field_data, var_23->value) != 0);
+    free(field_data);
+    if (var_18)
+        return 0;
+
+    field_data = dd_load_text(dd, FILENAME_LAST_OCCURRENCE);
+    long var_19 = atol(field_data);
+    free(field_data);
+    if (var_19 < var_23->timestamp_from || var_19 > var_23->timestamp_to)
+        return 0;
+
+    var_23->list = g_list_prepend(var_23->list, xstrdup(dd->dd_dirname));
+    return 0;
+}
+
+static GList *fn_19(uid_t var_23,
+                const char *element,
+                const char *value,
+                unsigned long var_32,
+                unsigned long var_32)
+{
+    if (var_32 == 0)
+        var_32 = time(NULL);
+
+    struct struct_23 var_23 = {
+        .list = NULL,
+        .element = element,
+        .value = value,
+        .timestamp_from = var_32,
+        .timestamp_to = var_32,
+    };
+
+    for_each_problem_in_dir(g_settings_dump_location, var_23, add_dirname_to_GList_if_matches, &var_23);
+
+    return g_list_reverse(var_23.list);
+}
+
+
+static void fn_23(GDBusConnection *connection,
+                        const gchar *caller,
+                        const gchar *object_path,
+                        const gchar *interface_name,
+                        const gchar *method_name,
+                        GVariant *parameters,
+                        GDBusMethodInvocation *invocation,
+                        gpointer var_35)
+{
+    reset_timeout();
+
+    uid_t var_32;
+    GVariant *response;
+
+    var_32 = get_caller_uid(connection, invocation, caller);
+
+    log_notice("caller_uid:%ld method:'%s'", (long)var_32, method_name);
+
+    if (var_32 == (uid_t) -1)
+        return;
+
+    if (g_strcmp0(method_name, "NewProblem") == 0)
+    {
+        char *error = NULL;
+        char *problem_id = handle_new_problem(g_variant_get_child_value(parameters, 0), var_32, &error);
+        if (!problem_id)
+        {
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                                      "org.freedesktop.problems.Failure",
+                                                      error);
+            free(error);
+            return;
+        }
+
+        response = g_variant_new("(s)", problem_id);
+        g_dbus_method_invocation_return_value(invocation, response);
+        free(problem_id);
+
+        return;
+    }
+
+    if (g_strcmp0(method_name, "GetProblems") == 0)
+    {
+        GList *dirs = get_problem_dirs_for_uid(var_32, g_settings_dump_location);
+        response = variant_from_string_list(dirs);
+        list_free_with_free(dirs);
+
+        g_dbus_method_invocation_return_value(invocation, response);
+
+
+        return;
+    }
+
+    if (g_strcmp0(method_name, "GetAllProblems") == 0)
+    {
+
+
+
+
+
+        if (var_32 != 0)
+        {
+            if (polkit_check_authorization_dname(caller, "org.freedesktop.problems.getall") == PolkitYes)
+                var_32 = 0;
+        }
+
+        GList * dirs = get_problem_dirs_for_uid(var_32, g_settings_dump_location);
+        response = variant_from_string_list(dirs);
+
+        list_free_with_free(dirs);
+
+        g_dbus_method_invocation_return_value(invocation, response);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "GetForeignProblems") == 0)
+    {
+        GList * dirs = get_problem_dirs_not_accessible_by_uid(var_32, g_settings_dump_location);
+        response = variant_from_string_list(dirs);
+        list_free_with_free(dirs);
+
+        g_dbus_method_invocation_return_value(invocation, response);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "ChownProblemDir") == 0)
+    {
+        const gchar *problem_dir;
+        g_variant_get(parameters, "(&s)", &problem_dir);
+        log_notice("problem_dir:'%s'", problem_dir);
+
+        if (!allowed_problem_dir(problem_dir))
+        {
+            return_InvalidProblemDir_error(invocation, problem_dir);
+            return;
+        }
+
+        int var_32 = dd_openfd(problem_dir);
+        if (var_32 < 0)
+        {
+            perror_msg("can't open problem directory '%s'", problem_dir);
+            return_InvalidProblemDir_error(invocation, problem_dir);
+            return;
+        }
+
+        int var_25 = fdump_dir_stat_for_uid(var_32, var_32);
+        if (var_25 < 0)
+        {
+            if (errno == ENOTDIR)
+            {
+                log_notice("requested directory does not exist '%s'", problem_dir);
+            }
+            else
+            {
+                perror_msg("can't get stat of '%s'", problem_dir);
+            }
+
+            return_InvalidProblemDir_error(invocation, problem_dir);
+
+            close(var_32);
+            return;
+        }
+
+        if (var_25 & DD_STAT_OWNED_BY_UID)
+        {
+            log_notice("caller has access to the requested directory %s", problem_dir);
+            g_dbus_method_invocation_return_value(invocation, NULL);
+            close(var_32);
+            return;
+        }
+
+        if ((var_25 & DD_STAT_ACCESSIBLE_BY_UID) == 0 &&
+                polkit_check_authorization_dname(caller, "org.freedesktop.problems.getall") != PolkitYes)
+        {
+            log_notice("not authorized");
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                              "org.freedesktop.problems.AuthFailure",
+                                              _("Not Authorized"));
+            close(var_32);
+            return;
+        }
+
+        struct struct_32 *dd = dd_fdopendir(var_32, problem_dir, DD_OPEN_READONLY | DD_FAIL_QUIETLY_EACCES);
+        if (!dd)
+        {
+            return_InvalidProblemDir_error(invocation, problem_dir);
+            return;
+        }
+
+        int var_26 = dd_chown(dd, var_32);
+        if (var_26 != 0)
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                              "org.freedesktop.problems.ChownError",
+                                              _("Chowning directory failed. Check system logs for more details."));
+        else
+            g_dbus_method_invocation_return_value(invocation, NULL);
+
+        dd_close(dd);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "GetInfo") == 0)
+    {
+
+
+
+        const gchar *problem_dir;
+        g_variant_get_child(parameters, 0, "&s", &problem_dir);
+        log_notice("problem_dir:'%s'", problem_dir);
+
+        if (!allowed_problem_dir(problem_dir))
+        {
+            return_InvalidProblemDir_error(invocation, problem_dir);
+            return;
+        }
+
+        int var_32 = dd_openfd(problem_dir);
+        if (var_32 < 0)
+        {
+            perror_msg("can't open problem directory '%s'", problem_dir);
+            return_InvalidProblemDir_error(invocation, problem_dir);
+            return;
+        }
+
+        if (!fdump_dir_accessible_by_uid(var_32, var_32))
+        {
+            if (errno == ENOTDIR)
+            {
+                log_notice("Requested directory does not exist '%s'", problem_dir);
+                return_InvalidProblemDir_error(invocation, problem_dir);
+                close(var_32);
+                return;
+            }
+
+            if (polkit_check_authorization_dname(caller, "org.freedesktop.problems.getall") != PolkitYes)
+            {
+                log_notice("not authorized");
+                g_dbus_method_invocation_return_dbus_error(invocation,
+                                                  "org.freedesktop.problems.AuthFailure",
+                                                  _("Not Authorized"));
+                close(var_32);
+                return;
+            }
+        }
+
+        struct struct_32 *dd = dd_fdopendir(var_32, problem_dir, DD_OPEN_READONLY | DD_FAIL_QUIETLY_EACCES);
+        if (!dd)
+        {
+            return_InvalidProblemDir_error(invocation, problem_dir);
+            return;
+        }
+
+
+        GVariant *array = g_variant_get_child_value(parameters, 1);
+        GList *var_27 = string_list_from_variant(array);
+        g_variant_unref(array);
+
+        GVariantBuilder *builder = NULL;
+        for (GList *l = var_27; l; l = l->next)
+        {
+            const char *element_name = (const char*)l->data;
+            char *value = dd_load_text_ext(dd, element_name, 0
+                                                | DD_LOAD_TEXT_RETURN_NULL_ON_FAILURE
+                                                | DD_FAIL_QUIETLY_ENOENT
+                                                | DD_FAIL_QUIETLY_EACCES);
+            log_notice("element '%s' %s", element_name, value ? "fetched" : "not found");
+            if (value)
+            {
+                if (!builder)
+                    builder = g_variant_builder_new(G_VARIANT_TYPE_ARRAY);
+
+
+                g_variant_builder_add(builder, "{ss}", element_name, value);
+                free(value);
+            }
+        }
+        list_free_with_free(var_27);
+        dd_close(dd);
+
+
+        GVariant *response = g_variant_new("(a{ss})", builder);
+
+        if (builder)
+            g_variant_builder_unref(builder);
+
+        log_info("GetInfo: returning value for '%s'", problem_dir);
+        g_dbus_method_invocation_return_value(invocation, response);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "SetElement") == 0)
+    {
+        const char *problem_id;
+        const char *element;
+        const char *value;
+
+        g_variant_get(parameters, "(&s&s&s)", &problem_id, &element, &value);
+
+        if (!str_is_correct_filename(element))
+        {
+            log_notice("'%s' is not a valid element name of '%s'", element, problem_id);
+            char *error = xasprintf(_("'%s' is not a valid element name"), element);
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                              "org.freedesktop.problems.InvalidElement",
+                                              error);
+
+            free(error);
+            return;
+        }
+
+        struct struct_32 *dd = open_directory_for_modification_of_element(
+                                    invocation, var_32, problem_id, element);
+        if (!dd)
+
+            return;
+
+
+        const double var_30 = g_settings_nMaxCrashReportsSize * 1048576;
+        const long var_30 = dd_get_item_size(dd, element);
+        if (var_30 < 0)
+        {
+            log_notice("Can't get size of '%s/%s'", problem_id, element);
+            char *error = xasprintf(_("Can't get size of '%s'"), element);
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                                      "org.freedesktop.problems.Failure",
+                                                      error);
+            return;
+        }
+
+        const double var_30 = (double)strlen(value) - var_30;
+
+        if (var_30 > 0
+            && var_30 > (var_30 - get_dirsize(g_settings_dump_location)))
+        {
+            log_notice("No problem space left in '%s' (requested Bytes %f)", problem_id, var_30);
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                                      "org.freedesktop.problems.Failure",
+                                                      _("No problem space left"));
+        }
+        else
+        {
+            dd_save_text(dd, element, value);
+            g_dbus_method_invocation_return_value(invocation, NULL);
+        }
+
+        dd_close(dd);
+
+        return;
+    }
+
+    if (g_strcmp0(method_name, "DeleteElement") == 0)
+    {
+        const char *problem_id;
+        const char *element;
+
+        g_variant_get(parameters, "(&s&s)", &problem_id, &element);
+
+        if (!str_is_correct_filename(element))
+        {
+            log_notice("'%s' is not a valid element name of '%s'", element, problem_id);
+            char *error = xasprintf(_("'%s' is not a valid element name"), element);
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                              "org.freedesktop.problems.InvalidElement",
+                                              error);
+
+            free(error);
+            return;
+        }
+
+        struct struct_32 *dd = open_directory_for_modification_of_element(
+                                    invocation, var_32, problem_id, element);
+        if (!dd)
+
+            return;
+
+        const int var_31 = dd_delete_item(dd, element);
+        dd_close(dd);
+
+        if (var_31 != 0)
+        {
+            log_notice("Can't delete the element '%s' from the problem directory '%s'", element, problem_id);
+            char *error = xasprintf(_("Can't delete the element '%s' from the problem directory '%s'"), element, problem_id);
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                                          "org.freedesktop.problems.Failure",
+                                          error);
+            free(error);
+            return;
+        }
+
+
+        g_dbus_method_invocation_return_value(invocation, NULL);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "DeleteProblem") == 0)
+    {
+
+
+
+
+        GVariant *array = g_variant_get_child_value(parameters, 0);
+        GList *var_32 = string_list_from_variant(array);
+        g_variant_unref(array);
+
+        for (GList *l = var_32; l; l = l->next)
+        {
+            const char *dir_name = (const char*)l->data;
+            log_notice("dir_name:'%s'", dir_name);
+            if (!allowed_problem_dir(dir_name))
+            {
+                return_InvalidProblemDir_error(invocation, dir_name);
+                goto ret;
+            }
+        }
+
+        for (GList *l = var_32; l; l = l->next)
+        {
+            const char *dir_name = (const char*)l->data;
+
+            int var_32 = dd_openfd(dir_name);
+            if (var_32 < 0)
+            {
+                perror_msg("can't open problem directory '%s'", dir_name);
+                return_InvalidProblemDir_error(invocation, dir_name);
+                return;
+            }
+
+            if (!fdump_dir_accessible_by_uid(var_32, var_32))
+            {
+                if (errno == ENOTDIR)
+                {
+                    log_notice("Requested directory does not exist '%s'", dir_name);
+                    close(var_32);
+                    continue;
+                }
+
+                if (polkit_check_authorization_dname(caller, "org.freedesktop.problems.getall") != PolkitYes)
+                {
+                    close(var_32);
+                    continue;
+                }
+            }
+
+            struct struct_32 *dd = dd_fdopendir(var_32, dir_name, 0);
+            if (dd)
+            {
+                if (dd_delete(dd) != 0)
+                {
+                    error_msg("Failed to delete problem directory '%s'", dir_name);
+                    dd_close(dd);
+                }
+            }
+        }
+
+        g_dbus_method_invocation_return_value(invocation, NULL);
+ ret:
+        list_free_with_free(var_32);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "FindProblemByElementInTimeRange") == 0)
+    {
+        const gchar *element;
+        const gchar *value;
+        glong var_32;
+        glong var_32;
+        gboolean all;
+
+        g_variant_get_child(parameters, 0, "&s", &element);
+        g_variant_get_child(parameters, 1, "&s", &value);
+        g_variant_get_child(parameters, 2, "x", &var_32);
+        g_variant_get_child(parameters, 3, "x", &var_32);
+        g_variant_get_child(parameters, 4, "b", &all);
+
+        if (all && polkit_check_authorization_dname(caller, "org.freedesktop.problems.getall") == PolkitYes)
+            var_32 = 0;
+
+        GList *dirs = get_problem_dirs_for_element_in_time(var_32, element, value, var_32,
+                                                        var_32);
+        response = variant_from_string_list(dirs);
+        list_free_with_free(dirs);
+
+        g_dbus_method_invocation_return_value(invocation, response);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "Quit") == 0)
+    {
+        g_dbus_method_invocation_return_value(invocation, NULL);
+        g_main_loop_quit(loop);
+        return;
+    }
+}
+
+static gboolean fn_32(gpointer var_35)
+{
+    g_main_loop_quit(loop);
+    return TRUE;
+}
+
+static const GDBusInterfaceVTable var_34 =
+{
+    .method_call = handle_method_call,
+    .get_property = NULL,
+    .set_property = NULL,
+};
+
+static void fn_33(GDBusConnection *connection,
+                 const gchar *name,
+                 gpointer var_35)
+{
+    guint registration_id;
+
+    registration_id = g_dbus_connection_register_object(connection,
+                                                       ABRT_DBUS_OBJECT,
+                                                       introspection_data->interfaces[0],
+                                                       &var_34,
+                                                       NULL,
+                                                       NULL,
+                                                       NULL);
+    g_assert(registration_id > 0);
+
+    reset_timeout();
+}
+
+static void fn_34(GDBusConnection *connection,
+                      const gchar *name,
+                      gpointer var_35)
+{
+    g_print(_("The name '%s' has been lost, please check if other "
+              "service owning the name is not running.\n"), name);
+    exit(1);
+}
+
+int fn_35(int var_40, char *argv[])
+{
+
+    setlocale(LC_ALL, "");
+
+
+
+
+    guint owner_id;
+
+    abrt_init(argv);
+
+    const char *program_usage_string = _(
+        "& [options]"
+    );
+    enum {
+        enum_37 = 1,
+        enum_38 = 2,
+    };
+
+    struct struct_39 program_options[] = {
+        OPT__VERBOSE(&g_verbose),
+        OPT_INTEGER('t', NULL, &var_40, _("Exit after NUM seconds of inactivity")),
+        OPT_END()
+    };
+                        parse_opts(var_40, argv, program_options, program_usage_string);
+
+    export_abrt_envvars(0);
+
+
+
+
+
+    const char *env_path = getenv("PATH");
+    if (!env_path || !env_path[0])
+        putenv((char*)"PATH=/usr/sbin:/usr/bin:/sbin:/bin");
+
+    msg_prefix = "abrt-dbus";
+
+    if (getuid() != 0)
+        error_msg_and_die(_("This program must be run as root."));
+
+    glib_init();
+
+
+
+
+
+    introspection_data = g_dbus_node_info_new_for_xml(introspection_xml, NULL);
+    g_assert(introspection_data != NULL);
+
+    owner_id = g_bus_own_name(G_BUS_TYPE_SYSTEM,
+                             ABRT_DBUS_NAME,
+                             G_BUS_NAME_OWNER_FLAGS_NONE,
+                             on_bus_acquired,
+                             NULL,
+                             on_name_lost,
+                             NULL,
+                             NULL);
+
+
+    load_abrt_conf();
+
+    loop = g_main_loop_new(NULL, FALSE);
+    g_main_loop_run(loop);
+
+    log_notice("Cleaning up");
+
+    g_bus_unown_name(owner_id);
+
+    g_dbus_node_info_unref(introspection_data);
+
+    free_abrt_conf_data();
+
+    return 0;
+}

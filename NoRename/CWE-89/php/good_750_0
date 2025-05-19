@@ -1,0 +1,56 @@
+<?php
+
+
+
+chdir(__DIR__);
+
+
+
+if (isset($_SERVER['argv'])) {
+   for ($i=1; $i<$_SERVER['argc']; $i++) {
+      $it    = explode("=", $_SERVER['argv'][$i], 2);
+      $it[0] = preg_replace('/^--/', '', $it[0]);
+
+      $_GET[$it[0]] = (isset($it[1]) ? $it[1] : true);
+   }
+}
+if (isset($_GET['cycle'])) {
+   $cycle = (int)$_GET['cycle'];
+} else {
+   $cycle = 25;
+}
+
+if (isset($_GET['only_tasks'])) {
+   $only_tasks = explode(',', $_GET['only_tasks']);
+} else {
+   $only_tasks = [];
+}
+
+$crontask = new Crontask();
+$query    = "SELECT `id`, `name`
+             FROM `glpi_crontasks`
+             WHERE `state` = '".Crontask::STATE_RUNNING."'
+                   AND unix_timestamp(`lastrun`) + $cycle * `frequency` < unix_timestamp(now())";
+
+
+$unlocked_tasks = 0;
+
+
+
+
+foreach ($DB->request($query) as $task) {
+   if (!empty($only_tasks) && !in_array($task['name'], $only_tasks)) {
+      
+      continue;
+   }
+
+   $tmp['state'] = Crontask::STATE_WAITING;
+   $tmp['id']    = $task['id'];
+   if ($crontask->update($tmp)) {
+      $unlocked_tasks++;
+      $message = "Task '".$task['name']."' unlocked";
+      
+      Glpi\Event::log($task['id'], 'Crontask', 5, 'Configuration', $message);
+   }
+}
+

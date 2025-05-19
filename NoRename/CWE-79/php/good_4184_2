@@ -1,0 +1,86 @@
+<?php
+
+
+
+declare(strict_types=1);
+
+
+
+final class CustomerEmailUpdaterListener
+{
+    
+    private $tokenGenerator;
+    
+    private $channelContext;
+    
+    private $eventDispatcher;
+    
+    private $session;
+
+    public function __construct(
+        GeneratorInterface $tokenGenerator,
+        ChannelContextInterface $channelContext,
+        EventDispatcherInterface $eventDispatcher,
+        SessionInterface $session
+    ) {
+        $this->tokenGenerator = $tokenGenerator;
+        $this->channelContext = $channelContext;
+        $this->eventDispatcher = $eventDispatcher;
+        $this->session = $session;
+    }
+
+    public function eraseVerification(GenericEvent $event): void
+    {
+        $customer = $event->getSubject();
+
+        
+        Webmozart\Assert\Assert::isInstanceOf($customer, Sylius\Component\Core\Model\CustomerInterface::class);
+
+        
+        $user = $customer->getUser();
+        if ($customer->getEmail() !== $user->getUsername()) {
+            $user->setEmail($customer->getEmail());
+            $user->setVerifiedAt(null);
+
+            $token = $this->tokenGenerator->generate();
+            $user->setEmailVerificationToken($token);
+
+            
+            $channel = $this->channelContext->getChannel();
+
+            if ($channel->isAccountVerificationRequired()) {
+                $user->setEnabled(false);
+            }
+        }
+    }
+
+    public function sendVerificationEmail(GenericEvent $event): void
+    {
+        
+        $channel = $this->channelContext->getChannel();
+
+        if (!$channel->isAccountVerificationRequired()) {
+            return;
+        }
+
+        $customer = $event->getSubject();
+
+        
+        Webmozart\Assert\Assert::isInstanceOf($customer, Sylius\Component\Core\Model\CustomerInterface::class);
+
+        
+        $user = $customer->getUser();
+
+        if (!$user->isEnabled() && !$user->isVerified() && null !== $user->getEmailVerificationToken()) {
+            $this->eventDispatcher->dispatch(Sylius\Bundle\UserBundle\UserEvents::REQUEST_VERIFICATION_TOKEN, new GenericEvent($user));
+            $this->addFlash('success', 'sylius.user.verify_email_request');
+        }
+    }
+
+    private function addFlash(string $type, string $message): void
+    {
+        
+        $flashBag = $this->session->getBag('flashes');
+        $flashBag->add($type, $message);
+    }
+}

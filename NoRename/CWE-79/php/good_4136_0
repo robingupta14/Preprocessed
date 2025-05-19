@@ -1,0 +1,103 @@
+<?php
+
+
+if (!defined('MEDIAWIKI')) {
+    die();
+}
+
+
+
+
+error_reporting(0);
+
+
+
+
+$wgExtensionFunctions[] = 'sigSetup';
+$wgHooks['ParserFirstCallInit'][] = 'sigParserInit';
+
+
+
+
+global $sig_imageUrls;
+$sig_imageUrls = array();
+
+
+
+
+function sigParserInit (Parser $parser) {
+    
+    $parser->setHook('scratchsig', 'sigRenderTag');
+    return true;
+}
+
+
+
+
+function sigFetchProfile ($username) {
+    
+    $data = file_get_contents("http:
+    $json = json_decode($data, $assoc=true);
+    $pk = $json['user']['pk'];
+    $image_url = "http:
+    return $image_url;
+}
+
+
+
+
+
+function sigGetAvatarUrl ($username) {
+    global $sig_imageUrls;
+    if (!isset($sig_imageUrls[$username])) {
+        $sig_imageUrls[$username] = sigFetchProfile($username);
+    }
+    return $sig_imageUrls[$username];
+}
+
+
+
+
+function sigRenderTag ($input, array $args, Parser $parser, PPFrame $frame) {
+    $username = htmlspecialchars($input);
+
+    $img_url = sigGetAvatarUrl($username);
+
+    $o =  '<br>'
+        . '<span class="scratch-sig">'
+        . '<a href="/wiki/User:'.$username.'">'
+        . '<img src="' . $img_url . '" width="18px" height="18px">'
+        . '</a>'
+        . ' '
+        . '<a href="/wiki/User:'.$username.'">'
+        . '<b>'.$username.'</b>'
+        . '</a>'
+        . ' '
+        . '('
+        . '<a href="/wiki/User_Talk:'.$username.'">talk</a>'
+        . ' | '
+        . '<a href="/wiki/Special:Contributions/'.$username.'">contribs</a>'
+        . ')'
+        . '</span>';
+
+    return $o;
+}
+
+
+
+
+function sigSetup () {
+    global $wgOut;
+    $wgOut->addModules('ext.scratchSig');
+}
+
+
+
+
+$wgResourceModules['ext.scratchSig'] = array(
+    'styles' => 'scratchsig.css',
+
+    'localBasePath' => __DIR__,
+    'remoteExtPath' => 'mw-ScratchSig2'
+);
+

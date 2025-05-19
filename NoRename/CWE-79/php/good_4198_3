@@ -1,0 +1,85 @@
+<?php
+
+declare(strict_types=1);
+
+
+
+
+class Upload extends Field
+{
+    
+    protected $view = 'platform::fields.upload';
+
+    
+    protected $attributes = [
+        'value'           => null,
+        'multiple'        => true,
+        'parallelUploads' => 10,
+        'maxFileSize'     => null,
+        'maxFiles'        => 9999,
+        'acceptedFiles'   => null,
+        'resizeQuality'   => 0.8,
+        'resizeWidth'     => null,
+        'resizeHeight'    => null,
+        'media'           => false,
+        'closeOnAdd'      => false,
+    ];
+
+    
+    protected $inlineAttributes = [
+        'accept',
+        'form',
+        'formaction',
+        'formenctype',
+        'formmethod',
+        'formnovalidate',
+        'formtarget',
+        'name',
+        'multiple',
+        'placeholder',
+        'required',
+        'groups',
+        'storage',
+        'media',
+        'closeOnAdd',
+    ];
+
+    
+    public function __construct()
+    {
+
+        
+        $this->addBeforeRender(function () {
+            $maxFileSize = $this->get('maxFileSize');
+
+            $serverMaxFileSize = Orchid\Support\Init::maxFileUpload(Orchid\Support\Init::MB);
+
+            if ($maxFileSize === null) {
+                $this->set('maxFileSize', $serverMaxFileSize);
+
+                return;
+            }
+
+            throw_if(
+                $maxFileSize > $serverMaxFileSize,
+                \RuntimeException::class,
+                'Cannot set the desired maximum file size. This contradicts the settings specified in .ini');
+        });
+
+        
+        $this->addBeforeRender(function () {
+            $value = Illuminate\Support\Arr::wrap($this->get('value'));
+
+            if (! Orchid\Support\Assert::isIntArray($value)) {
+                return;
+            }
+
+            
+            $attach = Orchid\Platform\Dashboard::model(Orchid\Attachment\Models\Attachment::class);
+
+            $value = $attach::whereIn('id', $value)->orderBy('sort')->get()->toArray();
+
+            $this->set('value', $value);
+        });
+    }
+}

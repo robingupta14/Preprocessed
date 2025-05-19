@@ -1,0 +1,45 @@
+<?php
+
+
+
+
+class FrontendSearchAjaxSave extends FrontendBaseAJAXAction
+{
+	
+	public function execute()
+	{
+		parent::execute();
+
+		
+		$searchTerm = SpoonFilter::getPostValue('term', null, '');
+		$term = (SPOON_CHARSET == 'utf-8') ? SpoonFilter::htmlspecialchars($searchTerm) : SpoonFilter::htmlentities($searchTerm);
+
+		
+		if($term == '') $this->output(self::BAD_REQUEST, null, 'term-parameter is missing.');
+
+		
+		$previousTerm = SpoonSession::exists('searchTerm') ? SpoonSession::get('searchTerm') : '';
+		SpoonSession::set('searchTerm', '');
+
+		
+		if($previousTerm != $term)
+		{
+			
+			$this->statistics = array();
+			$this->statistics['term'] = $term;
+			$this->statistics['language'] = FRONTEND_LANGUAGE;
+			$this->statistics['time'] = FrontendModel::getUTCDate();
+			$this->statistics['data'] = serialize(array('server' => $_SERVER));
+			$this->statistics['num_results'] = FrontendSearchModel::getTotal($term);
+
+			
+			FrontendSearchModel::save($this->statistics);
+		}
+
+		
+		SpoonSession::set('searchTerm', $term);
+
+		
+		$this->output(self::OK);
+	}
+}

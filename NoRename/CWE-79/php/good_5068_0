@@ -1,0 +1,539 @@
+<?php
+
+
+
+if (!function_exists('os_handle_start'))
+{
+    
+    return1;
+}
+
+
+
+$ossec_handle = os_handle_start($ossec_dir);
+if($ossec_handle == NULL)
+{
+    
+    exit(1);
+}
+
+
+
+$u_final_time = time(0);
+$u_init_time = $u_final_time - $ossec_search_time;
+$u_level = $ossec_search_level;
+$u_pattern = "";
+$u_rule = "";
+$u_srcip = "";
+$u_user = "";
+$u_location = "";
+
+
+$USER_pattern = NULL;
+$LOCATION_pattern = NULL;
+$USER_group = NULL;
+$USER_log = NULL;
+$USER_rule = NULL;
+$USER_srcip = NULL;
+$USER_user = NULL;
+$USER_page = 1;
+$USER_searchid = 0;
+$USER_monitoring = 0;
+$used_stored = 0;
+
+
+
+if(isset($_POST['searchid']))
+{
+    if(preg_match('/^[a-z0-9]+$/', $_POST['searchid']))
+    {
+        $USER_searchid = $_POST['searchid'];
+    }
+}
+
+
+$rt_sk = "";
+$sv_sk = 'checked="checked"';
+if(isset($_POST['monitoring']) && ($_POST['monitoring'] == 1))
+{
+    $rt_sk = 'checked="checked"';
+    $sv_sk = "";
+
+    
+    $USER_final = $u_final_time;
+    $USER_init = $u_init_time;
+    $USER_monitoring = 1;
+
+    
+    $_POST['search'] = "Search";
+    unset($_POST['initdate']);
+    unset($_POST['finaldate']);
+
+    
+    if($USER_searchid != 0)
+    {
+        os_cleanstored($USER_searchid);
+    }
+
+    
+    $m_ossec_refresh_time = $ossec_refresh_time * 1000;
+
+    
+        </script>
+        ';
+}
+
+
+
+$datepattern = "/^([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2})$/";
+if(isset($_POST['initdate']))
+{
+    if(preg_match($datepattern, $_POST['initdate'], $regs))
+    {
+        $USER_init = mktime($regs[4], $regs[5], 0,$regs[2],$regs[3],$regs[1]);
+        $u_init_time = $USER_init;
+    }
+}
+if(isset($_POST['finaldate']))
+{
+    if(preg_match($datepattern, $_POST['finaldate'], $regs) == true)
+    {
+        $USER_final = mktime($regs[4], $regs[5], 0,$regs[2],$regs[3],$regs[1]);
+        $u_final_time = $USER_final;
+    }
+}
+if(isset($_POST['level']))
+{
+    if((is_numeric($_POST['level'])) &&
+        ($_POST['level'] > 0) &&
+        ($_POST['level'] < 16))
+    {
+        $USER_level = $_POST['level'];
+        $u_level = $USER_level;
+    }
+}
+if(isset($_POST['page']))
+{
+    if((is_numeric($_POST['page'])) &&
+        ($_POST['page'] > 0) &&
+        ($_POST['page'] <= 999))
+    {
+        $USER_page = $_POST['page'];
+    }
+}
+
+
+$strpattern = "/^[0-9a-zA-Z.: _|^!\-()?]{1,128}$/";
+$intpattern = "/^[0-9]{1,8}$/";
+
+if(isset($_POST['strpattern']))
+{
+   if(preg_match($strpattern, $_POST['strpattern']) == true)
+   {
+       $USER_pattern = $_POST['strpattern'];
+       $u_pattern = $USER_pattern;
+   }
+}
+
+
+
+if(isset($_POST['locationpattern']))
+{
+    $lcpattern = "/^[0-9a-zA-Z.: _|^!>\/\\-]{1,156}$/";
+    if(preg_match($lcpattern, $_POST['locationpattern']) == true)
+    {
+        $LOCATION_pattern = $_POST['locationpattern'];
+        $u_location = $LOCATION_pattern;
+    }
+}
+
+
+
+if(isset($_POST['grouppattern']))
+{
+    if($_POST['grouppattern'] == "ALL")
+    {
+        $USER_group = NULL;
+    }
+    else if(preg_match($strpattern,$_POST['grouppattern']) == true)
+    {
+        $USER_group = $_POST['grouppattern'];
+    }
+}
+
+
+if(isset($_POST['logpattern']))
+{
+    if($_POST['logpattern'] == "ALL")
+    {
+        $USER_log = NULL;
+    }
+    else if(preg_match($strpattern,$_POST['logpattern']) == true)
+    {
+        $USER_log = $_POST['logpattern'];
+    }
+}
+
+
+
+if(isset($_POST['rulepattern']))
+{
+   if(preg_match($strpattern, $_POST['rulepattern']) == true)
+   {
+       $USER_rule = $_POST['rulepattern'];
+       $u_rule = $USER_rule;
+   }
+}
+
+
+
+if(isset($_POST['srcippattern']))
+{
+   if(preg_match($strpattern, $_POST['srcippattern']) == true)
+   {
+       $USER_srcip = $_POST['srcippattern'];
+       $u_srcip = $USER_srcip;
+   }
+}
+
+
+
+if(isset($_POST['userpattern']))
+{
+   if(preg_match($strpattern, $_POST['userpattern']) == true)
+   {
+       $USER_user = $_POST['userpattern'];
+       $u_user = $USER_user;
+   }
+}
+
+
+
+if(isset($_POST['max_alerts_per_page']))
+{
+    if(preg_match($intpattern, $_POST['max_alerts_per_page']) == true)
+    {
+        if(($_POST['max_alerts_per_page'] > 200) &&
+           ($_POST['max_alerts_per_page'] < 10000))
+        {
+            $ossec_max_alerts_per_page = $_POST['max_alerts_per_page'];
+        }
+    }
+}
+
+
+
+
+if( array_key_exists( 'search', $_POST ) ) {
+    if($_POST['search'] == "Search")
+    {
+        
+        $USER_searchid = md5(uniqid(rand(), true));
+        $USER_page = 1;
+    }
+    else if($_POST['search'] == "<< First")
+    {
+        $USER_page = 1;
+    }
+    else if($_POST['search'] == "< Prev")
+    {
+        if($USER_page > 1)
+	    {
+	        $USER_page--;
+	    }
+	}
+	else if($_POST['search'] == "Next >")
+	{
+	    $USER_page++;
+	}
+	else if($_POST['search'] == "Last >>")
+	{
+	    $USER_page = 999;
+	}
+	else if($_POST['search'] == "")
+	{
+	}
+	else
+	{
+	    
+	    return;
+	}
+}
+
+
+
+if($USER_monitoring == 1)
+{
+    
+}
+else
+{
+    
+}
+
+
+
+$agent_list = os_getagents($ossec_handle);
+
+
+
+
+
+
+
+<input type="text" name="initdate"
+    id="i_date_a" size="17"
+    value="'.date('Y-m-d H:i', $u_init_time).'" maxlength="16"
+    class="formText" />
+    <img src="img/calendar.gif" id="i_trigger" title="Date selector"
+    alt="Date selector" class="formText" />
+    </td><td>&nbsp;&nbsp;
+    To: &nbsp;<input type="text" name="finaldate" id="f_date_a" size="17"
+    value="'.date('Y-m-d H:i', $u_final_time).'" maxlength="16"
+    class="formText" />
+    <img src="img/calendar.gif" id="f_trigger" title="Date selector"
+    alt="Date selector" class="formText" />
+    </td>
+    </tr>
+';
+
+
+
+
+if($u_level == 1)
+{
+    
+}
+else
+{
+    
+}
+for($l_counter = 15; $l_counter >= 2; $l_counter--)
+{
+    if($l_counter == $u_level)
+    {
+        
+    }
+    else
+    {
+        
+    }
+}
+
+
+
+
+
+
+
+foreach($global_categories as $_cat_name => $_cat)
+{
+    foreach($_cat as $cat_name => $cat_val)
+    {
+        $sl = "";
+        if($USER_group == $cat_val)
+        {
+            $sl = ' selected="selected"';
+        }
+        if(strpos($cat_name, "(all)") !== FALSE)
+        {
+            
+        }
+        else
+        {
+             '.$cat_name.'</option>';
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+foreach($log_categories as $_cat_name => $_cat)
+{
+    foreach($_cat as $cat_name => $cat_val)
+    {
+        $sl = "";
+        if($USER_log == $cat_val)
+        {
+            $sl = ' selected="selected"';
+        }
+        if(strpos($cat_name, "(all)") !== FALSE)
+        {
+            
+        }
+        else
+        {
+             '.$cat_name.'</option>';
+        }
+    }
+}
+
+
+
+
+&nbsp;';
+
+
+
+
+
+&nbsp;';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Calendar.setup({
+button          :   "f_trigger",
+inputField     :    "f_date_a",
+ifFormat       :    "%Y-%m-%d %H:%M",
+showsTime      :    true,
+timeFormat     :    "24"
+});
+</script>
+
+';
+
+
+
+if(!isset($USER_init) || !isset($USER_final) || !isset($USER_level))
+{
+    
+    return1;
+}
+
+$output_list = NULL;
+
+
+
+if($_POST['search'] != "Search")
+{
+    $output_list = os_getstoredalerts($ossec_handle, $USER_searchid);
+    $used_stored = 1;
+}
+
+
+else
+{
+    
+    $output_list = os_searchalerts($ossec_handle, $USER_searchid,
+                                   $USER_init, $USER_final,
+                                   $ossec_max_alerts_per_page,
+                                   $USER_level,$USER_rule, $LOCATION_pattern,
+                                   $USER_pattern, $USER_group,
+                                   $USER_srcip, $USER_user,
+                                   $USER_log);
+}
+
+if($output_list == NULL || $output_list[1] == NULL)
+{
+    if($used_stored == 1)
+    {
+        
+    }
+    else
+    {
+        
+    }
+    return1;
+}
+
+
+
+if(!isset($output_list[0]{'count'}))
+{
+    
+    return1;
+}
+
+
+
+if($USER_page >= $output_list[0]{'pg'})
+{
+    $USER_page = $output_list[0]{'pg'};
+}
+
+
+$real_page = ($output_list[0]{'pg'} + 1) - $USER_page;
+
+
+
+
+if($output_list[0]{'pg'} > 1)
+{
+    
+
+    
+}
+
+
+if($output_list[0]{'pg'} > 1)
+{
+    
+
+    
+}
+
+
+
+
+
+if($output_list[0]{'pg'} > 1)
+{
+&nbsp;
+    <input type="submit" name="search" value="Next >" class="button"
+           class="formText" />
+     <input type="submit" name="search" value="Last >>" class="button"
+           class="formText" />
+    </form>
+';
+}
+
+
+
+if(!isset($output_list[0]{$real_page}) ||
+   (strlen($output_list[$real_page]) < 5) ||
+   (!file_exists($output_list[$real_page])))
+{
+    
+    return(1);
+}
+
+
+
+
+
+
+$fp = fopen($output_list[$real_page], "r");
+if($fp)
+{
+    while(!feof($fp))
+    {
+        
+    }
+}
+
+
+?>

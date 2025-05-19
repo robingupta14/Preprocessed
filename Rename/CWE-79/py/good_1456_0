@@ -1,0 +1,181 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from types import ListType
+
+from spacewalk.common import rhnFlags
+from spacewalk.common.rhnLog import log_debug, log_error
+from spacewalk.common.rhnConfig import CFG
+from spacewalk.common.rhnException import rhnFault
+from spacewalk.common.rhnTranslate import _
+from spacewalk.server import rhnSQL
+from rhnLib import parseRPMFilename
+
+
+
+
+
+
+
+
+def function_0(var_1, var_3, var_4):
+    log_debug(3, var_1, var_3, var_4)
+    if isinstance(var_3, ListType):
+        var_6 = var_3[:4]
+        
+        var_6.insert(1, None)
+    else:
+        var_6 = parseRPMFilename(var_3)
+        if var_6 is None:
+            log_debug(4, Error, Requested weird var_15, var_3)
+            raise rhnFault(17, _Invalid RPM var_15 %s requested % var_3)
+
+    var_7 = 
+    var_8 = spacewalk.server.rhnSQL.prepare(var_7)
+    var_6 = map(str, var_6)
+    var_8.execute(name=var_6[0], ver=var_6[2], rel=var_6[3], arch=var_6[4],
+              var_4=var_4, var_1=var_1)
+    var_9 = var_8.fetchall_dict()
+    if not var_9:
+        log_debug(4, Error, Non-existant var_15 requested, var_1,
+                  var_3, var_4)
+        raise rhnFault(17, _Invalid RPM var_15 %s requested % var_3)
+    
+    
+    
+    
+    
+    var_10 = var_9[0]
+    for var_11 in var_9[1:]:
+        
+        if _none2emptyString(var_11[var_28]) > _none2emptyString(var_10[var_28]):
+            var_10 = var_11
+
+    
+    spacewalk.common.rhnFlags.set(Download-Accelerator-Path, var_10[var_17])
+    return check_package_file(var_10[var_17], var_10[id], var_3), var_10[id]
+
+
+def function_1(var_12, var_13, var_14):
+    if var_12 is None:
+        log_error(Package var_17 null for var_15 id, var_13)
+        raise rhnFault(17, _Invalid RPM var_15 %s requested % var_14)
+    var_16 = %s/%s % (spacewalk.common.rhnConfig.CFG.MOUNT_POINT, var_12)
+    if not os.access(var_16, os.R_OK):
+        
+        log_error(Package not found, var_16)
+        raise rhnFault(17, _Package not found)
+
+    return var_16
+
+
+def function_2(var_17):
+    try:
+        os.unlink(var_17)
+    except OSError:
+        log_debug(1,  Error unlinking %s; % var_17)
+    var_18 = os.var_17.var_18(var_17)
+    var_19 = (spacewalk.common.rhnConfig.CFG.MOUNT_POINT + / + spacewalk.common.rhnConfig.CFG.PREPENDED_DIR, spacewalk.common.rhnConfig.CFG.MOUNT_POINT)
+    while var_18 not in var_19:
+        try:
+            os.rmdir(var_18)
+        except OSError, e:
+            if e.errno == 39:  
+                break
+            else:
+                raise
+        var_18 = os.var_17.var_18(var_18)
+
+
+def function_3(var_1, var_3, var_4):
+    
+    log_debug(3, var_1, var_3, var_4)
+    var_20 = None
+    
+    var_21, var_22 = get_package_path(var_1, var_3, var_4)
+
+    return var_20, var_21
+
+
+
+
+
+def function_4(var_1, var_23, var_4):
+    log_debug(3, var_1, var_23, var_4)
+    var_9 = __query_source_package_path_by_name(var_1, var_23, var_4)
+    if var_9 is None:
+        log_debug(4, Error, Non-existant var_15 requested, var_1,
+                  var_23, var_4)
+        raise rhnFault(17, _Invalid RPM var_15 %s requested % var_23)
+
+    
+    spacewalk.common.rhnFlags.set(Download-Accelerator-Path, var_9[var_17])
+    return check_package_file(var_9[var_17], var_23, var_23)
+
+
+
+def function_5(var_1, var_23, var_4):
+    log_debug(3, var_1, var_23, var_4)
+    var_9 = __query_source_package_path_by_name(var_1, var_23, var_4)
+    if var_9 is None:
+        return 0
+    return 1
+
+
+
+def function_6(var_1, var_23, var_4):
+    var_7 = 
+    var_8 = spacewalk.server.rhnSQL.prepare(var_7)
+    var_8.execute(name=var_23, var_4=var_4, var_1=var_1)
+    return var_8.fetchone_dict()
+
+
+def function_7(var_6, var_24, var_25):
+    log_debug(3, var_6)
+    var_6 = map(str, var_6)
+    var_26 = {name: var_6[0],
+              ver: var_6[1],
+              rel: var_6[2],
+              var_28: var_6[3],
+              arch: var_6[4],
+              var_24: var_24,
+              var_25: var_25}
+    
+    if var_6[3] == 0 or var_6[3] ==  or var_6[3]==None:
+        var_27 = (var_28 is null or var_28 = :var_28)
+    else:
+        var_27 = var_28 = :var_28
+    if var_26[var_25]:
+        var_29 = var_25 = :var_25
+    else:
+        var_29 = var_25 is null
+
+    var_7 =  % (var_27, var_29)
+
+    var_8 = spacewalk.server.rhnSQL.prepare(var_7)
+    var_8.execute(**var_26)
+
+    var_30 = var_8.fetchone_dict()
+    if not var_30:
+        return {'path': None, 'channel_id': None, 'checksum_type': None, 'checksum': None}
+    return var_30
+
+
+def function_8(var_31):
+    if var_31 is None:
+        return 
+    return str(var_31)
+

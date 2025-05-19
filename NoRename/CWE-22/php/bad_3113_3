@@ -1,0 +1,1318 @@
+<?php
+
+
+
+
+
+
+
+
+$disable_http_auth = true;
+
+
+load_funcs( '../inc/skins/_skin.funcs.php' );
+
+global $skins_path, $ads_current_skin_path, $disp, $ctrl;
+param( 'action', 'string', '' );
+$item_ID = param( 'p', 'integer' );
+$blog_ID = param( 'blog', 'integer' );
+
+$required_js = param( 'required_js', 'array:string', array(), false, true );
+
+
+evo_sendcookies();
+
+
+header_nocache();
+header_content_type( 'text/html', $io_charset );
+
+
+$current_debug = $debug;
+$current_debug_jslog = $debug_jslog;
+
+
+$debug = false;
+
+
+$debug_jslog = false;
+
+
+$Ajaxlog = new Log();
+
+$Ajaxlog->add( sprintf( 'action: %s', $action ), 'note' );
+
+$params = param( 'params', 'array', array() );
+switch( $action )
+{
+	case 'get_comment_form':
+		
+		$ItemCache = & get_ItemCache();
+		$Item = $ItemCache->get_by_ID( $item_ID );
+		$BlogCache = & get_BlogCache();
+		$Collection = $Blog = $BlogCache->get_by_ID( $blog_ID );
+
+		locale_activate( $Blog->get('locale') );
+
+		$disp = param( 'disp', '/^[a-z0-9\-_]+$/', '' );
+		$blog_skin_ID = $Blog->get_skin_ID();
+		if( ! empty( $blog_skin_ID ) )
+		{ 
+			$SkinCache = & get_SkinCache();
+			$Skin = & $SkinCache->get_by_ID( $blog_skin_ID );
+			$ads_current_skin_path = $skins_path.$Skin->folder.'/';
+		}
+
+		break;
+
+
+	case 'get_msg_form':
+		
+		$recipient_id = param( 'recipient_id', 'integer', 0 );
+		$recipient_name = param( 'recipient_name', 'string', '' );
+		$subject = param( 'subject', 'string', '' );
+		$email_author = param( 'email_author', 'string', '' );
+		$email_author_address = param( 'email_author_address', 'string', '' );
+		$redirect_to = param( 'redirect_to', 'url', '' );
+		$post_id = NULL;
+		$comment_id = param( 'comment_id', 'integer', 0 );
+		$BlogCache = & get_BlogCache();
+		$Collection = $Blog = $BlogCache->get_by_ID( $blog_ID );
+
+		locale_activate( $Blog->get('locale') );
+
+		if( $recipient_id > 0 )
+		{ 
+			$RecipientCache = & get_UserCache();
+			$Recipient = $RecipientCache->get_by_ID( $recipient_id );
+			$recipient_link = $Recipient->get_identity_link( array( 'link_text' => 'nickname' ) );
+		}
+		else if( $comment_id > 0 )
+		{ 
+			$gender_class = '';
+			if( check_setting( 'gender_colored' ) )
+			{ 
+				$gender_class = ' nogender';
+			}
+			$recipient_link = '<span class="user anonymous'.$gender_class.'" rel="bubbletip_comment_'.$comment_id.'">'.$recipient_name.'</span>';
+		}
+
+		$blog_skin_ID = $Blog->get_skin_ID();
+		if( ! empty( $blog_skin_ID ) )
+		{ 
+			$SkinCache = & get_SkinCache();
+			$Skin = & $SkinCache->get_by_ID( $blog_skin_ID );
+			$ads_current_skin_path = $skins_path.$Skin->folder.'/';
+		}
+
+		break;
+
+
+	case 'get_user_bubbletip':
+		
+		
+		$user_ID = param( 'userid', 'integer', 0 );
+		$comment_ID = param( 'commentid', 'integer', 0 );
+
+		if( strpos( $_SERVER["HTTP_REFERER"], $admin_url ) !== false )
+		{	
+			
+			if( empty($current_User) || ! $current_User->check_perm( 'admin', 'restricted' ) )
+			{	
+			}
+			else
+			{	
+				$is_admin_page = true;
+			}
+		}
+
+		if( $blog_ID > 0 )
+		{	
+			$BlogCache = & get_BlogCache();
+			$Collection = $Blog = $BlogCache->get_by_ID( $blog_ID );
+		}
+
+		if( $user_ID > 0 )
+		{	
+			$UserCache = & get_UserCache();
+			$User = & $UserCache->get_by_ID( $user_ID );
+
+			$Ajaxlog->add( 'User: 
+
+			if( is_logged_in() &&
+			    $current_User->can_moderate_user( $User->ID ) &&
+			    $current_User->check_status( 'can_access_admin' ) &&
+			    $current_User->check_perm( 'admin', 'restricted' ) )
+			{	
+				$moderation_buttons = '<p class="bubbletip_user__buttons">';
+				if( ! is_admin_page() )
+				{
+					$moderation_buttons .= '<a href="'.url_add_param( $admin_url, 'ctrl=user&amp;user_ID='.$User->ID ).'" class="btn btn-sm btn-block btn-primary">'
+							.T_('Edit in Back-Office').'</a>';
+				}
+				if( $current_User->ID != $User->ID && $current_User->check_perm( 'users', 'edit' ) )
+				{	
+					$moderation_buttons .= '<a href="'.url_add_param( $admin_url, 'ctrl=users&amp;action=delete&amp;deltype=spammer&amp;user_ID='.$User->ID.'&amp;'.url_crumb( 'user' ) )
+								.'" class="btn btn-sm btn-block btn-danger">'
+							.T_('Delete Spammer')
+						.'</a>';
+				}
+				$moderation_buttons .= '</p>';
+			}
+			else
+			{	
+				$moderation_buttons = '';
+			}
+
+			
+
+			if( $User->check_status( 'is_closed' ) )
+			{ 
+				
+				
+				 
+				break;
+			}
+
+			$avatar_overlay_text = '';
+			$link_class = '';
+			if( is_admin_page() )
+			{	
+				$avatar_size = $Settings->get('bubbletip_size_admin');
+			}
+			else if( is_logged_in() )
+			{	
+				$avatar_size = $Settings->get('bubbletip_size_front');
+			}
+			else
+			{	
+				$avatar_size = $Settings->get('bubbletip_size_anonymous');
+				$avatar_overlay_text = $Settings->get('bubbletip_overlay');
+				$link_class = 'overlay_link';
+			}
+
+			$width = $thumbnail_sizes[$avatar_size][1];
+			$height = $thumbnail_sizes[$avatar_size][2];
+			
+			
+			
+			
+			
+
+			if( ! ( $Settings->get( 'allow_anonymous_user_profiles' ) || ( is_logged_in() && $current_User->check_perm( 'user', 'view', false, $User ) ) ) )
+			{ 
+				
+				 
+				break;
+			}
+
+			
+			$user_info = array();
+
+			
+			if( $User->get_preferred_name() != $User->login )
+			{
+				$user_info[] = $User->get_preferred_name();
+			}
+
+			
+			$location = array();
+			if( !empty( $User->city_ID ) )
+			{	
+				$location[] = $User->get_city_name( false );
+			}
+			if( !empty( $User->subrg_ID ) )
+			{	
+				if( !is_logged_in() )
+				{	
+					$location[] = $User->get_subregion_name();
+				}
+				else if( $current_User->subrg_ID != $User->subrg_ID )
+				{	
+					$location[] = $User->get_subregion_name();
+				}
+			}
+			if( !empty( $User->rgn_ID ) )
+			{	
+				if( !is_logged_in() )
+				{	
+					$location[] = $User->get_region_name();
+				}
+				else if( $current_User->rgn_ID != $User->rgn_ID )
+				{	
+					$location[] = $User->get_region_name();
+				}
+			}
+			if( !empty( $User->ctry_ID ) )
+			{	
+				if( !is_logged_in() )
+				{	
+					$location[] = $User->get_country_name();
+				}
+				else if( $current_User->ctry_ID != $User->ctry_ID )
+				{	
+					$location[] = $User->get_country_name();
+				}
+			}
+			if( !empty( $location ) )
+			{	
+				$user_info[] = implode( '<br />', $location );
+			}
+
+			
+			if( !empty( $User->age_min ) && !empty( $User->age_max ) && $User->age_min != $User->age_max )
+			{
+				$user_info[] = sprintf( T_('%d to %d years old '), $User->age_min, $User->age_max );
+			}
+			else if( !empty( $User->age_min ) || !empty( $User->age_max ) )
+			{	
+				$age = !empty( $User->age_min ) ? $User->age_min : $User->age_max;
+				$user_info[] = sprintf( T_('%d years old '), $age );
+			}
+
+			if( !empty( $user_info ) )
+			{	
+				
+				foreach( $user_info as $info )
+				{
+					
+				}
+				
+			}
+
+			
+			 
+		}
+		else if( $comment_ID > 0 )
+		{	
+			$CommentCache = & get_CommentCache();
+			$Comment = $CommentCache->get_by_ID( $comment_ID );
+
+			$Ajaxlog->add( 'Comment: 
+
+			
+
+			
+			
+			
+			
+
+			if( isset( $Blog ) )
+			{	
+				
+				$Comment->msgform_link( $Blog->get('msgformurl'), '', '', get_icon( 'email', 'imgtag' ).' '.T_('Send a message') );
+				
+			}
+			
+		}
+		else
+		{ 
+			
+			
+			
+			break;
+		}
+
+		break;
+
+
+	case 'set_comment_vote':
+		
+		
+		$Session->assert_received_crumb( 'comment' );
+
+		if( !is_logged_in( false ) )
+		{ 
+			break;
+		}
+
+		
+		param( 'b2evo_icons_type', 'string', '' );
+
+		if( param( 'is_backoffice', 'integer', 0 ) )
+		{ 
+			global $current_User, $UserSettings, $is_admin_page, $adminskins_path;
+			$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+			$is_admin_page = true;
+			$AdminUI = new AdminUI();
+		}
+		else
+		{
+			$BlogCache = &get_BlogCache();
+			$Collection = $Blog = & $BlogCache->get_by_ID( $blog_ID, true );
+			$skin_ID = $Blog->get_skin_ID();
+			$SkinCache = & get_SkinCache();
+			$Skin = & $SkinCache->get_by_ID( $skin_ID );
+		}
+
+		
+		$current_User->check_perm( 'blog_vote_spam_comments', 'edit', true, $blog_ID );
+
+		$type = param( 'type', 'string' );
+		$commentid = param( 'commentid', 'integer' );
+		if( $type != 'spam' || empty( $commentid ) )
+		{	
+			break;
+		}
+
+		$edited_Comment = & Comment_get_by_ID( $commentid, false );
+		if( $edited_Comment !== false )
+		{ 
+			if( $current_User->ID == $edited_Comment->author_user_ID )
+			{ 
+				break;
+			}
+
+			
+			$edited_Comment->set_vote( 'spam', param( 'vote', 'string' ) );
+			$edited_Comment->dbupdate();
+
+			
+			$edited_Comment->vote_spam( '', '', '&amp;', true, true, array(
+					'display'            => true,
+					'button_group_class' => button_class( 'group' ).( is_admin_page() ? ' btn-group-sm' : '' ),
+				) );
+		}
+
+		break;
+
+	case 'voting':
+		
+
+		if( !is_logged_in( false ) )
+		{ 
+			break;
+		}
+
+		param( 'vote_action', 'string', '' );
+
+		if( !empty( $vote_action ) )
+		{ 
+			
+			$Session->assert_received_crumb( 'voting' );
+		}
+
+		param( 'vote_type', 'string', '' );
+		param( 'vote_ID', 'string', 0 );
+		param( 'checked', 'integer', 0 );
+		param( 'redirect_to', 'url', '' );
+		
+		param( 'b2evo_icons_type', 'string', '' );
+
+		$Ajaxlog->add( sprintf( 'vote action: %s', $vote_action ), 'note' );
+		$Ajaxlog->add( sprintf( 'vote type: %s', $vote_type ), 'note' );
+		$Ajaxlog->add( sprintf( 'vote ID: %s', $vote_ID ), 'note' );
+
+		$voting_form_params = array(
+				'vote_type' => $vote_type,
+			);
+
+		switch( $vote_type )
+		{
+			case 'link':
+				
+
+				$link_ID = preg_replace( '/link_(\d+)/i', '$1', $vote_ID );
+				if( empty( $link_ID )  || ( ! is_decimal( $link_ID ) ) )
+				{ 
+					break 2;
+				}
+
+				$LinkCache = & get_LinkCache();
+				$Link = & $LinkCache->get_by_ID( $link_ID, false );
+				if( !$Link )
+				{ 
+					break 2;
+				}
+
+				$File = & $Link->get_File();
+				if( !$File )
+				{ 
+					break 2;
+				}
+
+				if( empty( $File->hash ) )
+				{ 
+					$File->set_param( 'hash', 'string', md5_file( $File->get_full_path(), true ) );
+					$File->dbsave();
+				}
+
+				if( !empty( $vote_action ) )
+				{ 
+					link_vote( $link_ID, $current_User->ID, $vote_action, $checked );
+				}
+
+				$voting_form_params['vote_ID'] = $link_ID;
+
+				if( empty( $vote_action ) || in_array( $vote_action, array( 'like', 'noopinion', 'dontlike' ) ) )
+				{ 
+					
+					if( ! empty( $blog_ID ) )
+					{ 
+						$BlogCache = & get_BlogCache();
+						if( ( $Collection = $Blog = & $BlogCache->get_by_ID( $blog_ID, false, false ) ) &&
+						    $blog_skin_ID = $Blog->get_skin_ID() )
+						{
+							$LinkOwner = & $Link->get_LinkOwner();
+							$SkinCache = & get_SkinCache();
+							if( $Skin = & $SkinCache->get_by_ID( $blog_skin_ID, false, false ) &&
+							    $Skin->get_setting( 'colorbox_vote_'.$LinkOwner->get( 'name' ).'_numbers' ) )
+							{ 
+								$voting_form_params['display_numbers'] = true;
+							}
+						}
+					}
+					display_voting_form( $voting_form_params );
+				}
+				break;
+
+			case 'comment':
+				
+
+				$comment_ID = (int)$vote_ID;
+				if( empty( $comment_ID ) )
+				{ 
+					break 2;
+				}
+
+				$CommentCache = & get_CommentCache();
+				$Comment = $CommentCache->get_by_ID( $comment_ID, false );
+				if( !$Comment )
+				{ 
+					break 2;
+				}
+
+				if( $current_User->ID == $Comment->author_user_ID )
+				{ 
+					break 2;
+				}
+
+				$comment_Item = & $Comment->get_Item();
+				$comment_Item->load_Blog();
+
+				if( ! $comment_Item->Blog->get_setting('allow_rating_comment_helpfulness') )
+				{ 
+					break 2;
+				}
+
+				if( !empty( $vote_action ) )
+				{ 
+					switch( $vote_action )
+					{ 
+						case 'like':
+							$field_value = 'yes';
+							break;
+
+						case 'noopinion':
+							$field_value = 'noopinion';
+							break;
+
+						case 'dontlike':
+							$field_value = 'no';
+							break;
+					}
+
+					if( isset( $field_value ) )
+					{ 
+						$Comment->set_vote( 'helpful', $field_value );
+						$Comment->dbupdate();
+					}
+				}
+
+				if( !empty( $redirect_to ) )
+				{ 
+					header_redirect( $redirect_to, 303 ); 
+					
+				}
+
+				if( param( 'skin_ID', 'integer', 0 ) > 0 )
+				{	
+					$SkinCache = & get_SkinCache();
+					$request_Skin = & $SkinCache->get_by_ID( get_param( 'skin_ID' ), false, false );
+					if( $request_Skin && method_exists( $request_Skin, 'display_comment_voting_panel' ) )
+					{	
+						$request_Skin->display_comment_voting_panel( $Comment, array( 'display_wrapper' => false ) );
+						break 2;
+					}
+				}
+
+				$Comment->vote_helpful( '', '', '&amp;', true, true, array( 'display_wrapper' => false ) );
+				break;
+
+			case 'item':
+				
+
+				$item_ID = intval( $vote_ID );
+				if( empty( $item_ID ) )
+				{	
+					break 2;
+				}
+
+				$ItemCache = & get_ItemCache();
+				$Item = $ItemCache->get_by_ID( $item_ID, false );
+				if( ! $Item )
+				{	
+					break 2;
+				}
+
+				if( $current_User->ID == $Item->creator_user_ID )
+				{	
+					break 2;
+				}
+
+				$item_Blog = & $Item->get_Blog();
+
+				if( empty( $item_Blog ) || ! $item_Blog->get_setting( 'voting_positive' ) )
+				{	
+					break 2;
+				}
+
+				if( ! empty( $vote_action ) )
+				{	
+					switch( $vote_action )
+					{ 
+						case 'like':
+							$field_value = 'positive';
+							break;
+
+						case 'noopinion':
+							$field_value = 'neutral';
+							break;
+
+						case 'dontlike':
+							$field_value = 'negative';
+							break;
+					}
+
+					if( isset( $field_value ) )
+					{ 
+						$Item->set_vote( $field_value );
+						$Item->dbupdate();
+					}
+				}
+
+				if( ! empty( $redirect_to ) )
+				{	
+					header_redirect( $redirect_to, 303 ); 
+					
+				}
+
+				if( param( 'widget_ID', 'integer', 0 ) > 0 )
+				{	
+					$WidgetCache = & get_WidgetCache();
+					$item_Widget = & $WidgetCache->get_by_ID( get_param( 'widget_ID' ), false, false );
+					if( $item_Widget && $item_Widget->code == 'item_vote' )
+					{	
+						$item_Widget->display_voting_panel( $Item, array( 'display_wrapper' => false ) );
+						break 2;
+					}
+				}
+				elseif( param( 'skin_ID', 'integer', 0 ) > 0 )
+				{	
+					$SkinCache = & get_SkinCache();
+					$request_Skin = & $SkinCache->get_by_ID( get_param( 'skin_ID' ), false, false );
+					if( $request_Skin && method_exists( $request_Skin, 'display_item_voting_panel' ) )
+					{	
+						$request_Skin->display_item_voting_panel( $Item, array( 'display_wrapper' => false ) );
+						break 2;
+					}
+				}
+
+				
+				$Item->display_voting_panel( array( 'display_wrapper' => false ) );
+				break;
+		}
+		break;
+
+	case 'get_user_new_field':
+		
+		$field_ID = param( 'field_id', 'integer', 0 );
+		$user_ID = param( 'user_id', 'integer', 0 );
+
+		if( $field_ID == 0 )
+		{	
+			break;
+		}
+
+		$userfields = $DB->get_results( '
+			SELECT ufdf_ID, "0" AS uf_ID, ufdf_type, ufdf_code, ufdf_name, ufdf_icon_name, "" AS uf_varchar, ufdf_required, ufdf_options, ufdf_suggest, ufdf_duplicated, ufgp_ID, ufgp_name
+				FROM T_users__fielddefs
+				LEFT JOIN T_users__fieldgroups ON ufgp_ID = ufdf_ufgp_ID
+			WHERE ufdf_ID = "'.$field_ID.'"' );
+
+		if( $userfields[0]->ufdf_duplicated == 'forbidden' )
+		{	
+			 
+
+			$user_field_exist = $DB->get_var( '
+				SELECT uf_ID
+					FROM T_users__fields
+				WHERE uf_user_ID = "'.$user_ID.'" AND uf_ufdf_ID = "'.$field_ID.'"' );
+			if( $user_field_exist > 0 )
+			{	
+				break;
+			}
+		}
+		else
+		{	
+			
+		}
+
+		
+		param( 'b2evo_icons_type', 'string', '' );
+
+		$Form = new Form();
+		$Form->fieldstart = '
+		$Form->fieldend = '
+		$Form->labelclass = '
+		$Form->labelstart = '
+		$Form->labelend = '
+		$Form->inputstart = '
+		$Form->inputend = '
+
+		userfields_display( $userfields, $Form, 'add', false );
+
+		break;
+
+	case 'get_user_field_autocomplete':
+		
+
+		
+		$attr_id = param( 'attr_id', 'string' );
+		$term = param( 'term', 'string' );
+
+		$field_type_id = 0;
+		if( (int)$attr_id > 0 )
+		{	
+			$field_type_id = (int)$attr_id;
+		}
+		else if( preg_match( '/^uf_(new|add)_(\d+)_/i', $attr_id, $match ) )
+		{	
+			$field_type_id = (int)$match[2];
+		}
+		else if( preg_match( '/^uf_(\d+)$/i', $attr_id, $match ) )
+		{	
+			$field_id = (int)$match[1];
+			$field_type_id = $DB->get_var( '
+				SELECT uf_ufdf_ID
+				  FROM T_users__fields
+				 WHERE uf_ID = "'.$field_id.'"' );
+		}
+
+		if( $field_type_id == 0 )
+		{	
+			break;
+		}
+
+		
+
+		exit(0); 
+
+		break;
+
+	case 'get_userfields_criteria':
+		
+
+		
+		param( 'b2evo_icons_type', 'string', '' );
+
+		if( param( 'is_backoffice', 'integer', 0 ) )
+		{
+			global $current_User, $UserSettings, $is_admin_page;
+			$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+			$is_admin_page = true;
+			
+			$AdminUI = new AdminUI();
+		}
+		else
+		{
+			$BlogCache = &get_BlogCache();
+			$Collection = $Blog = & $BlogCache->get_by_ID( $blog_ID, true );
+			$skin_ID = $Blog->get_skin_ID();
+			$SkinCache = & get_SkinCache();
+			$Skin = & $SkinCache->get_by_ID( $skin_ID );
+		}
+
+		$Form = new Form();
+		$Form->switch_layout( 'blockspan' );
+
+		
+		$Form->output = false;
+		$criteria_input = $Form->text( 'criteria_value[]', '', 17, '', '', 50 );
+		$criteria_input .= get_icon( 'add', 'imgtag', array( 'rel' => 'add_criteria' ) );
+		$Form->output = true;
+
+		global $user_fields_empty_name;
+		$user_fields_empty_name = T_('Select...');
+
+		$Form->select( 'criteria_type[]', '', 'callback_options_user_new_fields', T_('Specific criteria'), $criteria_input );
+
+		break;
+
+	case 'get_regions_option_list':
+		
+		$country_ID = param( 'ctry_id', 'integer', 0 );
+		$region_ID = param( 'rgn_id', 'integer', 0 );
+		$page = param( 'page', 'string', '' );
+		$mode = param( 'mode', 'string', '' );
+
+		$params = array();
+		if( $page == 'edit' )
+		{
+			$params['none_option_text'] = T_( 'Unknown' );
+		}
+
+		load_funcs( 'regional/model/_regional.funcs.php' );
+		
+
+		if( $mode == 'load_subregions' || $mode == 'load_all' )
+		{	
+			
+
+	case 'get_subregions_option_list':
+		
+		$country_ID = param( 'ctry_id', 'integer', 0 );
+		$region_ID = param( 'rgn_id', 'integer', 0 );
+		$page = param( 'page', 'string', '' );
+		$mode = param( 'mode', 'string', '' );
+
+		$params = array();
+		if( $page == 'edit' )
+		{
+			$params['none_option_text'] = T_( 'Unknown' );
+		}
+
+		load_funcs( 'regional/model/_regional.funcs.php' );
+		
+
+		if( $mode == 'load_all' )
+		{	
+			
+
+	case 'get_cities_option_list':
+		
+		$country_ID = param( 'ctry_id', 'integer', 0 );
+		$region_ID = param( 'rgn_id', 'integer', 0 );
+		$subregion_ID = param( 'subrg_id', 'integer', 0 );
+		$page = param( 'page', 'string', '' );
+
+		$params = array();
+		if( $page == 'edit' )
+		{
+			$params['none_option_text'] = T_( 'Unknown' );
+		}
+
+		load_funcs( 'regional/model/_regional.funcs.php' );
+		
+
+		break;
+
+	case 'get_field_bubbletip':
+		
+		$field_ID = param( 'field_ID', 'integer', 0 );
+
+		if( $field_ID > 0 )
+		{	
+			$field = $DB->get_row( '
+				SELECT ufdf_bubbletip, ufdf_duplicated
+				  FROM T_users__fielddefs
+				 WHERE ufdf_ID = '.$DB->quote( $field_ID ) );
+
+			if( is_null( $field ) )
+			{	
+				break;
+			}
+
+			if( !empty( $field->ufdf_bubbletip ) )
+			{	
+				$field_info = nl2br( $field->ufdf_bubbletip );
+			}
+			else if( in_array( $field->ufdf_duplicated, array( 'allowed', 'list' ) ) )
+			{	
+				$field_info = T_('To enter multiple values,<br />please click on (+)');
+			}
+		}
+
+		if( !empty( $field_info ) )
+		{ 
+
+		
+		param( 'b2evo_icons_type', 'string', '' );
+
+			
+		}
+
+		break;
+
+	case 'collapse_filter':
+	case 'expand_filter':
+		
+		param( 'target', 'string', '' );
+		if( !empty( $target ) )
+		{	
+			$target_status = $action == 'collapse_filter' ? 'collapsed' : 'expanded';
+			if( preg_match( '/_(filters|colselect)$/', $target ) )
+			{	
+				
+				$Session->set( $target, $target_status );
+			}
+			else
+			{	
+				$Ajaxlog->add( 'Cannot ['.$target_status.'] unknown param ['.$target.']', 'error' );
+			}
+		}
+		break;
+
+	case 'validate_login':
+		
+		param( 'login', 'string', '' );
+
+		if( param_check_valid_login( 'login' ) )
+		{	
+			if( !empty( $login ) )
+			{
+				$SQL = new SQL( 'Validate if username is available' );
+				$SQL->SELECT( 'user_ID' );
+				$SQL->FROM( 'T_users' );
+				$SQL->WHERE( 'user_login = "'.$DB->escape( $login ).'"' );
+				if( $DB->get_var( $SQL->get() ) )
+				{	
+					
+				}
+				else
+				{	
+					
+				}
+			}
+		}
+		else
+		{	
+			
+		}
+		break;
+
+	case 'results':
+		
+
+		
+		$ajax_content_mode = true;
+
+		
+		$callback_function = param( 'callback_function', 'string', '' );
+		if( param( 'is_backoffice', 'integer', 0 ) )
+		{
+			global $current_User, $UserSettings, $is_admin_page;
+			$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+			$params = array( 'skin_type' => 'admin', 'skin_name' => $admin_skin );
+			$is_admin_page = true;
+			
+			$AdminUI = new AdminUI();
+
+			
+			param( 'ctrl', '/^[a-z0-9_]+$/', $default_ctrl, true );
+			param( 'blog', 'integer', NULL, true );
+			$ReqPath = $admin_url;
+		}
+		else
+		{
+			$BlogCache = &get_BlogCache();
+			$Collection = $Blog = & $BlogCache->get_by_ID( $blog_ID, true );
+			$skin_ID = $Blog->get_skin_ID();
+			$SkinCache = & get_SkinCache();
+			$Skin = & $SkinCache->get_by_ID( $skin_ID );
+			$params = array( 'skin_type' => 'front', 'skin_name' => $Skin->folder );
+		}
+
+		
+		switch( $callback_function )
+		{
+			case 'hits_results_block':
+				load_funcs('sessions/model/_hitlog.funcs.php');
+				break;
+
+			case 'items_created_results_block':
+			case 'items_edited_results_block':
+			case 'comments_results_block':
+			case 'threads_results_block':
+			case 'user_reports_results_block':
+			case 'blogs_user_results_block':
+			case 'blogs_all_results_block':
+			case 'items_list_block_by_page':
+			case 'items_manual_results_block':
+				break;
+
+			default:
+				$Ajaxlog->add( 'Incorrect callback function name!', 'error' );
+				debug_die( 'Incorrect callback function!' );
+		}
+
+		
+		call_user_func( $callback_function, $params );
+		break;
+
+	case 'set_comment_status':
+		
+
+		
+		$Session->assert_received_crumb( 'comment' );
+
+		$result_success = false;
+
+		if( is_logged_in() )
+		{ 
+
+			
+
+			$request_from = param( 'request_from', 'string', NULL );
+			$is_admin_page = $request_from != 'front';
+			$blog = param( 'blogid', 'integer' );
+			$moderation = param( 'moderation', 'string', NULL );
+			$status = param( 'status', 'string' );
+			$expiry_status = param( 'expiry_status', 'string', 'active' );
+			$limit = param( 'limit', 'integer', 0 );
+
+			$edited_Comment = & Comment_get_by_ID( param( 'commentid', 'integer' ), false );
+			if( $edited_Comment !== false )
+			{ 
+				
+				$current_User->check_perm( 'comment!'.$status, 'moderate', true, $edited_Comment );
+
+				$redirect_to = param( 'redirect_to', 'url', NULL );
+
+				$edited_Comment->set( 'status', $status );
+				
+				$edited_Comment->handle_qm_secret();
+				$result_success = $edited_Comment->dbupdate();
+				if( $result_success !== false )
+				{
+					$edited_Comment->handle_notifications();
+				}
+			}
+		}
+
+		if( $result_success === false )
+		{ 
+			header_http_response( '500 '.T_('Comment cannot be updated!'), 500 );
+			exit(0);
+		}
+
+		if( $moderation != NULL && in_array( $request_from, array( 'items', 'comments' ) ) )
+		{ 
+			if( param( 'is_backoffice', 'integer', 0 ) )
+			{ 
+				global $current_User, $UserSettings, $is_admin_page, $adminskins_path;
+				$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+				$is_admin_page = true;
+				$AdminUI = new AdminUI();
+			}
+
+			$statuses = param( 'statuses', 'string', NULL );
+			$item_ID = param( 'itemid', 'integer' );
+			$currentpage = param( 'currentpage', 'integer', 1 );
+
+			
+			
+			
+			$filterset_name = ( $item_ID > 0 ) ? '' : 'fullview';
+
+			echo_item_comments( $blog, $item_ID, $statuses, $currentpage, $limit, array(), $filterset_name, $expiry_status );
+		}
+		elseif( $request_from == 'front' )
+		{ 
+			
+			
+			
+			$comment_raise_status = $edited_Comment->get_next_status( true, $edited_Comment->status );
+			$comment_lower_status = $edited_Comment->get_next_status( false, $edited_Comment->status );
+			
+			
+		}
+		break;
+
+	case 'get_user_new_org':
+		
+		if( ! is_logged_in() )
+		{ 
+			break;
+		}
+
+		$first_org = param( 'first_org', 'integer', 0 );
+
+		
+		param( 'b2evo_icons_type', 'string', '' );
+
+		$Form = new Form();
+
+		$OrganizationCache = & get_OrganizationCache();
+		$OrganizationCache->clear();
+		
+		$OrganizationCache->load_where( '( org_accept != "no" OR org_owner_user_ID = "'.$current_User->ID.'" )' );
+
+		$Form->output = false;
+		$Form->switch_layout( 'none' );
+		$org_suffix = ' &nbsp; <strong>'.T_('Role').':</strong> '.$Form->text_input( 'org_roles[]', '', 20, '', '', array( 'maxlength' => 255 ) ).' &nbsp; ';
+		$Form->switch_layout( NULL );
+		$Form->output = true;
+
+		
+		$Form->fieldstart = '
+		$Form->fieldend = '
+		$Form->labelclass = '
+		$Form->labelstart = '
+		$Form->labelend = '
+		$Form->inputstart = '
+		$Form->inputend = '
+
+		$org_suffix .= ' '.get_icon( 'add', 'imgtag', array( 'class' => 'add_org', 'style' => 'cursor:pointer' ) );
+		$org_suffix .= ' '.get_icon( 'minus', 'imgtag', array( 'class' => 'remove_org', 'style' => 'cursor:pointer' ) );
+		$Form->select_input_object( 'organizations[]', 0, $OrganizationCache, T_('Organization'), array( 'allow_none' => $first_org ? true : false, 'field_suffix' => $org_suffix ) );
+
+		break;
+
+	case 'change_user_org_status':
+		
+		if( ! is_logged_in() )
+		{ 
+			break;
+		}
+
+		
+		$Session->assert_received_crumb( 'userorg' );
+
+		
+		$status = explode( '_', param( 'status', 'string' ) );
+
+		
+		$org_ID = isset( $status[3] ) ? intval( $status[3] ) : 0;
+
+		
+		$user_ID = isset( $status[4] ) ? intval( $status[4] ) : 0;
+
+		
+		$OrganizationCache = & get_OrganizationCache();
+		$user_Organization = & $OrganizationCache->get_by_ID( $org_ID, false, false );
+
+		if( count( $status ) != 5 || ( $status[2] != 'y' && $status[2] != 'n' ) || $org_ID == 0 || ! $user_Organization )
+		{ 
+			$Ajaxlog->add(  'Incorrect request to accept organization!', 'error' );
+			break;
+		}
+
+		
+		$current_User->check_perm( 'orgs', 'edit', true, $user_Organization );
+
+		
+		param( 'b2evo_icons_type', 'string', '' );
+
+		if( $status[2] == 'y' )
+		{ 
+			$org_is_accepted = false;
+		}
+		else
+		{ 
+			$org_is_accepted = true;
+		}
+
+		
+		$DB->query( 'UPDATE T_users__user_org
+			  SET uorg_accepted = '.$DB->quote( $org_is_accepted ? 1 : 0 ).'
+			WHERE uorg_user_ID = '.$DB->quote( $user_ID ).'
+			  AND uorg_org_ID = '.$DB->quote( $org_ID ) );
+
+		$accept_icon_params = array( 'style' => 'cursor: pointer;', 'rel' => 'org_status_'.( $org_is_accepted ? 'y' : 'n' ).'_'.$org_ID.'_'.$user_ID );
+		if( $org_is_accepted )
+		{ 
+			$accept_icon = get_icon( 'allowback', 'imgtag', array_merge( array( 'title' => T_('Accepted') ), $accept_icon_params ) );
+		}
+		else
+		{ 
+			$accept_icon = get_icon( 'bullet_red', 'imgtag', array_merge( array( 'title' => T_('Not accepted') ), $accept_icon_params ) );
+		}
+
+		
+		
+
+		break;
+
+	case 'get_user_salt':
+		
+		
+		
+
+		$get_widget_login_hidden_fields = param( 'get_widget_login_hidden_fields', 'boolean', false );
+
+		
+		if( ! $get_widget_login_hidden_fields )
+		{ 
+			$Session->assert_received_crumb( 'loginsalt' );
+		}
+
+		$result = array();
+
+		if( $get_widget_login_hidden_fields )
+		{ 
+			$pwd_salt = $Session->get('core.pwd_salt');
+			if( empty($pwd_salt) )
+			{ 
+				$pwd_salt = generate_random_key(64);
+				$Session->set( 'core.pwd_salt', $pwd_salt, 86400  );
+				$Session->dbsave(); 
+			}
+			$result['crumb'] = get_crumb( 'loginform' );
+			$result['pwd_salt'] = $pwd_salt;
+			$result['session_id'] = $Session->ID;
+		}
+
+		$login = param( $dummy_fields[ 'login' ], 'string', '' );
+		$check_field = is_email( $login ) ? 'user_email' : 'user_login';
+
+		
+		$salts = $DB->get_col('SELECT user_salt FROM T_users
+						WHERE '.$check_field.' = '.$DB->quote( utf8_strtolower( $login ) ).'
+						ORDER BY user_lastseen_ts DESC, user_status ASC
+						LIMIT 3' );
+
+		
+		if( empty( $salts ) )
+		{ 
+			$salts[] = generate_random_key( 8 );
+		}
+		$result['salts'] = $salts;
+
+		
+
+		exit(0); 
+		break;
+
+	case 'crop':
+		
+
+		if( ! is_logged_in() )
+		{ 
+			break;
+		}
+
+		$file_ID = param( 'file_ID', 'integer' );
+		$cropped_File = & $current_User->get_File_by_ID( $file_ID, $error_code );
+		if( ! $cropped_File )
+		{ 
+			break;
+		}
+
+		$BlogCache = &get_BlogCache();
+		$Collection = $Blog = & $BlogCache->get_by_ID( $blog_ID, true );
+		$skin_ID = $Blog->get_skin_ID();
+		$SkinCache = & get_SkinCache();
+		$Skin = & $SkinCache->get_by_ID( $skin_ID );
+
+		$display_mode = 'js';
+		$form_action = get_htsrv_url().'profile_update.php';
+
+		$window_width = param( 'window_width', 'integer' );
+		$window_height = param( 'window_height', 'integer' );
+
+		break;
+
+	case 'get_user_report_form':
+		
+
+		
+		$Session->assert_received_crumb( 'user' );
+
+		if( ! is_logged_in() || ( isset( $User ) && $current_User->ID == $User->ID ) || ! $current_User->check_status( 'can_report_user' ) )
+		{ 
+			break;
+		}
+
+		$user_ID = param( 'user_ID', 'integer', true );
+		$UserCache = & get_UserCache();
+		$edited_User = & $UserCache->get_by_ID( $user_ID );
+
+		if( param( 'is_backoffice', 'integer', 0 ) )
+		{ 
+			$user_tab = param( 'user_tab', 'string' );
+			global $current_User, $UserSettings, $is_admin_page;
+			$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+			$is_admin_page = true;
+			$AdminUI = new AdminUI();
+		}
+		else
+		{ 
+			$BlogCache = & get_BlogCache();
+			$Collection = $Blog = & $BlogCache->get_by_ID( $blog_ID, true );
+			$skin_ID = $Blog->get_skin_ID();
+			$SkinCache = & get_SkinCache();
+			$Skin = & $SkinCache->get_by_ID( $skin_ID );
+		}
+
+		$display_mode = 'js';
+		$form_action = get_htsrv_url().'profile_update.php';
+
+		break;
+
+	case 'get_user_contact_form':
+		
+
+		
+		$Session->assert_received_crumb( 'user' );
+
+		if( ! is_logged_in() || ( isset( $User ) && $current_User->ID == $User->ID ) ||
+		    ! $current_User->check_perm( 'perm_messaging', 'reply' ) ||
+				! $current_User->check_status( 'can_edit_contacts' ) )
+		{ 
+			break;
+		}
+
+		$user_ID = param( 'user_ID', 'integer', true );
+		$UserCache = & get_UserCache();
+		$edited_User = & $UserCache->get_by_ID( $user_ID );
+
+		if( param( 'is_backoffice', 'integer', 0 ) )
+		{ 
+			$user_tab = param( 'user_tab', 'string' );
+			global $current_User, $UserSettings, $is_admin_page;
+			$admin_skin = $UserSettings->get( 'admin_skin', $current_User->ID );
+			$is_admin_page = true;
+			$AdminUI = new AdminUI();
+		}
+		else
+		{ 
+			$BlogCache = & get_BlogCache();
+			$Collection = $Blog = & $BlogCache->get_by_ID( $blog_ID, true );
+			$skin_ID = $Blog->get_skin_ID();
+			$SkinCache = & get_SkinCache();
+			$Skin = & $SkinCache->get_by_ID( $skin_ID );
+		}
+
+		$display_mode = 'js';
+		$form_action = get_htsrv_url().'profile_update.php';
+
+		break;
+
+	case 'test_api':
+		
+		
+		break;
+
+	default:
+		$Ajaxlog->add( T_('Incorrect action!'), 'error' );
+		break;
+}
+
+$disp = NULL;
+$ctrl = NULL;
+
+if( $current_debug || $current_debug_jslog )
+{	
+	$Ajaxlog->display( NULL, NULL, true, 'all',
+					array(
+							'error' => array( 'class' => 'jslog_error', 'divClass' => false ),
+							'note'  => array( 'class' => 'jslog_note',  'divClass' => false ),
+						), 'ul', 'jslog' );
+}
+
+
+
+
+exit(0);
+
+?>

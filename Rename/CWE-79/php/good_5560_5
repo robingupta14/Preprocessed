@@ -1,0 +1,552 @@
+<?php
+session_start();
+
+if (isset($_GET['date_only'])) {
+  $var_0 = date("r");
+  
+  exit(0);
+}
+
+function fn_0($var_1, $var_2) {
+  global $var_3;
+
+  $var_4 = '<SELECT NAME="z" OnChange="ganglia_form.submit();">';
+      
+  $var_5 = $var_3['graph_sizes_keys'];
+  foreach ($var_5 as $var_6) {
+    if ($var_6 == "default")
+      continue;
+    $var_4 .= "<OPTION VALUE=\"$var_6\"";
+    if ((isset($var_1) && ($var_6 === $var_1)) || 
+	(!isset($var_1) && ($var_6 === 'small')) || 
+	(!isset($_GET['z']) && ($var_2 == 'host') && ($var_6 == "medium"))) {
+      $var_4 .= " SELECTED";
+    }
+    $var_4 .= ">$var_6</OPTION>\n";
+  }
+  $var_4 .= "</SELECT>\n";
+  return $var_4;
+}
+
+function fn_1() {
+  global $var_3;
+
+  $var_7 = "<SELECT NAME=\"hc\" OnChange=\"ganglia_form.submit();\">\n";
+
+  foreach(range(0,25) as $var_8) {
+    $var_7 .= "<OPTION VALUE=$var_8 ";
+    if ($var_8 == $var_3['hostcols'])
+      $var_7 .= "SELECTED";
+    $var_7 .= ">$var_8\n";
+  }
+  $var_7 .= "</SELECT>\n";
+  return $var_7;
+}
+
+function fn_2() {
+  global $var_3;
+
+  $var_9 = "<select name=\"mc\" OnChange=\"ganglia_form.submit();\">\n";
+
+  foreach(range(1,25) as $var_10) {
+    $var_9 .= "<option value=$var_10 ";
+    if ($var_10 == $var_3['metriccols'])
+      $var_9 .= "selected";
+    $var_9 .= ">$var_10\n";
+  }
+  $var_9 .= "</select>\n";
+  return $var_9;
+}
+
+function fn_3($var_2, $var_11) {
+  $var_12 = "";
+  if ($var_2 == "meta" or $var_2 == "cluster") {
+    $var_13[] = "ascending";
+    $var_13[] = "descending";
+    $var_13[] = "by name";
+
+    
+
+    if ($var_2 == "meta" ) {
+      $var_13[] = "by hosts up";
+      $var_13[] = "by hosts down";
+    }
+
+    $var_12 = "Sorted&nbsp;&nbsp;";
+    foreach ($var_13 as $var_14) {
+      $var_15 = rawurlencode($var_14);
+      if ($var_14 == $var_11)
+	$var_16 = "checked=\"checked\"";
+      else
+	$var_16 = "";
+      $var_12 .= "<input OnChange=\"ganglia_submit();\" type=\"radio\" id=\"radio-" .str_replace(" ", "_", $var_14) . "\" name=\"s\" value=\"$var_14\" $var_16/><label for=\"radio-" . str_replace(" ", "_", $var_14) . "\">$var_14</label>";
+    }
+  }
+  return $var_12;
+}
+
+function fn_4($var_17, $var_18, $var_19, $var_20, $var_21) {
+  global $var_3;
+
+  $var_22 = "";
+  if (!$var_17) {
+    $var_23 = array_keys($var_3['time_ranges']);
+    if ($var_18)
+      $var_23[] = "job";
+    if ($var_19 or $var_20)
+      $var_23[] = "custom";
+
+    $var_22 = "Last&nbsp;&nbsp;";
+    foreach ($var_23 as $var_14) {
+      $var_15 = rawurlencode($var_14);
+      if ($var_14 == $var_21)
+	$var_16 = "checked=\"checked\"";
+      else
+	$var_16 = "";
+      $var_22 .= "<input OnChange=\"ganglia_form.submit();\" type=\"radio\" id=\"range-$var_14\" name=\"r\" value=\"$var_14\" $var_16/><label for=\"range-$var_14\">$var_14</label>";
+    }
+  }
+  return $var_22;
+}
+
+function fn_5($var_2, $var_24, $var_25, $var_26) {
+  global $var_3;
+
+  $var_27 = rawurlencode($var_24);
+  $var_28 = rawurlencode($var_25);
+
+  $var_29 = "";
+
+  if ($var_2 == "cluster") {
+    $var_29 = "<button class=\"header_btn\" onclick=\"window.location='./?p=2&amp;c=$var_27';return false;\">Physical View</button>";
+  } elseif ($var_2 == "physical") {
+    $var_29 = "<button class=\"header_btn\" onclick=\"window.location='./?c=$var_27';return false;\">Full View</button>";
+  } elseif ($var_2=="node") {
+    $var_29 = "<button class=\"header_btn\" onclick=\"window.location='./?c=$var_27&amp;h=$var_28&amp;$var_26';return false;\">Host View</button>";
+  } elseif ($var_2=="host") {
+    $var_29 = "<button class=\"header_btn\" onclick=\"window.location='./?p=2&amp;c=$var_27&amp;h=$var_28';return false;\">Node View</button>";
+  } elseif ($var_2 == "views") {
+    if (checkAccess(var_30::var_31, var_30::var_32, $var_3)) {
+      $var_29 = '<button onclick="return false" id="create_view_button">Create View</button>';
+      $var_29 .= '&nbsp;&nbsp;<button onclick="return false" id="delete_view_button">Delete View</button>';
+    }
+  }
+  return $var_29;
+}
+
+function fn_6($var_33,
+			$var_2,
+			$var_34,
+			$var_35,
+			$var_36,
+			$var_37,
+			$var_24,
+			$var_25,
+			$var_26,
+			$var_38,
+			$var_39,
+			$var_40) {
+  global $var_3;
+
+  $var_41 = "";
+
+  if ($var_35) {
+    $var_41 .= "<b><a href=\"$var_36?gw=back&amp;gs=$var_37&amp;$var_26\">" . "$var_35 ${var_3['meta_designator']}</a></b> ";
+    $var_41 .= "<b>&gt;</b>\n";
+  }
+
+  
+  if ((($var_33 != "unspecified") && !$var_35) ||
+      $var_3['always_display_grid_view']) {
+    $var_42 = ($var_33 == "unspecified") ? "" : $var_33;
+    $var_41 .= "<b><a href=\"./?$var_26\">$var_42 ${var_3['meta_designator']}</a></b> ";
+    $var_41 .= "<b>&gt;</b>\n";
+  }
+
+  
+  
+  
+  
+  if ($var_24) {
+    $var_15 = rawurlencode($var_24);
+    $var_41 .= "<b><a href=\"./?c=$var_15&amp;$var_26\">$var_24</a></b> ";
+    $var_41 .= "<b>&gt;</b>\n";
+    $var_41 .= hiddenvar("c", $var_24);
+  } else if ($var_2 == "decompose_graph") {
+    $var_41 .= '<input type="hidden" name="dg" value="1">';
+    $var_41 .= "Decompose Graph";
+  } else {
+    
+    $var_41 .= "<select name=\"c\" OnChange=\"ganglia_form.submit();\">\n";
+    $var_41 .= "<option value=\"\">--Choose a Source\n";
+    ksort($var_34);
+    foreach ($var_34 as $var_43 => $var_14) {
+      if ($var_43 == $var_33) continue;
+      if (isset($var_14['GRID']) and $var_14['GRID']) {
+        $var_15 = $var_14['AUTHORITY'];
+        $var_41 .="<option value=\"$var_15\">$var_43 ${var_3['meta_designator']}\n";
+      } else {
+        $var_15 = rawurlencode($var_43);
+        $var_41 .="<option value=\"$var_15\">$var_43\n";
+      }
+    }
+    $var_41 .= "</select>\n";
+  }
+
+  
+  
+  
+  if ($var_24 && !$var_25) {
+    
+    if (!$var_38) {
+      $var_41 .= "[Summary Only]";
+    } elseif (is_array($var_39) || is_array($var_40)) {
+      $var_41 .= "<select name=\"h\" OnChange=\"ganglia_form.submit();\">";
+      $var_41 .= "<option value=\"\">--Choose a Node</option>";
+
+      if (is_array($var_39)) {
+        uksort($var_39, "strnatcmp");
+        foreach ($var_39 as $var_43=> $var_14) {
+          $var_15 = rawurlencode($var_43);
+          $var_41 .= "<option value=\"$var_15\">$var_43\n";
+        }
+      }
+
+      if (is_array($var_40)) {
+        uksort($var_40, "strnatcmp");
+        foreach ($var_40 as $var_43=> $var_14) {
+          $var_15 = rawurlencode($var_43);
+          $var_41 .= "<option value=\"$var_15\">$var_43\n";
+        }
+      }
+      $var_41 .= "</select>\n";
+    } else {
+      $var_41 .= "<b>No Hosts</b>\n";
+    }
+  } else {
+    $var_41 .= "<b>$var_25</b>\n";
+    $var_41 .= hiddenvar("h", $var_25);
+  }
+  return $var_41;
+}
+
+
+
+!isset($var_44) and $var_44 = 0;
+!isset($var_45) and $var_45 = "";
+!isset($var_46) and $var_46 = "";
+
+if ($var_2 == "control" && $var_47 < 0)
+  $var_48 = "header-nobanner";
+else
+  $var_48 = "header";
+
+
+
+
+$var_49 = $var_33 . "@";
+array_key_exists($var_33, $var_34) and $var_49 = $var_49 . $var_34[$var_33]['AUTHORITY'];
+if ($var_44)
+   {
+      $var_50 = array();
+      $var_50[] = $var_49;
+   }
+else if ($var_51=="fwd")
+   {
+      
+      if (end($var_50) != $var_49)
+         {
+            $var_50[] = $var_49;
+         }
+   }
+else if ($var_51=="back")
+   {
+      
+      if (end($var_50) != $var_49)
+         {
+            array_pop($var_50);
+         }
+   }
+$var_52 = join(">", $var_50);
+$var_37 = rawurlencode($var_52);
+
+if (strstr($var_24, "http:
+   header("var_53: $var_24?var_54=var_55&var_56;var_57=$var_37");
+}
+
+if ($var_44 or $var_51)
+   {
+      
+      
+      if ( !isset($_COOKIE["var_57"]) or $_COOKIE["var_57"] != $var_52 )
+            setcookie("var_57", $var_52, time() + 86400);
+   }
+
+
+
+
+
+$var_35 = $var_36 = NULL;
+if(count($var_50) > 1) {
+  list($var_35, $var_36) = explode("@", $var_50[count($var_50)-2]);
+}
+
+$var_58 = new Dwoo_Template_File( template("$var_48.tpl") );
+$var_59 = new class_0();
+
+
+$var_59->assign("server_utc_offset", date('Z'));
+
+$var_59->assign("page_title", $var_61);
+$var_59->assign("refresh", $var_3['default_refresh']);
+
+
+$var_59->assign("images","./templates/${var_3['template_name']}/images");
+
+$var_59->assign( "date", date("r"));
+
+
+if (isset($var_62))
+  $var_59->assign("page", $var_62);
+else
+  $var_59->assign("page","./");
+
+
+
+
+$var_63 = rawurlencode($var_11);
+
+$var_26 = "m=$var_45&amp;r=$var_21&amp;s=$var_63&amp;hc=${var_3['hostcols']}&amp;mc=${var_3['metriccols']}";
+if ($var_18 and $var_64)
+    $var_26 .= "&amp;jr=$var_18&amp;js=$var_64";
+if ($var_19)
+    $var_26 .= "&amp;cs=" . rawurlencode($var_19);
+if ($var_20)
+    $var_26 .= "&amp;ce=" . rawurlencode($var_20);
+
+$var_65 = null;
+$var_66 = null;
+if ($var_19) {
+    if (! is_numeric($var_19)) {
+        $var_65 = strtotime($var_19);
+    } else {
+        $var_65 = $var_19;
+    }
+
+    if ($var_20) {
+        if (! is_numeric($var_20)) {
+            $var_66 = strtotime($var_20);
+        } else {
+            $var_66 = $var_20;
+        }
+    } else {
+        $var_66 = $var_65 - $var_3['time_ranges'][$var_21];
+    }
+} else {
+    $var_66 = time();
+    $var_65 = $var_66 - $var_3['time_ranges'][$var_21];
+}
+
+$var_59->assign("start_timestamp", $var_65);
+$var_59->assign("end_timestamp", $var_66);
+
+
+$var_59->assign("cluster_url", $var_27);
+
+$var_29 = fn_5($var_2, 
+			  $var_24, 
+			  $var_25, 
+			  $var_26);
+$var_59->assign("alt_view", $var_29);
+
+
+$var_41 = "";
+if (($var_2 != 'views') && ($var_2 != 'compare_hosts')) {
+  $var_41 = fn_6($var_33,
+			      $var_2,
+			      $var_34,
+			      $var_35,
+			      $var_36,
+			      $var_37,
+			      $var_24,
+			      $var_25,
+			      $var_26,
+			      $var_38,
+			      $var_39,
+			      $var_40);
+  
+  if ($var_17)
+    $var_41 .= hiddenvar("p", $var_17);
+  $var_41 .= hiddenvar("cr", $var_47);
+  $var_41 .= hiddenvar("js", $var_64);
+  $var_41 .= hiddenvar("jr", $var_18);
+}
+$var_59->assign("node_menu", $var_41);
+
+
+
+if (count($var_67)) {
+  foreach ($var_67 as $var_68 => $var_69) {
+      foreach ($var_67[$var_68] as $var_70 => $var_71)
+        $var_46[$var_70] = $var_70;
+  }
+  foreach ($var_72 as $var_73 => $var_71)
+    $var_46[] = $var_73;
+}
+
+
+
+
+$var_22 = fn_4($var_17, $var_18, $var_19, $var_20, $var_21);
+$var_59->assign("range_menu", $var_22);
+
+
+
+
+if (is_array($var_46) and $var_2 == "cluster") {
+  $var_74 = array();
+
+  
+  if ($var_75 = opendir($var_3['gweb_root'] . '/graph.d')) {
+
+    
+    if ( $var_3['graph_engine'] == "rrdtool" )
+      $var_76 = "php|json";
+    else
+      $var_76 = "json";
+
+    while (false !== ($var_77 = readdir($var_75))) {
+      if ( preg_match("/(.*)(_report)\.(" . $var_76 .")/", $var_77, $var_78) ) {
+        if ( ! in_array($var_78[1] . "_report", $var_46) )
+          $var_46[] = $var_78[1] . "_report";
+      }
+    }
+
+    closedir($var_75);
+  }
+
+  var_11($var_46);
+
+  foreach ($var_46 as $var_79) {
+    $var_15 = rawurlencode($var_79);
+    $var_74[] = "<option value=\"$var_15\">$var_79</option>";
+  }
+
+  $var_59->assign("picker_metrics", join("", $var_74));
+  $var_59->assign("is_metrics_picker_disabled", "");  
+} else {
+  
+  $var_59->assign("is_metrics_picker_disabled", '$("
+  $data->assign("picker_metrics", "" );
+}
+
+
+
+
+$sort_menu = make_sort_menu($context, $sort);
+$data->assign("sort_menu", $sort_menu );
+   
+if ($context == "physical" or $context == "cluster" or $context == 'var_80') {
+  $var_7 = fn_1();
+  $var_4 = fn_0($var_1, $var_2);
+}
+
+if ($var_2 == "host") {
+  $var_9 = fn_2();
+}
+
+$var_81 = "";
+
+if ( in_array($var_2 , array ("meta", "cluster", "host", "views", "decompose_graph", "compare_hosts") ) ) {
+   $var_82 = "Feb 27 2007 00:00, 2/27/2007, 27.2.2007, now -1 week,"
+      . " -2 days, start + 1 hour, etc.";
+   $var_81 = "or <span class=\"nobr\">from <input type=\"TEXT\" title=\"$var_82\" NAME=\"cs\" ID=\"datepicker-cs\" SIZE=\"17\"";
+   if ($var_19)
+      $var_81 .= " value=\"$var_19\"";
+   $var_81 .= "> to <input type=\"TEXT\" title=\"$var_82\" name=\"ce\" ID=\"datepicker-ce\" SIZE=\"17\"";
+   if ($var_20)
+      $var_81 .= " value=\"$var_20\"";
+   $var_81 .= "> <input type=\"submit\" value=\"Go\">\n";
+   $var_81 .= "<input type=\"button\" value=\"Clear\" onclick=\"ganglia_submit(1)\"></span>\n";
+
+   $var_59->assign("custom_time", $var_81);
+
+
+   $var_59->assign("custom_time_head", "");
+} else {
+   $var_59->assign("custom_time_head", "");
+}
+ 
+$var_59->assign("custom_time", $var_81);
+
+
+
+
+
+if ( $var_2 == "cluster" ) {
+  if ( isset($user['host_regex']) && $user['host_regex'] != "" )
+    $var_83="var_87='" . $user['host_regex'] . "'";
+  else
+    $var_83="";
+
+  
+  
+  
+  
+  $var_84 = array(1000,500,200,100,50,25,20,15,10);
+
+  if ( isset($user['max_graphs']) && is_numeric($user['max_graphs']) )
+    $var_85 = $user['max_graphs'];
+  else
+    $var_85 = $var_3['max_graphs'];
+  
+  $var_86 = "<option value=0>all</option>";
+  foreach ( $var_84 as $var_79 => $var_87 ) {
+      if ( $var_85 == $var_87 )
+$var_86 .= "<option selected>" . $var_87 . "</option>";
+      else
+$var_86 .= "<option>" . $var_87 . "</option>";
+
+  }
+
+  $var_59->assign("additional_filter_options", 'Show only nodes matching <input name=host_regex ' .$var_83 . '>'
+   . '<input class="header_btn" type="SUBMIT" VALUE="Filter">'
+   . '&nbsp;<span class="nobr">Max graphs to show <select onChange="ganglia_submit();" name="max_graphs">' . $var_86 . '</select></span>'
+    );
+} else
+  $var_59->assign("additional_filter_options", '');
+
+if($var_3['auth_system'] == 'enabled') {
+  $var_59->assign('auth_system_enabled', true);
+  $var_88 = sanitize( GangliaAuth::getInstance()->getUser() );
+  $var_59->assign('username', $var_88);
+} else {
+  $var_59->assign('auth_system_enabled', false);
+  $var_59->assign('username', null);
+}
+
+
+if ( $var_3['overlay_events'] == true )
+  $var_59->assign('overlay_events', true);
+
+$var_59->assign('selected_tab', htmlspecialchars($user['selected_tab']) );
+$var_59->assign('view_name', $user['viewname']);
+
+$var_90 = "";
+if ($var_2 == 'views' || $var_2 == 'decompose_graph' || $var_2 == 'host') {
+  $var_90 = '<input title="Hide/Show Events" type="checkbox" id="show_all_events" onclick="showAllEvents(this.checked)"/><label for="show_all_events">Hide/Show Events</label>';
+}
+$var_59->assign('additional_buttons', $var_90);
+
+
+header ("Expires: Mon, 26 Jul 1997 05:00:00 GMT"); 
+header ("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT"); 
+header ("Cache-Control: no-cache, must-revalidate"); 
+header ("Pragma: no-cache"); 
+
+if (file_exists("./templates/${var_3['template_name']}/user_header.tpl"))
+  $var_59->assign('user_header', "1");
+
+$var_91->output($var_58, $var_59);
+
+?>

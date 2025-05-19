@@ -1,0 +1,766 @@
+<?php
+
+class ElggPlugin extends ElggObject {
+	private $package;
+	private $manifest;
+
+	private $path;
+	private $pluginID;
+	private $errorMsg = '';
+
+	
+	protected function initializeAttributes() {
+		parent::initializeAttributes();
+
+		$this->attributes['subtype'] = "plugin";
+
+		
+		$this->access_id = ACCESS_PUBLIC;
+	}
+
+	
+	public function __construct($plugin) {
+		if (!$plugin) {
+			throw new PluginException(elgg_echo('PluginException:NullInstantiated'));
+		}
+
+		
+		
+		if (is_numeric($plugin) || is_object($plugin)) {
+			parent::__construct($plugin);
+			$this->path = elgg_get_plugins_path() . $this->getID();
+		} else {
+			$plugin_path = elgg_get_plugins_path();
+
+			
+			
+			if (strpos($plugin, $plugin_path) !== 0) {
+				$plugin = $plugin_path . $plugin;
+			}
+
+			
+			$plugin = sanitise_filepath($plugin);
+			$this->path = $plugin;
+			$path_parts = explode('/', rtrim($plugin, '/'));
+			$plugin_id = array_pop($path_parts);
+			$this->pluginID = $plugin_id;
+
+			
+			$existing_plugin = elgg_get_plugin_from_id($this->pluginID);
+			$existing_guid = null;
+
+			if ($existing_plugin) {
+				$existing_guid = $existing_plugin->guid;
+			}
+
+			
+			parent::__construct($existing_guid);
+		}
+
+		_elgg_cache_plugin_by_id($this);
+	}
+
+	
+	public function save() {
+		
+		$site = get_config('site');
+		$this->attributes['site_guid'] = $site->guid;
+		$this->attributes['owner_guid'] = $site->guid;
+		$this->attributes['container_guid'] = $site->guid;
+		$this->attributes['title'] = $this->pluginID;
+
+		if (parent::save()) {
+			
+			$priority = $this->getPriority();
+			if ($priority === FALSE || $priority === NULL) {
+				return $this->setPriority('last');
+			}
+		} else {
+			return false;
+		}
+	}
+
+
+	
+
+	
+	public function getID() {
+		return $this->title;
+	}
+
+	
+	public function getFriendlyName() {
+		$manifest = $this->getManifest();
+		if ($manifest) {
+			return $manifest->getName();
+		}
+
+		return $this->getID();
+	}
+
+	
+	public function getPath() {
+		return sanitise_filepath($this->path);
+	}
+
+	
+	public function setID($id) {
+		return $this->attributes['title'] = $id;
+	}
+
+	
+	public function getAvailableTextFiles() {
+		$filenames = $this->getPackage()->getTextFilenames();
+
+		$files = array();
+		foreach ($filenames as $filename) {
+			if ($this->canReadFile($filename)) {
+				$files[$filename] = "$this->path/$filename";
+			}
+		}
+
+		return $files;
+	}
+
+	
+
+	
+	public function getPriority() {
+		$name = elgg_namespace_plugin_private_setting('internal', 'priority');
+		return $this->$name;
+	}
+
+	
+	public function setPriority($priority, $site_guid = null) {
+		if (!$this->guid) {
+			return false;
+		}
+
+		$db_prefix = get_config('dbprefix');
+		$name = elgg_namespace_plugin_private_setting('internal', 'priority');
+		
+		$old_priority = (int) $this->getPriority();
+		$old_priority = (!$old_priority) ? 1 : $old_priority;
+		$max_priority = elgg_get_max_plugin_priority();
+
+		
+		
+		if ($priority === '+1') {
+			$priority = $old_priority + 1;
+		} elseif ($priority === '-1') {
+			$priority = $old_priority - 1;
+		} elseif ($priority === 'first') {
+			$priority = 1;
+		} elseif ($priority === 'last') {
+			$priority = $max_priority;
+		}
+
+		
+		if ($priority > 0) {
+			if (!is_numeric($priority)) {
+				return false;
+			}
+
+			
+			if ($priority > $max_priority) {
+				$priority = $max_priority;
+			}
+
+			
+			if ($priority < 1) {
+				$priority = 1;
+			}
+
+			if ($priority > $old_priority) {
+				$op = '-';
+				$where = "CAST(value as unsigned) BETWEEN $old_priority AND $priority";
+			} else {
+				$op = '+';
+				$where = "CAST(value as unsigned) BETWEEN $priority AND $old_priority";
+			}
+
+			
+			$q = "UPDATE {$db_prefix}private_settings
+				SET value = CAST(value as unsigned) $op 1
+				WHERE entity_guid != $this->guid
+				AND name = '$name'
+				AND $where";
+
+			if (!$this->getDatabase()->updateData($q)) {
+				return false;
+			}
+
+			
+			if ($this->set($name, $priority)) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		return false;
+	}
+
+
+	
+
+	
+	public function getSetting($name) {
+		return $this->$name;
+	}
+
+	
+	public function getAllSettings() {
+		if (!$this->guid) {
+			return false;
+		}
+
+		$db_prefix = elgg_get_config('dbprefix');
+		
+		$us_prefix = elgg_namespace_plugin_private_setting('user_setting', '', $this->getID());
+		$is_prefix = elgg_namespace_plugin_private_setting('internal', '', $this->getID());
+
+		
+		$q = "SELECT * FROM {$db_prefix}private_settings
+			WHERE entity_guid = $this->guid
+			AND name NOT LIKE '$us_prefix%'
+			AND name NOT LIKE '$is_prefix%'";
+
+		$private_settings = $this->getDatabase()->getData($q);
+
+		if ($private_settings) {
+			$return = array();
+
+			foreach ($private_settings as $setting) {
+				$return[$setting->name] = $setting->value;
+			}
+
+			return $return;
+		}
+
+		return false;
+	}
+
+	
+	public function setSetting($name, $value) {
+		if (!$this->guid) {
+			return false;
+		}
+
+		return $this->set($name, $value);
+	}
+
+	
+	public function unsetSetting($name) {
+		return remove_private_setting($this->guid, $name);
+	}
+
+	
+	public function unsetAllSettings() {
+		$db_prefix = get_config('dbprefix');
+		$ps_prefix = elgg_namespace_plugin_private_setting('setting', '');
+
+		$q = "DELETE FROM {$db_prefix}private_settings
+			WHERE entity_guid = $this->guid
+			AND name NOT LIKE '$ps_prefix%'";
+
+		return $this->getDatabase()->deleteData($q);
+	}
+
+
+	
+
+	
+	public function getUserSetting($name, $user_guid = null) {
+		$user_guid = (int)$user_guid;
+
+		if ($user_guid) {
+			$user = get_entity($user_guid);
+		} else {
+			$user = elgg_get_logged_in_user_entity();
+		}
+
+		if (!($user instanceof ElggUser)) {
+			return false;
+		}
+
+		$name = elgg_namespace_plugin_private_setting('user_setting', $name, $this->getID());
+		return get_private_setting($user->guid, $name);
+	}
+
+	
+	public function getAllUserSettings($user_guid = null) {
+		$user_guid = (int)$user_guid;
+
+		if ($user_guid) {
+			$user = get_entity($user_guid);
+		} else {
+			$user = elgg_get_logged_in_user_entity();
+		}
+
+		if (!($user instanceof ElggUser)) {
+			return false;
+		}
+
+		$db_prefix = elgg_get_config('dbprefix');
+		
+		$ps_prefix = elgg_namespace_plugin_private_setting('user_setting', '', $this->getID());
+		$ps_prefix_len = strlen($ps_prefix);
+
+		
+		$q = "SELECT * FROM {$db_prefix}private_settings
+			WHERE entity_guid = {$user->guid}
+			AND name LIKE '$ps_prefix%'";
+
+		$private_settings = $this->getDatabase()->getData($q);
+
+		if ($private_settings) {
+			$return = array();
+
+			foreach ($private_settings as $setting) {
+				$name = substr($setting->name, $ps_prefix_len);
+				$value = $setting->value;
+
+				$return[$name] = $value;
+			}
+
+			return $return;
+		}
+
+		return false;
+	}
+
+	
+	public function setUserSetting($name, $value, $user_guid = null) {
+		$user_guid = (int)$user_guid;
+
+		if ($user_guid) {
+			$user = get_entity($user_guid);
+		} else {
+			$user = elgg_get_logged_in_user_entity();
+		}
+
+		if (!($user instanceof ElggUser)) {
+			return false;
+		}
+
+		
+		
+		$value = elgg_trigger_plugin_hook('usersetting', 'plugin', array(
+			'user' => $user,
+			'plugin' => $this,
+			'plugin_id' => $this->getID(),
+			'name' => $name,
+			'value' => $value
+		), $value);
+
+		
+		$name = elgg_namespace_plugin_private_setting('user_setting', $name, $this->getID());
+
+		return set_private_setting($user->guid, $name, $value);
+	}
+
+
+	
+	public function unsetUserSetting($name, $user_guid = null) {
+		$user_guid = (int)$user_guid;
+
+		if ($user_guid) {
+			$user = get_entity($user_guid);
+		} else {
+			$user = elgg_get_logged_in_user_entity();
+		}
+
+		if (!($user instanceof ElggUser)) {
+			return false;
+		}
+
+		
+		$name = elgg_namespace_plugin_private_setting('user_setting', $name, $this->getID());
+
+		return remove_private_setting($user->guid, $name);
+	}
+
+	
+	public function unsetAllUserSettings($user_guid) {
+		$db_prefix = get_config('dbprefix');
+		$ps_prefix = elgg_namespace_plugin_private_setting('user_setting', '', $this->getID());
+
+		$q = "DELETE FROM {$db_prefix}private_settings
+			WHERE entity_guid = $user_guid
+			AND name LIKE '$ps_prefix%'";
+
+		return $this->getDatabase()->deleteData($q);
+	}
+
+	
+	public function unsetAllUsersSettings() {
+		$db_prefix = get_config('dbprefix');
+		$ps_prefix = elgg_namespace_plugin_private_setting('user_setting', '', $this->getID());
+
+		$q = "DELETE FROM {$db_prefix}private_settings
+			WHERE name LIKE '$ps_prefix%'";
+
+		return $this->getDatabase()->deleteData($q);
+	}
+
+
+	
+
+	
+	public function isValid() {
+		if (!$this->getID()) {
+			$this->errorMsg = elgg_echo('ElggPlugin:NoId', array($this->guid));
+			return false;
+		}
+
+		if (!$this->getPackage() instanceof ElggPluginPackage) {
+			$this->errorMsg = elgg_echo('ElggPlugin:NoPluginPackagePackage', array($this->getID(), $this->guid));
+			return false;
+		}
+
+		if (!$this->getPackage()->isValid()) {
+			$this->errorMsg = $this->getPackage()->getError();
+			return false;
+		}
+
+		return true;
+	}
+
+	
+	public function isActive($site_guid = null) {
+		if (!$this->guid) {
+			return false;
+		}
+
+		if ($site_guid) {
+			$site = get_entity($site_guid);
+		} else {
+			$site = get_config('site');
+		}
+
+		if (!($site instanceof ElggSite)) {
+			return false;
+		}
+
+		return check_entity_relationship($this->guid, 'active_plugin', $site->guid);
+	}
+
+	
+	public function canActivate($site_guid = null) {
+		if ($this->getPackage()) {
+			$result = $this->getPackage()->isValid() && $this->getPackage()->checkDependencies();
+			if (!$result) {
+				$this->errorMsg = $this->getPackage()->getError();
+			}
+
+			return $result;
+		}
+
+		return false;
+	}
+
+
+	
+
+	
+	public function activate($site_guid = null) {
+		if ($this->isActive($site_guid)) {
+			return false;
+		}
+
+		if (!$this->canActivate()) {
+			return false;
+		}
+
+		
+		if ($this->setStatus(true, $site_guid)) {
+			
+			
+			
+			$params = array(
+				'plugin_id' => $this->pluginID,
+				'plugin_entity' => $this
+			);
+
+			$return = elgg_trigger_event('activate', 'plugin', $params);
+
+			
+			
+			if ($return) {
+				if ($this->canReadFile('activate.php')) {
+					$flags = ELGG_PLUGIN_INCLUDE_START | ELGG_PLUGIN_REGISTER_CLASSES
+							| ELGG_PLUGIN_REGISTER_LANGUAGES | ELGG_PLUGIN_REGISTER_VIEWS;
+
+					$this->start($flags);
+
+					$return = $this->includeFile('activate.php');
+				}
+			}
+
+			if ($return === false) {
+				$this->deactivate($site_guid);
+			}
+
+			return $return;
+		}
+
+		return false;
+	}
+
+	
+	public function deactivate($site_guid = null) {
+		if (!$this->isActive($site_guid)) {
+			return false;
+		}
+
+		
+		$params = array(
+			'plugin_id' => $this->pluginID,
+			'plugin_entity' => $this
+		);
+
+		$return = elgg_trigger_event('deactivate', 'plugin', $params);
+
+		
+		if ($return) {
+			if ($this->canReadFile('deactivate.php')) {
+				$return = $this->includeFile('deactivate.php');
+			}
+		}
+
+		if ($return === false) {
+			return false;
+		} else {
+			return $this->setStatus(false, $site_guid);
+		}
+	}
+
+	
+	public function start($flags) {
+		
+		
+		
+
+		
+		if ($flags & ELGG_PLUGIN_REGISTER_CLASSES) {
+			$this->registerClasses();
+		}
+		
+		
+		if ($flags & ELGG_PLUGIN_INCLUDE_START) {
+			$this->includeFile('start.php');
+		}
+
+		
+		if ($flags & ELGG_PLUGIN_REGISTER_VIEWS) {
+			$this->registerViews();
+		}
+
+		
+		if ($flags & ELGG_PLUGIN_REGISTER_LANGUAGES) {
+			$this->registerLanguages();
+		}
+
+		return true;
+	}
+
+
+	
+
+	
+	protected function includeFile($filename) {
+		
+		
+		if ($filename == 'start.php') {
+			global $CONFIG;
+		}
+
+		$filepath = "$this->path/$filename";
+
+		if (!$this->canReadFile($filename)) {
+			$msg = elgg_echo('ElggPlugin:Exception:CannotIncludeFile',
+							array($filename, $this->getID(), $this->guid, $this->path));
+			throw new PluginException($msg);
+		}
+
+		return include $filepath;
+	}
+
+	
+	protected function canReadFile($filename) {
+		return is_readable($this->path . '/' . $filename);
+	}
+
+	
+	protected function registerViews() {
+		$view_dir = "$this->path/views/";
+
+		
+		if (!is_dir($view_dir)) {
+			return true;
+		}
+
+		
+		$handle = opendir($view_dir);
+		if (!$handle) {
+			$msg = elgg_echo('ElggPlugin:Exception:CannotRegisterViews',
+							array($this->getID(), $this->guid, $view_dir));
+			throw new PluginException($msg);
+		}
+
+		while (FALSE !== ($view_type = readdir($handle))) {
+			$view_type_dir = $view_dir . $view_type;
+
+			if ('.' !== substr($view_type, 0, 1) && is_dir($view_type_dir)) {
+				if (autoregister_views('', $view_type_dir, $view_dir, $view_type)) {
+					elgg_register_viewtype($view_type);
+				} else {
+					$msg = elgg_echo('ElggPlugin:Exception:CannotRegisterViews',
+									array($this->getID(), $view_type_dir));
+					throw new PluginException($msg);
+				}
+			}
+		}
+
+		return true;
+	}
+
+	
+	protected function registerLanguages() {
+		$languages_path = "$this->path/languages";
+
+		
+		if (!is_dir($languages_path)) {
+			return true;
+		}
+
+		
+		if (!register_translations($languages_path)) {
+			$msg = elgg_echo('ElggPlugin:Exception:CannotRegisterLanguages',
+							array($this->getID(), $this->guid, $languages_path));
+			throw new PluginException($msg);
+		}
+
+		return true;
+	}
+
+	
+	protected function registerClasses() {
+		$classes_path = "$this->path/classes";
+
+		if (is_dir($classes_path)) {
+			_elgg_get_autoload_manager()->addClasses($classes_path);
+		}
+
+		return true;
+	}
+
+
+	
+
+	
+	public function get($name) {
+		
+		if (strstr($name, 'plugin:setting:')) {
+			$msg = 'Direct access of user settings is deprecated. Use ElggPlugin->getUserSetting()';
+			elgg_deprecated_notice($msg, 1.8);
+			$name = str_replace('plugin:setting:', '', $name);
+			$name = elgg_namespace_plugin_private_setting('user_setting', $name);
+		}
+
+		
+		if (array_key_exists($name, $this->attributes)) {
+			return $this->attributes[$name];
+		}
+
+		
+		
+		$meta = $this->getPrivateSetting($name);
+
+		if ($meta === false) {
+			
+			return NULL;
+		}
+
+		return $meta;
+	}
+
+	
+	public function set($name, $value) {
+		if (array_key_exists($name, $this->attributes)) {
+			
+			if ((array_key_exists('guid', $this->attributes)) && ($name == 'guid')) {
+				return false;
+			}
+
+			$this->attributes[$name] = $value;
+
+			return true;
+		} else {
+			
+			$value = elgg_trigger_plugin_hook('setting', 'plugin', array(
+				'plugin_id' => $this->pluginID,
+				'plugin' => $this,
+				'name' => $name,
+				'value' => $value
+			), $value);
+
+			return $this->setPrivateSetting($name, $value);
+		}
+	}
+
+	
+	private function setStatus($active, $site_guid = null) {
+		if (!$this->guid) {
+			return false;
+		}
+
+		if ($site_guid) {
+			$site = get_entity($site_guid);
+
+			if (!($site instanceof ElggSite)) {
+				return false;
+			}
+		} else {
+			$site = get_config('site');
+		}
+
+		if ($active) {
+			return add_entity_relationship($this->guid, 'active_plugin', $site->guid);
+		} else {
+			return remove_entity_relationship($this->guid, 'active_plugin', $site->guid);
+		}
+	}
+
+	
+	public function getError() {
+		return $this->errorMsg;
+	}
+
+	
+	public function getManifest() {
+		if ($this->manifest instanceof ElggPluginManifest) {
+			return $this->manifest;
+		}
+
+		try {
+			$this->manifest = $this->getPackage()->getManifest();
+		} catch (Exception $e) {}
+
+		return $this->manifest;
+	}
+
+	
+	public function getPackage() {
+		if ($this->package instanceof ElggPluginPackage) {
+			return $this->package;
+		}
+
+		try {
+			$this->package = new ElggPluginPackage($this->path, false);
+		} catch (Exception $e) {}
+
+		return $this->package;
+	}
+}

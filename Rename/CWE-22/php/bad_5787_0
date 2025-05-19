@@ -1,0 +1,1551 @@
+<?php
+
+
+
+
+
+
+
+api_expose('Utils\Backup\delete');
+api_expose('Utils\Backup\create');
+api_expose('Utils\Backup\download');
+api_expose('Utils\Backup\create_full');
+api_expose('Utils\Backup\move_uploaded_file_to_backup');
+
+api_expose('Utils\Backup\restore');
+api_expose('Utils\Backup\cronjob');
+
+class class_0
+{
+
+    public $var_1 = false;
+    public $var_2 = false;
+    
+
+
+    private $var_3 = '; ';
+    private $var_4 = '';
+
+    public $var_5;
+
+
+    function fn_0($var_5 = null)
+    {
+
+
+        api_expose('Microweber\Utils\Backup\delete');
+        api_expose('Microweber\Utils\Backup\create');
+        api_expose('Microweber\Utils\Backup\download');
+        api_expose('Microweber\Utils\Backup\create_full');
+        api_expose('Microweber\Utils\Backup\move_uploaded_file_to_backup');
+
+        api_expose('Microweber\Utils\Backup\restore');
+        api_expose('Microweber\Utils\Backup\cronjob');
+
+        if (!defined('USER_IP')) {
+            if (isset($_SERVER["REMOTE_ADDR"])) {
+                define("USER_IP", $_SERVER["REMOTE_ADDR"]);
+            } else {
+                define("USER_IP", '127.0.0.1');
+
+            }
+        }
+
+
+        
+
+        if (is_object($var_5)) {
+            $var_6->var_5 = $var_5;
+        } else {
+            $var_6->var_5 = mw('application');
+        }
+
+        
+
+
+    }
+
+    static function fn_1($var_7)
+    {
+        if (!defined('MW_NO_SESSION')) {
+            define('MW_NO_SESSION', 1);
+        }
+        $var_8 = site_url();
+        
+        
+        ob_end_clean();
+        
+        header("Connection: close");
+        
+        ignore_user_abort(true);
+        
+        set_time_limit(0);
+        
+        ob_start();
+        
+        header("Content-Length: 0");
+        
+        ob_end_flush();
+        
+        flush();
+        
+        session_write_close();
+
+        $var_9 = "Restoring backup";
+        self::fn_3($var_9);
+        $var_10 = new \var_11\var_12\var_0();
+        $var_10->fn_2($var_7);
+
+    }
+
+    static function fn_3($var_9)
+    {
+
+        if ($var_9 == false) {
+            mw()->var_14->fn_4("is_system=y&rel=backup&user_ip=" . var_16);
+        } else {
+            $var_17 = mw()->var_14->fn_5("order_by=created_on desc&one=true&is_system=y&created_on=[mt]30 min ago&field=action&rel=backup&user_ip=" . var_16);
+
+            if (is_array($var_17) and isset($var_17['id'])) {
+                mw()->var_14->save("is_system=y&field=action&rel=backup&value=" . $var_9 . "&user_ip=" . var_16 . "&id=" . $var_17['id']);
+            } else {
+                mw()->var_14->save("is_system=y&field=action&rel=backup&value=" . $var_9 . "&user_ip=" . var_16);
+            }
+        }
+
+    }
+
+    function fn_2($var_7 = false)
+    {
+        if (!is_admin()) {
+            error("must be admin");
+        }
+
+        ignore_user_abort(true);
+
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+        $var_20 = $var_6->var_2;
+        
+        if (isset($var_7['id'])) {
+            $var_21 = $var_7['id'];
+        } else if (isset($_GET['filename'])) {
+            $var_21 = $var_7['filename'];
+        } else if (isset($_GET['file'])) {
+            $var_21 = $var_7['file'];
+
+        } else if ($var_20 != false) {
+            $var_21 = $var_20;
+
+        }
+
+        
+        if ($var_21 == NULL) {
+
+            return array('error' => "You have not provided a backup to restore.");
+            die();
+        }
+
+        $var_22 = $var_6->fn_6();
+        
+
+        $var_24 = $var_22 . $var_21;
+        
+        $var_25 = get_file_extension($var_24);
+        $var_26 = false;
+
+        $var_27 = false;
+
+        if (!is_file($var_24)) {
+            return array('error' => "You have not provided a existing backup to restore.");
+            die();
+        }
+
+        $var_28 = false;
+        switch ($var_25) {
+            case 'zip' :
+                $var_9 = "Unzipping userfiles";
+                $var_6->fn_7($var_9);
+
+                $var_30 = md5(basename($var_24));
+                $var_31 = new \var_11\var_12\var_32();
+                $var_33 = var_34 . 'backup_restore' . var_35 . $var_30 . var_35;
+                if (!is_dir($var_33)) {
+                    mkdir_recursive($var_33);
+                }
+
+                $var_36 = $var_31->extract($var_24, $var_33, $var_38 = TRUE);
+
+                $var_28 = $var_33;
+
+                $var_39 = $var_33 . 'mw_sql_restore.sql';
+                if (is_file($var_39)) {
+                    $var_27 = $var_39;
+                }
+                
+                break;
+
+            case 'sql' :
+                $var_27 = $var_24;
+                break;
+
+            default :
+                $var_26 = true;
+                break;
+        }
+
+        if ($var_26 == true) {
+            return array('error' => "Invalid file extension. The restore file must be .sql or .zip");
+            die();
+        }
+
+        if ($var_27 != false) {
+            $var_9 = "Restoring database";
+            $var_6->fn_7($var_9);
+
+            $var_40 = $var_6->var_5->config('db');
+            $var_24 = $var_27;
+            
+            $var_42 = '*';
+            $var_43 = $var_44 = $var_40['host'];
+            $var_45 = $var_46 = $var_40['user'];
+            $var_47 = $var_48 = $var_40['pass'];
+            $var_49 = $var_50 = $var_40['dbname'];
+
+            $var_51 = '';
+            $var_52 = 0;
+            $var_53 = '';
+
+            
+            
+            
+            
+            
+            $var_54 = fopen($var_24, "r+");
+            $var_55 = fread($var_54, filesize($var_24));
+            $var_56 = explode($var_6->var_3, $var_55);
+
+            
+            foreach ($var_56 as $var_57) {
+                $var_57 = str_replace('', ' ', $var_57);
+                $var_57 = str_ireplace($var_6->var_4, var_58, $var_57);
+
+                if (strlen($var_57) > 3) {
+                    try {
+                        
+
+                        mw('db')->q($var_57);
+                        
+                    } catch (var_60 $var_61) {}
+
+                    
+                    
+                }
+            }
+            
+
+            
+            if ($var_52 == 0) {
+                $var_9 = "Database restored successfully!";
+                $var_6->fn_7($var_9);
+
+                print("Database restored successfully!\n");
+                print("Backup used: " . $var_24 . "\n");
+            } else {
+                print("An error occurred while restoring backup!<br><br>\n");
+                print("Error code: $var_52<br>\n");
+                print("Error text: $var_51<br>\n");
+                print("Statement:<br/> $var_53<br>");
+            }
+
+            
+            
+
+            
+            
+            $var_9 = "Database restored successfully!";
+            $var_6->fn_7($var_9);
+
+            
+            print("Files restored successfully!<br>\n");
+            print("Backup used: " . $var_24 . "<br>\n");
+            fclose($var_54);
+            if ($var_28 != false) {
+                unlink($var_24);
+            }
+
+        }
+
+
+        if (defined('MW_USERFILES')) {
+            if (!is_dir(var_62)) {
+                mkdir_recursive(var_62);
+            }
+        }
+
+
+        if (defined('MW_MEDIA_DIR')) {
+            if (!is_dir(var_63)) {
+                mkdir_recursive(var_63);
+            }
+        }
+
+        if ($var_28 != false and is_dir($var_28)) {
+
+            $var_64 = $var_28;
+            $var_65 = var_62;
+
+
+            $var_6->fn_8($var_64, $var_65);
+
+        }
+
+        if (function_exists('mw_post_update')) {
+            mw_post_update();
+        }
+        $var_9 = "Cleaning up cache";
+        $var_6->fn_7($var_9);
+        mw('cache')->clear();
+
+        sleep(5);
+        $var_6->fn_7(false);
+
+    }
+
+    function fn_6()
+    {
+
+        if (defined('MW_CRON_EXEC')) {
+
+        } else if (!is_admin()) {
+            error("must be admin");
+        }
+
+        $var_20 = $var_6->var_1;
+
+        if ($var_20 != false) {
+            return $var_20;
+        }
+        $var_22 = var_68 . "backup" . var_35;
+
+        if (!is_dir($var_22)) {
+            mkdir_recursive($var_22);
+            $var_69 = $var_22 . '.htaccess';
+            if (!is_file($var_69)) {
+                touch($var_69);
+                file_put_contents($var_69, 'Deny from all');
+            }
+        }
+
+        $var_22 = var_68 . "backup" . var_35 . var_58 . var_35;
+
+        $var_70 = mw('option')->fn_5('backup_location', 'admin/backup');
+        if ($var_70 != false and is_string($var_70) and trim($var_70) != 'default' and trim($var_70) != '') {
+            $var_70 = normalize_path($var_70, true);
+
+            if (!is_dir($var_70)) {
+                mkdir_recursive($var_70);
+            }
+
+            if (is_dir($var_70)) {
+                $var_22 = $var_70;
+            }
+        }
+
+
+        if (!is_dir($var_22)) {
+            mkdir_recursive($var_22);
+        }
+
+
+        $var_20 = $var_22;
+
+
+        $var_6->var_1 = $var_20;
+        return $var_22;
+    }
+
+    function fn_7($var_9)
+    {
+
+        if (defined('MW_IS_INSTALLED') and var_71 == true) {
+
+
+            if ($var_9 == false) {
+                $var_6->var_5->var_14->fn_4("is_system=y&rel=backup&user_ip=" . var_16);
+            } else {
+                $var_17 = $var_6->var_5->var_14->fn_5("order_by=created_on desc&one=true&is_system=y&created_on=[mt]30 min ago&field=action&rel=backup&user_ip=" . var_16);
+
+                if (is_array($var_17) and isset($var_17['id'])) {
+                    $var_6->var_5->var_14->save("is_system=y&field=action&rel=backup&value=" . $var_9 . "&user_ip=" . var_16 . "&id=" . $var_17['id']);
+                } else {
+                    $var_6->var_5->var_14->save("is_system=y&field=action&rel=backup&value=" . $var_9 . "&user_ip=" . var_16);
+                }
+            }
+        }
+    }
+
+    function fn_8($var_72, $var_73)
+    {
+        
+        if (is_file($var_72)) {
+            return copy($var_72, $var_73);
+        }
+
+        
+        if (!is_dir($var_73)) {
+            mkdir_recursive($var_73);
+        }
+
+        
+        $var_74 = dir($var_72);
+        while (false !== $var_75 = $var_74->read()) {
+            
+            if ($var_75 == '.' || $var_75 == '..') {
+                continue;
+            }
+
+            
+            if ($var_73 !== "$var_72/$var_75") {
+                $var_6->fn_8("$var_72/$var_75", "$var_73/$var_75");
+            }
+        }
+
+        
+        $var_74->close();
+        return true;
+    }
+
+    static function fn_9()
+    {
+        if (!defined('MW_NO_SESSION')) {
+            define('MW_NO_SESSION', 1);
+        }
+        $var_8 = site_url();
+        
+        
+        ob_end_clean();
+        
+        header("Connection: close");
+        
+        ignore_user_abort(true);
+        
+        set_time_limit(0);
+        
+        ob_start();
+        
+        header("Content-Length: 0");
+        
+        ob_end_flush();
+        
+        flush();
+        
+        session_write_close();
+
+        
+        
+
+
+        if (!defined('MW_BACKUP_BG_WORKER_STARTED')) {
+            define('MW_BACKUP_BG_WORKER_STARTED', 1);
+            $var_78 = new \var_11\var_12\var_0();
+            $var_78->fn_10();
+            unset($var_78);
+        } else {
+
+        }
+
+        
+
+
+    }
+
+    function fn_10()
+    {
+
+
+        if (!defined('MW_BACKUP_STARTED')) {
+            define('MW_BACKUP_STARTED', 1);
+        } else {
+            return false;
+        }
+
+
+        $var_80 = microtime_float();
+        if (defined('MW_CRON_EXEC')) {
+
+        } else {
+            only_admin_access();
+
+        }
+
+        @ob_end_clean();
+
+        ignore_user_abort(true);
+        $var_9 = "Preparing to zip";
+        $var_6->fn_7($var_9);
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+        $var_22 = $var_6->fn_6();
+        $var_24 = $var_22 . 'full_backup_' . date("Y-M-d-His") . '_' . uniqid() . '' . '.zip';
+
+        $var_81 = var_62;
+
+        $var_82 = array();
+        $var_82[] = var_62;
+        
+        $var_83 = date("D, d M Y H:i:s T");
+
+        $var_84 = $var_6->fn_11();
+
+        $var_86 = new \var_11\var_12\var_87($var_24);
+        $var_86->setZipFile($var_24);
+        $var_86->setComment("Microweber backup of the userfiles folder and db.
+				\n The Microweber version at the time of backup was {MW_VERSION}
+				\nCreated on " . date('l jS \of F Y h:i:s A'));
+        if (isset($var_84['filename'])) {
+            $var_90 = $var_22 . $var_84['filename'];
+            if (is_file($var_90)) {
+                $var_9 = "Adding sql restore to zip";
+                $var_6->fn_7($var_9);
+                $var_86->addLargeFile($var_90, 'mw_sql_restore.sql', filectime($var_90), 'SQL Restore file');
+                
+
+            }
+        }
+
+        $var_6->fn_7(false);
+
+        $var_9 = "Adding files to zip";
+        $var_6->fn_7($var_9);
+
+
+        $var_86->addDirectoryContent(var_62, '', true);
+        $var_9 = "Adding userfiles to zip";
+        $var_6->fn_7($var_9);
+
+        
+        $var_93 = $var_24;
+        $var_94 = microtime_float();
+        $var_94 = round($var_94 - $var_80, 3);
+
+        $var_9 = "Backup was created for $var_94 sec!";
+        $var_6->fn_7($var_9);
+
+        sleep(5);
+        $var_9 = "reload";
+        $var_6->fn_7($var_9);
+
+        sleep(5);
+        $var_6->fn_7(false);
+        return array('success' => "Backup was created for $var_94 sec! $var_93", 'filename' => $var_93, 'runtime' => $var_94);
+
+
+    }
+
+    function fn_11($var_24 = false)
+    {
+        if (is_array($var_24)) {
+            $var_24 = false;
+        }
+
+
+        ignore_user_abort(true);
+        $var_80 = microtime_float();
+
+        if (defined('MW_CRON_EXEC')) {
+
+        } else {
+            only_admin_access();
+
+        }
+        $var_95 = $var_40 = $var_6->var_5->config('db');
+
+        
+        $var_42 = '*';
+        $var_43 = $var_44 = $var_40['host'];
+        $var_45 = $var_46 = $var_40['user'];
+        $var_47 = $var_48 = $var_40['pass'];
+        $var_49 = $var_50 = $var_40['dbname'];
+
+        
+        if ($var_42 == '*') {
+            $var_96 = 'all';
+        } else {
+            $var_96 = str_replace(",", "_", $var_42);
+            $var_96 = str_replace(" ", "_", $var_96);
+        }
+
+        $var_22 = $var_6->fn_6();
+
+        if (!is_dir($var_22)) {
+            if (!mkdir_recursive($var_22)) {
+
+                $var_9 = "Error the dir is not writable: " . $var_22;
+                $var_6->fn_7($var_9);
+
+
+            } else {
+
+            }
+        }
+
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+        
+        $var_97 = $var_22 . 'index.php';
+        if ($var_24 == false) {
+            $var_93 = 'database_backup_' . date("Y-M-d-His") . uniqid() . '_' . $var_96 . '.sql';
+        } else {
+            $var_93 = $var_24;
+        }
+
+        $var_98 = $var_22 . $var_93;
+
+        if (is_file($var_98)) {
+            return false;
+        }
+
+
+        touch($var_98);
+        touch($var_97);
+
+        $var_99 = $var_98;
+
+
+        $var_69 = $var_22 . '.htaccess';
+        if (!is_file($var_69)) {
+            touch($var_69);
+            file_put_contents($var_69, 'Deny from all');
+        }
+
+        $var_100 = " \n";
+        $var_100 .= " \n\n\n";
+        file_put_contents($var_99, $var_100);
+        $var_101 = "";
+        $var_102 = '*';
+        
+        if ($var_102 == '*') {
+            $var_102 = array();
+            
+            $var_103 = 'SHOW TABLES';
+            $var_36 = mw('db')->query($var_103, $var_105 = false, $var_106 = false, $var_107 = false, $var_95);
+            
+            
+            
+            if (!empty($var_36)) {
+                foreach ($var_36 as $var_108) {
+                    $var_109 = (array_values($var_108));
+                    $var_102[] = $var_109[0];
+                }
+            }
+
+
+        } else {
+            if (is_array($var_102)) {
+                $var_102 = explode(',', $var_102);
+            }
+        }
+
+        $var_9 = "Starting database backup";
+        $var_6->fn_7($var_9);
+        
+        foreach ($var_102 as $var_42) {
+
+            if (stristr($var_42, var_58)) {
+
+                $var_9 = "Backing up database table $var_42";
+                $var_6->fn_7($var_9);
+
+                
+
+                $var_103 = 'SELECT * FROM ' . $var_42;
+                $var_36 = mw('db')->query($var_103, $var_105 = false, $var_106 = false, $var_107 = false, $var_95);
+
+                $var_110 = count($var_36[0]);
+                
+                $var_111 = $var_6->var_4 . str_ireplace(var_58, "", $var_42);
+
+                
+                
+                $var_101 = 'DROP TABLE IF EXISTS ' . $var_111 . $var_6->var_3 . "\n\n\n";
+                $var_6->fn_12($var_99, $var_101);
+
+
+                
+
+
+
+
+
+
+
+
+
+
+
+                $var_103 = 'SHOW CREATE TABLE ' . $var_42;
+                $var_113 = mw('db')->query($var_103, $var_105 = false, $var_106 = false, $var_107 = false, $var_95);
+                $var_114 = array_values($var_113[0]);
+
+
+                $var_115 = str_ireplace(var_58, $var_6->var_4, $var_114[1]);
+
+                
+
+
+                $var_101 = "\n\n" . $var_115 . $var_6->var_3 . "\n\n\n";
+                $var_6->fn_12($var_99, $var_101);
+                
+                
+
+                $var_6->fn_7(false);
+                if (!empty($var_36)) {
+                    foreach ($var_36 as $var_116) {
+                        $var_116 = array_values($var_116);
+                        $var_101 = 'INSERT INTO ' . $var_111 . ' VALUES(';
+                        for ($var_117 = 0; $var_117 < $var_110; $var_117++) {
+                            $var_116[$var_117] = addslashes($var_116[$var_117]);
+                            $var_116[$var_117] = str_replace("\n", "\\n", $var_116[$var_117]);
+                            if (isset($var_116[$var_117])) {
+                                $var_101 .= '"' . $var_116[$var_117] . '"';
+                            } else {
+                                $var_101 .= '""';
+                            }
+                            if ($var_117 < ($var_110 - 1)) {
+                                $var_101 .= ',';
+                            }
+                        }
+                        $var_101 .= ")" . $var_6->var_3 . "\n\n\n";
+                        $var_6->fn_12($var_99, $var_101);
+                        
+                    }
+                    
+
+
+
+
+
+
+                }
+                $var_101 = "\n\n\n";
+                $var_6->fn_12($var_99, $var_101);
+            }
+
+        }
+        $var_6->fn_7(false);
+        $var_9 = "Saving to file " . basename($var_98);
+        $var_6->fn_7($var_9);
+        
+
+
+
+
+
+
+
+
+
+        
+        $var_94 = microtime_float();
+        $var_94 = round($var_94 - $var_80, 3);
+        $var_6->fn_7(false);
+
+        
+
+        return array('success' => "Backup was created for $var_94 sec! $var_93", 'filename' => $var_93, 'runtime' => $var_94);
+        
+        
+    }
+
+    function fn_12($var_118, $var_119)
+    {
+        file_put_contents($var_118, $var_119, var_120);
+
+    }
+
+    function fn_13($var_7 = false)
+    {
+
+
+        
+
+
+    }
+
+    function fn_14($var_7)
+    {
+        if (!defined('MW_NO_SESSION')) {
+            define('MW_NO_SESSION', 1);
+        }
+        $var_21 = null;
+        if (isset($var_7['id'])) {
+            $var_21 = $var_7['id'];
+        } else if (isset($_GET['filename'])) {
+            $var_21 = $var_7['filename'];
+        } else if (isset($_GET['file'])) {
+            $var_21 = $var_7['file'];
+
+        }
+
+        if ($var_21 == NULL) {
+
+            return array('error' => "You have not provided a backup to restore.");
+            die();
+        }
+
+        $var_8 = site_url();
+        header("Location: " . $var_8);
+        
+        ob_end_clean();
+        
+        header("Connection: close");
+        
+        ignore_user_abort(true);
+        
+        set_time_limit(0);
+        
+        ob_start();
+        
+        header("Content-Length: 0");
+        
+        ob_end_flush();
+        
+        flush();
+        
+        session_write_close();
+
+        $var_121 = new \var_11\var_12\var_122();
+
+        
+        $var_121->registerShutdownEvent("\Microweber\Utils\Backup::bgworker_restore", $var_7);
+
+        exit();
+    }
+
+    function fn_15($var_7 = false)
+    {
+
+        if (!defined("INI_SYSTEM_CHECK_DISABLED")) {
+            define("INI_SYSTEM_CHECK_DISABLED", ini_get('disable_functions'));
+        }
+        if (!defined("MW_NO_SESSION")) {
+            define("MW_NO_SESSION", true);
+        }
+
+        if (!defined("IS_ADMIN")) {
+            define("IS_ADMIN", true);
+        }
+
+        if (!strstr(var_124, 'ini_set')) {
+            ini_set('memory_limit', '512M');
+            
+
+        }
+        if (!strstr(var_124, 'set_time_limit')) {
+            set_time_limit(600);
+        }
+
+        if (!strstr(var_124, 'ignore_user_abort')) {
+            ignore_user_abort();
+        }
+
+        $var_125 = 'full';
+
+        if (isset($var_7['type'])) {
+            $var_125 = trim($var_7['type']);
+        }
+
+        $var_105 = 'backup_queue';
+        
+        $var_126 = 'backup_progress';
+        $var_127 = 'backup_zip_state';
+
+        $var_128 = $var_6->var_5->var_129->fn_5($var_105, 'backup');
+        $var_130 = $var_6->var_5->var_129->fn_5($var_126, 'backup');
+        $var_131 = $var_6->var_5->var_129->fn_5($var_127, 'backup', 30);
+
+        
+
+
+        
+
+        $var_132 = time();
+        $var_22 = $var_6->fn_6();
+
+        session_write_close();
+        if ($var_131 == 'opened') {
+
+
+            return true;
+        }
+
+
+        
+
+        if ($var_128 == false or empty($var_128)) {
+            $var_6->var_5->var_129->save(false, $var_126, 'backup');
+            $var_6->var_5->var_129->save(false, $var_105, 'backup');
+
+            $var_133 = new \var_11\var_12\var_134();
+            $var_133->delete_job('make_full_backup');
+            return true;
+        } else {
+
+
+            $var_136 = 'backup_' . date("Y-M-d-His") . '_' . uniqid() . '';
+
+            $var_24 = $var_22 . $var_136 . '.zip';
+
+            if ($var_130 == false or !is_array($var_130)) {
+
+
+                $var_130 = array();
+                $var_130['processed'] = 0;
+                $var_130['files_count'] = count($var_128);
+                $var_130['time'] = $var_132;
+                $var_130['filename'] = $var_24;
+                $var_6->var_5->var_129->save($var_130, $var_126, 'backup');
+                
+            } else {
+                if (isset($var_130['filename'])) {
+                    $var_24 = $var_130['filename'];
+                }
+
+            }
+
+            if (isset($var_130['time'])) {
+                $var_137 = intval($var_130['time']);
+
+                if (($var_132 - 3) < $var_137) {
+                    
+                    return false;
+                }
+
+            }
+
+
+            $var_138 = $var_128;
+
+            global $var_139;
+            if (!is_object($var_139)) {
+                $var_139 = new  class_1();
+            }
+
+            if (is_array($var_138)) {
+                $var_140 = 0;
+
+                $var_6->var_5->var_129->save($var_24, $var_126, 'backup');
+
+
+                if (!$var_139->open($var_24, var_142::var_143)) {
+                    return false;
+                }
+                $var_6->var_5->var_129->save('opened', $var_127, 'backup');
+
+                $var_144 = 20;
+
+                foreach ($var_138 as $var_145 => $var_108) {
+                    $var_146 = strtolower(get_file_extension($var_108));
+
+                    if ($var_146 == 'php' or $var_146 == 'css' or $var_146 == 'js') {
+                        $var_144 = 150;
+
+                    }
+
+
+                    if ($var_140 > $var_144 or $var_130 == $var_108) {
+                        $var_139->close();
+                        $var_6->var_5->var_129->save('closed', $var_127, 'backup');
+                    } else {
+
+                        $var_130['processed']++;
+                        $var_130['time'] = time();
+                        $var_130['filename'] = $var_24;
+
+
+                        $var_147 = ($var_130['processed'] / $var_130['files_count']) * 100;
+                        $var_147 = round($var_147);
+                        $var_130['percent'] = $var_147;
+
+
+                        $var_9 = "Progress  {$var_147}% ({$var_130['processed']}/{$var_130['files_count']}) <br><small>" . basename($var_108) . "</small>";
+                        $var_6->fn_7($var_9);
+
+                        $var_6->var_5->var_129->save($var_130, $var_126, 'backup');
+
+
+                        if ($var_108 == 'make_db_backup') {
+
+                            $var_144 = 1;
+                            $var_139->close();
+                            $var_6->var_5->var_129->save('closed', $var_127, 'backup');
+
+
+                            $var_84 = $var_6->fn_11($var_136 . '.sql');
+
+
+                            if (!$var_139->open($var_24, var_142::var_143)) {
+                                return false;
+                            }
+                            $var_6->var_5->var_129->save('opened', $var_127, 'backup');
+
+
+                            if (isset($var_84['filename'])) {
+                                $var_90 = $var_22 . $var_84['filename'];
+                                if (is_file($var_90)) {
+                                    $var_9 = "Adding sql restore to zip";
+                                    $var_6->fn_7($var_9);
+                                    $var_139->addFile($var_90, 'mw_sql_restore.sql');
+                                    
+
+                                }
+                            }
+                        } else {
+                            $var_149 = str_replace(var_62, '', $var_108);
+
+
+                            $var_150 = array();
+
+
+                            if (is_dir($var_108)) {
+                                $var_139->addEmptyDir($var_149);
+                            } elseif (is_file($var_108)) {
+                                
+                                
+
+                                
+
+                                $var_139->addFile($var_108, $var_149);
+
+                            }
+
+
+                        }
+
+
+                        unset($var_138[$var_145]);
+
+
+                        if (isset($var_150) and !empty($var_150)) {
+                            $var_138 = array_merge($var_138, $var_150);
+                            array_unique($var_138);
+                            $var_6->var_5->var_129->save($var_138, $var_105, 'backup');
+
+                        } else {
+                            $var_6->var_5->var_129->save($var_138, $var_105, 'backup');
+
+                        }
+                        
+
+                        if (empty($var_138)) {
+                            $var_6->var_5->var_129->save(false, $var_105, 'backup');
+
+                        }
+
+                    }
+                    $var_140++;
+                }
+
+                $var_139->close();
+                $var_6->var_5->var_129->save('closed', $var_127, 'backup');
+            }
+        }
+
+        
+        if (empty($var_138)) {
+            $var_6->var_5->var_129->save(false, $var_105, 'backup');
+
+        }
+
+    }
+
+    function fn_16($var_7 = false)
+    {
+
+        $var_125 = 'full';
+
+        if (isset($var_7['type'])) {
+            $var_125 = trim($var_7['type']);
+        }
+
+        $var_105 = 'backup_cron' . (var_16);
+        $var_126 = 'backup_cron_lock' . (var_16);
+        $var_128 = $var_6->var_5->var_129->fn_5($var_105, 'backup');
+        $var_130 = $var_6->var_5->var_129->fn_5($var_126, 'backup');
+
+        
+
+        $var_83 = date("D, d M Y H:i:s T");
+
+
+        $var_22 = $var_6->fn_6();
+
+        $var_24 = $var_22 . 'backup_' . date("Y-M-d-H") . '_' . crc32(var_16) . '' . '.zip';
+
+        if ($var_130 == $var_24) {
+            $var_6->var_5->var_129->save('false', $var_126, 'backup');
+            return false;
+        }
+
+
+        
+
+        if ($var_128 == false or empty($var_128)) {
+            $var_138 = array();
+            $var_138[] = 'make_db_backup';
+
+            $var_81 = var_62;
+
+
+            $var_152 = rglob($var_81 . '*', var_153);
+            if (!empty($var_152)) {
+                foreach ($var_152 as $var_154) {
+                    $var_138[] = $var_154;
+
+                }
+            }
+
+            
+            $var_6->var_5->var_129->save($var_138, $var_105, 'backup');
+        } else {
+            $var_138 = $var_128;
+
+
+            
+
+
+            if (is_array($var_138)) {
+                $var_140 = 0;
+                
+                
+
+                $var_6->var_5->var_129->save($var_24, $var_126, 'backup');
+
+
+
+
+
+
+                
+
+
+
+
+
+
+
+
+
+
+
+
+                
+                
+                
+                
+                
+                
+                
+                
+
+
+                
+
+
+                foreach ($var_138 as $var_145 => $var_108) {
+
+                    if ($var_140 > 10 or $var_130 == $var_108) {
+
+                    } else {
+
+
+                        if ($var_108 == 'make_db_backup') {
+
+
+
+
+
+
+
+
+
+
+
+                        } else {
+                            $var_149 = str_replace(var_62, '', $var_108);
+                            
+                            if (is_dir($var_108)) {
+                                
+                                
+                                $var_149 = normalize_path($var_149, false);
+
+
+                                zip_folder($var_108, $var_24, $var_149);
+
+
+                                
+                                
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                
+                            } elseif (is_file($var_108)) {
+                                $var_155 = dirname($var_149);
+                                
+                                
+                                
+                                zip_folder($var_108, $var_24, $var_149);
+
+                                
+                            }
+                            
+                            
+
+
+                        }
+                        d($var_108);
+                        unset($var_138[$var_145]);
+                        if (isset($var_138)) {
+                            $var_6->var_5->var_129->save($var_138, $var_105, 'backup');
+                        }
+                        
+
+                        
+                    }
+                    $var_140++;
+                }
+
+
+            }
+        }
+        if (isset($var_86) and is_object($var_86)) {
+            
+            
+            
+        }
+
+        $var_6->var_5->var_129->save('false', $var_126, 'backup');
+        
+
+
+        
+    }
+
+    function fn_17()
+    {
+
+        if (!defined("INI_SYSTEM_CHECK_DISABLED")) {
+            define("INI_SYSTEM_CHECK_DISABLED", ini_get('disable_functions'));
+        }
+
+
+        if (!strstr(var_124, 'ini_set')) {
+            ini_set('memory_limit', '512M');
+            
+
+        }
+        if (!strstr(var_124, 'set_time_limit')) {
+            set_time_limit(600);
+        }
+
+        $var_133 = new \var_11\var_12\var_134();
+
+        $var_138 = array();
+        $var_138[] = 'make_db_backup';
+
+        $var_81 = var_62;
+
+
+
+
+
+
+
+
+
+
+
+        $var_152 = \var_156($var_81 . '*', var_153);
+        if (!empty($var_152)) {
+            $var_157 = array();
+
+
+            foreach ($var_152 as $var_154) {
+
+                if (strstr($var_154, '.php') or strstr($var_154, '.js')  or strstr($var_154, '.css')) {
+                    $var_157[] = $var_154;
+                } else {
+                    $var_138[] = $var_154;
+
+                }
+
+
+            }
+
+            if (!empty($var_157)) {
+                $var_138 = array_merge($var_157, $var_138);
+            }
+
+            
+
+        }
+        $var_105 = 'backup_queue';
+        $var_126 = 'backup_progress';
+
+        $var_127 = 'backup_zip_state';
+        
+        $var_6->var_5->var_129->save($var_138, $var_105, 'backup');
+        $var_6->var_5->var_129->save(false, $var_126, 'backup');
+        $var_6->var_5->var_129->save(false, $var_127, 'backup');
+        
+        
+
+        
+        if (!defined('MW_NO_SESSION')) {
+            define('MW_NO_SESSION', 1);
+        }
+
+        $var_133->job('make_full_backup', '25 sec', array('\Microweber\Utils\Backup', 'cronjob'), array('type' => 'full'));
+        
+        exit();
+
+
+        $var_6->fn_7(false);
+        
+        
+        
+        ob_end_clean();
+        
+        header("Connection: close");
+        
+        ignore_user_abort(true);
+        
+        set_time_limit(0);
+        
+        ob_start();
+        
+        header("Content-Length: 0");
+        
+        
+        
+        flush();
+        
+        session_write_close();
+
+        $var_121 = new \var_11\var_12\var_122();
+
+        
+        $var_121->registerShutdownEvent("\Microweber\Utils\Backup::bgworker");
+
+        exit();
+    }
+
+    function fn_18($var_7)
+    {
+        only_admin_access();
+
+        if (!isset($var_7['src'])) {
+
+            return array('error' => "You have not provided src to the file.");
+
+        }
+
+        $var_17 = url2dir(trim($var_7['src']));
+        $var_22 = $var_6->fn_6();
+        if (is_file($var_17)) {
+            $var_159 = basename($var_17);
+            if (copy($var_17, $var_22 . $var_159)) {
+                @unlink($var_17);
+                return array('success' => "$var_159 was uploaded!");
+
+            } else {
+                return array('error' => "Error moving uploaded file!");
+
+            }
+
+        } else {
+            return array('error' => "Uploaded file is not found!");
+
+        }
+
+    }
+
+    
+
+    public function fn_5()
+    {
+        if (!is_admin()) {
+            error("must be admin");
+        }
+        ;
+        $var_22 = $var_6->fn_6();
+
+        $var_160 = glob("$var_22{*.sql,*.zip}", var_161);
+
+        usort($var_160, function ($var_162, $var_163) {
+            return filemtime($var_162) < filemtime($var_163);
+        });
+
+        $var_164 = array();
+        if (!empty($var_160)) {
+            foreach ($var_160 as $var_165) {
+
+                if (strpos($var_165, '.sql', 1) or strpos($var_165, '.zip', 1)) {
+                    $var_166 = filemtime($var_165);
+                    
+                    $var_167 = date("F d Y", $var_166);
+                    $var_132 = date("H:i:s", $var_166);
+                    
+                    
+                    $var_168 = array();
+                    $var_168['filename'] = basename($var_165);
+                    $var_168['date'] = $var_167;
+                    $var_168['time'] = str_replace('_', ':', $var_132);
+                    ;
+                    $var_168['size'] = filesize($var_165);
+
+                    $var_164[] = $var_168;
+                }
+
+            }
+
+        }
+
+        return $var_164;
+
+    }
+
+    function fn_4($var_7)
+    {
+        if (!is_admin()) {
+            error("must be admin");
+        }
+
+
+        
+        $var_21 = $var_7['id'];
+
+        
+        if ($var_21 == NULL) {
+
+            return array('error' => "You have not provided filename to be deleted.");
+
+        }
+
+        $var_22 = $var_6->fn_6();
+        $var_24 = $var_22 . $var_21;
+
+
+        $var_21 = str_replace('..', '', $var_21);
+        $var_24 = str_replace('..', '', $var_24);
+
+        if (is_file($var_24)) {
+
+            unlink($var_24);
+            return array('success' => "$var_21 was deleted!");
+        } else {
+
+            $var_24 = $var_22 . $var_21 . '.sql';
+            if (is_file($var_24)) {
+                unlink($var_24);
+                return array('success' => "$var_21 was deleted!");
+            }
+        }
+
+        
+    }
+
+    function fn_19($var_7)
+    {
+        if (!is_admin()) {
+            error("must be admin");
+        }
+        ;
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+
+        if (isset($var_7['id'])) {
+            $var_21 = $var_7['id'];
+        } else if (isset($_GET['filename'])) {
+            $var_21 = $var_7['filename'];
+        } else if (isset($_GET['file'])) {
+            $var_21 = $var_7['file'];
+        }
+
+        
+        if ($var_21 == NULL) {
+            return array('error' => "You have not provided filename to download.");
+
+            die();
+        }
+
+        $var_22 = $var_6->fn_6();
+        
+
+        $var_24 = $var_22 . $var_21;
+        if (!is_file($var_24)) {
+            return array('error' => "You have not provided a existising filename to download.");
+
+            die();
+        }
+        
+        if (file_exists($var_24)) {
+            
+            $var_49 = basename($var_24);
+            $var_125 = 'sql';
+            header('Cache-Control: public');
+            header('Content-Description: File Transfer');
+            header('Content-Disposition: attachment; filename=' . $var_49);
+            header('Content-Length: ' . filesize($var_24));
+            
+            $var_6->fn_20($var_24);
+        } else {
+            die('File does not exist');
+        }
+    }
+
+    function fn_20($var_24, $var_170 = TRUE)
+    {
+        $var_171 = 1048576;
+        $var_172 = "";
+        $var_173 = 0;
+        
+        $var_174 = fopen($var_24, "rb");
+        if ($var_174 === false) {
+            return false;
+        }
+        while (!feof($var_174)) {
+            $var_172 = fread($var_174, $var_171);
+            
+            ob_flush();
+            flush();
+            if ($var_170) {
+                $var_173 += strlen($var_172);
+            }
+        }
+        $var_175 = fclose($var_174);
+        if ($var_170 && $var_175) {
+            return $var_173; 
+        }
+        return $var_175;
+    }
+
+}
+
+$var_139 = false;

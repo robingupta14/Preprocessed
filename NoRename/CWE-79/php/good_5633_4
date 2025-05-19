@@ -1,0 +1,924 @@
+<?php defined('SYSPATH') or die('No direct script access.');
+
+
+
+class Reports_Controller extends Main_Controller {
+	
+	
+	var $logged_in;
+
+	public function __construct()
+	{
+		parent::__construct();
+
+		
+		$this->logged_in = Auth::instance()->logged_in();
+	}
+
+	
+	public function index()
+	{
+		
+		$this->is_cachable = TRUE;
+
+		$this->template->header->this_page = 'reports';
+		$this->template->content = new View('reports/main');
+		$this->themes->js = new View('reports/reports_js');
+
+		$this->template->header->page_title .= Kohana::lang('ui_main.reports').Kohana::config('settings.title_delimiter');
+
+		
+		$this->themes->js->url_params = json_encode($_GET);
+
+		
+		$this->themes->map_enabled = TRUE;
+
+		
+		$this->themes->js->latitude = Kohana::config('settings.default_lat');
+		$this->themes->js->longitude = Kohana::config('settings.default_lon');
+		$this->themes->js->default_map = Kohana::config('settings.default_map');
+		$this->themes->js->default_zoom = Kohana::config('settings.default_zoom');
+
+		
+		$this->themes->js->default_map_all = $this->template->content->default_map_all = Kohana::config('settings.default_map_all');
+		
+		
+		$this->themes->js->default_map_all_icon = $this->template->content->default_map_all_icon = '';
+		if (Kohana::config('settings.default_map_all_icon_id'))
+		{
+			$icon_object = ORM::factory('media')->find(Kohana::config('settings.default_map_all_icon_id'));
+			$this->themes->js->default_map_all_icon = $this->template->content->default_map_all_icon = Kohana::config('upload.relative_directory')."/".$icon_object->media_thumb;
+		}
+
+		
+		$alert_radius_view = new View('alerts/radius');
+		$alert_radius_view->show_usage_info = FALSE;
+		$alert_radius_view->enable_find_location = FALSE;
+		$alert_radius_view->css_class = "rb_location-radius";
+
+		$this->template->content->alert_radius_view = $alert_radius_view;
+
+		
+		$l = Kohana::config('locale.language.0');
+
+		
+		$report_listing_view = $this->_get_report_listing_view($l);
+
+		
+		$this->template->content->report_listing_view = $report_listing_view;
+
+		
+		$category_id = (isset($_GET['c']) AND intval($_GET['c']) > 0)? intval($_GET['c']) : 0;
+		$category = ORM::factory('category', $category_id);
+
+		if ($category->loaded)
+		{
+			
+			$this->template->content->category_title = Category_Lang_Model::category_title($category_id,$l);
+		}
+		else
+		{
+			$this->template->content->category_title = "";
+		}
+
+		
+		$this->template->content->report_stats = new View('reports/stats');
+		
+		
+		$total_reports = Incident_Model::get_total_reports(TRUE);
+
+		
+		if (isset($_GET['s']) AND !empty($_GET['s']) AND intval($_GET['s']) > 0)
+		{
+			$oldest_timestamp =  intval($_GET['s']);
+		}
+		else
+		{
+			$oldest_timestamp = Incident_Model::get_oldest_report_timestamp();
+		}
+
+		
+		if (isset($_GET['e']) AND !empty($_GET['e']) AND intval($_GET['e']) > 0)
+		{
+			$latest_timestamp = intval($_GET['e']);
+		}
+		else
+		{
+			$latest_timestamp = Incident_Model::get_latest_report_timestamp();
+		}
+
+		
+		$days_since = ceil((time() - $oldest_timestamp) / 86400);
+		$avg_reports_per_day = ($days_since < 1)? $total_reports : round(($total_reports / $days_since),2);
+
+		
+		$total_verified = Incident_Model::get_total_reports_by_verified(TRUE);
+		$percent_verified = ($total_reports == 0) ? '-' : round((($total_verified / $total_reports) * 100),2).'%';
+
+		
+		$this->template->content->category_tree_view = category::get_category_tree_view();
+
+		
+		$this->template->content->custom_forms_filter = new View('reports/submit_custom_forms');
+		$this->template->content->custom_forms_filter->disp_custom_fields = customforms::get_custom_form_fields();
+		$this->template->content->custom_forms_filter->search_form = TRUE;
+		$this->template->content->oldest_timestamp = $oldest_timestamp;
+		$this->template->content->latest_timestamp = $latest_timestamp;
+		$this->template->content->report_stats->total_reports = $total_reports;
+		$this->template->content->report_stats->avg_reports_per_day = $avg_reports_per_day;
+		$this->template->content->report_stats->percent_verified = $percent_verified;
+		$this->template->content->services = Service_Model::get_array();
+	}
+
+	
+	private function _get_report_listing_view($locale = '')
+	{
+		
+		if (empty($locale))
+		{
+			$locale = Kohana::config('locale.language.0');
+		}
+
+		
+		$report_listing = new View('reports/list');
+
+		
+		$incidents = reports::fetch_incidents(TRUE);
+
+		
+		$pagination = reports::$pagination;
+
+		
+		
+		
+		foreach(Category_Model::categories() as $category)
+		{
+			$localized_categories[$category['category_title']] = Category_Lang_Model::category_title($category['category_id']);
+		}
+
+		
+		$report_listing->incidents = $incidents;
+		$report_listing->localized_categories = $localized_categories;
+
+		
+		$report_listing->pagination = "";
+
+		
+		$plural = ($pagination->total_items == 1)? "" : "s";
+
+		
+		$report_listing->next_page = $pagination->next_page;
+		$report_listing->previous_page = $pagination->previous_page;
+
+		if ($pagination->total_items > 0)
+		{
+			$current_page = ($pagination->sql_offset / $pagination->items_per_page) + 1;
+			$total_pages = ceil($pagination->total_items / $pagination->items_per_page);
+
+			if ($total_pages >= 1)
+			{
+				$report_listing->pagination = $pagination;
+
+				
+				
+				$report_listing->stats_breadcrumb = $pagination->current_first_item.'-'
+											. $pagination->current_last_item.' of '.$pagination->total_items.' '
+											. Kohana::lang('ui_main.reports');
+			}
+			else
+			{ 
+				
+				$report_listing->stats_breadcrumb = $pagination->total_items.' '.Kohana::lang('ui_admin.reports');
+			}
+		}
+		else
+		{
+			$report_listing->stats_breadcrumb = '('.$pagination->total_items.' report'.$plural.')';
+		}
+
+		
+		return $report_listing;
+	}
+
+	public function fetch_reports()
+	{
+		$this->template = "";
+		$this->auto_render = FALSE;
+		
+		$report_listing_view = $this->_get_report_listing_view();
+		
+	}
+
+	
+	public function submit($id = FALSE, $saved = FALSE)
+	{
+		$db = new Database();
+
+		
+		if ( ! Kohana::config('settings.allow_reports'))
+		{
+			url::redirect(url::site().'main');
+		}
+
+		$this->template->header->this_page = 'reports_submit';
+		$this->template->content = new View('reports/submit');
+
+		$this->template->header->page_title .= Kohana::lang('ui_main.reports_submit_new')
+											   .Kohana::config('settings.title_delimiter');
+
+		
+		$this->template->api_url = Kohana::config('settings.api_url');
+
+		
+		$form = array(
+			'incident_title' => '',
+			'incident_description' => '',
+			'incident_date' => '',
+			'incident_hour' => '',
+			'incident_minute' => '',
+			'incident_ampm' => '',
+			'latitude' => '',
+			'longitude' => '',
+			'geometry' => array(),
+			'location_name' => '',
+			'country_id' => '',
+			'country_name'=>'',
+			'incident_category' => array(),
+			'incident_news' => array(),
+			'incident_video' => array(),
+			'incident_photo' => array(),
+			'incident_zoom' => '',
+			'person_first' => '',
+			'person_last' => '',
+			'person_email' => '',
+			'form_id'	  => '',
+			'custom_field' => array()
+		);
+
+		
+		$errors = $form;
+		$form_error = FALSE;
+		$form_saved = ($saved == 'saved');
+
+		
+		$form['incident_date'] = date("m/d/Y",time());
+		$form['incident_hour'] = date('g');
+		$form['incident_minute'] = date('i');
+		$form['incident_ampm'] = date('a');
+		$form['country_id'] = Kohana::config('settings.default_country');
+
+		
+		$country_name = ORM::factory('country',$form['country_id']);
+		$form['country_name'] = $country_name->country;
+
+		
+		$form['form_id'] = 1;
+		$form_id = $form['form_id'];
+		$form['custom_field'] = customforms::get_custom_form_fields($id,$form_id,true);
+
+		
+		$forms = array();
+		foreach (customforms::get_custom_forms() as $custom_forms)
+		{
+			$forms[$custom_forms->id] = $custom_forms->form_title;
+		}
+		$this->template->content->forms = $forms;
+
+
+		
+		if ($_POST)
+		{
+			
+			$post = array_merge($_POST, $_FILES);
+			
+			
+			Event::run('ushahidi_action.report_posted_frontend', $post);
+
+			
+			if (reports::validate($post))
+			{
+
+				
+				$location = new Location_Model();
+				reports::save_location($post, $location);
+
+				
+				$incident = new Incident_Model();
+				reports::save_report($post, $incident, $location->id);
+
+				
+				reports::save_report_geometry($post, $incident);
+
+				
+				reports::save_category($post, $incident);
+
+				
+				reports::save_media($post, $incident);
+
+				
+				reports::save_custom_fields($post, $incident);
+
+				
+				reports::save_personal_info($post, $incident);
+
+				
+				Event::run('ushahidi_action.report_submit', $post);
+				Event::run('ushahidi_action.report_add', $incident);
+
+				url::redirect('reports/thanks');
+			}
+
+			
+			else
+			{
+				
+				$form = arr::overwrite($form, $post->as_array());
+
+				
+				$errors = arr::merge($errors, $post->errors('report'));
+				$form_error = TRUE;
+			}
+		}
+
+		
+		$default_country = Kohana::config('settings.default_country');
+		$this->template->content->cities = $this->_get_cities($default_country);
+		$this->template->content->multi_country = Kohana::config('settings.multi_country');
+
+		$this->template->content->id = $id;
+		$this->template->content->form = $form;
+		$this->template->content->errors = $errors;
+		$this->template->content->form_error = $form_error;
+		
+		 
+		$this->template->content->categories = array();
+
+		
+		$this->template->content->site_timezone = Kohana::config('settings.site_timezone');
+
+		
+		$this->template->content->site_submit_report_message = Kohana::config('settings.site_submit_report_message');
+
+		
+		$this->template->content->custom_forms = new View('reports/submit_custom_forms');
+		$disp_custom_fields = customforms::get_custom_form_fields($id, $form_id, FALSE);
+		$this->template->content->disp_custom_fields = $disp_custom_fields;
+		$this->template->content->stroke_width_array = $this->_stroke_width_array();
+		$this->template->content->custom_forms->disp_custom_fields = $disp_custom_fields;
+		$this->template->content->custom_forms->form = $form;
+
+		
+		$this->themes->map_enabled = TRUE;
+		$this->themes->treeview_enabled = TRUE;
+		$this->themes->colorpicker_enabled = TRUE;
+
+		$this->themes->js = new View('reports/submit_edit_js');
+		$this->themes->js->edit_mode = FALSE;
+		$this->themes->js->incident_zoom = FALSE;
+		$this->themes->js->default_map = Kohana::config('settings.default_map');
+		$this->themes->js->default_zoom = Kohana::config('settings.default_zoom');
+		if ( ! $form['latitude'] OR ! $form['latitude'])
+		{
+			$this->themes->js->latitude = Kohana::config('settings.default_lat');
+			$this->themes->js->longitude = Kohana::config('settings.default_lon');
+		}
+		else
+		{
+			$this->themes->js->latitude = $form['latitude'];
+			$this->themes->js->longitude = $form['longitude'];
+		}
+		$this->themes->js->geometries = $form['geometry'];
+
+	}
+
+	 
+	public function view($id = FALSE)
+	{
+		$this->template->header->this_page = 'reports';
+		$this->template->content = new View('reports/detail');
+
+		
+		$api_akismet = Kohana::config('settings.api_akismet');
+
+		
+		$id = intval($id);
+
+		if ($id > 0 AND Incident_Model::is_valid_incident($id,TRUE))
+		{
+			$incident = ORM::factory('incident')
+				->where('id',$id)
+				->where('incident_active',1)
+				->find();
+				
+			
+			if ( ! $incident->loaded) 
+			{
+				url::redirect('reports/view/');
+			}
+
+			
+			
+
+			$form = array(
+				'comment_author' => '',
+				'comment_description' => '',
+				'comment_email' => '',
+				'comment_ip' => '',
+				'captcha' => ''
+			);
+
+			$captcha = Captcha::factory();
+			$errors = $form;
+			$form_error = FALSE;
+
+			
+
+			if ($_POST AND Kohana::config('settings.allow_comments') )
+			{
+				
+				$post = Validation::factory($_POST);
+
+				
+				$post->pre_filter('trim', TRUE);
+
+				
+				if ( ! $this->user)
+				{
+					$post->add_rules('comment_author', 'required', 'length[3,100]');
+					$post->add_rules('comment_email', 'required','email', 'length[4,100]');
+				}
+				$post->add_rules('comment_description', 'required');
+				$post->add_rules('captcha', 'required', 'Captcha::valid');
+
+				
+				if ($post->validate())
+				{
+					
+					if ($api_akismet != "")
+					{
+						
+						$akismet = new Akismet();
+
+						
+						$comment = array(
+							'website' => "",
+							'body' => $post->comment_description,
+							'user_ip' => $_SERVER['REMOTE_ADDR']
+						);
+
+						if ($this->user)
+						{
+							$comment['author'] = $this->user->name;
+							$comment['email'] = $this->user->email;
+						}
+						else
+						{
+							$comment['author'] = $post->comment_author;
+							$comment['email'] = $post->comment_email;
+						}
+
+						$config = array(
+							'blog_url' => url::site(),
+							'api_key' => $api_akismet,
+							'comment' => $comment
+						);
+
+						$akismet->init($config);
+
+						if ($akismet->errors_exist())
+						{
+							if ($akismet->is_error('AKISMET_INVALID_KEY'))
+							{
+								
+							}
+							elseif ($akismet->is_error('AKISMET_RESPONSE_FAILED'))
+							{
+								
+							}
+							elseif ($akismet->is_error('AKISMET_SERVER_NOT_FOUND'))
+							{
+								
+							}
+
+							$comment_spam = 0;
+						}
+						else
+						{
+							$comment_spam = ($akismet->is_spam()) ? 1 : 0;
+						}
+					}
+					else
+					{
+						
+						$comment_spam = 0;
+					}
+
+					$comment = new Comment_Model();
+					$comment->incident_id = $id;
+					if ($this->user)
+					{
+						$comment->user_id = $this->user->id;
+						$comment->comment_author = $this->user->name;
+						$comment->comment_email = $this->user->email;
+					}
+					else
+					{
+						$comment->comment_author = html::strip_tags($post->comment_author, FALSE);
+						$comment->comment_email = html::strip_tags($post->comment_email, FALSE);
+					}
+					$comment->comment_description = html::strip_tags($post->comment_description, FALSE);
+					$comment->comment_ip = $_SERVER['REMOTE_ADDR'];
+					$comment->comment_date = date("Y-m-d H:i:s",time());
+
+					
+					if ($comment_spam == 1)
+					{
+						$comment->comment_spam = 1;
+						$comment->comment_active = 0;
+					}
+					else
+					{
+						$comment->comment_spam = 0;
+						$comment->comment_active = (Kohana::config('settings.allow_comments') == 1)? 1 : 0;
+					}
+					$comment->save();
+
+					
+					Event::run('ushahidi_action.comment_add', $comment);
+
+					
+					$send = notifications::notify_admins(
+						"[".Kohana::config('settings.site_name')."] ".
+							Kohana::lang('notifications.admin_new_comment.subject'),
+							Kohana::lang('notifications.admin_new_comment.message')
+							."\n\n'".utf8::strtoupper($incident->incident_title)."'"
+							."\n".url::base().'reports/view/'.$id
+						);
+
+					
+					url::redirect('reports/view/'.$id);
+
+				}
+				else
+				{
+					
+					
+					$form = arr::overwrite($form, $post->as_array());
+
+					
+					$errors = arr::overwrite($errors, $post->errors('comments'));
+					$form_error = TRUE;
+				}
+			}
+
+			
+			$incident_title = $incident->incident_title;
+			$incident_description = $incident->incident_description;
+			Event::run('ushahidi_filter.report_title', $incident_title);
+			Event::run('ushahidi_filter.report_description', $incident_description);
+
+			$this->template->header->page_title .= $incident_title.Kohana::config('settings.title_delimiter');
+
+			
+			$this->template->content->features_count = $incident->geometry->count();
+			$this->template->content->features = $incident->geometry;
+			$this->template->content->incident_id = $incident->id;
+			$this->template->content->incident_title = $incident_title;
+			$this->template->content->incident_description = $incident_description;
+			$this->template->content->incident_location = $incident->location->location_name;
+			$this->template->content->incident_latitude = $incident->location->latitude;
+			$this->template->content->incident_longitude = $incident->location->longitude;
+			$this->template->content->incident_date = date('M j Y', strtotime($incident->incident_date));
+			$this->template->content->incident_time = date('H:i', strtotime($incident->incident_date));
+			$this->template->content->incident_category = $incident->incident_category;
+
+			
+			$this->template->content->incident_rating = $this->_get_rating($incident->id, 'original');
+
+			
+			$incident_news = array();
+			$incident_video = array();
+			$incident_photo = array();
+
+			foreach ($incident->media as $media)
+			{
+				if ($media->media_type == 4)
+				{
+					$incident_news[] = $media->media_link;
+				}
+				elseif ($media->media_type == 2)
+				{
+					$incident_video[] = $media->media_link;
+				}
+				elseif ($media->media_type == 1)
+				{
+					$incident_photo[] = array(
+						'large' => url::convert_uploaded_to_abs($media->media_link),
+						'thumb' => url::convert_uploaded_to_abs($media->media_thumb)
+						);
+				}
+			}
+
+			$this->template->content->incident_verified = $incident->incident_verified;
+
+			
+			$this->template->content->comments = "";
+			if (Kohana::config('settings.allow_comments'))
+			{
+				$this->template->content->comments = new View('reports/comments');
+				$incident_comments = array();
+				if ($id)
+				{
+					$incident_comments = Incident_Model::get_comments($id);
+				}
+				$this->template->content->comments->incident_comments = $incident_comments;
+			}
+		}
+		else
+		{
+			url::redirect('main');
+		}
+
+		
+		$this->template->content->incident_neighbors = Incident_Model::get_neighbouring_incidents($id, TRUE, 0, 5);
+
+		
+		$this->template->content->incident_news = $incident_news;
+
+
+		
+		$this->template->content->incident_videos = $incident_video;
+
+		
+		$this->template->content->incident_photos = $incident_photo;
+
+		
+		$video_embed = new VideoEmbed();
+		$this->template->content->videos_embed = $video_embed;
+
+		
+		$this->themes->map_enabled = TRUE;
+		$this->themes->photoslider_enabled = TRUE;
+		$this->themes->validator_enabled = TRUE;
+		$this->themes->js = new View('reports/view_js');
+		$this->themes->js->incident_id = $incident->id;
+		$this->themes->js->default_map = Kohana::config('settings.default_map');
+		$this->themes->js->default_zoom = Kohana::config('settings.default_zoom');
+		$this->themes->js->latitude = $incident->location->latitude;
+		$this->themes->js->longitude = $incident->location->longitude;
+		$this->themes->js->incident_zoom = $incident->incident_zoom;
+		$this->themes->js->incident_photos = $incident_photo;
+
+		
+		$this->template->content->custom_forms = new View('reports/detail_custom_forms');
+		$form_field_names = customforms::get_custom_form_fields($id, $incident->form_id, FALSE, "view");
+		$this->template->content->custom_forms->form_field_names = $form_field_names;
+
+		
+		$this->template->content->comments_form = "";
+		if (Kohana::config('settings.allow_comments'))
+		{
+			$this->template->content->comments_form = new View('reports/comments_form');
+			$this->template->content->comments_form->user = $this->user;
+			$this->template->content->comments_form->form = $form;
+			$this->template->content->comments_form->form_field_names = $form_field_names;
+			$this->template->content->comments_form->captcha = $captcha;
+			$this->template->content->comments_form->errors = $errors;
+			$this->template->content->comments_form->form_error = $form_error;
+		}
+
+		
+		$this->template->content->logged_in = $this->logged_in;
+	}
+
+	
+	public function thanks()
+	{
+		$this->template->header->this_page = 'reports_submit';
+		$this->template->content = new View('reports/submit_thanks');
+	}
+
+	
+	public function rating($id = false)
+	{
+		$this->template = "";
+		$this->auto_render = FALSE;
+
+		if (!$id)
+		{
+			
+		}
+		else
+		{
+			if (!empty($_POST['action']) AND !empty($_POST['type']))
+			{
+				$action = $_POST['action'];
+				$type = $_POST['type'];
+
+				
+				if ($action == 'add')
+				{
+					$action = 1;
+				}
+				elseif ($action == 'subtract')
+				{
+					$action = -1;
+				}
+				else
+				{
+					$action = 0;
+				}
+
+				if (!empty($action) AND ($type == 'original' OR $type == 'comment'))
+				{
+					
+					if ($this->user)
+					{
+						$filter = array("user_id" => $this->user->id);
+					}
+					else
+					{
+						$filter = array("rating_ip" => $_SERVER['REMOTE_ADDR']);
+					}
+
+					if ($type == 'original')
+					{
+						$previous = ORM::factory('rating')
+							->where('incident_id',$id)
+							->where($filter)
+							->find();
+					}
+					elseif ($type == 'comment')
+					{
+						$previous = ORM::factory('rating')
+							->where('comment_id',$id)
+							->where($filter)
+							->find();
+					}
+
+					
+					$rating = new Rating_Model($previous->id);
+
+					
+					if ($type == 'original')
+					{
+						$rating->incident_id = $id;
+					}
+					elseif ($type == 'comment')
+					{
+						$rating->comment_id = $id;
+					}
+
+					
+					if ($this->user)
+					{
+						$rating->user_id = $this->user->id;
+
+						
+						if ($type == 'original')
+						{
+							if ($rating->incident->user_id == $this->user->id)
+							{
+								
+								exit;
+							}
+						}
+						elseif ($type == 'comment')
+						{
+							if ($rating->comment->user_id == $this->user->id)
+							{
+								
+								exit;
+							}
+						}
+					}
+
+					$rating->rating = $action;
+					$rating->rating_ip = $_SERVER['REMOTE_ADDR'];
+					$rating->rating_date = date("Y-m-d H:i:s",time());
+					$rating->save();
+
+					
+					$total_rating = $this->_get_rating($id, $type);
+
+					
+				}
+				else
+				{
+					
+				}
+			}
+			else
+			{
+				
+			}
+		}
+	}
+
+	public function geocode()
+	{
+		$this->template = "";
+		$this->auto_render = FALSE;
+
+		if (isset($_POST['address']) AND ! empty($_POST['address']))
+		{
+			$geocode_result = map::geocode($_POST['address']);
+			if ($geocode_result)
+			{
+				
+			}
+			else
+			{
+				
+			}
+		}
+		else
+		{
+			
+		}
+	}
+
+	
+	private function _get_cities($country_id)
+	{
+		
+		$cities = (Kohana::config('settings.multi_country'))
+		    ? City_Model::get_all()
+		    : ORM::factory('country', $country_id)->get_cities();
+
+		$city_select = array('' => Kohana::lang('ui_main.reports_select_city'));
+
+		foreach ($cities as $city)
+		{
+			$city_select[$city->city_lon.",".$city->city_lat] = $city->city;
+		}
+
+		return $city_select;
+	}
+
+	
+	private function _get_rating($id = FALSE, $type = NULL)
+	{
+		if (empty($id))
+			return 0;
+		
+		$total_rating = 0;
+		$result = FALSE;
+		
+		if ($type == 'original')
+		{
+			$result = $this->db->query('SELECT SUM(rating) as total_rating FROM rating WHERE incident_id = ?', $id);
+		}
+		elseif ($type == 'comment')
+		{
+			$result = $this->db->query('SELECT SUM(rating) as total_rating FROM rating WHERE comment_id = ?', $id);
+		}
+		
+		if ($result->count() == 0 OR $result->current()->total_rating == NULL) return 0;
+		
+		$total_rating = $result->current()->total_rating;
+		
+		return $total_rating;
+	}
+
+	
+	private function _is_numeric_array($numeric_array=array())
+	{
+		if (count($numeric_array) == 0)
+			return FALSE;
+		else
+		{
+			foreach ($numeric_array as $item)
+			{
+				if (! is_numeric($item))
+					return FALSE;
+			}
+
+			return TRUE;
+		}
+	}
+
+	
+	private function _stroke_width_array()
+	{
+		for ($i = 0.5; $i <= 8 ; $i += 0.5)
+		{
+			$stroke_width_array["$i"] = $i;
+		}
+
+		return $stroke_width_array;
+	}
+
+	
+	public function switch_form()
+	{
+		$this->template = "";
+		$this->auto_render = FALSE;
+		isset($_POST['form_id']) ? $form_id = $_POST['form_id'] : $form_id = "1";
+		isset($_POST['incident_id']) ? $incident_id = $_POST['incident_id'] : $incident_id = "";
+		
+		$form_fields = customforms::switcheroo($incident_id,$form_id);
+		
+	}
+
+}

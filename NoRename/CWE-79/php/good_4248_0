@@ -1,0 +1,621 @@
+<?php
+
+
+
+
+
+function message_to_text($msg)
+{
+    $message_time = date("H:i:s ", $msg['created']);
+    if ($msg['kind'] == Mibew\Thread::KIND_USER || $msg['kind'] == Mibew\Thread::KIND_AGENT) {
+        if ($msg['name']) {
+            return $message_time . $msg['name'] . ": " . $msg['message'] . "\n";
+        } else {
+            return $message_time . $msg['message'] . "\n";
+        }
+    } elseif ($msg['kind'] == Mibew\Thread::KIND_INFO) {
+        return $message_time . $msg['message'] . "\n";
+    } else {
+        return $message_time . "[" . $msg['message'] . "]\n";
+    }
+}
+
+
+function sanitize_message($msg)
+{
+    $message_body = $msg['message'];
+
+    
+    if ($msg['kind'] == Mibew\Thread::KIND_USER || $msg['kind'] == Mibew\Thread::KIND_AGENT) {
+        $message_body = safe_htmlspecialchars($message_body);
+    }
+
+    $msg['message'] = sanitize_string($message_body, 'low', 'moderate');
+
+    return $msg;
+}
+
+
+function get_user_name($user_name, $addr, $id)
+{
+    return str_replace(
+        "{addr}",
+        $addr,
+        str_replace(
+            "{id}",
+            $id,
+            str_replace("{name}", $user_name, Mibew\Settings::get('usernamepattern'))
+        )
+    );
+}
+
+
+function setup_logo($group = null)
+{
+    $data = array();
+    $top_level_group = (!$group) ? array() : get_top_level_group($group);
+
+    $group_name = empty($top_level_group['vctitle'])
+        ? Mibew\Settings::get('title')
+        : $top_level_group['vctitle'];
+
+    $logo = empty($top_level_group['vclogo'])
+        ? Mibew\Settings::get('logo')
+        : $top_level_group['vclogo'];
+
+    $mibew_host = empty($top_level_group['vchosturl'])
+        ? Mibew\Settings::get('hosturl')
+        : $top_level_group['vchosturl'];
+
+    $data['company'] = array(
+        'name' => $group_name,
+        'chatLogoURL' => $logo,
+    );
+    $data['mibewHost'] = $mibew_host;
+
+    return $data;
+}
+
+
+function prepare_chat_app_data()
+{
+    $data = array();
+
+    
+    $data['frequency'] = Mibew\Settings::get('updatefrequency_chat');
+
+    return $data;
+}
+
+
+function setup_leavemessage($name, $email, $group_id, $info, $referrer)
+{
+    $data = prepare_chat_app_data();
+
+    
+    $data['leaveMessage'] = array();
+
+    $group = group_by_id($group_id);
+    $group_name = '';
+    if ($group) {
+        $group_name = get_group_name($group);
+    }
+
+    $data['leaveMessage']['leaveMessageForm'] = array(
+        'name' => $name,
+        'email' => $email,
+        'groupId' => $group_id,
+        'groupName' => $group_name,
+        'info' => $info,
+        'referrer' => $referrer,
+        'showCaptcha' => (bool) (Mibew\Settings::get("enablecaptcha") == "1" && can_show_captcha()),
+    );
+
+    $data['page.title'] = (empty($group_name) ? '' : $group_name . ': ')
+        . getlocal('Leave your message');
+    $data['leaveMessage']['page'] = array(
+        'title' => $data['page.title']
+    );
+
+    
+    if (Mibew\Settings::get('enableprivacypolicy')
+         && strcmp('', Mibew\Settings::get('privacypolicy'))) {
+        $data['leaveMessage']['leaveMessageForm']['privacyPolicyUrl'] = Mibew\Settings::get('privacypolicy');
+    }
+
+    if (Mibew\Settings::get('enablegroups') == '1') {
+        $data['leaveMessage']['leaveMessageForm']['groups']
+            = prepare_groups_select($group_id);
+    }
+
+    $data['startFrom'] = 'leaveMessage';
+
+    return $data;
+}
+
+
+function setup_survey($name, $email, $group_id, $info, $referrer)
+{
+    $data = prepare_chat_app_data();
+
+    
+    $data['survey'] = array();
+
+    $data['survey']['surveyForm'] = array(
+        'name' => $name,
+        'groupId' => $group_id,
+        'email' => $email,
+        'info' => $info,
+        'referrer' => $referrer,
+        'showEmail' => (bool) (Mibew\Settings::get("surveyaskmail") == "1"),
+        'showMessage' => (bool) (Mibew\Settings::get("surveyaskmessage") == "1"),
+        'canChangeName' => (bool) (Mibew\Settings::get('usercanchangename') == "1"),
+    );
+
+    $data['page.title'] = getlocal('Live support');
+    $data['survey']['page'] = array(
+        'title' => $data['page.title']
+    );
+
+    
+    if (Mibew\Settings::get('enableprivacypolicy')
+         && strcmp('', Mibew\Settings::get('privacypolicy'))) {
+        $data['survey']['surveyForm']['privacyPolicyUrl'] = Mibew\Settings::get('privacypolicy');
+    }
+
+    if (Mibew\Settings::get('enablegroups') == '1' && Mibew\Settings::get('surveyaskgroup') == '1') {
+        $data['survey']['surveyForm']['groups']
+            = prepare_groups_select($group_id);
+    }
+
+    $data['startFrom'] = 'survey';
+
+    return $data;
+}
+
+
+function prepare_groups_select($group_id)
+{
+    $show_groups = ($group_id == '') ? true : group_has_children($group_id);
+
+    if (!$show_groups) {
+        return false;
+    }
+
+    $all_groups = get_groups(false);
+
+    if (empty($all_groups)) {
+        return false;
+    }
+
+    $groups_list = array();
+    $selected_group_id = $group_id;
+
+    foreach ($all_groups as $group) {
+        $group_is_empty = (bool) ($group['inumofagents'] == 0);
+        $group_related_with_specified = empty($group_id)
+            || $group['parent'] == $group_id
+            || $group['groupid'] == $group_id;
+
+        if ($group_is_empty || !$group_related_with_specified) {
+            continue;
+        }
+
+        if (group_is_online($group) && !$selected_group_id) {
+            $selected_group_id = $group['groupid'];
+        }
+
+        $groups_list[] = array(
+            'id' => $group['groupid'],
+            'name' => get_group_name($group),
+            'description' => get_group_description($group),
+            'online' => group_is_online($group),
+            'selected' => (bool) ($group['groupid'] == $selected_group_id),
+        );
+    }
+
+    
+    if (!empty($groups_list)) {
+        
+        $selected_group_present = false;
+        foreach ($groups_list as $group) {
+            if ($group['selected']) {
+                $selected_group_present = true;
+                break;
+            }
+        }
+
+        
+        if (!$selected_group_present) {
+            $groups_list[0]['selected'] = true;
+        }
+    }
+
+    return $groups_list;
+}
+
+
+function setup_chatview(Thread $thread)
+{
+    $data = prepare_chat_app_data();
+
+    
+    if (!empty($thread->groupId)) {
+        $group = group_by_id($thread->groupId);
+        $group = get_top_level_group($group);
+    } else {
+        $group = array();
+    }
+
+    
+    $data['chat'] = array(
+        'messageForm' => array(),
+        'links' => array(),
+        'windowsParams' => array(),
+    );
+
+    
+    $data['chat']['thread'] = array(
+        'id' => $thread->id,
+        'token' => $thread->lastToken,
+        'agentId' => $thread->agentId,
+        'userId' => $thread->userId,
+    );
+
+    $data['page.title'] = empty($group['vcchattitle'])
+        ? Mibew\Settings::get('chattitle')
+        : $group['vcchattitle'];
+    $data['chat']['page'] = array(
+        'title' => $data['page.title']
+    );
+
+    
+    $data = array_merge_recursive($data, setup_logo($group));
+
+    
+    if (Mibew\Settings::get('sendmessagekey') == 'enter') {
+        $data['chat']['messageForm']['ignoreCtrl'] = true;
+    } else {
+        $data['chat']['messageForm']['ignoreCtrl'] = false;
+    }
+
+    
+    $chat_style = new ChatStyle(Mibew\Style\ChatStyle::getCurrentStyle());
+    $style_config = $chat_style->getConfigurations();
+    $data['chat']['windowsParams']['mail']
+        = $style_config['mail']['window'];
+
+    
+    $page_style = new PageStyle(Mibew\Style\PageStyle::getCurrentStyle());
+    $style_config = $page_style->getConfigurations();
+    $data['chat']['windowsParams']['history']
+        = $style_config['history']['window'];
+
+    $data['startFrom'] = 'chat';
+
+    return $data;
+}
+
+
+function setup_chatview_for_user(
+    UrlGeneratorInterface $url_generator,
+    AssetUrlGeneratorInterface $asset_url_generator,
+    Request $request,
+    Thread $thread
+) {
+    $data = setup_chatview($thread);
+
+    
+    $data['chat']['user'] = array(
+        'name' => htmlspecialchars($thread->userName),
+        'canChangeName' => (bool) (Mibew\Settings::get('usercanchangename') == "1"),
+        'defaultName' => (bool) (getlocal("Guest") != $thread->userName),
+        'canPost' => true,
+        'isAgent' => false,
+    );
+
+    
+    $data['chat']['links']['mail'] = $url_generator->generate(
+        'chat_user_mail',
+        array(
+            'thread_id' => $thread->id,
+            'token' => $thread->lastToken,
+        )
+    );
+
+    
+    if (Mibew\Settings::get('enablessl') == "1" && $request->isSecure()) {
+        $data['chat']['links']['ssl'] = $url_generator->generateSecure(
+            'chat_user',
+            array(
+                'thread_id' => $thread->id,
+                'token' => $thread->lastToken,
+            ),
+            Mibew\Routing\Generator\SecureUrlGeneratorInterface::ABSOLUTE_URL
+        );
+    }
+
+    
+    $data['chat']['links']['chat'] = $url_generator->generate(
+        'chat_user',
+        array(
+            'thread_id' => $thread->id,
+            'token' => $thread->lastToken,
+        ),
+        Mibew\Routing\Generator\SecureUrlGeneratorInterface::ABSOLUTE_URL
+    );
+
+    
+    $operator = operator_by_id($thread->agentId);
+    $data['chat']['avatar'] = $operator['vcavatar']
+        ? $asset_url_generator->generate($operator['vcavatar'])
+        : '';
+
+
+    return $data;
+}
+
+
+function setup_chatview_for_operator(
+    UrlGeneratorInterface $url_generator,
+    Request $request,
+    Thread $thread,
+    $operator
+) {
+    $data = setup_chatview($thread);
+
+    
+    $data['chat']['user'] = array(
+        'name' => htmlspecialchars(
+            get_user_name(
+                $thread->userName,
+                $thread->remote,
+                $thread->userId
+            )
+        ),
+        'canPost' => (bool) ($thread->agentId == $operator['operatorid']),
+        'isAgent' => true,
+    );
+
+    
+    if (Mibew\Settings::get('enablessl') == "1" && !$request->isSecure()) {
+        $data['chat']['links']['ssl'] = $url_generator->generateSecure(
+            'chat_operator',
+            array(
+                'thread_id' => $thread->id,
+                'token' => $thread->lastToken,
+            ),
+            Mibew\Routing\Generator\SecureUrlGeneratorInterface::ABSOLUTE_URL
+        );
+    }
+
+    
+    $data['chat']['links']['chat'] = $url_generator->generate(
+        'chat_operator',
+        array(
+            'thread_id' => $thread->id,
+            'token' => $thread->lastToken,
+        ),
+        Mibew\Routing\Generator\SecureUrlGeneratorInterface::ABSOLUTE_URL
+    );
+
+    
+    $data['chat']['links']['history'] = $url_generator->generate(
+        'history_user',
+        array('user_id' => $thread->userId)
+    );
+
+    
+    if (Mibew\Settings::get('enabletracking')) {
+        $visitor = track_get_visitor_by_thread_id($thread->id);
+        $data['chat']['links']['tracked'] = $url_generator->generate(
+            'history_user_track',
+            array('visitor' => $visitor['visitorid'])
+        );
+    }
+
+    
+    if ($thread->agentId == $operator['operatorid']) {
+        
+        $canned_messages = load_canned_messages($thread->locale, 0);
+        if ($thread->groupId) {
+            $canned_messages = array_merge(
+                load_canned_messages($thread->locale, $thread->groupId),
+                $canned_messages
+            );
+        };
+
+        $predefined_answers = array();
+        foreach ($canned_messages as $answer) {
+            $predefined_answers[] = array(
+                'short' => htmlspecialchars(
+                    $answer['vctitle'] ? $answer['vctitle'] : cut_string($answer['vcvalue'], 97, '...')
+                ),
+                'full' => $answer['vcvalue'],
+            );
+        }
+        $data['chat']['messageForm']['predefinedAnswers'] = $predefined_answers;
+    }
+    
+    $data['chat']['links']['redirect'] = $url_generator->generate(
+        'chat_operator_redirection_links',
+        array(
+            'thread_id' => $thread->id,
+            'token' => $thread->lastToken,
+        )
+    );
+
+    return $data;
+}
+
+
+function visitor_from_request()
+{
+    $default_name = getlocal("Guest");
+    $user_name = $default_name;
+    if (isset($_COOKIE[USERNAME_COOKIE_NAME])) {
+        $data = base64_decode(strtr($_COOKIE[USERNAME_COOKIE_NAME], '-_,', '+/='));
+        if (strlen($data) > 0) {
+            $user_name = $data;
+        }
+    }
+
+    if ($user_name == $default_name) {
+        $temp = Symfony\Component\HttpFoundation\Request::createFromGlobals()->query->get('name');
+        $user_name = (isset($temp) && ($temp !== '')) ? $temp : $user_name;
+    }
+
+    if (isset($_COOKIE[USERID_COOKIE_NAME])) {
+        $user_id = $_COOKIE[USERID_COOKIE_NAME];
+    } else {
+        $user_id = uniqid('', true);
+        setcookie(USERID_COOKIE_NAME, $user_id, time() + 31536000);
+    }
+
+    return array('id' => $user_id, 'name' => $user_name);
+}
+
+
+function get_remote_host()
+{
+    $ext_addr = $_SERVER['REMOTE_ADDR'];
+    $has_proxy = isset($_SERVER['HTTP_X_FORWARDED_FOR'])
+        && $_SERVER['HTTP_X_FORWARDED_FOR'] != $_SERVER['REMOTE_ADDR'];
+    if ($has_proxy) {
+        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'], 2);
+        $ext_addr = (count($ips) > 1)
+            ? $ips[0] . ' (' . $_SERVER['HTTP_X_FORWARDED_FOR'] . ')'
+            : $ips[0];
+    }
+
+    return isset($_SERVER['REMOTE_HOST']) ? $_SERVER['REMOTE_HOST'] : $ext_addr;
+}
+
+
+function chat_start_for_user(
+    $group_id,
+    $requested_operator,
+    $visitor_id,
+    $visitor_name,
+    $referrer,
+    $info
+) {
+    
+    $remote_host = get_remote_host();
+    $user_browser = $_SERVER['HTTP_USER_AGENT'];
+
+    
+    if (Mibew\Thread::connectionLimitReached($remote_host)) {
+        die("number of connections from your IP is exceeded, try again later");
+    }
+
+    
+    $is_invited = false;
+    if (Mibew\Settings::get('enabletracking')) {
+        $invitation_state = invitation_state($_SESSION[SESSION_PREFIX . 'visitorid']);
+        if ($invitation_state['invited']) {
+            $is_invited = true;
+        }
+    }
+
+    
+    $requested_operator_online = false;
+    if ($requested_operator) {
+        $requested_operator_online = is_operator_online(
+            $requested_operator['operatorid']
+        );
+    }
+
+    
+    if ($is_invited) {
+        
+        $thread = invitation_accept($_SESSION[SESSION_PREFIX . 'visitorid']);
+        if (!$thread) {
+            die("Cannot start thread");
+        }
+    } else {
+        
+        $thread = new Thread();
+        $thread->state = Mibew\Thread::STATE_LOADING;
+        $thread->agentId = 0;
+        if ($requested_operator && $requested_operator_online) {
+            $thread->nextAgent = $requested_operator['operatorid'];
+        }
+    }
+
+    
+    $thread->groupId = $group_id;
+    $thread->userName = $visitor_name;
+    $thread->remote = $remote_host;
+    $thread->referer = $referrer;
+    $thread->locale = get_current_locale();
+    $thread->userId = $visitor_id;
+    $thread->userAgent = $user_browser;
+    $thread->save();
+
+    $_SESSION[SESSION_PREFIX . 'threadid'] = $thread->id;
+
+    
+    if (!isset($_SESSION[SESSION_PREFIX . 'own_threads'])) {
+        $_SESSION[SESSION_PREFIX . 'own_threads'] = array();
+    }
+    $_SESSION[SESSION_PREFIX . 'own_threads'][] = $thread->id;
+
+    
+    if (Mibew\Settings::get('enabletracking')) {
+        track_visitor_bind_thread($visitor_id, $thread);
+    }
+
+    
+    if ($is_invited) {
+        $operator = operator_by_id($thread->agentId);
+        $operator_name = get_operator_name($operator);
+        $thread->postMessage(
+            Mibew\Thread::KIND_FOR_AGENT,
+            getlocal(
+                'Visitor accepted invitation from operator {0}',
+                array(safe_htmlspecialchars($operator_name)),
+                get_current_locale(),
+                true
+            )
+        );
+    } else {
+        if ($referrer) {
+            $thread->postMessage(
+                Mibew\Thread::KIND_FOR_AGENT,
+                getlocal('Visitor came from page {0}', array(safe_htmlspecialchars($referrer)), get_current_locale(), true)
+            );
+        }
+        if ($requested_operator && !$requested_operator_online) {
+            $thread->postMessage(
+                Mibew\Thread::KIND_INFO,
+                getlocal(
+                    'Thank you for contacting us. We are sorry, but requested operator <strong>{0}</strong> is offline. Another operator will be with you shortly.',
+                    array(safe_htmlspecialchars(get_operator_name($requested_operator))),
+                    get_current_locale(),
+                    true
+                )
+            );
+        } else {
+            $thread->postMessage(
+                Mibew\Thread::KIND_INFO,
+                getlocal('Thank you for contacting us. An operator will be with you shortly.', null, get_current_locale(), true)
+            );
+        }
+    }
+
+    
+    if ($info) {
+        $thread->postMessage(
+            Mibew\Thread::KIND_FOR_AGENT,
+            getlocal('Info: {0}', array(safe_htmlspecialchars($info)), get_current_locale(), true)
+        );
+    }
+
+    
+    $dispatcher = Mibew\EventDispatcher\EventDispatcher::getInstance();
+    $event_args = array('thread' => $thread);
+    $dispatcher->triggerEvent(Mibew\EventDispatcher\Events::THREAD_USER_IS_READY, $event_args);
+
+    return $thread;
+}

@@ -1,0 +1,447 @@
+<?php defined('SYSPATH') OR die('No direct access allowed.');
+
+class Imap_Core {
+
+	private $imap_stream;
+
+	
+	public function __construct()
+	{
+		
+		imap_timeout(IMAP_OPENTIMEOUT,90);
+		imap_timeout(IMAP_READTIMEOUT,90);
+
+
+		
+		$ssl = Kohana::config('settings.email_ssl') == true ? "/ssl" : "";
+
+		
+		
+		$novalidate = "/novalidate-cert";
+
+		
+		$notls = strtolower(Kohana::config('settings.email_servertype')) == "pop3" ? "/notls" : "";
+
+		
+
+		$service = "{".Kohana::config('settings.email_host').":"
+			.Kohana::config('settings.email_port')."/"
+			.Kohana::config('settings.email_servertype')
+			.$notls.$ssl.$novalidate."}";
+
+		
+		if(count(dns_get_record("".Kohana::config('settings.email_host')."")) == 0)
+		{
+			$this->imap_stream = false;
+			return false;
+		}
+
+		if ( $imap_stream = @imap_open($service, Kohana::config('settings.email_username')
+			,Kohana::config('settings.email_password')))
+		{
+
+			$this->imap_stream = $imap_stream;
+
+		} else {
+			
+			
+
+			$this->imap_stream = false;
+			return false;
+
+			
+		}
+	}
+
+	
+	public function get_messages($search_criteria="UNSEEN",
+								 $date_format="Y-m-d H:i:s")
+	{
+		global $htmlmsg,$plainmsg,$attachments;
+		
+		
+
+		if($this->imap_stream == false)
+		{
+			return array();
+		}
+
+		
+		
+		$new_msgs = imap_search($this->imap_stream, 'UNSEEN');
+		$max_imap_messages = Kohana::config('email.max_imap_messages');
+
+		if ($new_msgs == null)
+		{
+			return array();
+		}
+
+		
+		
+		
+		$msg_to_pull = sizeof($new_msgs);
+		
+		
+		if($msg_to_pull > $max_imap_messages)
+		{
+			$msg_to_pull = $max_imap_messages;
+		}
+
+		$messages = array();
+
+		for ($msgidx = 0; $msgidx < $msg_to_pull; $msgidx++)
+		{
+			$msgno = $new_msgs[$msgidx];
+			$header = imap_headerinfo($this->imap_stream, $msgno);
+
+			if( ! isset($header->message_id) OR ! isset($header->udate))
+			{
+				continue;
+			}
+			
+			
+			
+			if ($header->Unseen != 'U' AND $header->Recent != 'N')
+			{
+				continue;
+			}
+
+			$message_id = $header->message_id;
+			$date = date($date_format, $header->udate);
+
+			if (isset($header->from))
+			{
+				$from = $header->from;
+			}else{
+				$from = FALSE;
+			}
+
+			$fromname = "";
+			$fromaddress = "";
+			$subject = "";
+			$body = "";
+			$attachments = "";
+
+			if ($from != FALSE)
+			{
+				foreach ($from as $id => $object)
+				{
+					if (isset($object->personal))
+					{
+						$fromname = $object->personal;
+					}
+
+					if (isset($object->mailbox) AND isset($object->host))
+					{
+						$fromaddress = $object->mailbox."@".$object->host;
+					}
+
+					if ($fromname == "")
+					{
+						
+						$fromname = $fromaddress;
+					}
+				}
+			}
+
+			if (isset($header->subject))
+			{
+				$subject = $this->_mime_decode($header->subject);
+			}
+
+			
+			$this->_getmsg($this->imap_stream, $msgno);
+			
+			if ($htmlmsg)
+			{
+				
+				$html2text = new Html2Text($htmlmsg);
+				$htmlmsg = $html2text->get_text();
+			}
+			$body = ($plainmsg) ? $plainmsg : $htmlmsg;
+			
+			
+			$attachments = $this->_extract_attachments($this->imap_stream, $msgno);
+
+			
+			
+			if(mb_detect_encoding($body, 'auto', TRUE) == '')
+			{
+				$body = iconv("windows-1256", "UTF-8", $body);
+			}
+
+			
+			$detected_encoding = mb_detect_encoding($body, "auto");
+			if($detected_encoding == 'ASCII') $detected_encoding = 'iso-8859-1';
+			$body = mb_convert_encoding($body, $detected_encoding, 'UTF-8');
+			$body = html::escape($body);
+			$subject = html::strip_tags($subject);
+
+			array_push($messages, array('message_id' => $message_id,
+										'date' => $date,
+										'from' => $fromname,
+										'email' => $fromaddress,
+										'subject' => $subject,
+										'body' => $body,
+										'attachments' => $attachments));
+
+			
+			imap_setflag_full($this->imap_stream, $msgno, "\\Seen");
+		}
+
+		return $messages;
+	}
+
+	
+	public function delete_message($msg_no)
+	{
+		imap_delete($this->imap_stream, $msg_no);
+	}
+
+	
+	public function close()
+	{
+		
+		$error = imap_errors();
+		@imap_close($this->imap_stream);
+	}
+
+	private function _mime_decode($str)
+	{
+		$elements = imap_mime_header_decode($str);
+		$text = "";
+
+		foreach ($elements as $element)
+		{
+			
+			
+			
+			if(strtoupper($element->charset) == 'WINDOWS-1256'){
+				$element->text = iconv("windows-1256", "UTF-8", $element->text);
+			}
+			
+			$text.= $element->text;
+		}
+
+		return $text;
+	}
+	
+	
+	private function _extract_attachments($connection, $message_number) {
+
+		$attachments = array();
+		$structure = imap_fetchstructure($connection, $message_number);
+
+		if(isset($structure->parts) && count($structure->parts)) {
+
+			for($i = 0; $i < count($structure->parts); $i++) {
+
+				$attachments[$i] = array(
+					'is_attachment' => false,
+					'file_name' => '',
+					'name' => '',
+					'type' => 0,
+					'subtype' => '',
+					'attachment' => ''
+				);
+
+				
+				
+				
+				
+				
+				
+				$attachments[$i]['type'] = $structure->parts[$i]->type;
+				$attachments[$i]['subtype'] = $structure->parts[$i]->subtype;
+
+				if($structure->parts[$i]->ifdparameters) {
+					foreach($structure->parts[$i]->dparameters as $object) {
+						if(strtolower($object->attribute) == 'filename') {
+							$attachments[$i]['is_attachment'] = true;
+							$attachments[$i]['file_name'] = $object->value;
+						}
+					}
+				}
+
+				if($structure->parts[$i]->ifparameters) {
+					foreach($structure->parts[$i]->parameters as $object) {
+						if(strtolower($object->attribute) == 'name') {
+							$attachments[$i]['is_attachment'] = true;
+							$attachments[$i]['name'] = $object->value;
+						}
+					}
+				}
+
+				if($attachments[$i]['is_attachment']) {
+					$attachments[$i]['attachment'] = imap_fetchbody($connection, $message_number, $i+1);
+					if($structure->parts[$i]->encoding == 3) { 
+						$attachments[$i]['attachment'] = base64_decode($attachments[$i]['attachment']);
+					}
+					elseif($structure->parts[$i]->encoding == 4) { 
+						$attachments[$i]['attachment'] = quoted_printable_decode($attachments[$i]['attachment']);
+					}
+				}
+
+			}
+
+		}
+		
+		$valid_attachments = array();
+		foreach ($attachments as $attachment)
+		{
+			$file_content = $attachment['attachment'];
+			
+			
+			
+			
+			
+			if (strlen($file_content) < 12500) {
+				continue;
+			}
+			
+			$file_type = $attachment['type'];
+			$file_extension = $attachment['subtype'];
+			
+			if ($file_extension == 'JPEG')
+			{
+				$file_extension = '.JPG';
+			}
+			else
+			{
+				$file_extension = '.' . $file_extension;
+			}
+			
+			$new_file_name = time()."_".$this->_random_string(10); 
+			$valid_attachments[] = $this->_save_attachments($file_type, $new_file_name, $file_content, $file_extension);
+		}
+
+		
+		return array_filter($valid_attachments);
+	}
+	
+	
+		
+	private function _save_attachments($file_type,$file_name,$file_content,$file_extension)
+	{
+	  
+	  
+	  if ($file_type == 5)
+		{
+			$attachments = array();
+			$file = Kohana::config("upload.directory")."/".$file_name.$file_extension;
+			$fp = fopen($file, "w");
+			fwrite($fp, $file_content);
+			fclose($fp);
+			
+			
+			
+			
+			Image::factory($file)->resize(800,600,Image::AUTO)
+				->save(Kohana::config('upload.directory', TRUE).$file_name.$file_extension);
+
+			
+			Image::factory($file)->resize(400,300,Image::HEIGHT)
+				->save(Kohana::config('upload.directory', TRUE).$file_name."_m".$file_extension);
+			
+			
+			Image::factory($file)->resize(89,59,Image::HEIGHT)
+				->save(Kohana::config('upload.directory', TRUE).$file_name."_t".$file_extension);
+				
+			$attachments[] = array(
+					$file_name.$file_extension,
+					$file_name."_m".$file_extension,
+					$file_name."_t".$file_extension
+				);
+			return $attachments;
+		}
+		else
+		{
+			return null;
+		}
+	}
+	
+	
+	private function _random_string($length)
+	{
+		$random = "";
+		srand((double)microtime()*1000000);
+		$char_list = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		$char_list .= "abcdefghijklmnopqrstuvwxyz";
+		$char_list .= "1234567890";
+		
+
+		for($i = 0; $i < $length; $i++)
+		{
+			$random .= substr($char_list,(rand()%(strlen($char_list))), 1);
+		}
+		
+		return $random;
+	}
+	
+	private function _getmsg($mbox,$mid)
+	{
+		
+		
+		global $htmlmsg,$plainmsg,$attachments;
+		
+		$htmlmsg = $plainmsg = '';
+		$attachments = array();
+
+		
+		$h = imap_header($mbox,$mid);
+		
+
+		
+		$s = imap_fetchstructure($mbox,$mid);
+		if (@!$s->parts)	 
+			$this->_getpart($mbox,$mid,$s,0);  
+		else {	
+			foreach ($s->parts as $partno0=>$p)
+				$this->_getpart($mbox,$mid,$p,$partno0+1);
+		}
+	}
+
+	private function _getpart($mbox,$mid,$p,$partno)
+	{
+		
+		global $htmlmsg,$plainmsg,$attachments;
+
+		
+		$data = ($partno)?
+			imap_fetchbody($mbox,$mid,$partno):	 
+			imap_body($mbox,$mid);	
+		
+		if ($p->encoding==4)
+			$data = quoted_printable_decode($data);
+		elseif ($p->encoding==3)
+			$data = base64_decode($data);
+		
+
+		
+		if ($p->type==0 && $data) {
+			
+			
+			if (strtolower($p->subtype)=='plain')
+				$plainmsg .= trim($data) ."\n\n";
+			else
+				$htmlmsg .= $data ."<br><br>";
+		}
+
+		
+		
+		
+		
+		
+		elseif ($p->type==2 && $data)
+		{
+			$plainmsg .= trim($data) ."\n\n";
+		}
+
+		
+		if (isset($p->parts))
+		{
+			foreach ($p->parts as $partno0=>$p2)
+				$this->_getpart($mbox,$mid,$p2,$partno.'.'.($partno0+1));  
+		}
+	}
+} 

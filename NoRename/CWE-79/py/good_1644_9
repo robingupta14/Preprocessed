@@ -1,0 +1,121 @@
+
+
+
+
+
+
+from tornado import web
+
+from Ellipsisbase.handlers import APIHandler, json_errors
+from IPython.utils.jsonutil import date_default
+from IPython.html.utils import url_path_join, url_escape
+from IPython.kernel.kernelspec import NoSuchKernel
+
+
+class SessionRootHandler(APIHandler):
+
+    @tornado.web.authenticated
+    @json_errors
+    def get(self):
+        
+        sm = self.session_manager
+        sessions = sm.list_sessions()
+        self.finish(json.dumps(sessions, default=date_default))
+
+    @tornado.web.authenticated
+    @json_errors
+    def post(self):
+        
+        
+        sm = self.session_manager
+        cm = self.contents_manager
+        km = self.kernel_manager
+
+        model = self.get_json_body()
+        if model is None:
+            raise tornado.web.HTTPError(400, 'No JSON data provided')
+        try:
+            path = model[notebook][path]
+        except KeyError:
+            raise tornado.web.HTTPError(400, 'Missing field in JSON data: notebook.path')
+        try:
+            kernel_name = model[kernel][name]
+        except KeyError:
+            self.log.debugNo kernel name specified, using default kernel
+            kernel_name = None
+
+        
+        if sm.session_exists(path=path):
+            model = sm.get_session(path=path)
+        else:
+            try:
+                model = sm.create_session(path=path, kernel_name=kernel_name)
+            except NoSuchKernel:
+                msg = (The '%s' kernel is not available. Please pick another 
+                       suitable kernel instead, or install that kernel. % kernel_name)
+                status_msg = %s not found % kernel_name
+                self.log.warn(Kernel not found: %s % kernel_name)
+                self.set_status501
+                self.finish(json.dumps(dict(message=msg, short_message=status_msg)))
+                return
+
+        location = url_path_join(self.base_url, api, sessions, model[id])
+        self.set_header(Location, url_escape(location))
+        self.set_status201
+        self.finish(json.dumps(model, default=date_default))
+
+class SessionHandler(APIHandler):
+
+    SUPPORTED_METHODS = ('GET', 'PATCH', 'DELETE')
+
+    @tornado.web.authenticated
+    @json_errors
+    def get(self, session_id):
+        
+        sm = self.session_manager
+        model = sm.get_session(session_id=session_id)
+        self.finish(json.dumps(model, default=date_default))
+
+    @tornado.web.authenticated
+    @json_errors
+    def patch(self, session_id):
+        
+        sm = self.session_manager
+        model = self.get_json_body()
+        if model is None:
+            raise tornado.web.HTTPError(400, 'No JSON data provided')
+        changes = {}
+        if notebook in model:
+            notebook = model[notebook]
+            if path in notebook:
+                changes[path] = notebook[path]
+
+        sm.update_session(session_id, **changes)
+        model = sm.get_session(session_id=session_id)
+        self.finish(json.dumps(model, default=date_default))
+
+    @tornado.web.authenticated
+    @json_errors
+    def delete(self, session_id):
+        
+        sm = self.session_manager
+        try:
+            sm.delete_session(session_id)
+        except KeyError:
+            
+            raise tornado.web.HTTPError(410, 'Kernel deleted before session')
+        self.set_status204
+        self.finish()
+
+
+
+
+
+
+_session_id_regex = (?P<session_id>\w+-\w+-\w+-\w+-\w+)
+
+default_handlers = [
+    (/api/sessions/%s % _session_id_regex, SessionHandler),
+    (/api/sessions,  SessionRootHandler)
+]
+

@@ -1,0 +1,350 @@
+<?php
+
+declare(strict_types=1);
+
+
+
+
+class Field implements Fieldable
+{
+
+    
+    private $beforeRender = [];
+
+    
+    protected $view;
+
+    
+    protected $attributes = [
+        'value' => null,
+    ];
+
+    
+    protected $required = [
+        'name',
+    ];
+
+    
+    protected $typeForm;
+
+    
+    protected $translations = [
+        'title',
+        'placeholder',
+        'help',
+    ];
+
+    
+    protected $universalAttributes = [
+        'accesskey',
+        'class',
+        'dir',
+        'hidden',
+        'id',
+        'lang',
+        'spellcheck',
+        'style',
+        'tabindex',
+        'title',
+        'xml:lang',
+        'autocomplete',
+        'data-*',
+    ];
+
+    
+    protected $inlineAttributes = [];
+
+    
+    public function __call(string $name, array $arguments): self
+    {
+        $arguments = collect($arguments)->map(static function ($argument) {
+            return $argument instanceof Closure ? $argument() : $argument;
+        });
+
+        if (method_exists($this, $name)) {
+            $this->$name($arguments);
+        }
+
+        return $this->set($name, $arguments->first() ?? true);
+    }
+
+    
+    public function value($value): self
+    {
+        return $this->set('value', $value);
+    }
+
+    
+    public function set(string $key, $value = true): self
+    {
+        $this->attributes[$key] = $value;
+
+        return $this;
+    }
+
+    
+    protected function checkRequired(): self
+    {
+        collect($this->required)
+            ->filter(function ($attribute) {
+                return ! array_key_exists($attribute, $this->attributes);
+            })
+            ->each(function ($attribute) {
+                throw new FieldRequiredAttributeException($attribute);
+            });
+
+        return $this;
+    }
+
+    
+    public function render()
+    {
+        if (! $this->isSee()) {
+            return;
+        }
+
+        $this
+            ->checkRequired()
+            ->modifyName()
+            ->modifyValue()
+            ->runBeforeRender()
+            ->translate()
+            ->checkError();
+
+        $id = $this->getId();
+        $this->set('id', $id);
+
+        $errors = $this->getErrorsMessage();
+
+        return view($this->view, array_merge($this->getAttributes(), [
+            'attributes'     => $this->getAllowAttributes(),
+            'dataAttributes' => $this->getAllowDataAttributes(),
+            'id'             => $id,
+            'old'            => $this->getOldValue(),
+            'slug'           => $this->getSlug(),
+            'oldName'        => $this->getOldName(),
+            'typeForm'       => $this->typeForm ?? $this->vertical()->typeForm,
+        ]))
+            ->withErrors($errors);
+    }
+
+    
+    private function translate(): self
+    {
+        $lang = $this->get('lang');
+
+        collect($this->attributes)
+            ->intersectByKeys(array_flip($this->translations))
+            ->each(function ($value, $key) use ($lang) {
+                $this->set($key, __($value, [], $lang));
+            });
+
+        return $this;
+    }
+
+    
+    public function getAttributes(): array
+    {
+        return $this->attributes;
+    }
+
+    
+    protected function getAllowAttributes(): ComponentAttributeBag
+    {
+        $allow = array_merge($this->universalAttributes, $this->inlineAttributes);
+
+        $attributes = collect($this->getAttributes())
+            ->filter(function ($value, $attribute) use ($allow) {
+                return Illuminate\Support\Str::is($allow, $attribute);
+            })->toArray();
+
+        return (new ComponentAttributeBag())
+            ->merge($attributes);
+    }
+
+    
+    protected function getAllowDataAttributes(): ComponentAttributeBag
+    {
+        return $this->getAllowAttributes()->filter(function ( $value, $key) {
+            return Illuminate\Support\Str::startsWith($key, 'data-');
+        });
+    }
+
+    
+    protected function getId(): ?string
+    {
+        $id = $this->get('id');
+
+        if ($id !== null) {
+            return (string) $id;
+        }
+
+        $lang = $this->get('lang');
+        $slug = $this->get('name');
+        $hash = sha1(json_encode($this->getAttributes()));
+
+        return Illuminate\Support\Str::slug("field-$lang-$slug-$hash");
+    }
+
+    
+    public function get(string $key, $value = null)
+    {
+        if (! isset($this->attributes[$key])) {
+            return $value;
+        }
+
+        return $this->attributes[$key];
+    }
+
+    
+    protected function getSlug(): string
+    {
+        return Illuminate\Support\Str::slug($this->get('name'));
+    }
+
+    
+    public function getOldValue()
+    {
+        return old($this->getOldName());
+    }
+
+    
+    public function getOldName(): string
+    {
+        return (string) Illuminate\Support\Str::of($this->get('name'))
+            ->replace(['][', '['], '.')
+            ->replace([']'], '');
+    }
+
+    
+    private function checkError(): self
+    {
+        if (! $this->hasError()) {
+            return $this;
+        }
+
+        $class = $this->get('class');
+
+        return $this->set('class', $class.' is-invalid');
+    }
+
+    
+    private function hasError(): bool
+    {
+        return optional(session('errors'))->has($this->getOldName()) ?? false;
+    }
+
+    
+    protected function modifyName()
+    {
+        $name = $this->get('name');
+        $prefix = $this->get('prefix');
+        $lang = $this->get('lang');
+
+        if ($prefix !== null && $lang !== null) {
+            return $this->set('name', $prefix.'['.$lang.']'.$name);
+        }
+
+        if ($prefix !== null) {
+            return $this->set('name', $prefix.$name);
+        }
+
+        if ($lang !== null) {
+            return $this->set('name', $lang.'['.$name.']');
+        }
+
+        return $this;
+    }
+
+    
+    protected function modifyValue()
+    {
+        $value = $this->getOldValue() ?? $this->get('value');
+
+        if ($value instanceof Closure) {
+            $value = $value($this->attributes);
+        }
+
+        return $this->set('value', $value);
+    }
+
+    
+    public static function group($group): Group
+    {
+        return Orchid\Screen\Fields\Group::make(is_callable($group) ? $group() : $group);
+    }
+
+    
+    public function vertical(): self
+    {
+        $this->typeForm = 'platform::partials.fields.vertical';
+
+        return $this;
+    }
+
+    
+    public function clear(): self
+    {
+        $this->typeForm = 'platform::partials.fields.clear';
+
+        return $this;
+    }
+
+    
+    public function horizontal(): self
+    {
+        $this->typeForm = 'platform::partials.fields.horizontal';
+
+        return $this;
+    }
+
+    
+    public function hr(): self
+    {
+        $this->set('hr');
+
+        return $this;
+    }
+
+    
+    public function addBeforeRender(Closure $closure)
+    {
+        $this->beforeRender[] = $closure;
+
+        return $this;
+    }
+
+    
+    public function runBeforeRender(): self
+    {
+        foreach ($this->beforeRender as $before) {
+            $before->call($this);
+        }
+
+        return $this;
+    }
+
+    
+    private function getErrorsMessage()
+    {
+        $errors = session()->get('errors', new MessageBag());
+
+        return $errors->getMessages();
+    }
+
+    
+    public function __toString(): string
+    {
+        $view = $this->render();
+
+        if (is_string($view)) {
+            return $view;
+        }
+
+        if (is_a($view, Illuminate\View\View::class)) {
+            return (string) $view->render();
+        }
+
+        return '';
+    }
+}

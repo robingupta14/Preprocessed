@@ -1,0 +1,128 @@
+<?php
+
+
+
+
+
+if (isset($_GET['user_id']) && !empty($_GET['user_id'])) {
+    $var_0 = intval($_GET['user_id']);
+    
+    $var_1->checkUserValid($var_0);
+} elseif ($var_1->var_3) {
+    $var_0 = $var_1->user_data['id'];
+} else {
+    $_SESSION['LOGIN_MESSAGE'] = $MSG['5000'];
+    $_SESSION['REDIRECT_AFTER_LOGIN'] = 'active_auctions.php';
+    header('location: user_login.php');
+    var_4;
+}
+
+
+$var_5 = "SELECT count(id) AS auctions FROM " . $var_6 . "auctions
+		WHERE user = :user_id
+		AND closed = 0
+		AND suspended = 0
+		AND starts <= CURRENT_TIMESTAMP";
+$var_7 = array();
+$var_7[] = array(':user_id', $var_0, 'int');
+$var_8->query($var_5, $var_7);
+$var_9 = $var_8->result('auctions');
+
+
+if (!isset($_GET['PAGE']) || $_GET['PAGE'] == '' || $_GET['PAGE'] < 1) {
+    $var_11 = 0;
+    $var_12 = 1;
+} else {
+    $var_12 = intval($_GET['PAGE']);
+    $var_11 = ($var_12 - 1) * $var_13->SETTINGS['perpage'];
+}
+$var_14 = ceil($var_9 / $var_13->SETTINGS['perpage']);
+if (!isset($var_14) || $var_14 < 1) {
+    $var_14 = 1;
+}
+
+$var_5 = "SELECT * FROM " . $var_6 . "auctions
+		WHERE user = :user_id
+		AND closed = 0
+		AND suspended = 0
+		AND starts <= CURRENT_TIMESTAMP
+		ORDER BY ends ASC LIMIT :offset, :perpage";
+$var_7 = array();
+$var_7[] = array(':user_id', $var_0, 'int');
+$var_7[] = array(':offset', $var_11, 'int');
+$var_7[] = array(':perpage', $var_13->SETTINGS['perpage'], 'int');
+$var_8->query($var_5, $var_7);
+
+$var_15 = 0;
+while ($var_16 = $var_8->fetch()) {
+    if (strlen($var_16['pict_url']) > 0) {
+        $var_16['pict_url'] = $var_13->SETTINGS['siteurl'] . 'getthumb.php?w=' . $var_13->SETTINGS['thumb_show'] . '&auction_id=' . $var_16['id'] . '&fromfile=' . $var_16['pict_url'];
+    } else {
+        $var_16['pict_url'] = get_lang_img('nopicture.gif');
+    }
+
+    $var_18 = new class_0('now', $var_19->var_20);
+    $var_21 = new class_0($var_16['ends'], $var_19->var_20);
+    $var_22 = $var_18->diff($var_21);
+
+    $var_24->assign_block_vars('auctions', array(
+            'BGCOLOUR' => (!($var_15 % 2)) ? '' : 'class="alt-row"',
+            'ID' => $var_16['id'],
+            'PIC_URL' => $var_16['pict_url'],
+            'TITLE' => htmlspecialchars($var_16['title']),
+            'BNIMG' => get_lang_img(($var_16['bn_only'] == 0) ? 'buy_it_now.gif' : 'bn_only.png'),
+            'BNVALUE' => $var_16['buy_now'],
+            'BNFORMAT' => $var_13->print_money($var_16['buy_now']),
+            'BIDVALUE' => $var_16['current_bid'],
+            'BIDFORMAT' => $var_13->print_money($var_16['current_bid']),
+            'NUM_BIDS' => $var_16['num_bids'],
+            'TIMELEFT' => $var_19->formatTimeLeft($var_22),
+
+            'B_BUY_NOW' => ($var_16['buy_now'] > 0 && ($var_16['bn_only'] || $var_16['bn_only'] == 0 && ($var_16['num_bids'] == 0 || ($var_16['reserve_price'] > 0 && $var_16['current_bid'] < $var_16['reserve_price'])))),
+            'B_BNONLY' => ($var_16['bn_only'])
+            ));
+    $var_15++;
+}
+
+
+$var_5 = "SELECT nick FROM " . $var_6 . "users WHERE id = :user_id";
+$var_7[] = array(':user_id', $var_0, 'int');
+$var_8->query($var_5, $var_7);
+$var_28 = $var_8->result('nick');
+$var_29 = $MSG['219'] . ': ' . $var_28;
+
+$var_30 = $var_12 - 5;
+if ($var_30 <= 0) {
+    $var_30 = 1;
+}
+$var_31 = $var_30;
+$var_32 = '';
+while ($var_31 <= $var_14 && $var_31 < ($var_12 + 6)) {
+    if ($var_12 == $var_31) {
+        $var_32 .= '<b>' . $var_31 . '</b>&nbsp;&nbsp;';
+    } else {
+        $var_32 .= '<a href="active_auctions.php?PAGE=' . $var_31 . '&user_id=' . $var_0 . '"><u>' . $var_31 . '</u></a>&nbsp;&nbsp;';
+    }
+    $var_31++;
+}
+
+$var_24->assign_vars(array(
+        'B_MULPAG' => ($var_14 > 1),
+        'B_NOTLAST' => ($var_12 < $var_14),
+        'B_NOTFIRST' => ($var_12 > 1),
+
+        'USER_RSSFEED' => sprintf($MSG['932'], $var_28),
+        'USER_ID' => $var_0,
+        'USERNAME' => $var_28,
+        'THUMBWIDTH' => $var_13->SETTINGS['thumb_show'],
+        'NEXT' => intval($var_12 + 1),
+        'PREV' => intval($var_12 - 1),
+        'PAGE' => $var_12,
+        'PAGES' => $var_14,
+        'PAGENA' => $var_32
+        ));
+
+$var_24->set_filenames(array(
+        'body' => 'active_auctions.tpl'
+        ));
+$var_24->display('body');

@@ -1,0 +1,2885 @@
+<?php
+
+
+if (!defined('IS_VALID_PHPMYFAQ')) {
+    exit();
+}
+
+
+define('FAQ_SQL_ACTIVE_YES', 'yes');
+define('FAQ_SQL_ACTIVE_NO',  'no');
+
+
+define('FAQ_QUERY_TYPE_DEFAULT',      'faq_default');
+define('FAQ_QUERY_TYPE_APPROVAL',     'faq_approval');
+define('FAQ_QUERY_TYPE_EXPORT_PDF',   'faq_export_pdf');
+define('FAQ_QUERY_TYPE_EXPORT_XHTML', 'faq_export_xhtml');
+define('FAQ_QUERY_TYPE_EXPORT_XML',   'faq_export_xml');
+define('FAQ_QUERY_TYPE_RSS_LATEST',   'faq_rss_latest');
+
+
+define('FAQ_SORTING_TYPE_NONE', 0);
+define('FAQ_SORTING_TYPE_CATID_FAQID', 1);
+define('FAQ_SORTING_TYPE_FAQTITLE_FAQID', 2);
+define('FAQ_SORTING_TYPE_DATE_FAQID', 3);
+define('FAQ_SORTING_TYPE_FAQID', 4);
+
+
+class class_0
+{
+    
+    private $var_0;
+
+    
+    private $var_1;
+
+    
+    private $var_2;
+
+    
+    public $var_3 = [];
+
+    
+    public $var_4 = [];
+
+    
+    private $var_5 = -1;
+
+    
+    private $var_6 = array(-1);
+
+    
+    private $var_7 = false;
+
+    
+    public function fn_0(var_8 $var_9)
+    {
+        global $var_10, $var_2;
+
+        $var_11->var_0 = $var_9;
+        $var_11->var_1 = $var_10;
+        $var_11->var_2 = $var_2;
+
+        if ($var_11->var_0->fn_1('security.permLevel') == 'medium') {
+            $var_11->var_7 = true;
+        }
+    }
+
+    
+    
+    
+    
+    
+
+    
+    public function fn_2($var_13 = -1)
+    {
+        $var_11->var_5 = $var_13;
+    }
+
+    
+    public function fn_3(var_14 $var_6)
+    {
+        $var_11->var_6 = $var_6;
+    }
+
+    
+    public function fn_4($var_15, $var_16 = 'id', $var_17 = 'ASC')
+    {
+        global $var_18;
+
+        $var_19 = [];
+
+        if ($var_16 == 'visits') {
+            $var_20 = 'fv';
+        } else {
+            $var_20 = 'fd';
+        }
+
+        $var_21 = date('YmdHis');
+        $var_22 = sprintf("
+            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fd.thema AS thema,
+                fd.content AS record_content,
+                fd.updated AS updated,
+                fcr.category_id AS category_id,
+                fv.visits AS visits,
+                fd.created AS created
+            FROM
+                %sfaqdata AS fd
+            LEFT JOIN
+                %sfaqcategoryrelations AS fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                %sfaqvisits AS fv
+            ON
+                fd.id = fv.id
+            AND
+                fv.lang = fd.lang
+            LEFT JOIN
+                %sfaqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.date_start <= '%s'
+            AND
+                fd.date_end   >= '%s'
+            AND
+                fd.active = 'yes'
+            AND
+                fcr.category_id = %d
+            AND
+                fd.lang = '%s'
+                %s
+            ORDER BY
+                %s.%s %s",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_21,
+            $var_21,
+            $var_15,
+            $var_11->var_0->getLanguage()->getLanguage(),
+            $var_11->fn_5($var_11->var_7),
+            $var_20,
+            $var_11->var_0->getDb()->escape($var_16),
+            $var_11->var_0->getDb()->escape($var_17)
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+        $var_28 = $var_11->var_0->getDb()->numRows($var_27);
+
+        if ($var_28 > 0) {
+            $var_30 = new class_1($var_11->var_0);
+            while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27))) {
+                if (empty($var_31->var_33)) {
+                    $var_33 = 0;
+                } else {
+                    $var_33 = $var_31->var_33;
+                }
+
+                $var_34 = sprintf(
+                    '%sindex.php?%saction=artikel&cat=%d&id=%d&artlang=%s',
+                    $var_11->var_0->getDefaultUrl(),
+                    $var_18,
+                    $var_31->var_15,
+                    $var_31->var_36,
+                    $var_31->var_37
+                );
+                $var_38 = new class_2($var_34, $var_11->var_0);
+                $var_38->var_39 = $var_38->var_40 = $var_38->var_41 = $var_31->var_42;
+
+                $var_19[] = array(
+                    'record_id' => $var_31->var_36,
+                    'record_lang' => $var_31->var_37,
+                    'category_id' => $var_31->var_15,
+                    'record_title' => $var_31->var_42,
+                    'record_preview' => $var_30->renderAnswerPreview($var_31->var_44, 25),
+                    'record_link' => $var_38->toString(),
+                    'record_updated' => $var_31->var_46,
+                    'visits' => $var_33,
+                    'record_created' => $var_31->var_47,
+                );
+            }
+        } else {
+            return $var_19;
+        }
+
+        return $var_19;
+    }
+
+    
+    public function fn_6($var_48, $var_16 = 'id', $var_17 = 'ASC')
+    {
+        global $var_18;
+
+        $var_49 = $var_11->var_0->fn_1('records.numberOfRecordsPerPage');
+        $var_50 = PMF_Filter::filterInput(var_51, 'seite', var_52, 1);
+        $var_53 = '';
+        $var_54 = '';
+
+        if ($var_16 == 'visits') {
+            $var_20 = 'fv';
+        } else {
+            $var_20 = 'fd';
+        }
+
+        
+        if (true === $var_11->var_0->fn_1('records.randomSort')) {
+            $var_55 = '';
+        } else {
+            $var_55 = sprintf(
+                'ORDER BY fd.sticky DESC, %s.%s %s',
+                $var_20,
+                $var_11->var_0->getDb()->escape($var_16),
+                $var_11->var_0->getDb()->escape($var_17)
+            );
+        }
+
+        $var_21 = date('YmdHis');
+        $var_22 = sprintf("
+            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fd.sticky AS sticky,
+                fd.thema AS thema,
+                fcr.category_id AS category_id,
+                fv.visits AS visits
+            FROM
+                %sfaqdata AS fd
+            LEFT JOIN
+                %sfaqcategoryrelations AS fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                %sfaqvisits AS fv
+            ON
+                fd.id = fv.id
+            AND
+                fv.lang = fd.lang
+            LEFT JOIN
+                %sfaqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.date_start <= '%s'
+            AND
+                fd.date_end   >= '%s'
+            AND
+                fd.active = 'yes'
+            AND
+                fcr.category_id = %d
+            AND
+                fd.lang = '%s'
+            %s
+            %s",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_21,
+            $var_21,
+            $var_48,
+            $var_11->var_0->getLanguage()->getLanguage(),
+            $var_11->fn_5($var_11->var_7),
+            $var_55
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+        $var_28 = $var_11->var_0->getDb()->numRows($var_27);
+        $var_56 = (int) ceil($var_28 / $var_49);
+
+        if ($var_50 == 1) {
+            $var_57 = 0;
+        } else {
+            $var_57 = $var_50 * $var_49 - $var_49;
+        }
+
+        if ($var_28 > 0) {
+            if ($var_56 > 1) {
+                $var_53 .= sprintf('<p><strong>%s %s %s</strong></p>',
+                    $var_11->var_1['msgPage'].$var_50,
+                    $var_11->var_1['msgVoteFrom'],
+                    $var_56.$var_11->var_1['msgPages']);
+            }
+            $var_53 .= '<ul class="phpmyfaq_ul">';
+
+            $var_58 = 0;
+            $var_59 = 0;
+            $var_60 = [];
+            while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) && $var_59 < $var_49) {
+                ++$var_58;
+                if ($var_58 <= $var_57) {
+                    continue;
+                }
+                ++$var_59;
+
+                if (empty($var_31->var_33)) {
+                    $var_33 = 0;
+                } else {
+                    $var_33 = $var_31->var_33;
+                }
+
+                $var_54 = $var_31->var_42;
+                $var_34 = sprintf(
+                    '%s?%saction=artikel&amp;cat=%d&amp;id=%d&amp;artlang=%s',
+                    class_2::getSystemRelativeUri(),
+                    $var_18,
+                    $var_31->var_15,
+                    $var_31->var_36,
+                    $var_31->var_37
+                );
+
+                $var_38 = new class_2($var_34, $var_11->var_0);
+                $var_38->var_39 = $var_38->var_40 = $var_38->var_41 = $var_54;
+
+                
+                if (true === $var_11->var_0->fn_1('records.randomSort')) {
+                    $var_31->var_61 = 0;
+                }
+
+                $var_60[$var_31->var_36] = sprintf(
+                    '<li%s>%s<span id="viewsPerRecord"><br /><small>(%s)</small></span></li>',
+                    ($var_31->var_61 == 1) ? ' class="sticky-faqs"' : '',
+                    $var_38->toHtmlAnchor(),
+                    $var_11->var_2->GetMsg('plmsgViews', $var_33)
+                );
+            }
+
+            
+            if (true === $var_11->var_0->fn_1('records.randomSort')) {
+                shuffle($var_60);
+            }
+
+            $var_53 .= implode("\n", $var_60);
+            $var_53 .= '</ul><span class="totalFaqRecords hide">'.$var_28.'</span>';
+        } else {
+            return false;
+        }
+
+        if ($var_56 > 1) {
+            
+            if ($var_11->var_0->fn_1('main.enableRewriteRules')) {
+                $var_64 = new class_2(class_2::getSystemRelativeUri('index.php'), $var_11->var_0);
+                $var_65 = true;
+                $var_66 = sprintf(
+                    '%scategory/%d/%%d/%s.html',
+                    class_2::getSystemRelativeUri('index.php'),
+                    $var_48,
+                    $var_64->getSEOItemTitle($var_54)
+                );
+            } else {
+                $var_65 = false;
+                $var_66 = '';
+            }
+            $var_68 = sprintf(
+                '%s?%saction=show&amp;cat=%d&amp;seite=%d',
+                class_2::getSystemRelativeUri(),
+                (empty($var_18) ? '' : $var_18),
+                $var_48,
+                $var_50
+            );
+
+            $var_69 = array(
+                'baseUrl' => $var_68,
+                'total' => $var_28,
+                'perPage' => $var_11->var_0->fn_1('records.numberOfRecordsPerPage'),
+                'useRewrite' => $var_65,
+                'rewriteUrl' => $var_66,
+                'pageParamName' => 'seite',
+            );
+
+            $var_70 = new class_3($var_11->var_0, $var_69);
+            $var_53    .= $var_70->render();
+        }
+
+        return $var_53;
+    }
+
+    
+    public function fn_7(var_14 $var_72, $var_16 = 'fd.id', $var_17 = 'ASC')
+    {
+        global $var_18;
+
+        $var_73 = implode(', ', $var_72);
+        $var_50 = PMF_Filter::filterInput(var_51, 'seite', var_52, 1);
+        $var_74 = PMF_Filter::filterInput(var_51, 'tagging_id', var_52);
+        $var_53 = '';
+
+        $var_21 = date('YmdHis');
+        $var_22 = sprintf("
+            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fd.thema AS thema,
+                fcr.category_id AS category_id,
+                fv.visits AS visits
+            FROM
+                %sfaqdata AS fd
+            LEFT JOIN
+                %sfaqcategoryrelations AS fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                %sfaqvisits AS fv
+            ON
+                fd.id = fv.id
+            AND
+                fv.lang = fd.lang
+            LEFT JOIN
+                %sfaqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.date_start <= '%s'
+            AND
+                fd.date_end   >= '%s'
+            AND
+                fd.active = 'yes'
+            AND
+                fd.id IN (%s)
+            AND
+                fd.lang = '%s'
+                %s
+            ORDER BY
+                %s %s",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_21,
+            $var_21,
+            $var_73,
+            $var_11->var_0->getLanguage()->getLanguage(),
+            $var_11->fn_5($var_11->var_7),
+            $var_11->var_0->getDb()->escape($var_16),
+            $var_11->var_0->getDb()->escape($var_17));
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        $var_28 = $var_11->var_0->getDb()->numRows($var_27);
+        $var_56 = ceil($var_28 / $var_11->var_0->fn_1('records.numberOfRecordsPerPage'));
+
+        if ($var_50 == 1) {
+            $var_57 = 0;
+        } else {
+            $var_57 = ($var_50 * $var_11->var_0->fn_1('records.numberOfRecordsPerPage')) - $var_11->var_0->fn_1('records.numberOfRecordsPerPage');
+        }
+
+        if ($var_28 > 0) {
+            if ($var_56 > 1) {
+                $var_53 .= sprintf('<p><strong>%s %s %s</strong></p>',
+                    $var_11->var_1['msgPage'].$var_50,
+                    $var_11->var_1['msgVoteFrom'],
+                    $var_56.$var_11->var_1['msgPages']);
+            }
+            $var_53 .= '<ul class="phpmyfaq_ul">';
+            $var_58 = 0;
+            $var_59 = 0;
+
+            $var_75 = 0;
+            while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) && $var_59 < $var_11->var_0->fn_1('records.numberOfRecordsPerPage')) {
+                ++$var_58;
+                if ($var_58 <= $var_57) {
+                    continue;
+                }
+                ++$var_59;
+
+                if ($var_75 == $var_31->var_36) {
+                    continue; 
+                }
+
+                if (empty($var_31->var_33)) {
+                    $var_33 = 0;
+                } else {
+                    $var_33 = $var_31->var_33;
+                }
+
+                $var_54 = $var_31->var_42;
+                $var_34 = sprintf(
+                    '%s?%saction=artikel&amp;cat=%d&amp;id=%d&amp;artlang=%s',
+                    class_2::getSystemRelativeUri(),
+                    $var_18,
+                    $var_31->var_15,
+                    $var_31->var_36,
+                    $var_31->var_37
+                );
+                $var_38 = new class_2($var_34, $var_11->var_0);
+                $var_38->var_39 = $var_31->var_42;
+                $var_38->var_40 = $var_54;
+                $var_38->var_41 = $var_54;
+                $var_76 = sprintf(
+                    '<li>%s<br /><small>(%s)</small></li>',
+                    $var_38->toHtmlAnchor(),
+                    $var_11->var_2->GetMsg('plmsgViews', $var_33)
+                );
+
+                $var_53 .= $var_76;
+
+                $var_75 = $var_31->var_36;
+            }
+            $var_53 .= '</ul><span id="totFaqRecords" style="display: none;">'.$var_28.'</span>';
+        } else {
+            return false;
+        }
+
+        if ($var_28 > $var_11->var_0->fn_1('records.numberOfRecordsPerPage')) {
+            $var_53 .= '<p class="text-center"><strong>';
+            if (!isset($var_50)) {
+                $var_50 = 1;
+            }
+            $var_77 = $var_50 - 1;
+            $var_78 = $var_50 + 1;
+            if ($var_77 != 0) {
+                $var_34 = $var_18.'&amp;action=search&amp;tagging_id='.$var_74.'&amp;seite='.$var_77;
+                $var_38 = new class_2(class_2::getSystemRelativeUri().'?'.$var_34, $var_11->var_0);
+                $var_38->var_39 = 'tag';
+                $var_38->var_40 = $var_11->var_1['msgPrevious'];
+                $var_38->var_41 = $var_11->var_1['msgPrevious'];
+                $var_53          .= '[ '.$var_38->toHtmlAnchor().' ]';
+            }
+            $var_53 .= ' ';
+            if ($var_78 <= $var_56) {
+                $var_34 = $var_18.'&amp;action=search&amp;tagging_id='.$var_74.'&amp;seite='.$var_78;
+                $var_38 = new class_2(class_2::getSystemRelativeUri().'?'.$var_34, $var_11->var_0);
+                $var_38->var_39 = 'tag';
+                $var_38->var_40 = $var_11->var_1['msgNext'];
+                $var_38->var_41 = $var_11->var_1['msgNext'];
+                $var_53          .= '[ '.$var_38->toHtmlAnchor().' ]';
+            }
+            $var_53 .= '</strong></p>';
+        }
+
+        return $var_53;
+    }
+
+    
+    public function fn_8($var_79, $var_80 = null, $var_81 = false)
+    {
+        global $var_10;
+
+        $var_82 = $var_11->var_0->getLanguage()->getLanguage();
+        $var_83 = $var_11->var_0->getDefaultLanguage();
+
+        $var_27 = $var_11->fn_9($var_79, $var_82, $var_80, $var_81);
+
+        if (0 === $var_11->var_0->getDb()->numRows($var_27)) {
+            $var_27 = $var_11->fn_9($var_79, $var_83, $var_80, $var_81);
+        }
+
+        if ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            $var_86 = nl2br($var_31->var_42);
+            $var_87 = $var_31->var_88;
+            $var_89 = ('yes' === $var_31->var_89);
+            $var_90 = (date('YmdHis') > $var_31->var_91);
+
+            if (!$var_81) {
+                if (!$var_89) {
+                    $var_87 = $var_11->var_1['err_inactiveArticle'];
+                }
+                if ($var_90) {
+                    $var_87 = $var_11->var_1['err_expiredArticle'];
+                }
+            }
+
+            $var_11->var_3 = [
+                'id' => $var_31->var_36,
+                'lang' => $var_31->var_37,
+                'solution_id' => $var_31->var_92,
+                'revision_id' => $var_31->var_93,
+                'active' => $var_31->var_89,
+                'sticky' => $var_31->var_61,
+                'keywords' => $var_31->var_94,
+                'title' => $var_86,
+                'content' => $var_87,
+                'author' => $var_31->var_95,
+                'email' => $var_31->var_96,
+                'comment' => $var_31->var_97,
+                'date' => class_5::createIsoDate($var_31->var_46),
+                'dateStart' => $var_31->var_98,
+                'dateEnd' => $var_31->var_91,
+                'linkState' => $var_31->var_99,
+                'linkCheckDate' => $var_31->var_100,
+                'notes' => $var_31->var_101,
+                'created' => $var_31->var_47,
+            ];
+        } else {
+            $var_11->var_3 = [
+                'id' => $var_79,
+                'lang' => $var_82,
+                'solution_id' => 42,
+                'revision_id' => $var_80,
+                'active' => 'no',
+                'sticky' => 0,
+                'keywords' => '',
+                'title' => '',
+                'content' => $var_10['msgAccessDenied'],
+                'author' => '',
+                'email' => '',
+                'comment' => '',
+                'date' => class_5::createIsoDate(date('YmdHis')),
+                'dateStart' => '',
+                'dateEnd' => '',
+                'linkState' => '',
+                'linkCheckDate' => '',
+                'notes' => '',
+                'created' => date('c'),
+            ];
+        }
+    }
+
+    
+    public function fn_9($var_79, $var_102, $var_80 = null, $var_81 = false)
+    {
+        $var_22 = sprintf(
+            "SELECT
+                 id, lang, solution_id, revision_id, active, sticky, keywords,
+                 thema, content, author, email, comment, updated, links_state,
+                 links_check_date, date_start, date_end, created, notes
+            FROM
+                %s%s fd
+            LEFT JOIN
+                %sfaqdata_group fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.id = %d
+            %s
+            AND
+                fd.lang = '%s'
+                %s",
+            PMF_Db::getTablePrefix(),
+            isset($var_80) ? 'faqdata_revisions' : 'faqdata',
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_79,
+            isset($var_80) ? 'AND revision_id = '.$var_80 : '',
+            $var_102,
+            ($var_81) ? 'AND 1=1' : $var_11->fn_5($var_11->var_7)
+        );
+
+        return $var_11->var_0->getDb()->query($var_22);
+    }
+
+    
+    public function fn_10(var_14 $var_103)
+    {
+        $var_4 = [];
+
+        $var_22 = sprintf(
+            "SELECT
+                 fd.id AS id,
+                 fd.lang AS lang,
+                 fd.thema AS question,
+                 fd.content AS answer,
+                 fd.updated AS updated,
+                 fd.created AS created,
+                 fcr.category_id AS category_id,
+                 fv.visits AS visits
+            FROM
+                %sfaqdata fd
+            LEFT JOIN
+                %sfaqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                %sfaqdata_group fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqvisits AS fv
+            ON
+                fd.id = fv.id
+            AND
+                fv.lang = fd.lang
+            LEFT JOIN
+                %sfaqdata_user fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.id IN (%s)
+            AND
+                fd.lang = '%s'
+                %s",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            implode(',', $var_103),
+            $var_11->var_0->getLanguage()->getLanguage(),
+            $var_11->fn_5($var_11->var_7)
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        $var_30 = new class_1($var_11->var_0);
+        while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            if (empty($var_31->var_33)) {
+                $var_33 = 0;
+            } else {
+                $var_33 = $var_31->var_33;
+            }
+
+            $var_34 = sprintf(
+                '%sindex.php?action=artikel&cat=%d&id=%d&artlang=%s',
+                $var_11->var_0->getDefaultUrl(),
+                $var_31->var_15,
+                $var_31->var_36,
+                $var_31->var_37
+            );
+            $var_38 = new class_2($var_34, $var_11->var_0);
+            $var_38->var_39 = $var_38->var_40 = $var_38->var_41 = $var_31->var_86;
+
+            $var_4[] = [
+                'record_id' => (int)$var_31->var_36,
+                'record_lang' => $var_31->var_37,
+                'category_id' => (int)$var_31->var_15,
+                'record_title' => $var_31->var_86,
+                'record_preview' => $var_30->renderAnswerPreview($var_31->var_87, 25),
+                'record_link' => $var_38->toString(),
+                'record_updated' => class_5::createIsoDate($var_31->var_46).':00',
+                'visits' => (int)$var_33,
+                'record_created' => $var_31->var_47
+            ];
+        }
+
+        return $var_4;
+    }
+
+    
+    public function fn_11(var_14 $var_104, $var_105 = true)
+    {
+        if ($var_105) {
+            $var_106 = $var_11->var_0->getDb()->nextId(PMF_Db::getTablePrefix().'faqdata', 'id');
+        } else {
+            $var_106 = $var_104['id'];
+        }
+
+        
+        $var_22 = sprintf("
+            INSERT INTO
+                %sfaqdata
+            VALUES
+                (%d, '%s', %d, %d, '%s', %d, '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', %d, '%s', '%s', '%s', '%s')",
+            PMF_Db::getTablePrefix(),
+            $var_106,
+            $var_104['lang'],
+            $var_11->fn_12(),
+            0,
+            $var_104['active'],
+            $var_104['sticky'],
+            $var_11->var_0->getDb()->escape($var_104['keywords']),
+            $var_11->var_0->getDb()->escape($var_104['thema']),
+            $var_11->var_0->getDb()->escape($var_104['content']),
+            $var_11->var_0->getDb()->escape($var_104['author']),
+            $var_104['email'],
+            $var_104['comment'],
+            $var_104['date'],
+            $var_104['linkState'],
+            $var_104['linkDateCheck'],
+            $var_104['dateStart'],
+            $var_104['dateEnd'],
+            date('Y-m-d H:i:s'),
+            $var_104['notes']
+        );
+
+        $var_11->var_0->getDb()->query($var_22);
+
+        return $var_106;
+    }
+
+    
+    public function fn_13(var_14 $var_104)
+    {
+        
+        $var_22 = sprintf("
+            UPDATE
+                %sfaqdata
+            SET
+                revision_id = %d,
+                active = '%s',
+                sticky = %d,
+                keywords = '%s',
+                thema = '%s',
+                content = '%s',
+                author = '%s',
+                email = '%s',
+                comment = '%s',
+                updated = '%s',
+                links_state = '%s',
+                links_check_date = %d,
+                date_start = '%s',
+                date_end = '%s',
+                notes = '%s'
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_104['revision_id'],
+            $var_104['active'],
+            $var_104['sticky'],
+            $var_11->var_0->getDb()->escape($var_104['keywords']),
+            $var_11->var_0->getDb()->escape($var_104['thema']),
+            $var_11->var_0->getDb()->escape($var_104['content']),
+            $var_11->var_0->getDb()->escape($var_104['author']),
+            $var_104['email'],
+            $var_104['comment'],
+            $var_104['date'],
+            $var_104['linkState'],
+            $var_104['linkDateCheck'],
+            $var_104['dateStart'],
+            $var_104['dateEnd'],
+            $var_104['notes'],
+            $var_104['id'],
+            $var_104['lang']
+        );
+
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_14($var_106, $var_109)
+    {
+        $var_110 = $var_11->fn_15($var_106, $var_109);
+
+        $var_112 = array(
+            sprintf(
+                "DELETE FROM %sfaqchanges WHERE beitrag = %d AND lang = '%s'",
+                PMF_Db::getTablePrefix(),
+                $var_106,
+                $var_109
+            ),
+            sprintf(
+                "DELETE FROM %sfaqcategoryrelations WHERE record_id = %d AND record_lang = '%s'",
+                PMF_Db::getTablePrefix(),
+                $var_106,
+                $var_109
+            ),
+            sprintf(
+                "DELETE FROM %sfaqdata WHERE id = %d AND lang = '%s'",
+                PMF_Db::getTablePrefix(),
+                $var_106,
+                $var_109
+            ),
+            sprintf(
+                "DELETE FROM %sfaqdata_revisions WHERE id = %d AND lang = '%s'",
+                PMF_Db::getTablePrefix(),
+                $var_106,
+                $var_109
+            ),
+            sprintf(
+                "DELETE FROM %sfaqvisits WHERE id = %d AND lang = '%s'",
+                PMF_Db::getTablePrefix(),
+                $var_106,
+                $var_109
+            ),
+            sprintf(
+                'DELETE FROM %sfaqdata_user WHERE record_id = %d',
+                PMF_Db::getTablePrefix(),
+                $var_106,
+                $var_109
+            ),
+            sprintf(
+                'DELETE FROM %sfaqdata_group WHERE record_id = %d',
+                PMF_Db::getTablePrefix(),
+                $var_106,
+                $var_109
+            ),
+            sprintf(
+                'DELETE FROM %sfaqdata_tags WHERE record_id = %d',
+                PMF_Db::getTablePrefix(),
+                $var_106
+            ),
+            sprintf(
+                'DELETE FROM %sfaqdata_tags WHERE %sfaqdata_tags.record_id NOT IN (SELECT %sfaqdata.id FROM %sfaqdata)',
+                PMF_Db::getTablePrefix(),
+                PMF_Db::getTablePrefix(),
+                PMF_Db::getTablePrefix(),
+                PMF_Db::getTablePrefix()
+            ),
+            sprintf(
+                'DELETE FROM %sfaqcomments WHERE id = %d',
+                PMF_Db::getTablePrefix(),
+                $var_106
+            ),
+            sprintf(
+                'DELETE FROM %sfaqvoting WHERE artikel = %d',
+                PMF_Db::getTablePrefix(),
+                $var_106
+            ),
+        );
+
+        foreach ($var_112 as $var_22) {
+            $var_11->var_0->getDb()->query($var_22);
+        }
+
+        
+        $var_113 = PMF_Attachment_Factory::fetchByRecordId($var_11->var_0, $var_106);
+        $var_114 = PMF_Attachment_Factory::create($var_113);
+        $var_114->delete();
+
+        
+        if ($var_11->var_0->fn_1('search.enableElasticsearch')) {
+            $var_116 = new class_4($var_11->var_0);
+            $var_116->delete($var_110);
+        }
+
+        return true;
+    }
+
+    
+    public function fn_16($var_117, $var_118)
+    {
+        $var_22 = sprintf("
+            SELECT
+                id, lang
+            FROM
+                %sfaqdata
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_117,
+            $var_118);
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_11->var_0->getDb()->numRows($var_27)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    
+    public function fn_17($var_117, $var_118, $var_119 = 'faq')
+    {
+        if ('news' == $var_119) {
+            $var_120 = 'faqnews';
+        } else {
+            $var_120 = 'faqdata';
+        }
+
+        $var_22 = sprintf("
+            SELECT
+                comment
+            FROM
+                %s%s
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_120,
+            $var_117,
+            $var_118
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            return ($var_31->var_97 === 'y') ? false : true;
+        } else {
+            return true;
+        }
+    }
+
+    
+    public function fn_18(var_14 $var_122, $var_117, $var_123)
+    {
+        if (!is_array($var_122)) {
+            return false;
+        }
+
+        foreach ($var_122 as $var_124) {
+            $var_11->var_0->getDb()->query(sprintf(
+                "INSERT INTO
+                    %sfaqcategoryrelations
+                VALUES
+                    (%d, '%s', %d, '%s')",
+                PMF_Db::getTablePrefix(),
+                $var_124,
+                $var_123,
+                $var_117,
+                $var_123));
+        }
+
+        return true;
+    }
+
+    
+    public function fn_19($var_125, $var_117, $var_123)
+    {
+        
+        if (is_array($var_125)) {
+            $var_11->fn_18($var_125, $var_117, $var_123);
+        }
+        $var_122[] = $var_125;
+
+        return $var_11->fn_18($var_122, $var_117, $var_123);
+    }
+
+    
+    public function fn_20($var_117, $var_118)
+    {
+        $var_22 = sprintf("
+            DELETE FROM
+                %sfaqcategoryrelations
+            WHERE
+                record_id = %d
+            AND
+                record_lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_117,
+            $var_118);
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_21($var_110)
+    {
+        $var_22 = sprintf(
+            'SELECT
+                *
+            FROM
+                %sfaqdata fd
+            LEFT JOIN
+                %sfaqdata_group fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.solution_id = %d
+                %s',
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_110,
+            $var_11->fn_5($var_11->var_7)
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            $var_86 = nl2br($var_31->var_42);
+            $var_88 = $var_31->var_88;
+            $var_89 = ('yes' == $var_31->var_89);
+            $var_90 = (date('YmdHis') > $var_31->var_91);
+
+            if (!$var_89) {
+                $var_88 = $var_11->var_1['err_inactiveArticle'];
+            }
+            if ($var_90) {
+                $var_88 = $var_11->var_1['err_expiredArticle'];
+            }
+
+            $var_11->var_3 = array(
+                'id' => $var_31->var_36,
+                'lang' => $var_31->var_37,
+                'solution_id' => $var_31->var_92,
+                'revision_id' => $var_31->var_93,
+                'active' => $var_31->var_89,
+                'sticky' => $var_31->var_61,
+                'keywords' => $var_31->var_94,
+                'title' => $var_86,
+                'content' => $var_88,
+                'author' => $var_31->var_95,
+                'email' => $var_31->var_96,
+                'comment' => $var_31->var_97,
+                'date' => class_5::createIsoDate($var_31->var_46),
+                'dateStart' => $var_31->var_98,
+                'dateEnd' => $var_31->var_91,
+                'linkState' => $var_31->var_99,
+                'linkCheckDate' => $var_31->var_100,
+                'notes' => $var_31->var_101
+            );
+        }
+    }
+
+    
+    public function fn_22($var_110)
+    {
+        $var_22 = sprintf('
+            SELECT
+                fd.id,
+                fd.lang,
+                fd.thema AS question,
+                fd.content, 
+                fcr.category_id AS category_id
+            FROM
+                %sfaqdata fd
+            LEFT JOIN
+                %sfaqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            WHERE
+                fd.solution_id = %d',
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_110
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            return [
+                'id' => $var_31->var_36,
+                'lang' => $var_31->var_37,
+                'question' => $var_31->var_86,
+                'content' => $var_31->var_88,
+                'category_id' => $var_31->var_15
+            ];
+        }
+
+        return [];
+    }
+
+    
+    public function fn_15($var_79, $var_126)
+    {
+        $var_22 = sprintf("
+            SELECT
+                solution_id
+            FROM
+                %sfaqdata
+            WHERE
+                id = %d
+                AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            (int) $var_79,
+            $var_11->var_0->getDb()->escape($var_126)
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            return $var_31->var_92;
+        }
+
+        return $var_11->fn_12();
+    }
+
+    
+    public function fn_12()
+    {
+        $var_127 = 0;
+
+        $var_22 = sprintf('
+            SELECT
+                MAX(solution_id) AS solution_id
+            FROM
+                %sfaqdata',
+            PMF_Db::getTablePrefix()
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_27 && $var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            $var_127 = $var_31->var_92;
+        }
+
+        if ($var_127 < var_128) {
+            $var_129 = var_128;
+        } else {
+            $var_129 = $var_127 + var_130;
+        }
+
+        return $var_129;
+    }
+
+    
+    public function fn_23($var_131 = var_132, var_14 $var_133 = null, $var_134 = 'ASC')
+    {
+        $var_135 = '';
+        if (!is_null($var_133)) {
+            $var_28 = count($var_133);
+            $var_135 = 'WHERE ';
+            foreach ($var_133 as $var_136 => $var_104) {
+                --$var_28;
+                $var_135 .= $var_136;
+                if (is_array($var_104)) {
+                    $var_135 .= ' IN (';
+                    $var_137 = '';
+                    foreach ($var_104 as $var_138) {
+                        $var_135 .= $var_137."'".$var_11->var_0->getDb()->escape($var_138)."'";
+                        $var_137 = ', ';
+                    }
+                    $var_135 .= ')';
+                } else {
+                    $var_135 .= " = '".$var_11->var_0->getDb()->escape($var_104)."'";
+                }
+                if ($var_28 > 0) {
+                    $var_135 .= ' AND ';
+                }
+            }
+        }
+
+        switch ($var_131) {
+
+            case var_132:
+                $var_139 = sprintf('
+            ORDER BY
+                fcr.category_id,
+                fd.id %s',
+                    $var_134);
+                break;
+
+            case var_140:
+                $var_139 = sprintf('
+            ORDER BY
+                fd.id %s',
+                    $var_134);
+                break;
+
+            case var_141:
+                $var_139 = sprintf('
+            ORDER BY
+                fcr.category_id,
+                fd.thema %s',
+                    $var_134);
+                break;
+
+            case var_142:
+                $var_139 = sprintf('
+            ORDER BY
+                fcr.category_id,
+                fd.updated %s',
+                    $var_134);
+                break;
+
+            default:
+                $var_139 = '';
+                break;
+        }
+
+        $var_22 = sprintf('
+            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fcr.category_id AS category_id,
+                fd.solution_id AS solution_id,
+                fd.revision_id AS revision_id,
+                fd.active AS active,
+                fd.sticky AS sticky,
+                fd.keywords AS keywords,
+                fd.thema AS thema,
+                fd.content AS content,
+                fd.author AS author,
+                fd.email AS email,
+                fd.comment AS comment,
+                fd.updated AS updated,
+                fd.links_state AS links_state,
+                fd.links_check_date AS links_check_date,
+                fd.date_start AS date_start,
+                fd.date_end AS date_end,
+                fd.sticky AS sticky,
+                fd.created AS created,
+                fd.notes AS notes
+            FROM
+                %sfaqdata fd
+            LEFT JOIN
+                %sfaqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                %sfaqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            %s
+            %s
+            %s',
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_135,
+            $var_11->fn_5($var_11->var_7),
+            $var_139
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+            $var_88 = $var_31->var_88;
+            $var_89 = ('yes' == $var_31->var_89);
+            $var_90 = (date('YmdHis') > $var_31->var_91);
+
+            if (!$var_89) {
+                $var_88 = $var_11->var_1['err_inactiveArticle'];
+            }
+            if ($var_90) {
+                $var_88 = $var_11->var_1['err_expiredArticle'];
+            }
+
+            $var_11->var_4[] = [
+                'id' => $var_31->var_36,
+                'category_id' => $var_31->var_15,
+                'lang' => $var_31->var_37,
+                'solution_id' => $var_31->var_92,
+                'revision_id' => $var_31->var_93,
+                'active' => $var_31->var_89,
+                'sticky' => $var_31->var_61,
+                'keywords' => $var_31->var_94,
+                'title' => $var_31->var_42,
+                'content' => $var_88,
+                'author' => $var_31->var_95,
+                'email' => $var_31->var_96,
+                'comment' => $var_31->var_97,
+                'updated' => class_5::createIsoDate($var_31->var_46, 'Y-m-d H:i:s'),
+                'dateStart' => $var_31->var_98,
+                'dateEnd' => $var_31->var_91,
+                'created' => $var_31->var_47,
+                'notes' => $var_31->var_101
+            ];
+        }
+    }
+
+    
+    public function fn_24($var_36)
+    {
+        if (isset($var_11->var_3['id']) && ($var_11->var_3['id'] == $var_36)) {
+            return $var_11->var_3['title'];
+        }
+
+        $var_86 = '';
+
+        $var_22 = sprintf(
+            "SELECT
+                thema AS question
+            FROM
+                %sfaqdata
+            WHERE
+                id = %d AND lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_36,
+            $var_11->var_0->getLanguage()->getLanguage()
+            );
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_11->var_0->getDb()->numRows($var_27) > 0) {
+            while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                $var_86 = $var_31->var_86;
+            }
+        } else {
+            $var_86 = $var_11->var_1['no_cats'];
+        }
+
+        return $var_86;
+    }
+
+    
+    public function fn_25($var_106, $var_109)
+    {
+        $var_143 = [];
+
+        $var_22 = sprintf("
+            SELECT
+                revision_id, updated, author
+            FROM
+                %sfaqdata_revisions
+            WHERE
+                id = %d
+            AND
+                lang = '%s'
+            ORDER BY
+                revision_id",
+            PMF_Db::getTablePrefix(),
+            $var_106,
+            $var_109
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_11->var_0->getDb()->numRows($var_27) > 0) {
+            while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                $var_143[] = [
+                    'revision_id' => $var_31->var_93,
+                    'updated' => $var_31->var_46,
+                    'author' => $var_31->var_95,
+                ];
+            }
+        }
+
+        return $var_143;
+    }
+
+    
+    public function fn_26($var_117, $var_118)
+    {
+        $var_22 = sprintf("
+            INSERT INTO
+                %sfaqdata_revisions
+            SELECT * FROM
+                %sfaqdata
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_117,
+            $var_118);
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_27($var_36)
+    {
+        if (isset($var_11->var_3['id']) && ($var_11->var_3['id'] == $var_36)) {
+            return $var_11->var_3['keywords'];
+        }
+
+        $var_22 = sprintf(
+            "SELECT
+                keywords
+            FROM
+                %sfaqdata
+            WHERE id = %d AND lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_36,
+            $var_11->var_0->getLanguage()->getLanguage());
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_11->var_0->getDb()->numRows($var_27) > 0) {
+            $var_31 = $var_11->var_0->getDb()->fetchObject($var_27);
+
+            return PMF_String::htmlspecialchars($var_31->var_94, var_144, 'utf-8');
+        } else {
+            return '';
+        }
+    }
+
+    
+    public function fn_28($var_106, $var_145 = 12)
+    {
+        if (isset($var_11->var_3['id']) && ((int)$var_11->var_3['id'] === (int)$var_106)) {
+            $var_146 = $var_11->var_3['content'];
+
+            return PMF_Utils::makeShorterText($var_146, $var_145);
+        }
+
+        $var_22 = sprintf("
+            SELECT
+                content as answer
+            FROM
+                %sfaqdata
+            WHERE 
+                id = %d 
+            AND 
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_106,
+            $var_11->var_0->getLanguage()->getLanguage()
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_11->var_0->getDb()->numRows($var_27) > 0) {
+            $var_31 = $var_11->var_0->getDb()->fetchObject($var_27);
+            $var_146 = strip_tags($var_31->var_87);
+        } else {
+            $var_146 = $var_11->var_0->fn_1('main.metaDescription');
+        }
+
+        return PMF_Utils::makeShorterText($var_146, $var_145);
+    }
+
+    
+    public function fn_29($var_123 = null)
+    {
+        $var_21 = date('YmdHis');
+
+        $var_22 = sprintf("
+            SELECT
+                id
+            FROM
+                %sfaqdata
+            WHERE
+                active = 'yes'
+            %s
+            AND
+                date_start <= '%s'
+            AND
+                date_end >= '%s'",
+            PMF_Db::getTablePrefix(),
+            null == $var_123 ? '' : "AND lang = '".$var_123."'",
+            $var_21,
+            $var_21
+        );
+
+        $var_28 = $var_11->var_0->getDb()->numRows($var_11->var_0->getDb()->query($var_22));
+
+        if ($var_28 > 0) {
+            return $var_28;
+        } else {
+            return 0;
+        }
+    }
+
+    
+    public function fn_30($var_147 = 'visits')
+    {
+        if ('visits' == $var_147) {
+            $var_27 = $var_11->fn_31(var_149, 0, $var_11->var_0->getLanguage()->getLanguage());
+        } else {
+            $var_27 = $var_11->fn_32(var_149, $var_11->var_0->getLanguage()->getLanguage());
+        }
+        $var_53 = [];
+
+        if (count($var_27) > 0) {
+            foreach ($var_27 as $var_31) {
+                if ('visits' == $var_147) {
+                    $var_53['title'][] = PMF_Utils::makeShorterText($var_31['question'], 8);
+                    $var_53['preview'][] = $var_31['question'];
+                    $var_53['url'][] = $var_31['url'];
+                    $var_53['visits'][] = $var_11->var_2->GetMsg('plmsgViews', $var_31['visits']);
+                } else {
+                    $var_53['title'][] = PMF_Utils::makeShorterText($var_31['question'], 8);
+                    $var_53['preview'][] = $var_31['question'];
+                    $var_53['url'][] = $var_31['url'];
+                    $var_53['voted'][] = sprintf(
+                        '%s %s 5 - %s',
+                        round($var_31['avg'], 2),
+                        $var_11->var_1['msgVoteFrom'],
+                        $var_11->var_2->GetMsg('plmsgVotes', $var_31['user'])
+                    );
+                }
+            }
+        } else {
+            $var_53['error'] = $var_11->var_1['err_noTopTen'];
+        }
+
+        return $var_53;
+    }
+
+    
+    public function fn_33()
+    {
+        $var_151 = new class_5($var_11->var_0);
+        $var_27 = $var_11->fn_34(var_153, $var_11->var_0->getLanguage()->getLanguage());
+        $var_53 = [];
+
+        if (count($var_27) > 0) {
+            foreach ($var_27 as $var_31) {
+                $var_53['url'][] = $var_31['url'];
+                $var_53['title'][] = PMF_Utils::makeShorterText($var_31['question'], 8);
+                $var_53['preview'][] = $var_31['question'];
+                $var_53['date'][] = $var_151->format(class_5::createIsoDate($var_31['date']));
+            }
+        } else {
+            $var_53['error'] = $var_11->var_1['err_noArticles'];
+        }
+
+        return $var_53;
+    }
+
+    
+    public function fn_35($var_155)
+    {
+        $var_115 = sprintf("
+            DELETE FROM
+                %sfaqquestions
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_155,
+            $var_11->var_0->getLanguage()->getLanguage()
+        );
+
+        $var_11->var_0->getDb()->query($var_115);
+
+        return true;
+    }
+
+     
+     public function fn_36($var_155)
+     {
+         $var_22 = sprintf("
+            SELECT
+                is_visible
+            FROM
+                %sfaqquestions
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_155,
+            $var_11->var_0->getLanguage()->getLanguage()
+        );
+
+         $var_27 = $var_11->var_0->getDb()->query($var_22);
+         if ($var_11->var_0->getDb()->numRows($var_27) > 0) {
+             $var_31 = $var_11->var_0->getDb()->fetchObject($var_27);
+
+             return $var_31->var_156;
+         }
+
+         return;
+     }
+
+    
+    public function fn_37($var_155, $var_157)
+    {
+        $var_22 = sprintf("
+            UPDATE
+                %sfaqquestions
+            SET
+                is_visible = '%s'
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_157,
+            $var_155,
+            $var_11->var_0->getLanguage()->getLanguage()
+        );
+
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_32($var_158 = var_149, $var_123 = null)
+    {
+        global $var_18;
+
+        $var_159 = $var_104 = [];
+
+        $var_21 = date('YmdHis');
+        $var_22 =
+'            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fd.thema AS thema,
+                fd.updated AS updated,
+                fcr.category_id AS category_id,
+                (fv.vote/fv.usr) AS avg,
+                fv.usr AS user
+            FROM
+                '.PMF_Db::getTablePrefix().'faqvoting fv,
+                '.PMF_Db::getTablePrefix().'faqdata fd
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                    fd.date_start <= \''.$var_21.'\'
+                AND fd.date_end   >= \''.$var_21.'\'
+                AND fd.id = fv.artikel
+                AND fd.active = \'yes\'';
+
+        if (isset($var_48) && is_numeric($var_48) && ($var_48 != 0)) {
+            $var_22 .= '
+            AND
+                fcr.category_id = \''.$var_48.'\'';
+        }
+        if (isset($var_123) && PMF_Language::isASupportedLanguage($var_123)) {
+            $var_22 .= '
+            AND
+                fd.lang = \''.$var_123.'\'';
+        }
+        $var_22 .= '
+                '.$var_11->fn_5($var_11->var_7).'
+            ORDER BY
+                avg DESC';
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        $var_160 = 1;
+        $var_161 = 0;
+        while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) && $var_160 <= $var_158) {
+            if ($var_161 != $var_31->var_36) {
+                $var_104['avg'] = $var_31->var_162;
+                $var_104['question'] = $var_31->var_42;
+                $var_104['date'] = $var_31->var_46;
+                $var_104['user'] = $var_31->var_5;
+
+                $var_54 = $var_31->var_42;
+                $var_34 = sprintf(
+                    '%s?%saction=artikel&amp;cat=%d&amp;id=%d&amp;artlang=%s',
+                    class_2::getSystemRelativeUri(),
+                    $var_18,
+                    $var_31->var_15,
+                    $var_31->var_36,
+                    $var_31->var_37
+                );
+                $var_38 = new class_2($var_34, $var_11->var_0);
+                $var_38->var_39 = $var_31->var_42;
+                $var_38->var_41 = $var_54;
+                $var_104['url'] = $var_38->toString();
+
+                $var_159[] = $var_104;
+                ++$var_160;
+            }
+            $var_161 = $var_31->var_36;
+        }
+
+        return $var_159;
+    }
+
+    
+    public function fn_31($var_158 = var_149, $var_48 = 0, $var_123 = null)
+    {
+        global $var_18;
+
+        $var_21 = date('YmdHis');
+        $var_22 =
+'            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fd.thema AS question,
+                fd.updated AS updated,
+                fcr.category_id AS category_id,
+                fv.visits AS visits,
+                fv.last_visit AS last_visit,
+                fdg.group_id AS group_id,
+                fdu.user_id AS user_id
+            FROM
+                '.PMF_Db::getTablePrefix().'faqvisits fv,
+                '.PMF_Db::getTablePrefix().'faqdata fd
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                    fd.date_start <= \''.$var_21.'\'
+                AND fd.date_end   >= \''.$var_21.'\'
+                AND fd.id = fv.id
+                AND fd.lang = fv.lang
+                AND fd.active = \'yes\'';
+
+        if (isset($var_48) && is_numeric($var_48) && ($var_48 != 0)) {
+            $var_22 .= '
+            AND
+                fcr.category_id = \''.$var_48.'\'';
+        }
+        if (isset($var_123) && PMF_Language::isASupportedLanguage($var_123)) {
+            $var_22 .= '
+            AND
+                fd.lang = \''.$var_123.'\'';
+        }
+        $var_22 .= '
+                '.$var_11->fn_5($var_11->var_7).'
+
+            GROUP BY
+                fd.id,fd.lang,fcr.category_id,fv.visits,fv.last_visit,fdg.group_id,fdu.user_id
+            ORDER BY
+                fv.visits DESC';
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+        $var_159 = [];
+        $var_104 = [];
+
+        if ($var_27) {
+            while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                if ($var_11->var_7) {
+                    if (!in_array($var_31->var_163, array(-1, $var_11->var_5)) || !in_array($var_31->var_164, $var_11->var_6)) {
+                        continue;
+                    }
+                } else {
+                    if (!in_array($var_31->var_163, array(-1, $var_11->var_5))) {
+                        continue;
+                    }
+                }
+
+                $var_104['visits'] = (int)$var_31->var_33;
+                $var_104['question'] = $var_31->var_86;
+                $var_104['date'] = $var_31->var_46;
+                $var_104['last_visit'] = $var_31->var_165;
+
+                $var_54 = $var_31->var_86;
+                $var_34 = sprintf(
+                    '%sindex.php?%saction=artikel&cat=%d&id=%d&artlang=%s',
+                    $var_11->var_0->getDefaultUrl(),
+                    $var_18,
+                    $var_31->var_15,
+                    $var_31->var_36,
+                    $var_31->var_37
+                );
+                $var_38 = new class_2($var_34, $var_11->var_0);
+                $var_38->var_39 = $var_31->var_86;
+                $var_38->var_41 = $var_54;
+                $var_104['url'] = $var_38->toString();
+
+                $var_159[$var_31->var_36] = $var_104;
+
+                if (count($var_159) === $var_158) {
+                    break;
+                }
+            }
+
+            array_multisort($var_159, var_166);
+        }
+
+        return $var_159;
+    }
+
+    
+    public function fn_34($var_158 = var_153, $var_123 = null)
+    {
+        global $var_18;
+
+        $var_21 = date('YmdHis');
+        $var_22 =
+'            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fcr.category_id AS category_id,
+                fd.thema AS question,
+                fd.content AS content,
+                fd.updated AS updated,
+                fv.visits AS visits,
+                fdg.group_id AS group_id,
+                fdu.user_id AS user_id
+            FROM
+                '.PMF_Db::getTablePrefix().'faqvisits fv,
+                '.PMF_Db::getTablePrefix().'faqdata fd
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                '.PMF_Db::getTablePrefix().'faqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                    fd.date_start <= \''.$var_21.'\'
+                AND fd.date_end   >= \''.$var_21.'\'
+                AND fd.id = fv.id
+                AND fd.lang = fv.lang
+                AND fd.active = \'yes\'';
+
+        if (isset($var_123) && PMF_Language::isASupportedLanguage($var_123)) {
+            $var_22 .= '
+            AND
+                fd.lang = \''.$var_123.'\'';
+        }
+        $var_22 .= '
+                '.$var_11->fn_5($var_11->var_7).'
+            GROUP BY
+                fd.id,fd.lang,fcr.category_id,fv.visits,fdg.group_id,fdu.user_id
+            ORDER BY
+                fd.updated DESC';
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+        $var_167 = [];
+        $var_104 = [];
+
+        if ($var_27) {
+            while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27))) {
+                if ($var_11->var_7) {
+                    if (!in_array($var_31->var_163, array(-1, $var_11->var_5)) || !in_array($var_31->var_164, $var_11->var_6)) {
+                        continue;
+                    }
+                } else {
+                    if (!in_array($var_31->var_163, array(-1, $var_11->var_5))) {
+                        continue;
+                    }
+                }
+
+                $var_104['date'] = $var_31->var_46;
+                $var_104['question'] = $var_31->var_86;
+                $var_104['answer'] = $var_31->var_88;
+                $var_104['visits'] = $var_31->var_33;
+
+                $var_54 = $var_31->var_86;
+                $var_34 = sprintf(
+                    '%sindex.php?%saction=artikel&cat=%d&id=%d&artlang=%s',
+                    $var_11->var_0->getDefaultUrl(),
+                    $var_18,
+                    $var_31->var_15,
+                    $var_31->var_36,
+                    $var_31->var_37
+                );
+                $var_38 = new class_2($var_34, $var_11->var_0);
+                $var_38->var_39 = $var_31->var_86;
+                $var_38->var_41 = $var_54;
+                $var_104['url'] = $var_38->toString();
+
+                $var_167[$var_31->var_36] = $var_104;
+
+                if (count($var_167) === $var_158) {
+                    break;
+                }
+            }
+        }
+        
+        return $var_167;
+    }
+
+    
+    public function fn_38($var_36, $var_168)
+    {
+        $var_169 = $_SERVER['REQUEST_TIME'] - 300;
+        $var_22 = sprintf(
+            "SELECT
+                id
+            FROM
+                %sfaqvoting
+            WHERE
+                artikel = %d AND (ip = '%s' AND datum > '%s')",
+            PMF_Db::getTablePrefix(),
+            $var_36,
+            $var_168,
+            $var_169);
+        if ($var_11->var_0->getDb()->numRows($var_11->var_0->getDb()->query($var_22))) {
+            return false;
+        }
+
+        return true;
+    }
+
+    
+    public function fn_39($var_117)
+    {
+        $var_22 = sprintf(
+            'SELECT
+                usr
+            FROM
+                %sfaqvoting
+            WHERE
+                artikel = %d',
+            PMF_Db::getTablePrefix(),
+            $var_117);
+        if ($var_27 = $var_11->var_0->getDb()->query($var_22)) {
+            if ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                return $var_31->var_170;
+            }
+        }
+
+        return 0;
+    }
+
+    
+    public function fn_40($var_171)
+    {
+        if (!is_array($var_171)) {
+            return false;
+        }
+
+        $var_22 = sprintf(
+            "INSERT INTO
+                %sfaqvoting
+            VALUES
+                (%d, %d, %d, 1, %d, '%s')",
+            PMF_Db::getTablePrefix(),
+            $var_11->var_0->getDb()->nextId(PMF_Db::getTablePrefix().'faqvoting', 'id'),
+            $var_171['record_id'],
+            $var_171['vote'],
+            $_SERVER['REQUEST_TIME'],
+            $var_171['user_ip']);
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_41(var_14 $var_172)
+    {
+        $var_22 = sprintf("
+            INSERT INTO
+                %sfaqquestions
+            (id, lang, username, email, category_id, question, created, is_visible, answer_id)
+                VALUES
+            (%d, '%s', '%s', '%s', %d, '%s', '%s', '%s', %d)",
+            PMF_Db::getTablePrefix(),
+            $var_11->var_0->getDb()->nextId(PMF_Db::getTablePrefix().'faqquestions', 'id'),
+            $var_11->var_0->getLanguage()->getLanguage(),
+            $var_11->var_0->getDb()->escape($var_172['username']),
+            $var_11->var_0->getDb()->escape($var_172['email']),
+            $var_172['category_id'],
+            $var_11->var_0->getDb()->escape($var_172['question']),
+            date('YmdHis'),
+            $var_172['is_visible'],
+            0
+        );
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_42($var_155)
+    {
+        $var_86 = [
+            'id' => 0,
+            'lang' => '',
+            'username' => '',
+            'email' => '',
+            'category_id' => '',
+            'question' => '',
+            'created' => '',
+            'is_visible' => '',
+        ];
+
+        if (!is_int($var_155)) {
+            return $var_86;
+        }
+
+        $var_86 = [];
+
+        $var_22 = sprintf("
+            SELECT
+                 id, lang, username, email, category_id, question, created, is_visible
+            FROM
+                %sfaqquestions
+            WHERE
+                id = %d
+            AND
+                lang = '%s'",
+            PMF_Db::getTablePrefix(),
+            $var_155,
+            $var_11->var_0->getLanguage()->getLanguage()
+        );
+
+        if ($var_27 = $var_11->var_0->getDb()->query($var_22)) {
+            if ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                $var_86 = array(
+                    'id' => $var_31->var_36,
+                    'lang' => $var_31->var_37,
+                    'username' => $var_31->var_173,
+                    'email' => $var_31->var_96,
+                    'category_id' => $var_31->var_15,
+                    'question' => $var_31->var_86,
+                    'created' => $var_31->var_47,
+                    'is_visible' => $var_31->var_156, );
+            }
+        }
+
+        return $var_86;
+    }
+
+    
+    public function fn_43($var_174 = true)
+    {
+        $var_175 = [];
+
+        $var_22 = sprintf("
+            SELECT
+                id, lang, username, email, category_id, question, created, answer_id, is_visible
+            FROM
+                %sfaqquestions
+            WHERE
+                lang = '%s'
+                %s
+            ORDER BY 
+                created ASC",
+            PMF_Db::getTablePrefix(),
+            $var_11->var_0->getLanguage()->getLanguage(),
+            ($var_174 == false ? " AND is_visible = 'Y'" : '')
+        );
+
+        if ($var_27 = $var_11->var_0->getDb()->query($var_22)) {
+            while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                $var_175[] = array(
+                    'id' => $var_31->var_36,
+                    'lang' => $var_31->var_37,
+                    'username' => $var_31->var_173,
+                    'email' => $var_31->var_96,
+                    'category_id' => $var_31->var_15,
+                    'question' => $var_31->var_86,
+                    'created' => $var_31->var_47,
+                    'answer_id' => $var_31->var_176,
+                    'is_visible' => $var_31->var_156,
+                );
+             }
+        }
+
+        return $var_175;
+    }
+
+    
+    public function fn_44($var_171)
+    {
+        if (!is_array($var_171)) {
+            return false;
+        }
+
+        $var_22 = sprintf(
+            "UPDATE
+                %sfaqvoting
+            SET
+                vote    = vote + %d,
+                usr     = usr + 1,
+                datum   = %d,
+                ip      = '%s'
+            WHERE
+                artikel = %d",
+            PMF_Db::getTablePrefix(),
+            $var_171['vote'],
+            $_SERVER['REQUEST_TIME'],
+            $var_171['user_ip'],
+            $var_171['record_id']);
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_45($var_36, $var_13, $var_40, $var_37, $var_93 = 0)
+    {
+        if (!is_numeric($var_36)
+            && !is_numeric($var_13)
+            && !is_string($var_40)
+            && !is_string($var_37)
+            ) {
+            return false;
+        }
+
+        $var_22 = sprintf(
+            "INSERT INTO
+                %sfaqchanges
+            (id, beitrag, lang, revision_id, usr, datum, what)
+                VALUES
+            (%d, %d, '%s', %d, %d, %d, '%s')",
+            PMF_Db::getTablePrefix(),
+            $var_11->var_0->getDb()->nextId(PMF_Db::getTablePrefix().'faqchanges', 'id'),
+            $var_36,
+            $var_37,
+            $var_93,
+            $var_13,
+            $_SERVER['REQUEST_TIME'],
+            $var_40);
+
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_46($var_106)
+    {
+        $var_177 = [];
+
+        $var_22 = sprintf('
+            SELECT
+                DISTINCT revision_id, usr, datum, what
+            FROM
+                %sfaqchanges
+            WHERE
+                beitrag = %d
+            ORDER BY revision_id DESC',
+            PMF_Db::getTablePrefix(),
+            $var_106
+        );
+
+        if ($var_27 = $var_11->var_0->getDb()->query($var_22)) {
+            while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                $var_177[] = array(
+                    'revision_id' => $var_31->var_93,
+                    'user' => $var_31->var_170,
+                    'date' => $var_31->var_178,
+                    'changelog' => $var_31->var_179, );
+            }
+        }
+
+        return $var_177;
+    }
+
+    
+    public function fn_1($var_180 = var_181, $var_182 = 0, $var_183 = true, $var_37 = '', $var_151 = '')
+    {
+        $var_184 = [];
+
+        $var_27 = $var_11->var_0->getDb()->query($var_11->fn_47($var_180, $var_182, $var_183, $var_37, $var_151));
+
+        if ($var_11->var_0->getDb()->numRows($var_27) > 0) {
+            $var_160 = 0;
+            while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                $var_186 = [];
+                $var_186['id'] = $var_31->var_36;
+                $var_186['solution_id'] = $var_31->var_92;
+                $var_186['revision_id'] = $var_31->var_93;
+                $var_186['lang'] = $var_31->var_37;
+                $var_186['category_id'] = $var_31->var_15;
+                $var_186['active'] = $var_31->var_89;
+                $var_186['sticky'] = $var_31->var_61;
+                $var_186['keywords'] = $var_31->var_94;
+                $var_186['topic'] = $var_31->var_42;
+                $var_186['content'] = $var_31->var_88;
+                $var_186['author_name'] = $var_31->var_95;
+                $var_186['author_email'] = $var_31->var_96;
+                $var_186['comment_enable'] = $var_31->var_97;
+                $var_186['lastmodified'] = $var_31->var_46;
+                $var_186['hits'] = $var_31->var_33;
+                $var_186['hits_last'] = $var_31->var_165;
+                $var_186['notes'] = $var_31->var_101;
+                $var_184[$var_160] = $var_186;
+                ++$var_160;
+            }
+        }
+
+        return $var_184;
+    }
+
+    
+    public function fn_48($var_182, $var_188 = 'OR', $var_189 = null)
+    {
+        $var_190 = '';
+
+        if (!isset($var_189)) {
+            $var_189 = new class_6($var_11->var_0);
+        }
+        $var_191 = array_values($var_189->getChildren($var_182));
+
+        foreach ($var_191 as $var_193) {
+            $var_190 .= ' '.$var_188.' fcr.category_id = '.$var_193;
+            $var_190 .= $var_11->fn_48($var_193, 'OR', $var_189);
+        }
+
+        return $var_190;
+    }
+
+    
+    private function fn_47($var_194, $var_182, $var_183, $var_37, $var_151, $var_195 = 0)
+    {
+        $var_21 = date('YmdHis');
+        $var_22 = sprintf("
+            SELECT
+                fd.id AS id,
+                fd.solution_id AS solution_id,
+                fd.revision_id AS revision_id,
+                fd.lang AS lang,
+                fcr.category_id AS category_id,
+                fd.active AS active,
+                fd.sticky AS sticky,
+                fd.keywords AS keywords,
+                fd.thema AS thema,
+                fd.content AS content,
+                fd.author AS author,
+                fd.email AS email,
+                fd.comment AS comment,
+                fd.updated AS updated,
+                fd.notes AS notes,
+                fv.visits AS visits,
+                fv.last_visit AS last_visit
+            FROM
+                %sfaqdata fd,
+                %sfaqvisits fv,
+                %sfaqcategoryrelations fcr
+            WHERE
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            AND
+                fd.date_start <= '%s'
+            AND
+                fd.date_end   >= '%s'
+            AND ",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_21,
+            $var_21);
+        
+        if (!empty($var_195)) {
+            
+            $var_22 .= "fd.id = '".$var_195."' AND ";
+        }
+        $var_22 .= 'fd.id = fv.id
+            AND
+                fd.lang = fv.lang';
+        $var_196 = true;
+        if ((!empty($var_182)) && is_int($var_182) && $var_182 > 0) {
+            if ($var_196) {
+                $var_22 .= ' AND';
+            }
+            $var_22 .= ' (fcr.category_id = '.$var_182;
+            if ($var_183) {
+                $var_22 .= $var_11->fn_48($var_182, 'OR');
+            }
+            $var_22 .= ')';
+            $var_196 = true;
+        }
+        if ((!empty($var_151)) && PMF_Utils::isLikeOnPMFDate($var_151)) {
+            if ($var_196) {
+                $var_22 .= ' AND';
+            }
+            $var_22 .= " fd.updated LIKE '".$var_151."'";
+            $var_196 = true;
+        }
+        if ((!empty($var_37)) && PMF_Utils::isLanguage($var_37)) {
+            if ($var_196) {
+                $var_22 .= ' AND';
+            }
+            $var_22 .= " fd.lang = '".$var_37."'";
+            $var_196 = true;
+        }
+        switch ($var_194) {
+            case var_197:
+                if ($var_196) {
+                    $var_22 .= ' AND';
+                }
+                $var_22 .= " fd.active = '".var_198."'";
+                break;
+            case var_199:
+            case var_200:
+            case var_201:
+                if ($var_196) {
+                    $var_22 .= ' AND';
+                }
+                $var_22 .= " fd.active = '".var_202."'";
+                break;
+            default:
+                if ($var_196) {
+                    $var_22 .= ' AND';
+                }
+                $var_22 .= " fd.active = '".var_202."'";
+                break;
+        }
+        
+        switch ($var_194) {
+            case var_199:
+            case var_200:
+            case var_201:
+                $var_22 .= "\nORDER BY fcr.category_id, fd.id";
+                break;
+            case var_203:
+                $var_22 .= "\nORDER BY fd.updated DESC";
+                break;
+            default:
+                
+                $var_22 .= "\nORDER BY fcr.category_id, fd.id";
+                break;
+        }
+
+        return $var_22;
+    }
+
+    
+    public function fn_49($var_204, $var_106, $var_205)
+    {
+        if ('user' !== $var_204 && 'group' !== $var_204) {
+            return false;
+        }
+
+        foreach ($var_205 as $var_36) {
+            $var_22 = sprintf('
+            INSERT INTO
+                %sfaqdata_%s
+            (record_id, %s_id)
+                VALUES
+            (%d, %d)',
+                PMF_Db::getTablePrefix(),
+                $var_204,
+                $var_204,
+                $var_106,
+                $var_36
+            );
+
+            $var_11->var_0->getDb()->query($var_22);
+        }
+
+        return true;
+    }
+
+    
+    public function fn_50($var_204, $var_117)
+    {
+        if (!($var_204 == 'user' || $var_204 == 'group')) {
+            return false;
+        }
+        if (!is_int($var_117)) {
+            return false;
+        }
+
+        $var_22 = sprintf('
+            DELETE FROM
+                %sfaqdata_%s
+            WHERE
+                record_id = %d',
+            PMF_Db::getTablePrefix(),
+            $var_204,
+            $var_117);
+        $var_11->var_0->getDb()->query($var_22);
+
+        return true;
+    }
+
+    
+    public function fn_51($var_204, $var_106)
+    {
+        $var_206 = [];
+
+        if (!($var_204 == 'user' || $var_204 == 'group')) {
+            return false;
+        }
+
+        $var_22 = sprintf('
+            SELECT
+                %s_id AS permission
+            FROM
+                %sfaqdata_%s
+            WHERE
+                record_id = %d',
+            $var_204,
+            PMF_Db::getTablePrefix(),
+            $var_204,
+            (int) $var_106);
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        if ($var_11->var_0->getDb()->numRows($var_27) > 0) {
+            while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27))) {
+                $var_206[] = (int) $var_31->var_207;
+            }
+        }
+
+        return $var_206;
+    }
+
+    
+    public function fn_52($var_125)
+    {
+        global $var_18;
+
+        $var_21 = date('YmdHis');
+        $var_22 = sprintf("
+            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fd.thema AS thema,
+                fcr.category_id AS category_id,
+                fv.visits AS visits
+            FROM
+                %sfaqdata fd
+            LEFT JOIN
+                %sfaqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                %sfaqvisits fv
+            ON
+                fd.id = fv.id
+            AND
+                fv.lang = fd.lang
+            LEFT JOIN
+                %sfaqdata_group fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.date_start <= '%s'
+            AND
+                fd.date_end   >= '%s'
+            AND
+                fd.active = 'yes'
+            AND
+                fcr.category_id = %d
+            AND
+                fd.lang = '%s'
+            GROUP BY
+                fd.id,fd.lang,fcr.category_id,fv.visits
+            ORDER BY
+                %s %s",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_21,
+            $var_21,
+            $var_125,
+            $var_11->var_0->getLanguage()->getLanguage(),
+            $var_11->var_0->fn_1('records.orderby'),
+            $var_11->var_0->fn_1('records.sortby')
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+
+        $var_53 = '<ul class="phpmyfaq_ul">';
+
+        while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27))) {
+            $var_54 = $var_31->var_42;
+            $var_34 = sprintf(
+                '%s?%saction=artikel&amp;cat=%d&amp;id=%d&amp;artlang=%s',
+                class_2::getSystemRelativeUri(),
+                $var_18,
+                $var_31->var_15,
+                $var_31->var_36,
+                $var_31->var_37
+            );
+
+            $var_38 = new class_2($var_34, $var_11->var_0);
+            $var_38->var_39 = $var_31->var_42;
+            $var_38->var_40 = $var_54;
+            $var_38->var_41 = $var_54;
+            $var_76 = sprintf('<li>%s</li>', $var_38->toHtmlAnchor(), $var_11->var_1['msgViews']);
+            $var_76 = '<li>'.$var_38->toHtmlAnchor().'</li>';
+
+            $var_53 .= $var_76;
+        }
+
+        $var_53 .= '</ul>';
+
+        return $var_53;
+    }
+
+    
+    public function fn_53()
+    {
+        global $var_18, $var_125;
+
+        $var_151 = new class_5($var_11->var_0);
+        $var_208 = new class_7($var_11->var_0);
+
+        $var_22 = sprintf("
+            SELECT
+                COUNT(id) AS num
+            FROM
+                %sfaqquestions
+            WHERE
+                lang = '%s'
+            AND
+                is_visible != 'Y'",
+            PMF_Db::getTablePrefix(),
+            $var_11->var_0->getLanguage()->getLanguage()
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+        $var_31 = $var_11->var_0->getDb()->fetchObject($var_27);
+        $var_209 = $var_31->var_28;
+
+        if ($var_209 > 0) {
+            $var_210 = sprintf(
+                '<tr><td colspan="3"><small>%s %s</small></td></tr>',
+                $var_11->var_1['msgQuestionsWaiting'],
+                $var_209
+            );
+        } else {
+            $var_210 = '';
+        }
+
+        $var_22 = sprintf("
+            SELECT
+                *
+            FROM
+                %sfaqquestions
+            WHERE
+                lang = '%s'
+            AND
+                is_visible = 'Y'
+            ORDER BY
+                created ASC",
+            PMF_Db::getTablePrefix(),
+            $var_11->var_0->getLanguage()->getLanguage()
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+        $var_53 = '';
+
+        if ($var_27 && $var_11->var_0->getDb()->numRows($var_27) > 0) {
+            while ($var_31 = $var_11->var_0->getDb()->fetchObject($var_27)) {
+                $var_53 .= '<tr class="openquestions">';
+                $var_53 .= sprintf(
+                    '<td><small>%s</small><br /><a href="mailto:%s">%s</a></td>',
+                    $var_151->format(class_5::createIsoDate($var_31->var_47)),
+                    $var_208->safeEmail($var_31->var_96),
+                    $var_31->var_173
+                );
+                $var_53 .= sprintf(
+                    '<td><strong>%s:</strong><br />%s</td>',
+                    isset($var_125->categoryName[$var_31->var_15]['name']) ? $var_125->categoryName[$var_31->var_15]['name'] : '',
+                    strip_tags($var_31->var_86)
+                );
+                if ($var_11->var_0->fn_1('records.enableCloseQuestion') && $var_31->var_176) {
+                    $var_53 .= sprintf(
+                        '<td><a id="PMF_openQuestionAnswered" href="?%saction=artikel&amp;cat=%d&amp;id=%d">%s</a></td>',
+                        $var_18,
+                        $var_31->var_15,
+                        $var_31->var_176,
+                        $var_11->var_1['msg2answerFAQ']
+                    );
+                } else {
+                    $var_53 .= sprintf(
+                        '<td><a class="btn btn-primary" href="?%saction=add&amp;question=%d&amp;cat=%d">%s</a></td>',
+                        $var_18,
+                        $var_31->var_36,
+                        $var_31->var_15,
+                        $var_11->var_1['msg2answer']
+                    );
+                }
+                $var_53 .= '</tr>';
+            }
+        } else {
+            $var_53 = sprintf(
+                '<tr><td colspan="3">%s</td></tr>',
+                $var_11->var_1['msgNoQuestionsAvailable']
+            );
+        }
+
+        return $var_53.$var_210;
+    }
+
+    
+    public function fn_54($var_36, $var_37, $var_212, $var_147)
+    {
+        $var_213 = false;
+
+        switch ($var_147) {
+            case 'sticky':
+                $var_212 = ($var_212 === 'checked' ? 1 : 0);
+                break;
+
+            case 'active':
+                $var_212 = ($var_212 === 'checked' ? "'yes'" : "'no'");
+                break;
+
+            default:
+                
+                $var_212 = null;
+                break;
+        }
+
+        if (null !== $var_212) {
+            $var_214 = sprintf("
+                UPDATE 
+                    %sfaqdata 
+                SET 
+                    %s = %s 
+                WHERE 
+                    id = %d 
+                AND 
+                    lang = '%s'",
+                PMF_Db::getTablePrefix(),
+                $var_147,
+                $var_212,
+                $var_36,
+                $var_37
+            );
+
+            $var_213 = (bool) $var_11->var_0->getDb()->query($var_214);
+        }
+
+        return $var_213;
+    }
+
+    
+    private function fn_55()
+    {
+        global $var_18;
+
+        $var_21 = date('YmdHis');
+        $var_22 = sprintf("
+            SELECT
+                fd.id AS id,
+                fd.lang AS lang,
+                fd.thema AS thema,
+                fcr.category_id AS category_id
+            FROM
+                %sfaqdata fd
+            LEFT JOIN
+                %sfaqcategoryrelations fcr
+            ON
+                fd.id = fcr.record_id
+            AND
+                fd.lang = fcr.record_lang
+            LEFT JOIN
+                %sfaqdata_group AS fdg
+            ON
+                fd.id = fdg.record_id
+            LEFT JOIN
+                %sfaqdata_user AS fdu
+            ON
+                fd.id = fdu.record_id
+            WHERE
+                fd.lang = '%s'
+            AND 
+                fd.date_start <= '%s'
+            AND 
+                fd.date_end   >= '%s'
+            AND 
+                fd.active = 'yes'
+            AND 
+                fd.sticky = 1
+            %s",
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            PMF_Db::getTablePrefix(),
+            $var_11->var_0->getLanguage()->getLanguage(),
+            $var_21,
+            $var_21,
+            $var_11->fn_5($var_11->var_7)
+        );
+
+        $var_27 = $var_11->var_0->getDb()->query($var_22);
+        $var_61 = [];
+        $var_104 = [];
+
+        $var_161 = 0;
+        while (($var_31 = $var_11->var_0->getDb()->fetchObject($var_27))) {
+            if ($var_161 != $var_31->var_36) {
+                $var_104['thema'] = $var_31->var_42;
+
+                $var_54 = $var_31->var_42;
+                $var_34 = sprintf(
+                    '%s?%saction=artikel&amp;cat=%d&amp;id=%d&amp;artlang=%s',
+                    class_2::getSystemRelativeUri(),
+                    $var_18,
+                    $var_31->var_15,
+                    $var_31->var_36,
+                    $var_31->var_37
+                );
+                $var_38 = new class_2($var_34, $var_11->var_0);
+                $var_38->var_39 = $var_31->var_42;
+                $var_38->var_41 = $var_54;
+                $var_104['url'] = $var_38->toString();
+
+                $var_61[] = $var_104;
+            }
+            $var_161 = $var_31->var_36;
+        }
+
+        return $var_61;
+    }
+
+    
+    public function fn_56()
+    {
+        $var_27 = $var_11->fn_55();
+        $var_53 = [];
+
+        if (count($var_27) > 0) {
+            foreach ($var_27 as $var_31) {
+                $var_53[] = array(
+                    'title' => PMF_Utils::makeShorterText($var_31['thema'], 8),
+                    'preview' => $var_31['thema'],
+                    'url' => $var_31['url'],
+                );
+            }
+        } else {
+            $var_53['error'] = sprintf('<li>%s</li>', $var_11->var_1['err_noTopTen']);
+        }
+        if (!isset($var_53['error'])) {
+            $var_216 = '';
+            foreach ($var_53 as $var_217) {
+                $var_216 .= sprintf(
+                    '<li><a class="sticky-faqs" data-toggle="tooltip" data-placement="top" title="%s" href="%s">%s</a></li>',
+                    $var_217['preview'],
+                    $var_217['url'],
+                    $var_217['title']
+                );
+            }
+            $var_53['html'] = $var_216;
+        }
+
+        return $var_53;
+    }
+
+    
+    public function fn_57($var_218, $var_79, $var_48)
+    {
+        $var_22 = sprintf(
+            'UPDATE %sfaqquestions SET answer_id = %d, category_id= %d WHERE id= %d',
+            PMF_Db::getTablePrefix(),
+            $var_79,
+            $var_48,
+            $var_218
+        );
+
+        return $var_11->var_0->getDb()->query($var_22);
+    }
+
+    
+    protected function fn_5($var_219 = false)
+    {
+        if ($var_219) {
+            if (-1 === $var_11->var_5) {
+                return sprintf(
+                    'AND fdg.group_id IN (%s)',
+                    implode(', ', $var_11->var_6),
+                    $var_11->var_5,
+                    implode(', ', $var_11->var_6));
+            } else {
+                return sprintf(
+                    'AND ( fdg.group_id IN (%s) OR (fdu.user_id = %d OR fdg.group_id IN (%s)) )',
+                    implode(', ', $var_11->var_6),
+                    $var_11->var_5,
+                    implode(', ', $var_11->var_6)
+                );
+            }
+        } else {
+            if (-1 !== $var_11->var_5) {
+                return sprintf(
+                    'AND ( fdu.user_id = %d OR fdu.user_id = -1 )',
+                    $var_11->var_5
+                );
+            } else {
+                return sprintf(
+                    'AND fdu.user_id = -1',
+                    $var_11->var_5
+                );
+            }
+        }
+    }
+}

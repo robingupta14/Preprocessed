@@ -1,0 +1,437 @@
+<?php
+
+
+
+
+
+$var_0 = true;
+
+api_block_anonymous_users();
+
+if (api_get_setting('allow_message_tool') !== 'true') {
+    api_not_allowed(true);
+}
+
+$var_1 = [
+    'tool' => 'Messages',
+    'tool_id' => 0,
+    'tool_id_detail' => 0,
+    'action' => 'new_message',
+    'action_details' => isset($_GET['re_id']) ? 're_id' : '',
+    'current_id' => isset($_GET['re_id']) ? (int) $_GET['re_id'] : 0,
+    'info' => '',
+];
+Event::registerLog($var_1);
+
+$var_2 = api_get_setting('allow_social_tool') == 'true';
+$var_3 = api_xml_http_response_encode(get_lang('Messages'));
+
+$htmlHeadXtra[] = '<script>
+var counter_image = 1;
+function add_image_form() {
+    
+    var filepaths = document.getElementById("file_uploads");
+    if (document.getElementById("filepath_"+counter_image)) {
+        counter_image = counter_image + 1;
+    }  else {
+        counter_image = counter_image;
+    }
+    var elem1 = document.createElement("div");
+    elem1.setAttribute("id","filepath_"+counter_image);
+    filepaths.appendChild(elem1);
+    id_elem1 = "filepath_"+counter_image;
+    id_elem1 = "\'"+id_elem1+"\'";
+    document.getElementById("filepath_"+counter_image).innerHTML = "<div class=\"form-group\" ><label class=\"col-sm-4\">'.get_lang('FilesAttachment').'</label><input class=\"col-sm-8\" type=\"file\" name=\"attach_"+counter_image+"\" /></div><div class=\"form-group\" ><label class=\"col-sm-4\">'.get_lang('Description').'</label><div class=\"col-sm-8\"><input style=\"width:100%\" type=\"text\" name=\"legend[]\" /></div></div>";
+    if (filepaths.childNodes.length == 6) {
+        var link_attach = document.getElementById("link-more-attach");
+        if (link_attach) {
+            link_attach.innerHTML="";
+        }
+    }
+}
+</script>';
+$var_3 = get_lang('ComposeMessage');
+
+$var_4 = new class_0(get_lang('ComposeMessage'));
+
+
+function fn_0($var_4)
+{
+    $var_6['user_list'] = 0;
+    $var_5 = fn_3($var_6, null, null, $var_4);
+
+    return $var_5;
+}
+
+function fn_1($var_7, $var_8, $var_4)
+{
+    $var_9 = Database::get_main_table(var_10);
+    $var_8 = (int) $var_8;
+    $var_7 = (int) $var_7;
+
+    $var_11 = "SELECT user_sender_id
+              FROM $var_9
+              WHERE user_receiver_id = ".$var_8." AND id = ".$var_7;
+    $var_12 = Database::query($var_11);
+    $var_13 = Database::fetch_array($var_12, 'ASSOC');
+    $var_14 = api_get_user_info($var_13['user_sender_id']);
+    if (empty($var_13['user_sender_id']) || empty($var_14)) {
+        $var_5 = get_lang('InvalidMessageId');
+
+        return $var_5;
+    }
+
+    $var_6['users'] = [$var_13['user_sender_id']];
+    $var_5 = fn_3($var_6, null, $var_14['complete_name_with_username'], $var_4);
+
+    return $var_5;
+}
+
+function fn_2($var_8, $var_4)
+{
+    $var_14 = api_get_user_info($var_8);
+    $var_5 = get_lang('To').':&nbsp;<strong>'.$var_14['complete_name'].'</strong>';
+    $var_6['title'] = api_xml_http_response_encode(get_lang('EnterTitle'));
+    $var_6['users'] = [$var_8];
+    $var_5 .= fn_3($var_6, null, '', $var_4);
+
+    return $var_5;
+}
+
+
+function fn_3($var_6, $var_15 = null, $var_16 = '', $var_4 = null)
+{
+    $var_17 = isset($_REQUEST['group_id']) ? (int) $_REQUEST['group_id'] : null;
+    $var_7 = isset($_GET['message_id']) ? (int) $_GET['message_id'] : null;
+
+    $var_18 = new class_1(
+        'compose_message',
+        null,
+        api_get_self(),
+        null,
+        ['enctype' => 'multipart/form-data']
+    );
+
+    if (empty($var_17)) {
+        if (isset($var_15)) {
+            $var_18->addText(
+                'id_text_name',
+                get_lang('SendMessageTo'),
+                true,
+                [
+                    'id' => 'id_text_name',
+                    'onkeyup' => 'send_request_and_search()',
+                    'autocomplete' => 'off',
+                ]
+            );
+            $var_18->addRule('id_text_name', get_lang('ThisFieldIsRequired'), 'required');
+            $var_18->addElement('html', '<div id="id_div_search" style="padding:0px" class="message-select-box" >&nbsp;</div>');
+            $var_18->addElement('hidden', 'user_list', 0, ['id' => 'user_list']);
+        } else {
+            if (!empty($var_16)) {
+                $var_18->addLabel(get_lang('SendMessageTo'), $var_16);
+            }
+            if (empty($var_6['users'])) {
+                
+                $var_18->addElement(
+                    'select_ajax',
+                    'users',
+                    get_lang('SendMessageTo'),
+                    [],
+                    [
+                        'multiple' => 'multiple',
+                        'url' => api_get_path(var_23).'message.ajax.php?a=find_users',
+                    ]
+                );
+            } else {
+                $var_18->addElement('hidden', 'hidden_user', $var_6['users'][0], ['id' => 'hidden_user']);
+            }
+        }
+    } else {
+        $var_24 = new class_2();
+        $var_25 = $var_24->get($var_17);
+
+        $var_18->addElement('label', get_lang('ToGroup'), api_xml_http_response_encode($var_25['name']));
+        $var_18->addElement('hidden', 'group_id', $var_17);
+        $var_18->addElement('hidden', 'parent_id', $var_7);
+    }
+
+    $var_18->addText('title', get_lang('Subject'), true);
+    $var_18->addHtmlEditor(
+        'content',
+        get_lang('Message'),
+        false,
+        false,
+        ['ToolbarSet' => 'Messages', 'Width' => '100%', 'Height' => '250']
+    );
+
+    if (isset($_GET['re_id'])) {
+        $var_28 = MessageManager::get_message_by_id($_GET['re_id']);
+        $var_6['title'] = get_lang('MailSubjectReplyShort').' '.Security::remove_XSS($var_28['title']);
+        $var_18->addHidden('re_id', (int) $_GET['re_id']);
+        $var_18->addHidden('save_form', 'save_form');
+
+        
+        $var_30 = api_get_user_info($var_28['user_sender_id']);
+        $var_6['content'] = '<p><br/></p>'.sprintf(
+            get_lang('XWroteY'),
+            $var_30['complete_name'],
+            Security::filter_terms($var_28['content'])
+        );
+    }
+
+    if (isset($_GET['forward_id'])) {
+        $var_31 = (int) $_GET['forward_id'];
+        $var_28 = MessageManager::get_message_by_id($var_31);
+        $var_32 = MessageManager::getAttachmentLinkList($var_31);
+        if (!empty($var_32)) {
+            $var_33 = !empty($var_32) ? implode('<br />', $var_32) : '';
+            $var_18->addLabel('', $var_33);
+        }
+        $var_6['title'] = '['.get_lang('MailSubjectForwardShort').": ".Security::remove_XSS($var_28['title']).']';
+        $var_18->addHidden('forward_id', $var_31);
+        $var_18->addHidden('save_form', 'save_form');
+        $var_34 = api_get_user_info($var_28['user_receiver_id']);
+
+        $var_35 = '---------- '.get_lang('ForwardedMessage').' ---------'.'<br />';
+        $var_35 .= get_lang('Date').': '.api_get_local_time($var_28['send_date']).'<br />';
+        $var_35 .= get_lang('Subject').': '.Security::remove_XSS($var_28['title']).'<br />';
+        $var_35 .= get_lang('To').': '.$var_34['complete_name'].' - '.$var_34['email'].' <br />';
+        $var_6['content'] = '<p><br/></p>'.$var_35.'<br />'.Security::filter_terms($var_28['content']);
+    }
+
+    if (empty($var_17)) {
+        $var_18->addLabel(
+            '',
+            '<div id="file_uploads"><div id="filepath_1">
+                <div id="filepaths" class="form-horizontal">
+                    <div id="paths-file" class="form-group">
+                    <label class="col-sm-4">'.get_lang('FilesAttachment').'</label>
+                    <input class="col-sm-8" type="file" name="attach_1"/>
+                    </div>
+                </div>
+                <div id="paths-description" class="form-group">
+                    <label class="col-sm-4">'.get_lang('Description').'</label>
+                    <div class="col-sm-8">
+                    <input id="file-descrtiption" class="form-control" type="text" name="legend[]" />
+                    </div>
+                </div>
+            </div>
+            </div>'
+        );
+
+        $var_18->addLabel(
+            '',
+            '<span id="link-more-attach"><a class="btn btn-default" href="javascript:
+            get_lang('var_36').'</a></span>&nbsp;('.
+            sprintf(
+                get_lang('MaximunFileSizeX'),
+                format_file_size(api_get_setting('message_max_upload_filesize'))
+            ).')'
+        );
+    }
+
+    $var_18->addLabel(
+        '',
+        '<iframe 
+            frameborder="0" height="200" width="100%" scrolling="no" 
+            src="'.api_get_path(var_37).'messages/record_audio.php"></iframe>'
+    );
+
+    $var_18->addButtonSend(get_lang('SendMessage'), 'compose');
+    $var_18->setRequiredNote('<span class="form_required">*</span> <small>'.get_lang('ThisFieldIsRequired').'</small>');
+
+    if (!empty($var_17) && !empty($var_7)) {
+        $var_40 = MessageManager::get_message_by_id($var_7);
+        $var_6['title'] = get_lang('MailSubjectReplyShort')." ".$var_40['title'];
+    }
+    $var_18->setDefaults($var_6);
+    $var_5 = '';
+    if ($var_18->validate()) {
+        $var_43 = Security::check_token('post');
+        $var_44 = api_get_configuration_value('disable_token_in_new_message');
+        if ($var_44) {
+            $var_43 = true;
+        }
+
+        if ($var_43) {
+            $var_45 = $var_6['users'];
+            $var_46 = $_POST['legend'];
+            $var_47 = $var_6['title'];
+            $var_48 = $var_6['content'];
+            $var_17 = isset($var_6['group_id']) ? $var_6['group_id'] : null;
+            $var_49 = isset($var_6['parent_id']) ? $var_6['parent_id'] : null;
+            $var_31 = isset($_POST['forward_id']) ? $_POST['forward_id'] : false;
+
+            if (is_array($var_45) && count($var_45) > 0) {
+                
+                foreach ($var_45 as $var_50) {
+                    $var_51 = MessageManager::send_message(
+                        $var_50,
+                        $var_47,
+                        $var_48,
+                        $var_52,
+                        $var_46,
+                        $var_17,
+                        $var_49,
+                        0,
+                        0,
+                        null,
+                        false,
+                        $var_31,
+                        [],
+                        true
+                    );
+
+                    if ($var_51) {
+                        $var_14 = api_get_user_info($var_50);
+                        Display::addFlash(Display::return_message(
+                            get_lang('MessageSentTo')."&nbsp;<b>".$var_14['complete_name_with_username']."</b>",
+                            'confirmation',
+                            false
+                        ));
+                    }
+                }
+                MessageManager::cleanAudioMessage();
+            } else {
+                Display::addFlash(Display::return_message('ErrorSendingMessage', 'error'));
+            }
+        }
+        Security::clear_token();
+        header('Location: '.api_get_path(var_53).'main/messages/inbox.php');
+        var_54;
+    } else {
+        $var_55 = Security::get_token();
+        $var_18->addElement('hidden', 'sec_token');
+        $var_18->setConstants(['sec_token' => $var_55]);
+        $var_5 .= $var_18->returnForm();
+    }
+
+    return $var_5;
+}
+
+if ($var_2) {
+    $var_58 = var_59;
+    $interbreadcrumb[] = [
+        'url' => api_get_path(var_53).'main/social/home.php',
+        'name' => get_lang('SocialNetwork'),
+    ];
+} else {
+    $var_58 = var_60;
+    $interbreadcrumb[] = [
+        'url' => api_get_path(var_53).'main/auth/profile.php',
+        'name' => get_lang('Profile'),
+    ];
+}
+
+$interbreadcrumb[] = [
+    'url' => api_get_path(var_53).'main/messages/inbox.php',
+    'name' => get_lang('Messages'),
+];
+
+$var_17 = isset($_REQUEST['group_id']) ? (int) $_REQUEST['group_id'] : 0;
+$var_61 = null;
+if ($var_17 != 0) {
+    $var_61 .= '<div class=actions>';
+    $var_61 .= '<a href="'.api_get_path(var_53).'main/social/group_view.php?id='.$var_17.'">'.
+        Display::return_icon('back.png', api_xml_http_response_encode(get_lang('ComposeMessage'))).'</a>';
+    $var_61 .= '<a href="'.api_get_path(var_53).'main/messages/new_message.php?group_id='.$var_17.'">'.
+        Display::return_icon('message_new.png', api_xml_http_response_encode(get_lang('ComposeMessage'))).'</a>';
+    $var_61 .= '</div>';
+} else {
+    if ($var_2) {
+    } else {
+        $var_61 .= '<div class=actions>';
+        if (api_get_setting('allow_message_tool') === 'true') {
+            $var_61 .= '<a href="'.api_get_path(var_53).'main/messages/new_message.php">'.
+                Display::return_icon('message_new.png', get_lang('ComposeMessage')).'</a>';
+            $var_61 .= '<a href="'.api_get_path(var_53).'main/messages/inbox.php">'.
+                Display::return_icon('inbox.png', get_lang('Inbox')).'</a>';
+            $var_61 .= '<a href="'.api_get_path(var_53).'main/messages/outbox.php">'.
+                Display::return_icon('outbox.png', get_lang('Outbox')).'</a>';
+        }
+        $var_61 .= '</div>';
+    }
+}
+
+
+$var_62 = '';
+if ($var_2) {
+    
+    $var_63 = SocialManager::show_social_menu('messages');
+    $var_61 .= '<div class="row">';
+    $var_61 .= '<div class="col-md-12">';
+    $var_61 .= '<div class="actions">';
+    $var_61 .= '<a href="'.api_get_path(var_53).'main/messages/inbox.php">'.
+        Display::return_icon('back.png', get_lang('Back'), [], 32).'</a>';
+    $var_61 .= '</div>';
+    $var_61 .= '</div>';
+    $var_61 .= '<div class="col-md-12">';
+}
+
+
+if (!isset($_POST['compose'])) {
+    if (isset($_GET['re_id'])) {
+        $var_61 .= fn_1(
+            $_GET['re_id'],
+            api_get_user_id(),
+            $var_4
+        );
+    } elseif (isset($_GET['send_to_user'])) {
+        $var_61 .= fn_2($_GET['send_to_user'], $var_4);
+    } else {
+        $var_61 .= fn_0($var_4);
+    }
+} else {
+    $var_64 = false;
+    if (isset($_POST['users'])) {
+        $var_64 = true;
+    } elseif (isset($_POST['group_id'])) {
+        $var_64 = true;
+    } elseif (isset($_POST['hidden_user'])) {
+        $var_64 = true;
+    }
+
+    $var_6['title'] = $_POST['title'];
+    $var_6['content'] = $_POST['content'];
+
+    
+    if (isset($_GET['re_id']) || isset($_GET['forward_id'])) {
+        $var_61 .= fn_3($var_6, null, null, $var_4);
+    } else {
+        
+        if ($var_64) {
+            if (!isset($_POST['group_id'])) {
+                $var_6['users'] = isset($_POST['users']) ? $_POST['users'] : null;
+            } else {
+                $var_6['group_id'] = (int) $_POST['group_id'];
+            }
+            if (isset($_POST['hidden_user'])) {
+                $var_6['users'] = [$_POST['hidden_user']];
+            }
+            $var_61 .= fn_3($var_6, null, null, $var_4);
+        } else {
+            $var_61 .= Display::return_message(get_lang('ErrorSendingMessage'), 'error');
+        }
+    }
+}
+
+if ($var_2) {
+    $var_61 .= '</div>';
+    $var_61 .= '</div>';
+}
+
+
+SocialManager::setSocialUserBlock($var_4, api_get_user_id(), 'messages');
+
+MessageManager::cleanAudioMessage();
+if ($var_2) {
+    $var_4->assign('social_menu_block', $var_63);
+    $var_4->assign('social_right_content', $var_61);
+    $var_66 = $var_4->get_template('social/inbox.tpl');
+    $var_4->display($var_66);
+} else {
+    $var_48 = $var_61;
+    $var_4->assign('content', $var_48);
+    $var_4->display_one_col_template();
+}

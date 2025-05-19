@@ -1,0 +1,295 @@
+<?php
+	
+	if(!function_exists("current_user_can") || (!current_user_can("manage_options") && !current_user_can("pmpro_orderscsv")))
+	{
+		die(__("You do not have permissions to perform this action.", "pmpro"));
+	}
+
+	global $var_0;
+
+	
+	if(isset($_REQUEST['s']))
+		$var_1 = sanitize_text_field($_REQUEST['s']);
+	else
+		$var_1 = "";
+
+	if(isset($_REQUEST['l']))
+		$var_2 = intval($_REQUEST['l']);
+	else
+		$var_2 = false;
+
+	if(isset($_REQUEST['start-month']))
+		$var_3 = intval($_REQUEST['start-month']);
+	else
+		$var_3 = "1";
+
+	if(isset($_REQUEST['start-day']))
+		$var_4 = intval($_REQUEST['start-day']);
+	else
+		$var_4 = "1";
+
+	if(isset($_REQUEST['start-year']))
+		$var_5 = intval($_REQUEST['start-year']);
+	else
+		$var_5 = date("Y");
+
+	if(isset($_REQUEST['end-month']))
+		$var_6 = intval($_REQUEST['end-month']);
+	else
+		$var_6 = date("n");
+
+	if(isset($_REQUEST['end-day']))
+		$var_7 = intval($_REQUEST['end-day']);
+	else
+		$var_7 = date("j");
+
+	if(isset($_REQUEST['end-year']))
+		$var_8 = intval($_REQUEST['end-year']);
+	else
+		$var_8 = date("Y");
+
+	if(isset($_REQUEST['predefined-date']))
+		$var_9 = sanitize_text_field($_REQUEST['predefined-date']);
+	else
+		$var_9 = "This Month";
+
+	if(isset($_REQUEST['status']))
+		$var_10 = sanitize_text_field($_REQUEST['status']);
+	else
+		$var_10 = "";
+
+	if(isset($_REQUEST['filter']))
+		$var_11 = sanitize_text_field($_REQUEST['filter']);
+	else
+		$var_11 = "all";
+
+	
+	if(!empty($_REQUEST['pn']))
+		$var_12 = intval($_REQUEST['pn']);
+	else
+		$var_12 = 1;
+
+	if(!empty($_REQUEST['limit']))
+		$var_13 = intval($_REQUEST['limit']);
+	else
+		$var_13 = false;
+
+	if($var_13)
+	{
+		$var_14 = $var_12 * $var_13;
+		$var_15 = $var_14 - $var_13;
+	}
+	else
+	{
+		$var_14 = NULL;
+		$var_15 = NULL;
+	}
+
+	
+	if($var_11 == "all" || !$var_11)
+			$var_16 = "1=1";
+	elseif($var_11 == "within-a-date-range")
+	{
+		$var_17 = $var_5."-".$var_3."-".$var_4;
+		$var_18 = $var_8."-".$var_6."-".$var_7;
+
+		
+		$var_17 =  $var_17 . " 00:00:00";
+		$var_18 =  $var_18 . " 23:59:59";
+
+		$var_16 = "timestamp BETWEEN '".$var_17."' AND '".$var_18."'";
+	}
+	elseif($var_11 == "predefined-date-range")
+	{
+		if($var_9 == "Last Month")
+		{
+			$var_17 = date("Y-m-d", strtotime("first day of last month", current_time("timestamp")));
+			$var_18   = date("Y-m-d", strtotime("last day of last month", current_time("timestamp")));
+		}
+		elseif($var_9 == "This Month")
+		{
+			$var_17 = date("Y-m-d", strtotime("first day of this month", current_time("timestamp")));
+			$var_18   = date("Y-m-d", strtotime("last day of this month", current_time("timestamp")));
+		}
+		elseif($var_9 == "This Year")
+		{
+			$var_19 = date('Y');
+			$var_17 = date("Y-m-d", strtotime("first day of January $var_19", current_time("timestamp")));
+			$var_18   = date("Y-m-d", strtotime("last day of December $var_19", current_time("timestamp")));
+		}
+
+		elseif($var_9 == "Last Year")
+		{
+			$var_19 = date('Y') - 1;
+			$var_17 = date("Y-m-d", strtotime("first day of January $var_19", current_time("timestamp")));
+			$var_18   = date("Y-m-d", strtotime("last day of December $var_19", current_time("timestamp")));
+		}
+
+		
+		$var_17 =  $var_17 . " 00:00:00";
+		$var_18 =  $var_18 . " 23:59:59";
+
+		$var_16 = "timestamp BETWEEN '".esc_sql($var_17)."' AND '".esc_sql($var_18)."'";
+	}
+	elseif($var_11 == "within-a-level")
+	{
+		$var_16 = "membership_id = " . esc_sql($var_2);
+	}
+	elseif($var_11 == "within-a-status")
+	{
+		$var_16 = "status = '" . esc_sql($var_10) . "' ";
+	}
+
+	
+	if($var_1)
+	{
+		$var_20 = "SELECT SQL_CALC_FOUND_ROWS o.id FROM $var_0->var_21 o LEFT JOIN $var_0->var_22 u ON o.user_id = u.ID LEFT JOIN $var_0->var_23 l ON o.membership_id = l.id ";
+
+		$var_24 = apply_filters("pmpro_orders_search_usermeta", false);
+		if($var_24)
+			$var_20 .= "LEFT JOIN $var_0->var_25 um ON o.user_id = um.user_id ";
+
+		$var_20 .= "WHERE (1=2 ";
+
+		$var_26 = array("o.id", "o.code", "o.billing_name", "o.billing_street", "o.billing_city", "o.billing_state", "o.billing_zip", "o.billing_phone", "o.payment_type", "o.cardtype", "o.accountnumber", "o.status", "o.gateway", "o.gateway_environment", "o.payment_transaction_id", "o.subscription_transaction_id", "u.user_login", "u.user_email", "u.display_name", "l.name");
+
+		if($var_24)
+			$var_26[] = "um.meta_value";
+
+		$var_26 = apply_filters("pmpro_orders_search_fields", $var_26);
+
+		foreach($var_26 as $var_27)
+			$var_20 .= " OR " . $var_27 . " LIKE '%" . esc_sql($var_1) . "%' ";
+		$var_20 .= ") ";
+
+		$var_20 .= "AND " . $var_16 . " ";
+
+		$var_20 .= "GROUP BY o.id ORDER BY o.id DESC, o.timestamp DESC ";
+	}
+	else
+	{
+		$var_20 = "SELECT SQL_CALC_FOUND_ROWS id FROM $var_0->var_21 WHERE ".$var_16." ORDER BY id DESC, timestamp DESC ";
+	}
+
+	if(!empty($var_15) && !empty($var_13))
+		$var_20 .= "LIMIT $var_15, $var_13";
+
+	$var_28 = $var_0->get_col($var_20);
+
+	
+	header("Content-type: text/csv");
+
+	$var_30 = "orders.csv";
+	
+	header("Content-Disposition: attachment; filename=$var_30;");
+
+	$var_31 = "id,user_id,user_login,first_name,last_name,user_email,billing_name,billing_street,billing_city,billing_state,billing_zip,billing_country,billing_phone,membership_id,level_name,subtotal,tax,couponamount,total,payment_type,cardtype,accountnumber,expirationmonth,expirationyear,status,gateway,gateway_environment,payment_transaction_id,subscription_transaction_id,discount_code_id,discount_code,timestamp";
+
+	
+	$var_32 = array(
+		array("order", "id"),
+		array("user", "ID"),
+		array("user", "user_login"),
+		array("user", "first_name"),
+		array("user", "last_name"),
+		array("user", "user_email"),
+		array("order", "billing", "name"),
+		array("order", "billing", "street"),
+		array("order", "billing", "city"),
+		array("order", "billing", "state"),
+		array("order", "billing", "zip"),
+		array("order", "billing", "country"),
+		array("order", "billing", "phone"),
+		array("order", "membership_id"),
+		array("level", "name"),
+		array("order", "subtotal"),
+		array("order", "tax"),
+		array("order", "couponamount"),
+		array("order", "total"),
+		array("order", "payment_type"),
+		array("order", "cardtype"),
+		array("order", "accountnumber"),
+		array("order", "expirationmonth"),
+		array("order", "expirationyear"),
+		array("order", "status"),
+		array("order", "gateway"),
+		array("order", "gateway_environment"),
+		array("order", "payment_transaction_id"),
+		array("order", "subscription_transactiond_id"),
+		array("discount_code", "id"),
+		array("discount_code", "code")
+	);
+
+	
+	$var_33 = apply_filters("pmpro_orders_csv_extra_columns", array());
+	if(!empty($var_33))
+	{
+		foreach($var_33 as $var_34 => $var_35)
+		{
+			$var_31 .= "," . $var_34;
+		}
+	}
+
+	$var_31 .= "\n";
+
+	
+	
+	$var_31 = "";
+
+	if($var_28)
+	{
+		foreach($var_28 as $var_36)
+		{
+			$var_37 = new class_0();
+			$var_37->var_38 = true;
+			$var_37->getMemberOrderByID($var_36);
+			$var_40 = get_userdata($var_37->var_41);
+			$var_42 = $var_37->getMembershipLevel();
+			$var_20 = "SELECT c.id, c.code FROM $var_0->var_44 cu LEFT JOIN $var_0->var_45 c ON cu.code_id = c.id WHERE cu.order_id = '" . $var_36 . "' LIMIT 1";
+			$var_46 = $var_0->get_row($var_20);
+
+			
+			if(!empty($var_32))
+			{
+				$var_48 = 0;
+				foreach($var_32 as $var_49)
+				{
+					
+					$var_48++;
+					if($var_48 > 1)
+						$var_31 .= ",";
+
+					
+					if(!empty($var_49[2]) && isset($$var_49[0]->$var_49[1]->$var_49[2]))
+						$var_31 .= fn_0($$var_49[0]->$var_49[1]->$var_49[2]);	
+					elseif(!empty($$var_49[0]->$var_49[1]))
+						$var_31 .= fn_0($$var_49[0]->$var_49[1]);	
+				}
+			}
+
+			
+			$var_31 .= "," . fn_0(date(get_option("date_format"), $var_37->var_50));
+
+			
+			if(!empty($var_33))
+			{
+				foreach($var_33 as $var_34 => $var_35)
+				{
+					$var_31 .= "," . fn_0(call_user_func($var_35, $var_37));
+				}
+			}
+
+			$var_31 .= "\n";
+
+			
+			
+			$var_31 = "";
+		}
+	}
+
+	
+
+	function fn_0($var_1)
+	{
+		return "\"" . str_replace("\"", "\\\"", $var_1) . "\"";
+	}

@@ -1,0 +1,1620 @@
+<?php if ( ! defined('BASEPATH')) exit('No direct script access allowed');
+
+
+function fn_0($var_0, $var_1, $var_2)
+{
+    $var_3 = array();
+    $var_4 = array();
+    foreach ($var_0 as $var_5 => $var_6)
+    {
+        $var_3[$var_5] = strtolower($var_6[$var_1]);
+    }
+    if ($var_2 == "asc")
+    {
+        asort($var_3, var_7);
+    }
+    else
+    {
+        arsort($var_3, var_7);
+    }
+    foreach ($var_3 as $var_8 => $var_9)
+    {
+        $var_4[] = $var_0[$var_8];
+    }
+    return $var_4;
+}
+
+
+
+class class_0 extends var_10
+{
+    public function fn_1($var_11)
+    {
+        if (!Permission::model()->hasGlobalPermission('participantpanel','read'))
+        {
+            die('No permission');
+        }
+        parent::fn_1($var_11);
+    }
+
+
+    
+    
+    private function fn_2($var_14 = '', $var_15 = array())
+    {
+        $var_15['aAttributes'] = ParticipantAttributeName::model()->getAllAttributes();
+        App()->getClientScript()->registerPackage('jqgrid');
+        if (!empty($var_14))
+        {
+            App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('adminscripts') . $var_14 . '.js');
+            $var_21->fn_3('participants', array('participantsPanel', $var_14), $var_15);
+        }
+    }
+
+    
+    protected function fn_3($var_23 = 'participants', $var_24 = array(), $var_15 = array())
+    {
+        App()->getClientScript()->registerPackage('bootstrap-multiselect');
+        $var_15['display']['menu_bars'] = false;    
+        foreach((array) $var_24 as $var_25)
+        {
+            $var_26[] = $var_25 . '_view';
+        }
+        parent::fn_3($var_23, $var_26, $var_15);
+    }
+    
+    
+    private function fn_4($var_28 = null, $var_29=null) {
+        Yii::app()->loadHelper('export');      
+        
+        
+        if (Permission::model()->hasGlobalPermission('superadmin','read'))
+        {
+            $var_31 = null;
+        } else {
+            $var_31 = Yii::app()->session['loginID'];
+        }
+
+        $var_32 = Participant::model()->getParticipants(0, 0, $var_29, null, $var_28, $var_31);
+        if (!$var_32)
+            return false;
+
+        
+        $var_34 = array('participant_id', 'firstname', 'lastname', 'email', 'language', 'blacklisted', 'owner_uid');
+        $var_35 = array(); 
+        
+        $var_35[0] = $var_34; 
+
+        
+        if ($var_29==null)
+        {
+            $var_36 = ParticipantAttributeName::model()->getAllAttributes();
+        }   
+        else
+        {
+            foreach ($var_29 as $var_37)
+            {
+                if ($var_37==0) continue;
+                $var_34[] = 'a'.$var_37;
+                $var_38 = ParticipantAttributeName::model()->getAttributeNames($var_37);
+                $var_35[0][] = $var_38[0]['attribute_name'];
+            }
+        }    
+
+        $var_40 = array_flip($var_34);
+        $var_41=array_fill_keys($var_35[0], '');
+        foreach ($var_32 as $var_42 => $var_15)
+        {
+            $var_35[] = array_merge($var_41,array_intersect_key($var_15, $var_40));
+        }
+        CPDBExport($var_35, "central_" . time());
+    }
+    
+    
+    protected function fn_5($var_28 = null)
+    {
+        $var_43 = $var_21->getController()->var_45;
+        
+        $var_46 = ParticipantAttributeName::model()->getVisibleAttributes();
+        
+        
+        if (Permission::model()->hasGlobalPermission('superadmin','read'))
+        {
+            $var_31 = null;
+        } else {
+            $var_31 = Yii::app()->session['loginID'];
+        }
+        
+
+        $var_48 = Participant::model()->getParticipantsCount($var_46, $var_28, $var_31);
+
+        if ($var_48 > 0) {
+            return sprintf($var_43->ngT("Export %s participant to CSV","Export %s participants to CSV", $var_48),$var_48);
+        } else {
+            return $var_48;
+        }
+    }
+
+    
+    function fn_6()
+    {
+        $var_31 = Yii::app()->session['loginID'];
+
+        
+        if (Permission::model()->hasGlobalPermission('superadmin','read'))
+        {
+            $var_52 = Participant::model()->count();
+        }
+        
+        else
+        {
+            $var_52 = Participant::model()->getParticipantsOwnerCount($var_31);
+        }
+        
+        $var_15 = array(
+            'totalrecords' => $var_52,
+            'owned' => Participant::model()->count('owner_uid = ' . $var_31),
+            'shared' => Participant::model()->getParticipantsSharedCount($var_31),
+            'aAttributes' => ParticipantAttributeName::model()->getAllAttributes(),
+            'attributecount' => ParticipantAttributeName::model()->count(),
+            'blacklisted' => Participant::model()->count('owner_uid = ' . $var_31 . ' AND blacklisted = \'Y\'')
+        );
+        
+        $var_21->fn_3('participants', array('participantsPanel', 'summary'), $var_15);
+    }
+
+    
+    function fn_7()
+    {
+        $var_15 = array(
+            'aAttributes' => ParticipantAttributeName::model()->getAllAttributes()
+        );
+        $var_21->fn_3('participants', array('participantsPanel', 'importCSV'),$var_15);
+    }
+
+    
+    function fn_8()
+    {
+        $var_45 = Yii::app()->session['adminlang'];
+        
+        
+        $var_55=Yii::app()->var_56->getPost('searchcondition','');
+        $var_58=!empty($var_55) ? "getParticipantsResults_json" : "getParticipants_json";
+
+        
+        
+        $var_59 = Survey::model();
+        
+        if (!Permission::model()->hasGlobalPermission('superadmin','read'))
+            $var_59->permission(Yii::app()->var_61->getId());
+
+        $var_63 = $var_59->model()->with(array('languagesettings'=>array('condition'=>'surveyls_language=language'), 'owner'))->findAll();
+
+        
+        $var_67=array();
+        foreach($var_63 as $var_68)
+        {
+            $var_68 = array_merge($var_68->var_69, $var_68->var_70->var_69);
+            $var_71 = tableExists('{{tokens_' . $var_68['sid'] . '}}');
+            if ($var_71) 
+            {
+                $var_67[]=$var_68;
+            }
+        }
+        
+        $var_15 = array(
+            'names' => User::model()->findAll(),
+            'attributes' => ParticipantAttributeName::model()->getVisibleAttributes(),
+            'allattributes' => ParticipantAttributeName::model()->getAllAttributes(),
+            'attributeValues' => ParticipantAttributeName::model()->getAllAttributesValues(),
+            'surveynames' => $var_63,
+            'tokensurveynames' => $var_67,
+            'urlsearch' => $var_58,
+            'sSearchCondition' => $var_55,
+            'aAttributes' => ParticipantAttributeName::model()->getAllAttributes()
+        );
+        App()->getClientScript()->registerPackage('jqgrid');
+        App()->getClientScript()->registerCssFile(Yii::app()->getConfig('adminstyleurl')  . 'displayParticipants.css');
+        
+
+        
+        $var_21->fn_3('participants', array('participantsPanel', 'displayParticipants'), $var_15);
+    }
+
+    
+    function fn_9()
+    {
+        $var_15 = array(
+            'blacklistallsurveys' => Yii::app()->getConfig('blacklistallsurveys'),
+            'blacklistnewsurveys' => Yii::app()->getConfig('blacklistnewsurveys'),
+            'blockaddingtosurveys' => Yii::app()->getConfig('blockaddingtosurveys'),
+            'hideblacklisted' => Yii::app()->getConfig('hideblacklisted'),
+            'deleteblacklisted' => Yii::app()->getConfig('deleteblacklisted'),
+            'allowunblacklist' => Yii::app()->getConfig('allowunblacklist'),
+            'aAttributes' => ParticipantAttributeName::model()->getAllAttributes()
+        );
+        $var_21->fn_3('participants', array('participantsPanel', 'blacklist'), $var_15);
+    }
+
+    
+    function fn_10()
+    {
+        $var_15 = array(
+            'userideditable' => Yii::app()->getConfig('userideditable'),
+            'aAttributes' => ParticipantAttributeName::model()->getAllAttributes()
+        );
+        $var_21->fn_3('participants', array('participantsPanel', 'userControl'), $var_15);
+    }
+
+    
+    function fn_11()
+    {
+        $var_21->fn_2('sharePanel');
+    }
+
+    
+    function fn_12()
+    {
+        $var_15 = new class_1();
+        $var_15->var_74 = 1;
+
+        
+        if (Permission::model()->hasGlobalPermission('superadmin','read'))
+        {
+            $var_75 = Participant::model()->getParticipantSharedAll();
+            $var_15->var_75 = count($var_75);
+            $var_15->var_77 = ceil($var_15->var_75 / 10);
+            $var_78 = 0;
+
+            foreach ($var_75 as $var_68)
+            {
+                $var_79 = User::model()->getName($var_68['share_uid']); 
+                $var_81 = User::model()->getName($var_68['owner_uid']);
+                $var_15->rows[$var_78]['id'] = $var_68['participant_id']."--".$var_68['share_uid']; 
+                $var_15->rows[$var_78]['cell'] = array($var_68['firstname'], $var_68['lastname'], $var_68['email'], $var_79[0]['full_name'], $var_68['share_uid'], $var_81[0]['full_name'], $var_68['date_added'], $var_68['can_edit']);
+                $var_78++;
+            }
+
+            
+        }
+        
+        else
+        {
+            $var_75 = Participant::model()->getParticipantShared(Yii::app()->session['loginID']);
+            $var_15->var_75 = count($var_75);
+            $var_15->var_77 = ceil($var_15->var_75 / 10);
+            $var_78 = 0;
+
+            foreach ($var_75 as $var_68)
+            {
+                $var_83 = User::model()->getName($var_68['share_uid']); 
+                $var_15->rows[$var_78]['id'] = $var_68['participant_id'];
+                $var_15['rows'][$var_78]['cell'] = array($var_68['firstname'], $var_68['lastname'], $var_68['email'], $var_83['full_name'], $var_68['share_uid'], $var_68['date_added'], $var_68['can_edit']);
+                $var_78++;
+            }
+
+            
+        }
+    }
+
+    
+    function fn_13()
+    {
+        $var_84 = Yii::app()->var_56->getPost('oper');
+        $var_85 = Yii::app()->var_56->getPost('id');
+        if ($var_84 == 'del') 
+        {
+            ParticipantShare::model()->deleteRow($var_85);
+        }
+        else
+        {
+            $var_15 = array(
+                'participant_id' => Yii::app()->var_56->getPost('participant_id'),
+                'can_edit' => Yii::app()->var_56->getPost('can_edit'),
+                'share_uid' => Yii::app()->var_56->getPost('shared_uid')
+            );
+            ParticipantShare::model()->updateShare($var_15);
+        }
+    }
+
+    
+    function fn_14()
+    {
+        $var_21->fn_2('attributeControl');
+    }
+
+    
+    function fn_15()
+    {
+        $var_43 = Yii::app()->var_45;
+        $var_74 = Yii::app()->var_56->getPost('page');
+        $var_88 = Yii::app()->var_56->getPost('rows');
+        $var_88 = isset($var_88) ? $var_88 : 50; 
+        $var_75 = ParticipantAttributeName::model()->with('participant_attribute_names_lang')->findAll(array('order'=>'attribute_name'));
+        $var_89 = array(
+            'DD' => $var_43->gT("Drop-down list"),
+            'DP' => $var_43->gT("Date"),
+            'TB' => $var_43->gT("Text box")
+        );
+        $var_15 = new class_1();
+        $var_15->var_74 = $var_74;
+        $var_15->var_75 = count($var_75);
+        $var_15->var_77 = ceil(ParticipantAttributeName::model()->getCPDBAttributes(true) / $var_88);
+        $var_78 = 0;
+        foreach($var_75 as $var_68) { 
+            $var_92=$var_68->var_93; 
+            foreach($var_68->var_94 as $var_95) { 
+                if($var_95->var_45 == Yii::app()->session['adminlang']) {$var_92= $var_92." ({$var_95->var_96})";} 
+            }
+            $var_15->rows[$var_78]['id'] = $var_68->var_97;
+            $var_15->rows[$var_78]['cell'] = array('', $var_92, $var_89[$var_68->attribute_type], $var_68->var_98);
+            $var_78++;
+        }
+
+        
+        
+    }
+
+    
+    function fn_16()
+    {    
+        $var_43 = Yii::app()->var_45;
+        $var_84 = Yii::app()->var_56->getPost('oper');
+
+        if ($var_84 == 'del' && Yii::app()->var_56->getPost('id'))
+        {
+            $var_99 = (array) explode(',', Yii::app()->var_56->getPost('id'));
+            $var_99 = array_map('trim', $var_99);
+            $var_99 = array_map('intval', $var_99);
+
+            foreach ($var_99 as $var_100)
+            {
+                ParticipantAttributeName::model()->delAttribute($var_100);
+            }
+        }
+        elseif ($var_84 == 'add' && Yii::app()->var_56->getPost('attribute_name'))
+        {
+            $var_15 = array(
+                'defaultname' => Yii::app()->var_56->getPost('attribute_name'),
+                'attribute_name' => Yii::app()->var_56->getPost('attribute_name'),
+                'attribute_type' => Yii::app()->var_56->getPost('attribute_type'),
+                'visible' => Yii::app()->var_56->getPost('visible')? 'TRUE' : 'FALSE'
+            );
+            
+        }
+        elseif ($var_84 == 'edit' && Yii::app()->var_56->getPost('id'))
+        {
+            $var_15 = array(
+                'attribute_id' => Yii::app()->var_56->getPost('id'),
+                'attribute_name' => Yii::app()->var_56->getPost('attribute_name'),
+                'attribute_type' => Yii::app()->var_56->getPost('attribute_type'),
+                'visible' => Yii::app()->var_56->getPost('visible','FALSE') != 'FALSE' ? 'TRUE' : 'FALSE'
+            );
+            ParticipantAttributeName::model()->fn_17($var_15);
+            $var_43->eT("Attribute display setting updated");
+        }
+
+    }
+
+    
+    function fn_18()
+    {
+        if (Permission::model()->hasGlobalPermission('participantpanel','delete'))
+        {
+            $var_104 = Yii::app()->var_56->getPost('selectedoption');
+            $var_105 = Yii::app()->var_56->getPost('participant_id');
+
+            
+
+            
+            if ($var_104 == 'po')
+            {
+                Participant::model()->deleteParticipants($var_105);
+            }
+            
+            elseif ($var_104 == 'ptt')
+            {
+                Participant::model()->deleteParticipantToken($var_105);
+            }
+            
+            elseif ($var_104 == 'ptta')
+            {
+                Participant::model()->deleteParticipantTokenAnswer($var_105);
+            }
+        }
+    }
+
+    
+    function fn_19()
+    {
+        $var_109 = Yii::app()->var_56->getPost('oper');
+
+        
+        if ($var_109 == 'edit' && Permission::model()->hasGlobalPermission('participantpanel','update') && Participant::model()->is_owner(Yii::app()->var_56->getPost('id')))
+        {
+            $var_15 = array(
+                'participant_id' => Yii::app()->var_56->getPost('id'),
+                'firstname' => Yii::app()->var_56->getPost('firstname'),
+                'lastname' => Yii::app()->var_56->getPost('lastname'),
+                'email' => Yii::app()->var_56->getPost('email'),
+                'language' => Yii::app()->var_56->getPost('language'),
+                'blacklisted' => Yii::app()->var_56->getPost('blacklisted')
+            );
+            Participant::model()->updateRow($var_15);
+        }
+        
+        elseif ($var_109 == 'add' && Permission::model()->hasGlobalPermission('participantpanel','create'))
+        {
+            $var_112 = $var_21->fn_20();
+            $var_15 = array(
+                'participant_id' => $var_112,
+                'firstname' => Yii::app()->var_56->getPost('firstname'),
+                'lastname' => Yii::app()->var_56->getPost('lastname'),
+                'email' => Yii::app()->var_56->getPost('email'),
+                'language' => Yii::app()->var_56->getPost('language'),
+                'blacklisted' => Yii::app()->var_56->getPost('blacklisted'),
+                'owner_uid' => Yii::app()->session['loginID'],
+                'created_by' => Yii::app()->session['loginID']
+            );
+            Participant::model()->insertParticipant($var_15);
+        }
+    }
+
+    
+    function fn_21()
+    {
+        if ($var_115 = class_2::model()->findByPk('userideditable'))
+        {
+            class_2::model()->updateByPk('userideditable', array('stg_value'=>Yii::app()->var_56->getPost('userideditable')));
+        }
+        else
+        {
+            $var_118 = new class_2;
+            $var_118 ->var_119='userideditable';
+            $var_118 ->var_120=Yii::app()->var_56->getPost('userideditable');
+            $var_118->save();
+        }
+        Yii::app()->getController()->redirect(array('admin/participants/sa/userControl'));
+    }
+
+    
+    function fn_22()
+    {
+        $var_123 = Array('blacklistallsurveys', 'blacklistnewsurveys', 'blockaddingtosurveys', 'hideblacklisted', 'deleteblacklisted', 'allowunblacklist', 'userideditable');
+        foreach ($var_123 as $var_37)
+        {
+            if ($var_115 = class_2::model()->findByPk($var_37))
+            {
+                class_2::model()->updateByPk($var_37, array('stg_value'=>Yii::app()->var_56->getPost($var_37)));
+            }
+            else
+            {
+                $var_118 = new class_2;
+                $var_118 ->var_119=$var_37;
+                $var_118 ->var_120=Yii::app()->var_56->getPost($var_37);
+                $var_118->save();
+            }
+        }
+        Yii::app()->getController()->redirect(array('admin/participants/sa/blacklistControl'));
+    }
+
+    
+    function fn_23()
+    {
+        $var_124 = Yii::app()->var_56->getQuery('pid');
+        $var_75 = SurveyLink::model()->findAllByAttributes((array('participant_id' => $var_124)));
+        $var_15 = new class_1();
+        $var_15->var_74 = 1;
+        $var_15->var_75 = count($var_75);
+        $var_15->var_77 = ceil($var_15->var_75 / 10);
+        $var_78 = 0;
+        foreach ($var_75 as $var_68)
+        {
+            $var_127=Survey::model()->with(array('languagesettings'=>array('condition'=>'surveyls_language=language')))->findByAttributes(array('sid' => $var_68['survey_id']));            
+            foreach($var_127->var_129 as $var_130)
+            {
+                $var_131= $var_130->var_132;
+            }
+            $var_133 = "";
+            
+            if (!Permission::model()->hasSurveyPermission($var_68['survey_id'], 'tokens', 'read'))
+            {
+                $var_133 = $var_68['survey_id'];
+            } else
+            {
+                $var_133 = '<a href=' . Yii::app()->getController()->createUrl("/admin/tokens/sa/browse/surveyid/{$var_68['survey_id']}") . '>' . $var_68['survey_id'].'</a>';
+            }
+            $var_15->rows[$var_78]['cell'] = array($var_131, $var_133, $var_68['token_id'], $var_68['date_created'], $var_68['date_invited'], $var_68['date_completed']);
+            $var_78++;
+        }
+
+        
+    }
+
+    
+    function fn_24()
+    {
+        $var_136 = Yii::app()->var_56->getPost('searchURL');
+        $var_137  = Yii::app()->var_56->getPost('searchcondition');
+        $var_136 = basename($var_136);
+        
+        if ($var_136 != 'getParticipants_json') 
+        {
+            $var_138 = explode("||", $var_137);
+            $var_28 = Participant::model()->getParticipantsSearchMultipleCondition($var_138);
+        } else {
+            $var_28 = null;
+        }
+        
+        
+    }
+
+    
+    function fn_25()
+    {
+        
+    }
+
+    
+    function fn_26()
+    {
+        $var_21->fn_4(); 
+    }
+
+    
+    function fn_27()
+    {
+        $var_137 = basename(Yii::app()->var_56->getPost('searchcondition'));
+
+        
+        if ($var_137 != 'getParticipants_json')
+        {
+            $var_124 = "";
+            $var_138 = explode("||", $var_137);
+
+            $var_32 = Participant::model()->getParticipantsSearchMultiple($var_138, 0, 0);
+
+            printf( $var_21->getController()->var_45->gT("%s participant(s) are to be copied "), count($var_32));
+        }
+        
+        else
+        {
+            if (Permission::model()->hasGlobalPermission('superadmin','read')) 
+            {
+                $var_48 = Participant::model()->getParticipantsCountWithoutLimit();
+            }
+            else
+            {
+                $var_32 = Participant::model()->getParticipantsOwner(Yii::app()->session['loginID']);
+                $var_48 = count($var_32);
+            }
+
+            printf($var_21->getController()->var_45->gT("%s participant(s) are to be copied "), $var_48);
+        }
+    }
+
+    
+    function fn_28()
+    {
+        $var_137 = Yii::app()->var_56->getPost('searchcondition'); 
+        $var_143 = basename(Yii::app()->var_56->getPost('searchURL')); 
+        
+        if ($var_143 != 'getParticipants_json') 
+        {
+            $var_124 = "";
+            $var_138 = explode("||", $var_137);  
+            $var_32 = Participant::model()->getParticipantsSearchMultiple($var_138, 0, 0);
+
+            foreach ($var_32 as $var_8 => $var_37)
+            {
+                if (Permission::model()->hasGlobalPermission('superadmin','read'))
+                {
+                    $var_124 .= "," . $var_37['participant_id']; 
+                } else
+                {
+                    if(Participant::model()->is_owner($var_37['participant_id']))
+                    {
+                        $var_124 .= "," . $var_37['participant_id']; 
+                    }
+                }
+            }
+             
+        }
+        else
+        {
+            $var_124 = ""; 
+            if (Permission::model()->hasGlobalPermission('superadmin','read')) 
+            {
+                $var_32 = Participant::model()->getParticipantsWithoutLimit(); 
+            }
+            else 
+            {
+                $var_32 = Participant::model()->getParticipantsOwner(Yii::app()->session['loginID']);
+            }
+
+            foreach ($var_32 as $var_8 => $var_37)
+            {
+                $var_124 = $var_124 . "," . $var_37['participant_id']; 
+            }
+             
+        }
+    }
+
+    
+    function fn_29()
+    {
+        if (Yii::app()->var_56->getPost('searchcondition','') != '') 
+        {
+            $var_138 = explode("%7C%7C", Yii::app()->var_56->getPost('searchcondition',''));
+            $var_28 = Participant::model()->getParticipantsSearchMultipleCondition($var_138);
+        } else {
+            $var_28 = null;
+        }
+        $var_36=explode('+',Yii::app()->var_56->getPost('attributes',''));
+        $var_21->fn_4($var_28,$var_36);
+    }
+
+    
+    function fn_30()
+    {
+        $var_137 = Yii::app()->var_56->getpost('searchcondition');
+        $var_146 = array();
+        $var_138 = explode("||", $var_137);
+        $var_28 = Participant::model()->getParticipantsSearchMultipleCondition($var_138);
+        return $var_21->fn_31($var_28);
+    }
+
+    
+    function fn_31($var_28 = null)
+    {
+        $var_74 = (int) Yii::app()->var_56->getPost('page');
+        $var_88 = (int) Yii::app()->var_56->getPost('rows');
+        $var_88 = empty($var_88) ? $var_88 : 50; 
+
+        $var_46 = ParticipantAttributeName::model()->getVisibleAttributes();
+        $var_148 = array('participant_id', 'can_edit', 'firstname', 'lastname', 'email', 'blacklisted', 'survey', 'language', 'owner_uid');
+        foreach ($var_46 as $var_8 => $var_37)
+        {
+            array_push($var_148, $var_37['attribute_id']);
+        }
+        $var_149 = Yii::app()->var_56->getPost('sidx');
+        $var_149 = in_array($var_149,$var_148) ? $var_149 : "lastname";
+        $var_150 = Yii::app()->var_56->getPost('sord');
+        $var_150 = ($var_150=='desc') ? 'desc' : 'asc';
+        $var_2 = $var_149. " ". $var_150;
+                                                 
+        
+        $var_15 = new class_1;
+        
+        
+        if (Permission::model()->hasGlobalPermission('superadmin','read'))
+        {
+            $var_31 = null;
+        } else {
+            $var_31 = Yii::app()->session['loginID'];
+        }
+        $var_15->var_75 = Participant::model()->getParticipantsCount($var_46, $var_28, $var_31);
+        $var_15->var_77 = ceil($var_15->var_75 / $var_88);
+        if ($var_74>$var_15->var_77) {
+            $var_74 = $var_15->var_77;
+        }
+        $var_15->var_74 = $var_74;
+        $var_75 = Participant::model()->getParticipants($var_74, $var_88,$var_46, $var_2, $var_28, $var_31);
+        
+        
+        $var_151=array();
+        foreach ($var_75 as $var_8 => $var_68)
+        {            
+            if (array_key_exists('can_edit', $var_68)) {
+                $var_152 = $var_68['can_edit'];
+                if (is_null($var_152)) {
+                    $var_152 = 'true';
+                }
+            } else {
+                
+                $var_152 = "true";
+            }
+            if (trim($var_68['ownername'])=='') {
+                $var_68['ownername']=$var_68['username'];   
+            }
+            $var_151['cell'] = array($var_68['participant_id'], $var_152, htmlspecialchars($var_68['firstname']), htmlspecialchars($var_68['lastname']), htmlspecialchars($var_68['email']), $var_68['blacklisted'], $var_68['survey'], $var_68['language'], $var_68['ownername']);
+            $var_151['id'] = $var_68['participant_id'];
+            
+            foreach($var_68 as $var_8=>$var_153)
+            {
+                if(preg_match('/^a\d+$/', $var_8))
+                {
+                    $var_151['cell'][] = $var_153;
+                }
+            }
+            
+            $var_15->rows[] = $var_151;
+        }
+
+        
+    }
+
+    
+    function fn_32()
+    {
+        $var_105 = strip_tags(Yii::app()->var_56->getQuery('pid'));
+        $var_75 = ParticipantAttributeName::model()->getParticipantVisibleAttribute($var_105);
+        $var_75 = fn_0($var_75, "attribute_name", "asc");
+
+        $var_78 = 0;
+
+        $var_155 = array(); 
+
+        
+        foreach ($var_75 as $var_68)
+        {
+            $var_161[$var_78] = array("", $var_68['participant_id']."_".$var_68['attribute_id'], $var_68['attribute_type'], $var_68['attribute_id'], $var_68['attribute_name'], $var_68['value']);
+            
+            if ($var_68['attribute_type'] == "DD")
+            {
+                $var_156 = ParticipantAttributeName::model()->getAttributesValues($var_68['attribute_id']);
+                if (!empty($var_156))
+                {
+                    $var_158 = "";
+                    foreach ($var_156 as $var_9)
+                    {
+                        $var_158 .= $var_9['value'] . ":" . $var_9['value'];
+                        $var_158 .= ";";
+                    }
+                    $var_158 = substr($var_158, 0, -1);
+                    array_push($var_161[$var_78], $var_158);
+                }
+                else
+                {
+                    array_push($var_161[$var_78], "");
+                }
+            }
+            else
+            {
+                array_push($var_161[$var_78], "");
+            }
+            array_push($var_155, $var_68['attribute_id']);
+            $var_78++;
+        }
+
+        
+        $var_159=array();
+        
+        if (count($var_155) == 0)
+        {
+            $var_159 = ParticipantAttributeName::model()->getCPDBAttributes();
+        }
+        
+        else
+        {
+            $var_159 = ParticipantAttributeName::model()->getnotaddedAttributes($var_155);
+        }
+
+        
+        foreach ($var_159 as $var_68)
+        {
+            $var_161[$var_78] = array("", $var_105."_".$var_68['attribute_id'], $var_68['attribute_type'], $var_68['attribute_id'], $var_68['attribute_name'], "");
+            if ($var_68['attribute_type'] == "DD")
+            {
+                $var_156 = ParticipantAttributeName::model()->getAttributesValues($var_68['attribute_id']);
+                if (!empty($var_156))
+                {
+                    $var_158 = "";
+                    foreach ($var_156 as $var_9)
+                    {
+                        $var_158 .= $var_9['value'] . ":" . $var_9['value'];
+                        $var_158 .= ";";
+                    }
+                    $var_158 = substr($var_158, 0, -1);
+                    array_push($var_161[$var_78], $var_158);
+                }
+                else
+                {
+                    array_push($var_161[$var_78], "");
+                }
+            }
+            else
+            {
+                array_push($var_161[$var_78], "");
+            }
+            $var_78++;
+        }
+        $var_161=fn_0($var_161, 3, "asc");
+
+        $var_15 = new class_1();
+        $var_15->var_74 = 1;
+        $var_15->rows[0]['id'] = $var_105;
+        $var_15->rows[0]['cell'] = array();
+        $var_15->var_75 = count($var_161);
+        $var_15->var_77 = ceil($var_15->var_75 / 10);
+        foreach($var_161 as $var_8=>$var_162) {
+            $var_15->rows[$var_8]['id']=$var_162[1];
+            $var_15->rows[$var_8]['cell']=$var_162;
+        }
+        
+
+        
+    }
+
+    
+    function fn_33()
+    {
+        $var_100 = Yii::app()->var_56->getQuery('aid');
+        $var_15 = array(
+            'attributes' => ParticipantAttributeName::model()->getAttribute($var_100),
+            'attributenames' => ParticipantAttributeName::model()->getAttributeNames($var_100),
+            'attributevalues' => ParticipantAttributeName::model()->getAttributesValues($var_100),
+            'aAttributes' => ParticipantAttributeName::model()->getAllAttributes()
+        );
+        App()->getClientScript()->registerCssFile(Yii::app()->getConfig('adminstyleurl').'participants.css');
+        App()->getClientScript()->registerCssFile(Yii::app()->getConfig('adminstyleurl').'viewAttribute.css');
+        App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('adminscripts') . "viewAttribute.js");
+        $var_21->fn_3('participants', array('participantsPanel', 'viewAttribute'), $var_15);
+    }
+
+    
+    function fn_17()
+    {
+        $var_100 = Yii::app()->var_56->getQuery('aid');
+        $var_15 = array(
+            'attribute_id' => $var_100,
+            'attribute_type' => Yii::app()->var_56->getPost('attribute_type'),
+            'defaultname' => Yii::app()->var_56->getPost('defaultname'),
+            'visible' => Yii::app()->var_56->getPost('visible')
+        );
+        ParticipantAttributeName::model()->fn_17($var_15);
+
+        foreach ($var_164 as $var_8 => $var_37)
+        {
+            
+            if (strlen($var_8) == 2)
+            {
+                $var_165 = array(
+                    'attribute_id' => $var_100,
+                    'attribute_name' => $var_37,
+                    'lang' => $var_8
+                );
+
+                ParticipantAttributeName::model()->saveAttributeLanguages($var_165);
+            }
+        }
+        if (Yii::app()->var_56->getPost('langdata'))
+        {
+            $var_165 = array(
+                'attribute_id' => $var_100,
+                'attribute_name' => Yii::app()->var_56->getPost('attname'),
+                'lang' => Yii::app()->var_56->getPost('langdata')
+            );
+
+            ParticipantAttributeName::model()->saveAttributeLanguages($var_165);
+        }
+        
+        if (Yii::app()->var_56->getPost('attribute_value_name_1') || Yii::app()->var_56->getPost('attribute_value_name_1') == "0")
+        {
+            $var_78 = 1;
+            $var_167 = 'attribute_value_name_' . $var_78;
+            while (array_key_exists($var_167, $var_164) && $var_164[$var_167] != "")
+            {
+                if ($var_164[$var_167] != "")
+                {
+                    $var_169[$var_78] = array(
+                        'attribute_id' => $var_100,
+                        'value' => Yii::app()->var_56->getPost($var_167)
+                    );
+                }
+                $var_167 = 'attribute_value_name_' . ++$var_78;
+            };
+            ParticipantAttributeName::model()->storeAttributeValues($var_169);
+        }
+        
+        if (Yii::app()->var_56->getPost('editbox') || Yii::app()->var_56->getPost('editbox')=="0")
+        {
+            $var_170 = array(
+                'attribute_id' => $var_100,
+                'value_id' => Yii::app()->var_56->getPost('value_id'),
+                'value' => Yii::app()->var_56->getPost('editbox')
+            );
+            ParticipantAttributeName::model()->saveAttributeValue($var_170);
+        }
+        Yii::app()->getController()->redirect(array('admin/participants/sa/attributeControl'));
+    }
+
+    
+    function fn_34()
+    {
+        $var_100 = Yii::app()->var_56->getQuery('aid');
+        $var_173 = Yii::app()->var_56->getQuery('vid');
+        ParticipantAttributeName::model()->fn_34($var_100, $var_173);
+        Yii::app()->getController()->redirect(array('/admin/participants/sa/viewAttribute/aid/' . $var_100));
+    }
+
+    
+    function fn_35()
+    {
+        if (Yii::app()->var_56->getPost('oper') == "edit" && (Yii::app()->var_56->getPost('attvalue') || Yii::app()->var_56->getPost('attvalue')=="0"))
+        {
+            $var_174 = explode('_',Yii::app()->var_56->getPost('participant_id'));
+            $var_100 =  Yii::app()->var_56->getPost('attid');
+            if (Permission::model()->hasGlobalPermission('participantpanel','update') && Participant::model()->is_owner($var_174[0]))
+            {
+                $var_15 = array('participant_id' => $var_174[0], 'attribute_id' => $var_100, 'value' => Yii::app()->var_56->getPost('attvalue'));
+                ParticipantAttributeName::model()->editParticipantAttributeValue($var_15);
+            }
+        }
+    }
+
+    function fn_36()
+    {
+
+        $var_43 = $var_21->getController()->var_45;
+        if ($_FILES['the_file']['name']=='')
+        {                                                                                                                     
+            Yii::app()->setFlashMessage($var_43->gT('Please select a file to import!'),'error');
+            Yii::app()->getController()->redirect(array('admin/participants/sa/importCSV'));
+        }
+        $var_177=randomChars(20);
+        $var_178 = Yii::app()->getConfig('tempdir') . var_179 . $var_177;
+        $var_180 = pathinfo($_FILES['the_file']['name']);
+        $var_181 = $var_180['extension'];
+        if (strtolower($var_181)=='csv')
+        {
+            $var_182 = @move_uploaded_file($_FILES['the_file']['tmp_name'], $var_178);
+            $var_183 = '';
+            $var_184 = Yii::app()->var_56->getPost('filterbea');
+        }
+        else
+        {
+            $var_185['errorinupload']['error'] = $var_43->gT("This is not a .csv file.");
+            $var_185['aAttributes'] = ParticipantAttributeName::model()->getAllAttributes();
+            $var_185['aGlobalErrors'] = array();
+          
+          
+            $var_21->fn_3('participants', array('participantsPanel', 'uploadSummary'),$var_185);
+            var_186;
+        }
+        
+
+        if (!$var_182)
+        {
+            $var_185['error_msg'] = sprintf($var_43->gT("An error occurred uploading your file. This may be caused by incorrect permissions in your %s folder."), Yii::app()->getConfig('tempdir'));
+            $var_183 = array('error' => $var_21->var_187->display_errors());
+            Yii::app()->session['summary'] = array('errorinupload' => $var_183);
+            $var_21->fn_3('participants', array('participantsPanel', 'uploadSummary'),array('aAttributes' => ParticipantAttributeName::model()->getAllAttributes()));
+        }
+        else
+        {
+            $var_15 = array('upload_data' => $_FILES['the_file']);
+            $var_189 = $_FILES['the_file']['name'];
+
+            $var_190 = array('firstname', 'participant_id', 'lastname', 'email', 'language', 'blacklisted', 'owner_uid');
+            $var_191 = fopen($var_178, 'r');
+
+            $var_192 = Yii::app()->var_56->getPost('separatorused');
+            $var_193 = fgetcsv($var_191, 1000, ',');
+            $var_194 = array();
+            foreach ($var_193 as $var_8 => $var_37)
+            {
+                $var_195 = preg_replace('/[^(\x20-\x7F)]*/','', $var_37); 
+                if (!in_array(strtolower($var_195), $var_190))
+                {
+                    array_push($var_194, $var_37);
+                }
+                $var_197[]=$var_37;
+            }
+            $var_196 = count(array_filter(array_filter(file($var_178),'trim')));
+
+            $var_69 = ParticipantAttributeName::model()->model()->getCPDBAttributes();
+            $var_15 = array(
+                'attributes' => $var_69,
+                'firstline' => $var_194,
+                'fullfilepath' => $var_177,
+                'linecount' => $var_196 - 1,
+                'filterbea' => $var_184,
+                'participant_id_exists' => in_array('participant_id', $var_197)
+            );
+        App()->getClientScript()->registerCssFile(Yii::app()->getConfig('adminstyleurl') . "attributeMapCSV.css");
+        App()->getClientScript()->registerPackage('qTip2');
+        App()->getClientScript()->registerPackage('jquery-nestedSortable');
+        App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('adminscripts') . "attributeMapCSV.js");
+        
+        $var_198="var copyUrl = '".App()->createUrl("admin/participants/sa/uploadCSV")."';\n"
+                        ."var displayParticipants = '".App()->createUrl("admin/participants/sa/displayParticipants")."';\n"
+                        ."var mapCSVcancelled = '".App()->createUrl("admin/participants/sa/mapCSVcancelled")."';\n"
+                        ."var characterset = '".sanitize_paranoid_string($var_164['characterset'])."';\n"
+                        ."var okBtn = '".$var_43->gT("OK")."';\n"
+                        ."var processed = '".$var_43->gT("Summary")."';\n"
+                        ."var summary = '".$var_43->gT("Upload summary")."';\n"
+                        ."var notPairedErrorTxt = '".$var_43->gT("You have to pair this field with an existing attribute.")."';\n"
+                        ."var onlyOnePairedErrorTxt = '".$var_43->gT("Only one CSV attribute is mapped with central attribute.")."';\n"
+                        ."var cannotAcceptErrorTxt='".$var_43->gT("This list cannot accept token attributes.")."';\n"
+                        ."var separator = '".sanitize_paranoid_string($var_164['separatorused'])."';\n"
+                        ."var thefilepath = '".$var_177."';\n"
+                        ."var filterblankemails = '".$var_184."';\n";
+        App()->getClientScript()->registerScript("sAttributeMapJS",$var_198,var_200::var_201);
+            $var_21->fn_3('participants', 'attributeMapCSV', $var_15);
+        }
+    }
+
+    
+    function fn_37()
+    {
+        $var_43 = $var_21->getController()->var_45;
+        unset(Yii::app()->session['summary']);
+        $var_202 = Yii::app()->var_56->getPost('characterset');
+        $var_192 = Yii::app()->var_56->getPost('separatorused');
+        $var_203 = Yii::app()->var_56->getPost('newarray');
+        $var_204 = Yii::app()->var_56->getPost('mappedarray',false);
+        $var_184 = Yii::app()->var_56->getPost('filterbea');
+        $var_205 = Yii::app()->var_56->getPost('overwrite');
+        $var_178 = Yii::app()->getConfig('tempdir') . '/' . basename(Yii::app()->var_56->getPost('fullfilepath'));
+        $var_183 = "";
+        $var_206 = 0;
+        $var_207 = 0;
+        $var_208 = 0;
+        $var_209 = 0;
+        $var_210 = 0;
+        $var_211 = 0;
+        $var_212="nameemail"; 
+        $var_213 = array();
+        $var_214 = array();
+        $var_215 = array();
+        $var_216 = array();
+        $var_217 = array();
+        $var_218=array();
+        
+        if(!$var_204)
+            $var_204=array();
+        
+        @ini_set('auto_detect_line_endings', true);
+        
+        $var_219 = file($var_178);
+
+        
+        $var_192 = Yii::app()->var_56->getPost('separatorused');
+        $var_220 = Yii::app()->var_56->getPost('characterset');
+        
+        if (!empty($var_203))
+        {
+            
+            foreach ($var_203 as $var_8 => $var_37)
+            {
+                $var_15 = array('attribute_type' => 'TB', 'defaultname' => $var_37, 'visible' => 'FALSE');
+                $var_221 = ParticipantAttributeName::model()->storeAttributeCSV($var_15);
+                
+                $var_204[$var_221] = $var_37;
+            }
+        }
+        if (!isset($var_220))
+        {
+            $var_220 = 'auto';
+        }
+        foreach ($var_219 as $var_223) 
+        {
+            $var_223 = @mb_convert_encoding($var_223, "UTF-8", $var_220);
+            $var_224 = "";
+            $var_225 = "";
+            $var_226 = "";
+            $var_227 = "";
+            if ($var_206 == 0) {
+                
+                
+                
+                $var_223 = removeBOM($var_223);
+                $var_228 = ParticipantAttributeName::model()->getAttributeID();
+                $var_230 = array('participant_id', 'firstname', 'lastname', 'email', 'language', 'blacklisted');
+                $var_231 = array('firstname', 'lastname', 'email');
+                if (!empty($var_204))
+                {
+                    foreach ($var_204 as $var_8 => $var_37)
+                    {
+                        array_push($var_230, strtolower($var_37));
+                    }
+                }
+                
+                switch ($var_192)
+                {
+                    case 'comma':
+                        $var_192 = ',';
+                        break;
+                    case 'semicolon':
+                        $var_192 = ';';
+                        break;
+                    default:
+                        $var_232 = substr_count($var_223, ',');
+                        $var_233 = substr_count($var_223, ';');
+                        if ($var_233 > $var_232)
+                            $var_192 = ';'; else
+                            $var_192 = ',';
+                }
+                $var_193 = convertCSVRowToArray($var_223, $var_192, '"');
+                $var_193 = array_map('trim', $var_193);
+                $var_234 = array();
+                
+                foreach ($var_193 as $var_51 => $var_235)
+                {
+                    $var_193[$var_51] = preg_replace("/(.*) <[^,]*>$/", "$1", $var_235);
+                    $var_235 = $var_193[$var_51];
+                    if (!in_array(strtolower($var_235), $var_230) && !in_array($var_235,$var_204))
+                    {
+                        $var_234[] = $var_235;
+                    } else {
+                        $var_193[$var_51] = strtolower($var_235);
+                    }
+                }
+                if ((!in_array('firstname', $var_193) && !in_array('lastname', $var_193) && !in_array('email', $var_193)) && !in_array('participant_id', $var_193))
+                {
+                    $var_206 = count($var_219);
+                    break;
+                }
+            } else {
+                
+                $var_236 = convertCSVRowToArray($var_223, $var_192, '"');
+                
+                if (count($var_193) != count($var_236))
+                {
+                    $var_215[] = $var_206.','.count($var_236).','.count($var_193);
+                    $var_206++;
+                    continue;
+                }
+                $var_237 = array_combine($var_193, $var_236);
+                
+                foreach ($var_234 as $var_238)
+                {
+                    unset($var_237[$var_238]);
+                }
+                
+                foreach($var_231 as $var_239){
+                    if(!in_array($var_239, $var_193))
+                        $var_237[$var_239]="";
+                }
+                $var_240 = false;
+                $var_241 = false;
+                $var_242 = 0;
+
+                
+                $var_15 = array(
+                         'firstname' => $var_237['firstname'],
+                         'lastname' => $var_237['lastname'],
+                         'email' => $var_237['email'],
+                         'owner_uid' => Yii::app()->session['loginID']
+                         );
+                
+                if(in_array('participant_id', $var_193)) {
+                    $var_212="participant_id";
+                    $var_15 = "participant_id = ".Yii::app()->var_243->quoteValue($var_237['participant_id']);
+                } else {
+                    $var_212="nameemail";
+                    $var_15 = "firstname = ".Yii::app()->var_243->quoteValue($var_237['firstname'])." AND lastname = ".Yii::app()->var_243->quoteValue($var_237['lastname'])." AND email = ".Yii::app()->var_243->quoteValue($var_237['email'])." AND owner_uid = '".Yii::app()->session['loginID']."'";
+                }
+                
+                $var_15 = Participant::model()->checkforDuplicate($var_15, "participant_id");
+                if ($var_15 !== false) {
+                    $var_242 = 1;
+                    $var_210++;
+                    if($var_205=="true")
+                    {
+                        
+                        if (!empty($var_204)) {
+                            
+                            
+                            foreach ($var_204 as $var_46 => $var_246) {
+                                if (!empty($var_246)) {
+                                    $var_247 = array('participant_id' => $var_15,
+                                                       'attribute_id' => $var_46,
+                                                       'value' => $var_237[strtolower($var_246)]);
+                                         ParticipantAttribute::model()->updateParticipantAttributeValue($var_247);
+                                } else {
+                                    
+                                }
+                            }
+                            $var_211++;
+                        }
+                    }
+                }
+                if ($var_242 == 1) {
+                    $var_241 = true;
+                    $var_213[] = $var_237['firstname'] . " " . $var_237['lastname'] . " (" . $var_237['email'] . ")";
+                }
+
+                
+                $var_240 = false;
+                $var_237['email'] = trim($var_237['email']);
+                if ($var_237['email'] != '') {
+                    $var_249 = explode(';', $var_237['email']);
+                    
+                    $var_250 = $var_249[0];
+                    if (!validateEmailAddress($var_250)) {
+                        $var_240 = true;
+                        $var_214[] = $var_236[0] . " " . $var_236[1] . " (" . $var_236[2] . ")";
+                    }
+                }
+                if (!$var_241 && !$var_240) {
+                    
+
+                       
+                    if (!isset($var_237['participant_id']) || $var_237['participant_id'] == "") {
+                        $var_112 = $var_21->fn_20(); 
+                        $var_237['participant_id'] = $var_112;
+                    }
+                    if (isset($var_237['emailstatus']) && trim($var_237['emailstatus'] == '')) {
+                        unset($var_237['emailstatus']);
+                    }
+                    if (!isset($var_237['language']) || $var_237['language'] == "") {
+                        $var_237['language'] = "en";
+                    }
+                    if (!isset($var_237['blacklisted']) || $var_237['blacklisted'] == "") {
+                        $var_237['blacklisted'] = "N";
+                    }
+                    $var_237['owner_uid'] = Yii::app()->session['loginID'];
+                    if (isset($var_237['validfrom']) && trim($var_237['validfrom'] == '')) {
+                        unset($var_237['validfrom']);
+                    }
+                    if (isset($var_237['validuntil']) && trim($var_237['validuntil'] == '')) {
+                        unset($var_237['validuntil']);
+                    }
+                    $var_251=false;
+                    if (($var_184 == "accept" && $var_237['email'] == "")) {
+                        
+                        
+                        $var_207++;
+                        $var_251=true;
+                    } else {
+                        foreach ($var_237 as $var_8 => $var_37) {
+                            if (!empty($var_204)) {
+                                
+                                
+                                if (in_array($var_8, $var_230)) {
+                                    foreach ($var_204 as $var_46 => $var_246) {
+                                        if (strtolower($var_246) == $var_8) {
+                                            if (!empty($var_37)) {
+                                                $var_15 = array('participant_id' => $var_237['participant_id'],
+                                                               'attribute_id' => $var_46,
+                                                               'value' => $var_37);
+                                                 ParticipantAttributeName::model()->saveParticipantAttributeValue($var_15);
+                                            } else {
+                                                
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if(!$var_251)
+                    {
+                        Participant::model()->insertParticipantCSV($var_237);
+                        $var_209++;
+                    }
+                }
+                $var_208++;
+            }
+            $var_206++;
+        }
+
+        unlink($var_178);
+        $var_15 = array();
+        $var_15['clang'] = $var_43;
+        $var_15['recordcount'] = $var_206 - 1;
+        $var_15['duplicatelist'] = $var_213;
+        $var_15['mincriteria'] = $var_208;
+        $var_15['imported'] = $var_209;
+        $var_15['errorinupload'] = $var_183;
+        $var_15['invalidemaillist'] = $var_214;
+        $var_15['aInvalidFormatlist'] = $var_215;
+        $var_15['mandatory'] = $var_207;
+        $var_15['invalidattribute'] = $var_216;
+        $var_15['invalidparticipantid'] = $var_217;
+        $var_15['overwritten'] = $var_211;
+        $var_15['dupreason'] = $var_212;
+        $var_15['aGlobalErrors'] = $var_218;
+        $var_21->getController()->renderPartial('/admin/participants/uploadSummary_view', $var_15);
+    }
+
+    function fn_38()
+    {                                                          
+        $var_21->fn_3('participants', array('participantsPanel', 'uploadSummary'),array('aAttributes' => ParticipantAttributeName::model()->getAllAttributes()));
+    }
+
+    
+    function fn_39()
+    {
+        unset(Yii::app()->session['participantid']);
+        Yii::app()->session['participantid'] = Yii::app()->var_56->getPost('participantid');
+    }
+
+    
+    function fn_20()
+    {
+        return sprintf(
+                '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+                mt_rand(0, 0xffff),
+                mt_rand(0, 0xffff),
+                mt_rand(0, 0xffff),
+                mt_rand(0, 0x0fff) | 0x4000,
+                mt_rand(0, 0x3fff) | 0x8000,
+                mt_rand(0, 0xffff),
+                mt_rand(0, 0xffff),
+                mt_rand(0, 0xffff)
+        );
+    }
+
+    
+    function fn_40()
+    {
+        $var_43 = $var_21->getController()->var_45;
+        $var_105 = Yii::app()->var_56->getPost('participantid');
+        $var_255 = Yii::app()->var_56->getPost('shareuser');
+        $var_256 = Yii::app()->var_56->getPost('can_edit');
+
+        $var_78 = 0;
+        foreach ($var_105 as $var_257)
+        {
+            $var_258 = time();
+            $var_15 = array('participant_id' => $var_257,
+                'share_uid' => $var_255,
+                'date_added' => date('Y-m-d H:i:s', $var_258),
+                'can_edit' => $var_256);
+            ParticipantShare::model()->storeParticipantShare($var_15);
+            $var_78++;
+        }
+
+        printf($var_43->gT("%s participants have been shared"), $var_78);
+    }
+
+    
+    function fn_41()
+    {
+        $var_260 = Yii::app()->var_56->getPost('newarr');
+        $var_261 = Yii::app()->var_56->getPost('mapped');
+        $var_262 = Yii::app()->var_56->getPost('overwriteauto');
+        $var_263 = Yii::app()->var_56->getPost('overwriteman');
+        $var_264 = Yii::app()->var_56->getPost('createautomap');
+
+        $var_265 = Participant::model()->copyToCentral(Yii::app()->var_56->getPost('surveyid'), $var_260, $var_261, $var_262, $var_263, $var_264);
+        $var_43 = $var_21->getController()->var_45;
+
+        printf($var_43->gT("%s participants have been copied to the central participants table"), $var_265['success']);
+        if($var_265['duplicate'] > 0) {
+            
+            printf($var_43->gT("%s entries were not copied because they already existed"), $var_265['duplicate']);
+        }
+        if($var_265['overwriteman']=="true" || $var_265['overwriteauto']) {
+            
+            $var_43->eT("Attribute values for existing participants have been updated from the token records");
+        }
+    }
+
+    
+    function fn_42()
+    {
+        $var_265 = Participant::model()->copytoSurvey(Yii::app()->var_56
+                                                         ->getPost('participantid'),
+                                               Yii::app()->var_56
+                                                         ->getPost('surveyid'), Yii::app()
+                                                         ->var_56->getPost('attributeid')
+                                               );
+        $var_43 = $var_21->getController()->var_45;
+
+        printf($var_43->gT("%s participants have been copied to the survey token table"), $var_265['success']);
+        if($var_265['duplicate']>0) {
+            
+            printf($var_43->gT("%s entries were not copied because they already existed"), $var_265['duplicate']);
+        }
+        if($var_265['overwrite']=="true") {
+            
+            $var_43->eT("Attribute values for existing participants have been updated from the participants records");
+        }
+    }
+
+    
+    function fn_43()
+    {
+        $var_105 = Yii::app()->var_56->getPost('participant_id');
+        $var_268 = Yii::app()->var_56->getPost('surveyid');
+        $var_261 = Yii::app()->var_56->getPost('mapped');
+        $var_269 = Yii::app()->var_56->getPost('newarr');
+        $var_262 = Yii::app()->var_56->getPost('overwrite');
+        $var_263 = Yii::app()->var_56->getPost('overwriteman');
+        $var_270 = Yii::app()->var_56->getPost('overwritest');
+        $var_264 = Yii::app()->var_56->getPost('createautomap');
+
+        $var_43 = $var_21->getController()->var_45;
+        if (empty($var_269[0])) { $var_269 = array(); }
+
+        $var_265 = Participant::model()->copyCPBDAttributesToTokens($var_268, $var_261, $var_269, $var_105, $var_262, $var_263, $var_270, $var_264);
+
+        printf($var_43->gT("%s participants have been copied to the survey token table"), $var_265['success']);
+        if($var_265['duplicate']>0) {
+            
+            printf($var_43->gT("%s entries were not copied because they already existed"), $var_265['duplicate']);
+        }
+        if($var_265['blacklistskipped']>0) {
+            
+            printf($var_43->gT("%s entries were skipped because they are blacklisted"), $var_265['blacklistskipped']);
+        }
+        if($var_265['overwriteauto']=="true" || $var_265['overwriteman']=="true") {
+            
+            $var_43->eT("Attribute values for existing participants have been updated from the participants records");
+        }
+    }
+
+    
+    function fn_44()
+    {
+        Yii::app()->loadHelper('common');
+        App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('adminscripts') . "attributeMap.js");
+        App()->getClientScript()->registerCssFile(Yii::app()->getConfig('adminstyleurl') ."attributeMap.css");
+
+        $var_268 = Yii::app()->var_56->getPost('survey_id');
+        $var_122 = Yii::app()->var_56->getPost('redirect');
+        $var_48 = Yii::app()->var_56->getPost('count');
+        $var_105 = Yii::app()->var_56->getPost('participant_id');
+        $var_69 = ParticipantAttributeName::model()->getCPDBAttributes();
+        $var_272 = getTokenFieldsAndNames($var_268, TRUE);
+        
+
+        $var_273 = array(); 
+        $var_274 = array(); 
+        $var_275 = array(); 
+        $var_276 = array();
+        $var_78 = 0;
+        $var_277 = 0;
+
+        foreach ($var_272 as $var_8 => $var_37)
+        {
+            if (is_numeric($var_8[10])) 
+            {
+                $var_273[$var_8] = $var_37['description'];
+                $var_78++;
+            }
+            else
+            {
+                array_push($var_275, substr($var_8, 15));
+            }
+        }
+        foreach ($var_69 as $var_68)
+        {
+            if (!in_array($var_68['attribute_id'], $var_275))
+            {
+                $var_274[$var_68['attribute_id']] = $var_68['attribute_name'];
+            }
+            else
+            {
+                array_push($var_276, $var_68['attribute_name']);
+            }
+        }
+
+        $var_15 = array(
+            'selectedcentralattribute' => $var_274,
+            'selectedtokenattribute' => $var_273,
+            'alreadymappedattributename' => $var_276,
+            'survey_id' => $var_268,
+            'redirect' => $var_122,
+            'participant_id' => $var_105,
+            'count' => $var_48
+        );
+
+        $var_21->fn_3('participants', 'attributeMap', $var_15);
+    }
+
+    
+    function fn_45()
+    {
+        Yii::app()->loadHelper('common');
+        App()->getClientScript()->registerScriptFile(Yii::app()->getConfig('adminscripts') . "attributeMapToken.js");
+        App()->getClientScript()->registerCssFile(Yii::app()->getConfig('adminstyleurl') ."attributeMapToken.css");
+
+        $var_278 = (int)Yii::app()->var_56->getQuery('sid');
+        $var_279 = ParticipantAttributeName::model()->getCPDBAttributes();
+        $var_280 = getTokenFieldsAndNames($var_278, TRUE);
+
+        $var_273 = array();
+        $var_274 = array();
+        $var_275 = array();
+        $var_281 = array();
+        $var_282 = array();
+        $var_78 = 0;
+        $var_277 = 0;
+
+        foreach ($var_280 as $var_8 => $var_37)
+        {
+            if ($var_37['cpdbmap']=='')
+            {
+                $var_273[$var_37['description']] = $var_8;
+            }
+            else
+            {
+                $var_283=$var_37['cpdbmap'];
+                $var_284=false;
+                foreach($var_279 as $var_285) {
+                    if($var_285['attribute_id']==$var_283) {
+                        $var_284=true;
+                    }
+                }
+                if($var_284) {
+                    $var_275[]=$var_283;
+                    $var_281[]=$var_8;
+                    $var_282[$var_8]=$var_37['description'];
+                } else {
+                    $var_273[$var_37['description']]=$var_8;
+                }
+            }
+        }
+        foreach ($var_279 as $var_68)
+        {
+            if (!in_array($var_68['attribute_id'], $var_275))
+            {
+                $var_274[$var_68['attribute_id']] = $var_68['attribute_name'];
+            }
+        }
+
+        $var_15 = array(
+            'attribute' => $var_274,
+            'tokenattribute' => $var_273,
+            'alreadymappedattributename' => $var_281,
+            'alreadymappedattdescription' => $var_282
+        );
+
+        $var_21->fn_3('participants', 'attributeMapToken', $var_15);
+    }
+
+    
+    function fn_46()
+    {
+        unlink(Yii::app()->getConfig('tempdir') . '/' . basename(Yii::app()->var_56->getPost('fullfilepath')));
+    }
+
+
+    function fn_47()
+    {
+        $var_21->var_286->model('participants_model');
+        $var_105 = $var_21->var_287->segment(4);
+        $var_268 = $var_21->var_287->segment(5);
+        $var_43 = $var_21->var_289;
+        if (!is_numeric($var_268))
+        {
+            $var_290 = $var_21->var_287->segment(5);
+            if ($var_290 == 'Y' || $var_290 == 'N')
+            {
+                $var_15 = array('blacklisted' => $var_290, 'participant_id' => $var_105);
+                $var_15 = $var_21->var_291->blacklistparticipantglobal($var_15);
+                $var_15['global'] = 1;
+                $var_15['clang'] = $var_43;
+                $var_15['blacklist'] = $var_290;
+                $var_21->var_286->view('admin/participants/blacklist_view', $var_15);
+            }
+            else
+            {
+                $var_15['is_participant'] = 0;
+                $var_15['is_updated'] = 0;
+                $var_15['clang'] = $var_43;
+                $var_21->var_286->view('admin/participants/blacklist_view', $var_15);
+            }
+        }
+        else
+        {
+            $var_290 = $var_21->var_287->segment(6);
+            if ($var_290 == 'Y' || $var_290 == 'N')
+            {
+                $var_15 = array('blacklisted' => $var_290);
+                $var_15 = $var_21->var_291->blacklistparticipantlocal($var_15, $var_268, $var_105);
+                $var_15['global'] = 1;
+                $var_15['clang'] = $var_43;
+                $var_15['local'] = 1;
+                $var_15['blacklist'] = $var_290;
+                $var_21->var_286->view('admin/participants/blacklist_view', $var_15);
+            }
+            else
+            {
+                $var_15['is_participant'] = 0;
+                $var_15['is_updated'] = 0;
+                $var_15['clang'] = $var_43;
+                $var_21->var_286->view('admin/participants/blacklist_view', $var_15);
+            }
+        }
+    }
+
+}
+
+?>

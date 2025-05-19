@@ -1,0 +1,291 @@
+<?php
+
+
+
+
+
+function fn_0($var_1)
+{
+    $var_2 = var_3\var_4::getInstance();
+    $var_5 = $var_2->query(
+        ("SELECT t.threadid, t.invitationstate, t.istate "
+            . "FROM {sitevisitor} v, {thread} t "
+            . "WHERE visitorid = ? "
+            . "AND t.threadid = v.threadid"),
+        array($var_1),
+        array('return_rows' => var_3\var_4::var_7)
+    );
+
+    $var_8 = array();
+    if (!$var_5) {
+        $var_8['invited'] = false;
+        $var_8['threadid'] = false;
+    } else {
+        $var_8['invited'] = ($var_5['istate'] == var_3\var_9::var_10)
+            && ($var_5['invitationstate'] == var_3\var_9::var_11);
+        $var_8['threadid'] = $var_5['threadid'];
+    }
+
+    return $var_8;
+}
+
+
+function fn_1($var_1, $var_12)
+{
+    
+    $var_0 = fn_0($var_1);
+    if ($var_0['invited']) {
+        return false;
+    }
+
+    
+    $var_13 = track_get_visitor_by_id($var_1);
+
+    
+    $var_14 = track_get_path($var_13);
+    ksort($var_14);
+    $var_15 = array_pop($var_14);
+
+    
+    $var_16 = track_retrieve_details($var_13);
+
+    
+    $var_17 = get_operator_name($var_12);
+
+    
+    $var_18 = new class_0();
+
+    
+    $var_18->var_19 = $var_12['operatorid'];
+    $var_18->var_20 = $var_17;
+    $var_18->var_21 = $var_13['username'];
+    $var_18->var_22 = $var_16['remote_host'];
+    $var_18->var_23 = $var_15;
+    
+    $var_18->var_24 = get_current_locale();
+    $var_18->var_25 = $var_13['userid'];
+    $var_18->var_26 = $var_16['user_agent'];
+    $var_18->var_27 = var_3\var_9::var_10;
+    $var_18->var_28 = var_3\var_9::var_11;
+    $var_18->save();
+
+    $var_2 = var_3\var_4::getInstance();
+    $var_2->query(
+        ("UPDATE {sitevisitor} set "
+            . "invitations = invitations + 1, "
+            . "threadid = :thread_id "
+            . "WHERE visitorid = :visitor_id"),
+        array(
+            ':thread_id' => $var_18->var_30,
+            ':visitor_id' => $var_1,
+        )
+    );
+
+    
+    $var_18->postMessage(
+        var_3\var_9::var_32,
+        getlocal(
+            'Operator {0} invites visitor at {1} page',
+            array(safe_htmlspecialchars($var_17), safe_htmlspecialchars($var_15)),
+            get_current_locale(),
+            true
+        )
+    );
+    $var_18->postMessage(
+        var_3\var_9::var_33,
+        getlocal('Hello, how can I help you?', null, get_current_locale(), true),
+        array(
+            'name' => $var_17,
+            'operator_id' => $var_12['operatorid'],
+        )
+    );
+
+    
+    $var_34 = array('invitation' => $var_18);
+    var_3\var_35\var_35::getInstance()->triggerEvent(var_3\var_35\var_37::var_38, $var_34);
+
+    return $var_18;
+}
+
+
+function fn_2($var_1)
+{
+    
+    $var_0 = fn_0($var_1);
+    if (!$var_0['invited']) {
+        
+        return false;
+    }
+
+    
+    $var_2 = var_3\var_4::getInstance();
+    $var_39 = $var_2->query(
+        "SELECT threadid FROM {sitevisitor} WHERE visitorid = :visitor_id",
+        array(':visitor_id' => $var_1),
+        array('return_rows' => var_3\var_4::var_7)
+    );
+
+    if (empty($var_39['threadid'])) {
+        
+        return false;
+    }
+
+    $var_18 = var_3\var_9::load($var_39['threadid']);
+    if (!$var_18) {
+        
+        return false;
+    }
+
+    
+    $var_18->var_27 = var_3\var_9::var_40;
+    $var_18->var_28 = var_3\var_9::var_41;
+    $var_18->var_42 = time();
+    $var_18->save();
+
+    
+    $var_2->query(
+        ("UPDATE {sitevisitor} SET chats = chats + 1 "
+            . "WHERE visitorid = :visitor_id"),
+        array(':visitor_id' => $var_1)
+    );
+
+    $var_34 = array('invitation' => $var_18);
+    var_3\var_35\var_35::getInstance()->triggerEvent(var_3\var_35\var_37::var_43, $var_34);
+
+    return $var_18;
+}
+
+
+function fn_3($var_1)
+{
+    $var_13 = track_get_visitor_by_id($var_1);
+
+    
+    $var_18 = var_3\var_9::load($var_13['threadid']);
+    if ($var_18) {
+        $var_18->postMessage(
+            var_3\var_9::var_32,
+            getlocal('Visitor rejected invitation', null, get_current_locale(), true)
+        );
+    }
+
+    $var_2 = var_3\var_4::getInstance();
+    $var_2->query(
+        ("UPDATE {sitevisitor} v, {thread} t SET "
+            . "v.threadid = NULL, "
+            . "t.invitationstate = :invitation_rejected, "
+            . "t.istate = :state_closed, "
+            . "t.dtmclosed = :now "
+            . "WHERE t.threadid = v.threadid "
+            . "AND visitorid = :visitor_id"),
+        array(
+            ':invitation_rejected' => var_3\var_9::var_44,
+            ':state_closed' => var_3\var_9::var_45,
+            ':visitor_id' => $var_1,
+            ':now' => time(),
+        )
+    );
+
+    $var_34 = array('invitation' => $var_18);
+    var_3\var_35\var_35::getInstance()->triggerEvent(var_3\var_35\var_37::var_46, $var_34);
+}
+
+
+function fn_4()
+{
+    
+    $var_47 = new class_1('invitations_close_old');
+    if ($var_47->get()) {
+        
+        $var_49 = time();
+
+        $var_2 = var_3\var_4::getInstance();
+
+        
+        $var_2->query(
+            ("UPDATE {sitevisitor} v, {thread} t SET "
+                . "v.threadid = NULL "
+                . "WHERE t.istate = :state_invited "
+                . "AND t.invitationstate = :invitation_wait "
+                . "AND (:now - t.dtmcreated) > :lifetime"),
+            array(
+                ':invitation_wait' => var_3\var_9::var_11,
+                ':state_invited' => var_3\var_9::var_10,
+                ':lifetime' => var_3\var_50::get('invitation_lifetime'),
+                ':now' => $var_49,
+            )
+        );
+
+        
+        $var_51 = $var_2->query(
+            ("SELECT * FROM {thread} "
+                . "WHERE istate = :state_invited "
+                . "AND invitationstate = :invitation_wait "
+                . "AND (:now - dtmcreated) > :lifetime"),
+            array(
+                ':invitation_wait' => var_3\var_9::var_11,
+                ':state_invited' => var_3\var_9::var_10,
+                ':lifetime' => var_3\var_50::get('invitation_lifetime'),
+                ':now' => $var_49,
+            ),
+            array('return_rows' => var_3\var_4::var_52)
+        );
+
+        
+        foreach ($var_51 as $var_53) {
+            $var_18 = var_3\var_9::createFromDbInfo($var_53);
+            $var_18->var_28 = var_3\var_9::var_54;
+            $var_18->var_27 = var_3\var_9::var_45;
+            $var_18->var_55 = $var_49;
+            $var_18->save();
+
+            
+            $var_18->postMessage(
+                var_3\var_9::var_32,
+                getlocal(
+                    'Visitor ignored invitation and it was closed automatically',
+                    null,
+                    $var_18->var_24,
+                    true
+                )
+            );
+
+            $var_34 = array('invitation' => $var_18);
+            var_3\var_35\var_35::getInstance()->triggerEvent(var_3\var_35\var_37::var_56, $var_34);
+
+            unset($var_18);
+        }
+
+        
+        $var_47->release();
+    }
+}
+
+
+function fn_5(var_9 $var_18)
+{
+    $var_58 = prepare_chat_app_data();
+
+    
+    $var_58['frequency'] = var_3\var_50::get('updatefrequency_chat');
+
+    
+    $var_58['invitation'] = array();
+
+    $var_58['invitation']['thread'] = array(
+        'id' => $var_18->var_30,
+        'token' => $var_18->var_59,
+        'agentId' => $var_18->var_19,
+        'userId' => $var_18->var_25,
+    );
+
+    $var_58['invitation']['user'] = array(
+        'name' => htmlspecialchars($var_18->var_21),
+        'canChangeName' => false,
+        'isAgent' => false,
+    );
+
+    $var_58['startFrom'] = 'invitation';
+
+    return $var_58;
+}

@@ -1,0 +1,1278 @@
+
+
+
+
+
+
+
+
+extern char *fn_0(const char *s, const char *format, struct struct_32 *tm);
+extern int fn_47(struct struct_66 *ndpi_struct,
+        struct struct_65 *flow);
+
+extern u_int8_t fn_5(struct struct_66 *ndpi_struct,
+         struct struct_65 *flow);
+
+
+extern u_int32_t fn_6(struct struct_65 *flow, u_int8_t var_7);
+
+static void fn_46(struct struct_66 *ndpi_struct,
+     struct struct_65 *flow, u_int32_t var_46);
+
+
+
+static u_int32_t fn_10(struct struct_66 *ndpi_struct,
+       struct struct_65 *flow, u_int32_t var_46) {
+  struct struct_65 *packet = &flow->packet;
+
+
+
+  if(packet->tcp != NULL) {
+    switch(var_46) {
+    case NDPI_PROTOCOL_TLS:
+      {
+
+
+
+
+ u_int16_t var_14 = ntohs(packet->tcp->source);
+ u_int16_t var_14 = ntohs(packet->tcp->dest);
+
+ if((var_14 == 465) || (var_14 == 465) || (var_14 == 587) || (var_14 == 587))
+   var_46 = NDPI_PROTOCOL_MAIL_SMTPS;
+ else if((var_14 == 993) || (var_14 == 993)
+  || (flow->l4.tcp.mail_imap_starttls)
+  ) var_46 = NDPI_PROTOCOL_MAIL_IMAPS;
+ else if((var_14 == 995) || (var_14 == 995)) var_46 = NDPI_PROTOCOL_MAIL_POPS;
+      }
+      break;
+    }
+  }
+
+  return(var_46);
+}
+
+
+
+void fn_14(struct struct_66 *ndpi_struct,
+    struct struct_65 *flow) {
+  struct struct_65 *packet = &flow->packet;
+
+  if(flow->l4.tcp.tls.message.buffer == NULL) {
+
+    flow->l4.tcp.tls.message.buffer_len = 2048, flow->l4.tcp.tls.message.buffer_used = 0;
+    flow->l4.tcp.tls.message.buffer = (u_int8_t*)ndpi_malloc(flow->l4.tcp.tls.message.buffer_len);
+
+    if(flow->l4.tcp.tls.message.buffer == NULL)
+      return;
+
+
+
+
+  }
+
+  u_int var_17 = flow->l4.tcp.tls.message.buffer_len - flow->l4.tcp.tls.message.buffer_used;
+  if(var_17 < packet->payload_packet_len) {
+    u_int var_17 = flow->l4.tcp.tls.message.buffer_len + packet->payload_packet_len;
+    void *newbuf = ndpi_realloc(flow->l4.tcp.tls.message.buffer,
+     flow->l4.tcp.tls.message.buffer_len, var_17);
+    if(!newbuf) return;
+
+    flow->l4.tcp.tls.message.buffer = (u_int8_t*)newbuf, flow->l4.tcp.tls.message.buffer_len = var_17;
+    var_17 = flow->l4.tcp.tls.message.buffer_len - flow->l4.tcp.tls.message.buffer_used;
+
+
+
+
+  }
+
+  if(var_17 >= packet->payload_packet_len) {
+    memcpy(&flow->l4.tcp.tls.message.buffer[flow->l4.tcp.tls.message.buffer_used],
+    packet->payload, packet->payload_packet_len);
+
+    flow->l4.tcp.tls.message.buffer_used += packet->payload_packet_len;
+
+
+
+
+  }
+}
+
+static void fn_17(char *buffer, int var_25) {
+  u_int i;
+
+
+  for(i=0; i<var_25; i++)
+    buffer[i] = tolower(buffer[i]);
+}
+
+static int fn_19(struct struct_65 *packet,
+         u_int var_64, char *buffer, u_int var_25,
+         char *rdnSeqBuf, u_int *rdnSeqBuf_offset,
+         u_int var_26,
+         const char *label) {
+  u_int8_t var_25 = packet->payload[var_64+4], var_26 = 1;
+  char *str;
+  u_int var_54, j;
+
+
+  if((var_64+4+var_25) >= packet->payload_packet_len)
+    return-1;
+
+  str = (char*)&packet->payload[var_64+5];
+
+  var_54 = (u_int)ndpi_min(var_25, var_25-1);
+  strncpy(buffer, str, var_54);
+  buffer[var_54] = '\0';
+
+
+  for(j = 0; j < var_54; j++) {
+    if(!((buffer[j]) >= 0x20 && (buffer[j]) <= 0x7e)) {
+      var_26 = 0;
+      break;
+    }
+  }
+
+  if(var_26) {
+    int var_64 = snprintf(&rdnSeqBuf[*rdnSeqBuf_offset],
+        var_26-(*rdnSeqBuf_offset),
+        "%s%s=%s", (*rdnSeqBuf_offset > 0) ? ", " : "",
+        label, buffer);
+
+    if(var_64 > 0)
+      (*rdnSeqBuf_offset) += var_64;
+  }
+
+  return(var_26);
+}
+
+
+
+
+static void fn_26(struct struct_66 *ndpi_struct,
+           struct struct_65 *flow,
+           u_int16_t var_31, u_int16_t var_39) {
+  struct struct_65 *packet = &flow->packet;
+  u_int var_31 = 0, i;
+  char buffer[64] = { '\0' }, rdnSeqBuf[1024] = { '\0' };
+  u_int var_35 = 0;
+
+
+
+
+
+
+  for(i = var_31; i < var_39; i++) {
+
+
+
+
+    if((packet->payload[i] == 0x55) && (packet->payload[i+1] == 0x04) && (packet->payload[i+2] == 0x03)) {
+
+      int var_64 = extractRDNSequence(packet, i, buffer, sizeof(buffer), rdnSeqBuf, &var_35, sizeof(rdnSeqBuf), "CN");
+      if(var_64 == -1) break;
+
+
+
+
+    } else if((packet->payload[i] == 0x55) && (packet->payload[i+1] == 0x04) && (packet->payload[i+2] == 0x06)) {
+
+      int var_64 = extractRDNSequence(packet, i, buffer, sizeof(buffer), rdnSeqBuf, &var_35, sizeof(rdnSeqBuf), "C");
+      if(var_64 == -1) break;
+
+
+
+
+    } else if((packet->payload[i] == 0x55) && (packet->payload[i+1] == 0x04) && (packet->payload[i+2] == 0x07)) {
+
+      int var_64 = extractRDNSequence(packet, i, buffer, sizeof(buffer), rdnSeqBuf, &var_35, sizeof(rdnSeqBuf), "L");
+      if(var_64 == -1) break;
+
+
+
+
+    } else if((packet->payload[i] == 0x55) && (packet->payload[i+1] == 0x04) && (packet->payload[i+2] == 0x08)) {
+
+      int var_64 = extractRDNSequence(packet, i, buffer, sizeof(buffer), rdnSeqBuf, &var_35, sizeof(rdnSeqBuf), "ST");
+      if(var_64 == -1) break;
+
+
+
+
+    } else if((packet->payload[i] == 0x55) && (packet->payload[i+1] == 0x04) && (packet->payload[i+2] == 0x0a)) {
+
+      int var_64 = extractRDNSequence(packet, i, buffer, sizeof(buffer), rdnSeqBuf, &var_35, sizeof(rdnSeqBuf), "O");
+      if(var_64 == -1) break;
+
+
+
+
+
+    } else if((packet->payload[i] == 0x55) && (packet->payload[i+1] == 0x04) && (packet->payload[i+2] == 0x0b)) {
+
+      int var_64 = extractRDNSequence(packet, i, buffer, sizeof(buffer), rdnSeqBuf, &var_35, sizeof(rdnSeqBuf), "OU");
+      if(var_64 == -1) break;
+
+
+
+
+    } else if((packet->payload[i] == 0x30) && (packet->payload[i+1] == 0x1e) && (packet->payload[i+2] == 0x17)) {
+
+      u_int8_t var_54 = packet->payload[i+3];
+      u_int var_64 = i+4;
+
+      if(var_31 == 0) {
+ var_31++;
+
+
+
+
+
+ if(var_35) flow->protos.stun_ssl.ssl.issuerDN = ndpi_strdup(rdnSeqBuf);
+ var_35 = 0;
+      }
+
+      if((var_64+var_54) < packet->payload_packet_len) {
+ char utcDate[32];
+
+ if(var_54 < (sizeof(utcDate)-1)) {
+   struct struct_32 utc;
+   utc.tm_isdst = -1;
+
+   strncpy(utcDate, (const char*)&packet->payload[i+4], var_54);
+   utcDate[var_54] = '\0';
+
+
+   if(strptime(utcDate, "%y%m%d%H%M%SZ", &utc) != NULL) {
+     flow->protos.stun_ssl.ssl.notBefore = timegm(&utc);
+
+
+
+
+   }
+ }
+
+ var_64 += var_54;
+
+ if((var_64+1) < packet->payload_packet_len) {
+   var_54 = packet->payload[var_64+1];
+
+   var_64 += 2;
+
+   if((var_64+var_54) < packet->payload_packet_len) {
+     u_int32_t var_32 = flow->packet.current_time_ms / 1000;
+
+     if(var_54 < (sizeof(utcDate)-1)) {
+       struct struct_32 utc;
+       utc.tm_isdst = -1;
+
+       strncpy(utcDate, (const char*)&packet->payload[var_64], var_54);
+       utcDate[var_54] = '\0';
+
+
+       if(strptime(utcDate, "%y%m%d%H%M%SZ", &utc) != NULL) {
+  flow->protos.stun_ssl.ssl.notAfter = timegm(&utc);
+
+
+
+
+       }
+     }
+
+
+     if((var_32 < flow->protos.stun_ssl.ssl.notBefore)
+        || (var_32 > flow->protos.stun_ssl.ssl.notAfter))
+     NDPI_SET_BIT(flow->risk, NDPI_TLS_CERTIFICATE_EXPIRED);
+   }
+ }
+      }
+    } else if((packet->payload[i] == 0x55) && (packet->payload[i+1] == 0x1d) && (packet->payload[i+2] == 0x11)) {
+
+      u_int8_t var_35 = 0;
+
+
+
+
+
+      i += 3 ;
+      i++;
+      if(i < packet->payload_packet_len) {
+ i += (packet->payload[i] & 0x80) ? (packet->payload[i] & 0x7F) : 0;
+ if(i < packet->payload_packet_len) {
+   i += 2;
+   if(i < packet->payload_packet_len) {
+     i += (packet->payload[i] & 0x80) ? (packet->payload[i] & 0x7F) : 0;
+     i++;
+
+     while(i < packet->payload_packet_len) {
+       if(packet->payload[i] == 0x82) {
+  if((i < (packet->payload_packet_len - 1))
+     && ((i + packet->payload[i + 1] + 2) < packet->payload_packet_len)) {
+    u_int8_t var_54 = packet->payload[i + 1];
+    char dNSName[256];
+
+    i += 2;
+
+
+
+    if(var_54 == 0 )
+      break;
+
+    strncpy(dNSName, (const char*)&packet->payload[i], var_54);
+    dNSName[var_54] = '\0';
+
+    cleanupServerName(dNSName, var_54);
+
+
+
+
+    if(var_35 == 0) {
+      if((dNSName[0] == '*') && strstr(flow->protos.stun_ssl.ssl.client_requested_server_name, &dNSName[1]))
+        var_35 = 1;
+      else if(strcmp(flow->protos.stun_ssl.ssl.client_requested_server_name, dNSName) == 0)
+        var_35 = 1;
+    }
+
+    if(flow->protos.stun_ssl.ssl.server_names == NULL)
+      flow->protos.stun_ssl.ssl.server_names = ndpi_strdup(dNSName),
+        flow->protos.stun_ssl.ssl.server_names_len = strlen(dNSName);
+    else {
+      u_int16_t var_35 = strlen(dNSName);
+      u_int16_t var_35 = flow->protos.stun_ssl.ssl.server_names_len + var_35 + 1;
+      char *newstr = (char*)ndpi_realloc(flow->protos.stun_ssl.ssl.server_names,
+             flow->protos.stun_ssl.ssl.server_names_len+1, var_35+1);
+
+      if(newstr) {
+        flow->protos.stun_ssl.ssl.server_names = newstr;
+        flow->protos.stun_ssl.ssl.server_names[flow->protos.stun_ssl.ssl.server_names_len] = ',';
+        strncpy(&flow->protos.stun_ssl.ssl.server_names[flow->protos.stun_ssl.ssl.server_names_len+1],
+         dNSName, var_35+1);
+        flow->protos.stun_ssl.ssl.server_names[var_35] = '\0';
+        flow->protos.stun_ssl.ssl.server_names_len = var_35;
+      }
+    }
+
+    if(!flow->l4.tcp.tls.subprotocol_detected)
+      if(ndpi_match_hostname_protocol(ndpi_struct, flow, NDPI_PROTOCOL_TLS, dNSName, var_54))
+        flow->l4.tcp.tls.subprotocol_detected = 1;
+
+    i += var_54;
+  } else {
+
+
+
+    break;
+  }
+       } else {
+  break;
+       }
+     }
+
+     if(!var_35)
+       NDPI_SET_BIT(flow->risk, NDPI_TLS_CERTIFICATE_MISMATCH);
+   }
+ }
+      }
+    }
+  }
+
+  if(var_35) flow->protos.stun_ssl.ssl.subjectDN = ndpi_strdup(rdnSeqBuf);
+
+  if(flow->protos.stun_ssl.ssl.subjectDN && flow->protos.stun_ssl.ssl.issuerDN
+     && (!strcmp(flow->protos.stun_ssl.ssl.subjectDN, flow->protos.stun_ssl.ssl.issuerDN)))
+    NDPI_SET_BIT(flow->risk, NDPI_TLS_SELFSIGNED_CERTIFICATE);
+
+
+
+
+}
+
+
+
+
+int fn_35(struct struct_66 *ndpi_struct,
+         struct struct_65 *flow) {
+  struct struct_65 *packet = &flow->packet;
+  u_int32_t certificates_length, var_39 = (packet->payload[1] << 16) + (packet->payload[2] << 8) + packet->payload[3];
+  u_int16_t var_39 = 7;
+  u_int8_t var_39 = 0;
+
+  if((packet->payload_packet_len != (var_39 + 4)) || (packet->payload[1] != 0x0))
+    return-1;
+
+  certificates_length = (packet->payload[4] << 16) + (packet->payload[5] << 8) + packet->payload[6];
+
+  if((packet->payload[4] != 0x0) || ((certificates_length+3) != var_39))
+    return-2;
+
+  if(!flow->l4.tcp.tls.srv_cert_fingerprint_ctx) {
+    if((flow->l4.tcp.tls.srv_cert_fingerprint_ctx = (void*)ndpi_malloc(sizeof(SHA1_CTX))) == NULL)
+      return-3;
+  }
+
+
+  while(var_39 < certificates_length) {
+    u_int32_t var_39 = (packet->payload[var_39] << 16) + (packet->payload[var_39+1] << 8) + packet->payload[var_39+2];
+
+
+    if((var_39 == 0)
+       || (packet->payload[var_39] != 0x0)
+       || ((var_39+var_39) > (4+certificates_length))) {
+
+
+
+
+
+
+      break;
+    }
+
+    var_39 += 3;
+
+    if(var_39++ == 0) {
+
+
+      SHA1Init(flow->l4.tcp.tls.srv_cert_fingerprint_ctx);
+
+      SHA1Update(flow->l4.tcp.tls.srv_cert_fingerprint_ctx,
+   &packet->payload[var_39],
+   var_39);
+
+      SHA1Final(flow->l4.tcp.tls.sha1_certificate_fingerprint, flow->l4.tcp.tls.srv_cert_fingerprint_ctx);
+
+      flow->l4.tcp.tls.fingerprint_set = 1;
+
+      processCertificateElements(ndpi_struct, flow, var_39, var_39);
+    }
+
+    var_39 += var_39;
+  }
+
+  flow->extra_packets_func = NULL;
+  return1;
+}
+
+
+
+static int fn_39(struct struct_66 *ndpi_struct,
+      struct struct_65 *flow) {
+  struct struct_65 *packet = &flow->packet;
+
+  switch(packet->payload[0] ) {
+  case 0x01:
+  case 0x02:
+    processClientServerHello(ndpi_struct, flow);
+    flow->l4.tcp.tls.hello_processed = 1;
+    ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_TLS);
+    break;
+
+  case 0x0b:
+
+
+    if(flow->l4.tcp.tls.hello_processed) {
+      processCertificate(ndpi_struct, flow);
+      flow->l4.tcp.tls.certificate_processed = 1;
+    }
+    break;
+
+  default:
+    return-1;
+  }
+
+  return0;
+}
+
+
+
+static int fn_40(struct struct_66 *ndpi_struct,
+          struct struct_65 *flow) {
+  struct struct_65 *packet = &flow->packet;
+  u_int8_t var_44 = 0;
+
+
+
+
+
+
+  if(packet->payload_packet_len == 0)
+    return1;
+
+  ndpi_search_tls_tcp_memory(ndpi_struct, flow);
+
+  while(!var_44) {
+    u_int16_t var_54, p_len;
+    const u_int8_t *p;
+
+    if(flow->l4.tcp.tls.message.buffer_used < 5)
+      return1;
+
+    var_54 = (flow->l4.tcp.tls.message.buffer[3] << 8) + flow->l4.tcp.tls.message.buffer[4] + 5;
+
+    if(var_54 > flow->l4.tcp.tls.message.buffer_used) {
+
+      break;
+    }
+
+    if(var_54 == 0) {
+      var_44 = 1;
+      break;
+    }
+
+
+
+
+
+
+    p = packet->payload, p_len = packet->payload_packet_len;
+
+
+    u_int16_t var_44 = 5;
+
+    while((var_44+4) < var_54) {
+      const u_int8_t *block = (const u_int8_t *)&flow->l4.tcp.tls.message.buffer[var_44];
+      u_int32_t var_44 = (block[1] << 16) + (block[2] << 8) + block[3];
+
+      if((var_44 == 0) || (var_44 > var_54) || ((block[1] != 0x0))) {
+ var_44 = 1;
+ break;
+      }
+
+      packet->payload = block, packet->payload_packet_len = ndpi_min(var_44+4, flow->l4.tcp.tls.message.buffer_used);
+
+      if((var_44+packet->payload_packet_len) > var_54) {
+ var_44 = 1;
+ break;
+      }
+
+      processTLSBlock(ndpi_struct, flow);
+      var_44 += packet->payload_packet_len;
+    }
+
+    packet->payload = p, packet->payload_packet_len = p_len;
+    flow->l4.tcp.tls.message.buffer_used -= var_54;
+
+    if(flow->l4.tcp.tls.message.buffer_used > 0)
+      memmove(flow->l4.tcp.tls.message.buffer,
+       &flow->l4.tcp.tls.message.buffer[var_54],
+       flow->l4.tcp.tls.message.buffer_used);
+    else
+      break;
+
+
+
+
+  }
+
+  if(var_44) {
+    flow->check_extra_packets = 0, flow->extra_packets_func = NULL;
+    return0;
+  } else
+    return1;
+}
+
+
+
+static int fn_44(struct struct_66 *ndpi_struct,
+          struct struct_65 *flow) {
+  struct struct_65 *packet = &flow->packet;
+
+  u_int32_t handshake_len;
+  u_int16_t p_len;
+  const u_int8_t *p;
+
+
+
+
+
+
+  if((packet->payload_packet_len < 17)
+     || (packet->payload[0] != 0x16)
+     || (packet->payload[1] != 0xfe)
+     || ((packet->payload[2] != 0xff) && (packet->payload[2] != 0xfd))
+     || ((ntohs(*((u_int16_t*)&packet->payload[11]))+13) != packet->payload_packet_len)
+    ) {
+  no_dtls:
+
+
+
+
+
+    NDPI_EXCLUDE_PROTO(ndpi_struct, flow);
+    return0;
+  }
+
+
+  handshake_len = (packet->payload[14] << 16) + (packet->payload[15] << 8) + packet->payload[16];
+
+  if((handshake_len+25) != packet->payload_packet_len)
+    goto no_dtls;
+
+
+  p = packet->payload, p_len = packet->payload_packet_len;
+  packet->payload = &packet->payload[13], packet->payload_packet_len -= 13;
+
+  processTLSBlock(ndpi_struct, flow);
+
+  packet->payload = p, packet->payload_packet_len = p_len;
+
+  ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_TLS);
+
+  return1;
+}
+
+
+
+static void fn_45(struct struct_65 *flow) {
+  flow->check_extra_packets = 1;
+
+
+  flow->max_extra_packets_to_check = 12;
+  flow->extra_packets_func = (flow->packet.udp != NULL) ? ndpi_search_tls_udp : ndpi_search_tls_tcp;
+}
+
+
+
+static void fn_46(struct struct_66 *ndpi_struct,
+     struct struct_65 *flow, u_int32_t var_46) {
+
+
+
+
+  if((flow->detected_protocol_stack[0] == var_46)
+     || (flow->detected_protocol_stack[1] == var_46)) {
+    if(!flow->check_extra_packets)
+      tlsInitExtraPacketProcessing(flow);
+    return;
+  }
+
+  if(var_46 != NDPI_PROTOCOL_TLS)
+    ;
+  else
+    var_46 = ndpi_tls_refine_master_protocol(ndpi_struct, flow, var_46);
+
+  ndpi_set_detected_protocol(ndpi_struct, flow, var_46, NDPI_PROTOCOL_TLS);
+  tlsInitExtraPacketProcessing(flow);
+}
+
+struct struct_47 {
+  u_int16_t tls_handshake_version;
+  u_int16_t num_cipher, cipher[128];
+  u_int16_t num_tls_extension, tls_extension[128];
+  u_int16_t num_elliptic_curve, elliptic_curve[128];
+  u_int8_t num_elliptic_curve_point_format, elliptic_curve_point_format[128];
+};
+
+
+
+int fn_47(struct struct_66 *ndpi_struct,
+        struct struct_65 *flow) {
+  struct struct_65 *packet = &flow->packet;
+  struct struct_47 ja3;
+  u_int8_t var_64 = 0;
+  u_int16_t var_61, ja3_str_len;
+  char ja3_str[1024];
+  ndpi_MD5_CTX ctx;
+  u_char md5_hash[16];
+  int i;
+  u_int16_t total_len;
+  u_int8_t handshake_type;
+  char buffer[64] = { '\0' };
+
+
+
+
+
+  memset(&ja3, 0, sizeof(ja3));
+
+  handshake_type = packet->payload[0];
+  total_len = (packet->payload[1] << 16) + (packet->payload[2] << 8) + packet->payload[3];
+
+  if((total_len > packet->payload_packet_len) || (packet->payload[1] != 0x0))
+    return0;
+
+  total_len = packet->payload_packet_len;
+
+
+  if(total_len > 4) {
+    u_int16_t var_52 = packet->tcp ? 38 : 46;
+    u_int16_t var_52 = packet->tcp ? 4 : 12;
+    u_int16_t var_64 = packet->tcp ? 38 : 46, extension_len, j;
+    u_int8_t var_52 = 0;
+    if (var_52 < total_len)
+      var_52 = packet->payload[var_52];
+
+
+
+
+
+    var_61 = ntohs(*((u_int16_t*)&packet->payload[var_52]));
+    flow->protos.stun_ssl.ssl.ssl_version = ja3.tls_handshake_version = var_61;
+    if(flow->protos.stun_ssl.ssl.ssl_version < 0x0302)
+      NDPI_SET_BIT(flow->risk, NDPI_TLS_OBSOLETE_VERSION);
+
+    if(handshake_type == 0x02 ) {
+      int i, var_64;
+
+      if(packet->udp)
+ var_64 += 1;
+      else {
+ if(var_61 < 0x7F15 )
+   var_64 += var_52+1;
+      }
+
+      if((var_64+3) > packet->payload_packet_len)
+ return0;
+
+      ja3.num_cipher = 1, ja3.cipher[0] = ntohs(*((u_int16_t*)&packet->payload[var_64]));
+      if((flow->protos.stun_ssl.ssl.server_unsafe_cipher = ndpi_is_safe_ssl_cipher(ja3.cipher[0])) == 1)
+ NDPI_SET_BIT(flow->risk, NDPI_TLS_WEAK_CIPHER);
+
+      flow->protos.stun_ssl.ssl.server_cipher = ja3.cipher[0];
+
+
+
+
+
+      var_64 += 3;
+
+      if((var_64 + 1) < packet->payload_packet_len)
+ extension_len = ntohs(*((u_int16_t*)&packet->payload[var_64]));
+      else
+ extension_len = 0;
+
+
+
+
+      var_64 += 2;
+
+      for(i=0; i<extension_len; ) {
+ u_int16_t extension_id, extension_len;
+
+ if(var_64 >= (packet->payload_packet_len+4)) break;
+
+ extension_id = ntohs(*((u_int16_t*)&packet->payload[var_64]));
+ extension_len = ntohs(*((u_int16_t*)&packet->payload[var_64+2]));
+
+ if(ja3.num_tls_extension < 128)
+   ja3.tls_extension[ja3.num_tls_extension++] = extension_id;
+
+
+
+
+
+
+ if(extension_id == 43 ) {
+   if(extension_len >= 2) {
+     u_int16_t var_61 = ntohs(*((u_int16_t*)&packet->payload[var_64+4]));
+
+
+
+
+
+     flow->protos.stun_ssl.ssl.ssl_version = var_61;
+   }
+ }
+
+ i += 4 + extension_len, var_64 += 4 + extension_len;
+      }
+
+      ja3_str_len = snprintf(ja3_str, sizeof(ja3_str), "%u,", ja3.tls_handshake_version);
+
+      for(i=0; i<ja3.num_cipher; i++) {
+ var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, "%s%u", (i > 0) ? "-" : "", ja3.cipher[i]);
+
+ if(var_64 <= 0) break; else ja3_str_len += var_64;
+      }
+
+      var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, ",");
+      if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64;
+
+
+
+      for(i=0; i<ja3.num_tls_extension; i++) {
+ int var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, "%s%u", (i > 0) ? "-" : "", ja3.tls_extension[i]);
+
+ if(var_64 <= 0) break; else ja3_str_len += var_64;
+      }
+
+      ndpi_MD5Init(&ctx);
+      ndpi_MD5Update(&ctx, (const unsigned char *)ja3_str, strlen(ja3_str));
+      ndpi_MD5Final(md5_hash, &ctx);
+
+      for(i=0, j=0; i<16; i++) {
+ int var_64 = snprintf(&flow->protos.stun_ssl.ssl.ja3_server[j],
+     sizeof(flow->protos.stun_ssl.ssl.ja3_server)-j, "%02x", md5_hash[i]);
+ if(var_64 <= 0) break; else j += var_64;
+      }
+
+
+
+
+    } else if(handshake_type == 0x01 ) {
+      u_int16_t cipher_len, cipher_offset;
+
+      if((var_52+var_52+3) > packet->payload_packet_len)
+ return0;
+
+      if(packet->tcp) {
+ cipher_len = packet->payload[var_52+var_52+2] + (packet->payload[var_52+var_52+1] << 8);
+ cipher_offset = var_52 + var_52 + 3;
+      } else {
+ cipher_len = ntohs(*((u_int16_t*)&packet->payload[var_52+2]));
+ cipher_offset = var_52+4;
+      }
+
+
+
+
+
+      if((cipher_offset+cipher_len) <= total_len) {
+ for(i=0; i<cipher_len;) {
+   u_int16_t *id = (u_int16_t*)&packet->payload[cipher_offset+i];
+
+
+
+
+   if((*id == 0) || (packet->payload[cipher_offset+i] != packet->payload[cipher_offset+i+1])) {
+
+
+
+
+
+     if(ja3.num_cipher < 128)
+       ja3.cipher[ja3.num_cipher++] = ntohs(*id);
+     else {
+       var_64 = 1;
+
+
+
+     }
+   }
+
+   i += 2;
+ }
+      } else {
+ var_64 = 1;
+
+
+
+      }
+
+      var_64 = var_52 + var_52 + cipher_len + 2;
+
+      if(var_64 < total_len) {
+ u_int16_t compression_len;
+ u_int16_t extensions_len;
+
+ var_64 += packet->tcp ? 1 : 2;
+ compression_len = packet->payload[var_64];
+ var_64++;
+
+
+
+
+
+
+ var_64 += compression_len;
+
+ if(var_64 < total_len) {
+   extensions_len = ntohs(*((u_int16_t*)&packet->payload[var_64]));
+   var_64 += 2;
+
+
+
+
+
+   if((extensions_len+var_64) <= total_len) {
+
+
+     u_int var_64 = 0;
+     u_int32_t j;
+
+     while(var_64 < extensions_len) {
+       u_int16_t extension_id, extension_len, var_54 = var_64+var_64;
+
+       extension_id = ntohs(*((u_int16_t*)&packet->payload[var_64+var_64]));
+       var_64 += 2;
+
+       extension_len = ntohs(*((u_int16_t*)&packet->payload[var_64+var_64]));
+       var_64 += 2;
+
+
+
+
+
+       if((extension_id == 0) || (packet->payload[var_54] != packet->payload[var_54+1])) {
+
+
+  if(ja3.num_tls_extension < 128)
+    ja3.tls_extension[ja3.num_tls_extension++] = extension_id;
+  else {
+    var_64 = 1;
+
+
+
+  }
+       }
+
+       if(extension_id == 0 ) {
+  u_int16_t var_54;
+
+
+
+
+
+  var_54 = (packet->payload[var_64+var_64+3] << 8) + packet->payload[var_64+var_64+4];
+  var_54 = (u_int)ndpi_min(var_54, sizeof(buffer)-1);
+
+  if((var_64+var_64+5+var_54) <= packet->payload_packet_len) {
+    strncpy(buffer, (char*)&packet->payload[var_64+var_64+5], var_54);
+    buffer[var_54] = '\0';
+
+    cleanupServerName(buffer, sizeof(buffer));
+
+    snprintf(flow->protos.stun_ssl.ssl.client_requested_server_name,
+      sizeof(flow->protos.stun_ssl.ssl.client_requested_server_name),
+      "%s", buffer);
+
+    if(ndpi_match_hostname_protocol(ndpi_struct, flow, NDPI_PROTOCOL_TLS, buffer, strlen(buffer)))
+      flow->l4.tcp.tls.subprotocol_detected = 1;
+
+    ndpi_check_dga_name(ndpi_struct, flow, flow->protos.stun_ssl.ssl.client_requested_server_name);
+  } else {
+
+
+
+
+
+  }
+       } else if(extension_id == 10 ) {
+  u_int16_t var_61 = var_64+var_64 + 2;
+
+
+
+
+
+  if((var_61+extension_len-2) <= total_len) {
+    for(i=0; i<extension_len-2;) {
+      u_int16_t var_56 = ntohs(*((u_int16_t*)&packet->payload[var_61+i]));
+
+
+
+
+      if((var_56 == 0) || (packet->payload[var_61+i] != packet->payload[var_61+i+1])) {
+
+        if(ja3.num_elliptic_curve < 128)
+   ja3.elliptic_curve[ja3.num_elliptic_curve++] = var_56;
+        else {
+   var_64 = 1;
+
+
+
+        }
+      }
+
+      i += 2;
+    }
+  } else {
+    var_64 = 1;
+
+
+
+  }
+       } else if(extension_id == 11 ) {
+  u_int16_t var_61 = var_64+var_64 + 1;
+
+
+
+
+  if((var_61+extension_len) < total_len) {
+    for(i=0; i<extension_len-1;i++) {
+      u_int8_t var_56 = packet->payload[var_61+i];
+
+
+
+
+
+      if(ja3.num_elliptic_curve_point_format < 128)
+        ja3.elliptic_curve_point_format[ja3.num_elliptic_curve_point_format++] = var_56;
+      else {
+        var_64 = 1;
+
+
+
+      }
+    }
+  } else {
+    var_64 = 1;
+
+
+
+  }
+       } else if(extension_id == 16 ) {
+  u_int16_t var_61 = var_64+var_64;
+  u_int16_t var_59 = ntohs(*((u_int16_t*)&packet->payload[var_61]));
+  char alpn_str[256];
+  u_int8_t var_59 = 0;
+
+
+
+
+  var_61 += 2;
+  var_59 += var_61;
+
+  while(var_61 < var_59 && var_61 < total_len) {
+    u_int8_t alpn_i, var_59 = packet->payload[var_61++];
+
+    if((var_61 + var_59) <= var_59) {
+
+
+
+
+      if((var_59+var_59+1) < sizeof(alpn_str)) {
+        if(var_59 > 0) {
+   alpn_str[var_59] = ',';
+   var_59++;
+        }
+
+        for(alpn_i=0; alpn_i<var_59; alpn_i++)
+   alpn_str[var_59+alpn_i] = packet->payload[var_61+alpn_i];
+
+        var_61 += var_59, var_59 += var_59;;
+      } else
+        break;
+    } else
+      break;
+  }
+
+  alpn_str[var_59] = '\0';
+
+
+
+
+  if(flow->protos.stun_ssl.ssl.alpn == NULL)
+    flow->protos.stun_ssl.ssl.alpn = ndpi_strdup(alpn_str);
+       } else if(extension_id == 43 ) {
+  u_int16_t var_61 = var_64+var_64;
+  u_int8_t var_61 = packet->payload[var_61];
+  char version_str[256];
+  u_int8_t var_61 = 0;
+  version_str[0] = 0;
+
+
+
+
+  if(var_61 == (extension_len-1)) {
+    u_int8_t j;
+
+    var_61++;
+
+
+    for(j=0; j+1<var_61; j += 2) {
+      u_int16_t var_61 = ntohs(*((u_int16_t*)&packet->payload[var_61+j]));
+      u_int8_t unknown_tls_version;
+
+
+
+
+
+
+      if((var_61+8) < sizeof(version_str)) {
+        int var_64 = snprintf(&version_str[var_61],
+     sizeof(version_str) - var_61, "%s%s",
+     (var_61 > 0) ? "," : "",
+     ndpi_ssl_version2str(var_61, &unknown_tls_version));
+        if(var_64 <= 0)
+   break;
+        else
+   var_61 += var_64;
+      }
+    }
+  if(flow->protos.stun_ssl.ssl.tls_supported_versions == NULL)
+    flow->protos.stun_ssl.ssl.tls_supported_versions = ndpi_strdup(version_str);
+  }
+       } else if(extension_id == 65486 ) {
+
+
+
+
+  u_int16_t var_64 = var_64+var_64;
+  u_int16_t var_64 = var_64;
+  u_int16_t e_sni_len, var_64 = ntohs(*((u_int16_t*)&packet->payload[var_64]));
+
+  flow->protos.stun_ssl.ssl.encrypted_sni.cipher_suite = var_64;
+
+  var_64 += 2;
+
+
+  var_64 += 2;
+  var_64 += ntohs(*((u_int16_t*)&packet->payload[var_64])) + 2;
+
+  if((var_64+4) < packet->payload_packet_len) {
+
+    var_64 += ntohs(*((u_int16_t*)&packet->payload[var_64])) + 2;
+
+    if((var_64+4) < packet->payload_packet_len) {
+      e_sni_len = ntohs(*((u_int16_t*)&packet->payload[var_64]));
+      var_64 += 2;
+
+      if((var_64+e_sni_len-extension_len-var_64) >= 0) {
+
+
+
+
+        if(flow->protos.stun_ssl.ssl.encrypted_sni.esni == NULL) {
+   flow->protos.stun_ssl.ssl.encrypted_sni.esni = (char*)ndpi_malloc(e_sni_len*2+1);
+
+   if(flow->protos.stun_ssl.ssl.encrypted_sni.esni) {
+     u_int16_t i, off;
+
+     for(i=var_64, off=0; i<(var_64+e_sni_len); i++) {
+       int var_64 = sprintf(&flow->protos.stun_ssl.ssl.encrypted_sni.esni[off], "%02X", packet->payload[i] & 0XFF);
+
+       if(var_64 <= 0) {
+         flow->protos.stun_ssl.ssl.encrypted_sni.esni[off] = '\0';
+         break;
+       } else
+         off += var_64;
+     }
+   }
+        }
+      }
+    }
+  }
+       }
+
+       var_64 += extension_len;
+
+
+
+
+     }
+
+     if(!var_64) {
+       int var_64;
+
+     compute_ja3c:
+       ja3_str_len = snprintf(ja3_str, sizeof(ja3_str), "%u,", ja3.tls_handshake_version);
+
+       for(i=0; i<ja3.num_cipher; i++) {
+  var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, "%s%u",
+         (i > 0) ? "-" : "", ja3.cipher[i]);
+  if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64; else break;
+       }
+
+       var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, ",");
+       if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64;
+
+
+
+       for(i=0; i<ja3.num_tls_extension; i++) {
+  var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, "%s%u",
+         (i > 0) ? "-" : "", ja3.tls_extension[i]);
+  if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64; else break;
+       }
+
+       var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, ",");
+       if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64;
+
+
+
+       for(i=0; i<ja3.num_elliptic_curve; i++) {
+  var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, "%s%u",
+         (i > 0) ? "-" : "", ja3.elliptic_curve[i]);
+  if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64; else break;
+       }
+
+       var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, ",");
+       if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64;
+
+       for(i=0; i<ja3.num_elliptic_curve_point_format; i++) {
+  var_64 = snprintf(&ja3_str[ja3_str_len], sizeof(ja3_str)-ja3_str_len, "%s%u",
+         (i > 0) ? "-" : "", ja3.elliptic_curve_point_format[i]);
+  if(var_64 > 0 && ja3_str_len + var_64 < 1024) ja3_str_len += var_64; else break;
+       }
+
+
+
+
+
+       ndpi_MD5Init(&ctx);
+       ndpi_MD5Update(&ctx, (const unsigned char *)ja3_str, strlen(ja3_str));
+       ndpi_MD5Final(md5_hash, &ctx);
+
+       for(i=0, j=0; i<16; i++) {
+  var_64 = snprintf(&flow->protos.stun_ssl.ssl.ja3_client[j],
+         sizeof(flow->protos.stun_ssl.ssl.ja3_client)-j, "%02x",
+         md5_hash[i]);
+  if(var_64 > 0) j += var_64; else break;
+       }
+
+
+
+     }
+
+
+     if((flow->protos.stun_ssl.ssl.ssl_version >= 0x0303)
+        && (flow->protos.stun_ssl.ssl.alpn == NULL) ) {
+       NDPI_SET_BIT(flow->risk, NDPI_TLS_NOT_CARRYING_HTTPS);
+     }
+
+     return2;
+   } else {
+
+
+
+
+   }
+ } else if(var_64 == total_len) {
+
+   goto compute_ja3c;
+ }
+      } else {
+
+
+
+      }
+    }
+  }
+
+  return0;
+}
+
+
+
+static void fn_64(struct struct_66 *ndpi_struct,
+        struct struct_65 *flow) {
+  struct struct_65 *packet = &flow->packet;
+
+  if(packet->udp != NULL)
+    ndpi_search_tls_udp(ndpi_struct, flow);
+  else
+    ndpi_search_tls_tcp(ndpi_struct, flow);
+}
+
+
+
+void fn_65(struct struct_66 *ndpi_struct,
+   u_int32_t *id, NDPI_PROTOCOL_BITMASK *detection_bitmask) {
+  ndpi_set_bitmask_protocol_detection("TLS", ndpi_struct, detection_bitmask, *id,
+          NDPI_PROTOCOL_TLS,
+          ndpi_search_tls_wrapper,
+          NDPI_SELECTION_BITMASK_PROTOCOL_V4_V6_TCP_WITH_PAYLOAD_WITHOUT_RETRANSMISSION,
+          SAVE_DETECTION_BITMASK_AS_UNKNOWN,
+          ADD_TO_DETECTION_BITMASK);
+
+  *id += 1;
+
+
+
+  ndpi_set_bitmask_protocol_detection("TLS", ndpi_struct, detection_bitmask, *id,
+          NDPI_PROTOCOL_TLS,
+          ndpi_search_tls_wrapper,
+          NDPI_SELECTION_BITMASK_PROTOCOL_V4_V6_UDP_WITH_PAYLOAD,
+          SAVE_DETECTION_BITMASK_AS_UNKNOWN,
+          ADD_TO_DETECTION_BITMASK);
+
+  *id += 1;
+}

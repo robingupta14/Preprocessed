@@ -1,0 +1,294 @@
+<?php
+
+
+
+
+
+$langs->load("suppliers");
+$langs->load("orders");
+$langs->load("companies");
+
+
+$socid = isset($_GET["socid"])?$_GET["socid"]:'';
+if ($user->societe_id) $socid=$user->societe_id;
+$result = restrictedArea($user, 'societe',$socid,'');
+
+
+
+
+$commandestatic=new CommandeFournisseur($db);
+$facturestatic=new FactureFournisseur($db);
+$companystatic=new Societe($db);
+
+llxHeader("",$langs->trans("SuppliersArea"));
+
+
+
+
+
+
+
+
+
+
+$commande = new CommandeFournisseur($db);
+$sql = "SELECT count(cf.rowid), cf.fk_statut";
+$sql.= " FROM ".MAIN_DB_PREFIX."commande_fournisseur as cf,";
+$sql.= " ".MAIN_DB_PREFIX."societe as s";
+if (!$user->rights->societe->client->voir && !$socid) $sql .= " LEFT JOIN ".MAIN_DB_PREFIX."societe_commerciaux as sc ON s.rowid = sc.fk_soc";
+$sql.= " WHERE cf.fk_soc = s.rowid ";
+if (!$user->rights->societe->client->voir && !$socid) $sql .= " AND sc.fk_user = " .$user->id;
+$sql.= " AND cf.entity = ".$conf->entity;
+$sql.= " GROUP BY cf.fk_statut";
+
+$resql = $db->query($sql);
+if ($resql)
+{
+	$num = $db->num_rows($resql);
+	$i = 0;
+
+	
+	</td>';
+	
+	$var=True;
+
+	while ($i < $num)
+	{
+		$row = $db->fetch_row($resql);
+		
+
+		
+		
+		
+		
+
+		
+		$i++;
+	}
+	
+	
+	$db->free($resql);
+}
+else
+{
+	dol_print_error($db);
+}
+
+
+
+if (! empty($conf->fournisseur->enabled))
+{
+	$langs->load("orders");
+
+	$sql = "SELECT cf.rowid, cf.ref, cf.total_ttc,";
+	$sql.= " s.nom as name, s.rowid as socid";
+	$sql.= " FROM ".MAIN_DB_PREFIX."commande_fournisseur as cf";
+	$sql.= ", ".MAIN_DB_PREFIX."societe as s";
+	if (!$user->rights->societe->client->voir && !$socid) $sql .= " LEFT JOIN ".MAIN_DB_PREFIX."societe_commerciaux as sc ON s.rowid = sc.fk_soc";
+	$sql.= " WHERE cf.fk_soc = s.rowid";
+	if (!$user->rights->societe->client->voir && !$socid) $sql .= " AND sc.fk_user = " .$user->id;
+	$sql.= " AND cf.entity = ".$conf->entity;
+	$sql.= " AND cf.fk_statut = 0";
+	if ($socid) $sql .= " AND cf.fk_soc = ".$socid;
+
+	$resql = $db->query($sql);
+	if ($resql)
+	{
+		$total = 0;
+		$num = $db->num_rows($resql);
+		if ($num)
+		{
+			
+			
+			
+
+			$i = 0;
+			$var = true;
+			while ($i < $num)
+			{
+				
+				$obj = $db->fetch_object($resql);
+				
+				$commandestatic->id=$obj->rowid;
+				$commandestatic->ref=$obj->ref;
+				
+				
+				
+				$companystatic->id=$obj->socid;
+				$companystatic->name=$obj->name;
+				$companystatic->client=0;
+				
+				
+				
+				$i++;
+				$total += $obj->total_ttc;
+			}
+			if ($total>0)
+			{
+				
+				
+			}
+			
+			
+		}
+	}
+}
+
+
+if (! empty($conf->fournisseur->enabled) && $user->rights->fournisseur->facture->lire)
+{
+	$sql = "SELECT ff.ref_supplier, ff.rowid, ff.total_ttc, ff.type";
+	$sql.= ", s.nom as name, s.rowid as socid";
+	$sql.= " FROM ".MAIN_DB_PREFIX."facture_fourn as ff";
+	$sql.= ", ".MAIN_DB_PREFIX."societe as s";
+	if (!$user->rights->societe->client->voir && !$socid) $sql .= " LEFT JOIN ".MAIN_DB_PREFIX."societe_commerciaux as sc ON s.rowid = sc.fk_soc";
+	$sql.= " WHERE s.rowid = ff.fk_soc";
+	if (!$user->rights->societe->client->voir && !$socid) $sql .= " AND sc.fk_user = " .$user->id;
+	$sql.= " AND ff.entity = ".$conf->entity;
+	$sql.= " AND ff.fk_statut = 0";
+	if ($socid)	$sql .= " AND f.fk_soc = ".$socid;
+
+	$resql = $db->query($sql);
+
+	if ( $resql )
+	{
+		$num = $db->num_rows($resql);
+		if ($num)
+		{
+			
+			
+			
+			$i = 0;
+			$tot_ttc = 0;
+			$var = True;
+			while ($i < $num && $i < 20)
+			{
+				$obj = $db->fetch_object($resql);
+				
+				
+				$facturestatic->ref=$obj->ref;
+				$facturestatic->id=$obj->rowid;
+				$facturestatic->type=$obj->type;
+				
+				
+				
+				$companystatic->id=$obj->socid;
+				$companystatic->name=$obj->name;
+				$companystatic->client=0;
+				
+				
+				
+				
+				$tot_ttc+=$obj->total_ttc;
+				$i++;
+			}
+
+			
+			
+			
+
+			
+			
+		}
+		$db->free($resql);
+	}
+	else
+	{
+		dol_print_error($db);
+	}
+}
+
+
+
+
+
+
+
+$max=10;
+$sql = "SELECT s.rowid as socid, s.nom as name, s.town, s.datec, s.tms, s.prefix_comm, s.code_fournisseur, s.code_compta_fournisseur";
+$sql.= ", st.libelle as stcomm";
+$sql.= " FROM ".MAIN_DB_PREFIX."societe as s";
+$sql.= ", ".MAIN_DB_PREFIX."c_stcomm as st";
+if (!$user->rights->societe->client->voir && !$socid) $sql .= ", ".MAIN_DB_PREFIX."societe_commerciaux as sc";
+$sql.= " WHERE s.fk_stcomm = st.id";
+$sql.= " AND s.fournisseur = 1";
+$sql.= " AND s.entity IN (".getEntity('societe').")";
+if (!$user->rights->societe->client->voir && !$socid) $sql .= " AND s.rowid = sc.fk_soc AND sc.fk_user = " .$user->id;
+if ($socid) $sql .= " AND s.rowid = ".$socid;
+$sql.= " ORDER BY s.tms DESC";
+$sql .= $db->plimit($max, 0);
+
+$resql = $db->query($sql);
+if ($resql)
+{
+	$langs->load("boxes");
+	$num = $db->num_rows($resql);
+	$i = 0;
+
+	
+	
+	
+	
+	
+
+	$var=True;
+
+	while ($obj = $db->fetch_object($resql) )
+	{
+		
+
+		
+		
+		<a href=\"card.php?socid=".$obj->socid."\">".$obj->name."</a></td>\n";
+		</td>';
+		
+		
+	}
+	
+
+	$db->free($resql);
+}
+else
+{
+	dol_print_error($db);
+}
+
+
+
+$companystatic->LoadSupplierCateg();
+$categstatic=new Categorie($db);
+
+if (count($companystatic->SupplierCategories))
+{
+	
+
+	
+	
+	
+	
+	$var=True;
+
+	foreach ($companystatic->SupplierCategories as $rowid => $label)
+	{
+		
+		
+		
+		$categstatic->id=$rowid;
+		$categstatic->ref=$label;
+		$categstatic->label=$label;
+		
+		
+		
+		
+	}
+	
+	
+}
+
+
+
+
+
+llxFooter();
+
+$db->close();

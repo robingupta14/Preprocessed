@@ -1,0 +1,92 @@
+<?php
+
+
+class ListController extends Controller
+{
+
+    
+    public function filters()
+    {
+        return array(
+            'accessControl', 
+        );
+    }
+
+    
+    public function accessRules()
+    {
+        return array(
+            array('allow', 
+                'users' => array('@'),
+            ),
+            array('deny', 
+                'users' => array('*'),
+            ),
+        );
+    }
+
+    
+    public function actionIndex()
+    {
+
+        
+        $lastEntryId = Yii::app()->request->getParam('from');
+
+        
+        $criteria = new CDbCriteria();
+        if ($lastEntryId > 0) {
+            
+            $criteria->condition = 'id<' . $lastEntryId;
+        }
+        $criteria->order = 'seen ASC, created_at DESC';
+        $criteria->limit = 6;
+
+        
+        $notifications = Notification::model()->findAllByAttributes(array('user_id' => Yii::app()->user->id), $criteria);
+
+        
+        $output = "";
+
+        foreach ($notifications as $notification) {
+            
+            $output .= $notification->getOut();
+
+            
+            $lastEntryId = $notification->id;
+        }
+
+        
+        $json = array();
+        $json['output'] = $output;
+        $json['lastEntryId'] = $lastEntryId;
+        $json['counter'] = count($notifications);
+
+        
+        
+
+        
+        Yii::app()->end();
+
+    }
+
+
+    public function actionMarkAsSeen()
+    {
+
+        
+        $criteria = new CDbCriteria();
+        $criteria->condition = 'seen=0';
+
+        
+        $notifications = Notification::model()->findAllByAttributes(array('user_id' => Yii::app()->user->id), $criteria);
+
+        foreach ($notifications as $notification) {
+            
+            $notification->markAsSeen();
+        }
+
+        
+        Yii::app()->end();
+    }
+
+}

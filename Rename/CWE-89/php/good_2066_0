@@ -1,0 +1,220 @@
+<?php
+
+
+
+
+
+
+
+
+function fn_0( $var_0, $var_1 ) {
+	$var_2 = access_has_bug_level( config_get( 'download_attachments_threshold' ), $var_0 );
+	if( $var_2 ) {
+		return true;
+	}
+
+	$var_3 = bug_is_user_reporter( $var_0, $var_1 );
+	return( $var_3 && config_get( 'allow_download_own_attachments' ) );
+}
+
+
+function fn_1( $var_4 ) {
+	$var_5 = fopen( $var_4, "r" );
+	$var_6 = fread( $var_5, filesize( $var_4 ) );
+	fclose( $var_5 );
+	return $var_6;
+}
+
+
+function fn_2( $var_4, $var_7 ) {
+	$var_5 = fopen( $var_4, "w" );
+	fwrite( $var_5, $var_7 );
+	fclose( $var_5 );
+}
+
+function fn_3( $var_8, $var_9, $var_7, $var_10, $var_11, $var_12 = '', $var_13 = '', $var_1 = null ) {
+	if( !file_type_check( $var_9 ) ) {
+		return SoapObjectsFactory::newSoapFault( 'Client',  'File type not allowed.' );
+	}
+	if( !file_is_name_unique( $var_9, $var_8 ) ) {
+		return SoapObjectsFactory::newSoapFault( 'Client', 'Duplicate filename.' );
+	}
+
+	$var_14 = strlen( $var_7 );
+	$var_15 = (int) min( ini_get_number( 'upload_max_filesize' ), ini_get_number( 'post_max_size' ), config_get( 'max_file_size' ) );
+	if( $var_14 > $var_15 ) {
+		return SoapObjectsFactory::newSoapFault( 'Client',  'File is too big.' );
+	}
+
+	if( 'bug' == $var_11 ) {
+		$var_16 = bug_get_field( $var_8, 'project_id' );
+		$var_17 = (int)$var_8;
+		$var_18 = bug_format_id( $var_8 );
+	} else {
+		$var_16 = $var_8;
+		$var_17 = $var_16;
+		$var_18 = 0;
+	}
+
+	if( $var_1 === null ) {
+		$var_1 = auth_get_current_user_id();
+	}
+
+	if( $var_16 == var_19 ) {
+		$var_20 = config_get( 'absolute_path_default_upload_folder' );
+	} else {
+		$var_20 = project_get_field( $var_16, 'file_path' );
+		if( is_blank( $var_20 ) ) {
+			$var_20 = config_get( 'absolute_path_default_upload_folder' );
+		}
+	}
+
+	$var_21 = ( 'bug' == $var_11 ) ? $var_18 : config_get( 'document_files_prefix' ) . '-' . $var_16;
+	$var_22 = file_generate_unique_name( $var_21 . '-' . $var_9, $var_20 );
+	$var_23 = $var_20 . $var_22;
+
+	$var_24 = config_get( 'file_upload_method' );
+
+	switch( $var_24 ) {
+		case var_25:
+		case var_26:
+			if( !file_exists( $var_20 ) || !is_dir( $var_20 ) || !is_writable( $var_20 ) || !is_readable( $var_20 ) ) {
+				return SoapObjectsFactory::newSoapFault( 'Server', "Upload folder '{$var_20}' doesn't exist.");
+			}
+
+			file_ensure_valid_upload_path( $var_20 );
+
+			if( !file_exists( $var_23 ) ) {
+				fn_2( $var_23, $var_7 );
+
+				if( var_25 == $var_24 ) {
+					$var_27 = file_ftp_connect();
+					file_ftp_put( $var_27, $var_23, $var_23 );
+					file_ftp_disconnect( $var_27 );
+					file_delete_local( $var_23 );
+				} else {
+					chmod( $var_23, config_get( 'attachments_file_permissions' ) );
+				}
+
+				$var_28 = "''";
+			}
+			break;
+		case var_29:
+			$var_28 = db_prepare_binary_string( $var_7 );
+			break;
+	}
+
+	$var_30 = db_get_table( 'mantis_' . $var_11 . '_file_table' );
+	$var_31 = $var_11 . "_id";
+
+	$var_32 = "INSERT INTO $var_30
+				( $var_31, title, description, diskfile, filename, folder, filesize, file_type, date_added, content, user_id )
+		VALUES
+				( " . db_param() . ", " . db_param() . ", " . db_param() . ", "
+				    . db_param() . ", " . db_param() . ", " . db_param() . ", "
+				    . db_param() . ", " . db_param() . ", " . db_param() . ", "
+				    . db_param() . ", " . db_param() . " )";
+	db_query_bound( $var_32, Array(
+		$var_17,
+		$var_12,
+		$var_13,
+		$var_22,
+		$var_9,
+		$var_20,
+		$var_14,
+		$var_10,
+		db_now(),
+		$var_28,
+		(int)$var_1,
+	) );
+
+	
+	$var_33 = db_insert_id( $var_30 );
+
+	if( 'bug' == $var_11 ) {
+		
+		$var_34 = bug_update_date( $var_18 );
+
+		
+		history_log_event_special( $var_18, var_35, $var_9 );
+	}
+
+	return $var_33;
+}
+
+
+function fn_4( $var_36, $var_37, $var_1 ) {
+
+	
+	
+	$var_38 = '';
+	switch( $var_37 ) {
+		case 'bug':
+			$var_39 = db_get_table( 'mantis_bug_file_table' );
+			$var_38 = "SELECT * FROM $var_39 WHERE id=" . db_param();
+			break;
+		case 'doc':
+			$var_40 = db_get_table( 'mantis_project_file_table' );
+			$var_38 = "SELECT * FROM $var_40 WHERE id=" . db_param();
+			break;
+		default:
+			return SoapObjectsFactory::newSoapFault( 'Server', 'Invalid file type '.$var_37. ' .' );
+	}
+
+	$var_34 = db_query_bound( $var_38, array( $var_36 ) );
+
+	if ( $var_34->var_41 ) {
+		return SoapObjectsFactory::newSoapFault( 'Client', 'Unable to find an attachment with type ' . $var_37. ' and id ' . $var_36 . ' .' );
+	}
+
+	$var_42 = db_fetch_array( $var_34 );
+
+	if ( $var_37 == 'doc' ) {
+		$var_16 = $var_42['project_id'];
+	} else if ( $var_37 == 'bug' ) {
+		$var_43 = $var_42['bug_id'];
+		$var_16 = bug_get_field( $var_43, 'project_id' );
+	}
+
+	$var_44 = file_normalize_attachment_path( $var_42['diskfile'], $var_16 );
+	$var_6 = $var_42['content'];
+
+	
+	switch( $var_37 ) {
+		case 'bug':
+			if( !fn_0( $var_43, $var_1 ) ) {
+				return mci_soap_fault_access_denied( $var_1 );
+			}
+			break;
+		case 'doc':
+			
+			if( var_45 == config_get( 'enable_project_documentation' ) ) {
+				return mci_soap_fault_access_denied( $var_1 );
+			}
+			if( !access_has_project_level( config_get( 'view_proj_doc_threshold' ), $var_16, $var_1 ) ) {
+				return mci_soap_fault_access_denied( $var_1 );
+			}
+			break;
+	}
+
+	
+	switch( config_get( 'file_upload_method' ) ) {
+		case var_26:
+			if( file_exists( $var_44 ) ) {
+				return fn_1( $var_44 ) ;
+			} else {
+				return SoapObjectsFactory::newSoapFault(  'Client', 'Unable to find an attachment with type ' . $var_37. ' and id ' . $var_36 . ' .' );
+			}
+		case var_25:
+			if( file_exists( $var_44 ) ) {
+				return fn_1( $var_44 );
+			} else {
+				$var_46 = file_ftp_connect();
+				file_ftp_get( $var_46, $var_44, $var_44 );
+				file_ftp_disconnect( $var_46 );
+				return fn_1( $var_44 );
+			}
+		default:
+			return $var_6;
+	}
+}

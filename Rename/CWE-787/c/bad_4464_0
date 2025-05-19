@@ -1,0 +1,2487 @@
+
+
+
+
+
+
+
+
+static blosc2_context* g_global_context;
+static pthread_mutex_t global_comp_mutex;
+static int var_128 = var_94;
+static int var_130 = 0;
+
+static int var_143 = 1;
+static int32_t var_141 = 0;
+static int var_145 = 0;
+static blosc2_schunk* g_schunk = NULL;
+
+
+
+
+int fn_122(blosc2_context *context);
+int fn_144(blosc2_context *context);
+
+static blosc_threads_callback var_144 = 0;
+static void *threads_callback_data = 0;
+
+
+
+void fn_9(blosc_threads_callback var_11, void *callback_data)
+{
+  var_144 = var_11;
+  threads_callback_data = callback_data;
+}
+
+
+
+static uint8_t* fn_11(size_t var_141) {
+  void* block = NULL;
+  int var_14 = 0;
+
+  block = malloc(var_141);
+
+
+  if (block == NULL || var_14 != 0) {
+    printf("Error allocating memory!");
+    return NULL;
+  }
+
+  return (uint8_t*)block;
+}
+
+
+
+static void fn_14(void* block) {
+
+
+
+  free(block);
+
+}
+
+
+
+
+
+
+
+static int fn_15(const char* compname) {
+  if (strcmp(compname, BLOSC_BLOSCLZ_COMPNAME) == 0)
+    return BLOSC_BLOSCLZ_LIB;
+  if (strcmp(compname, BLOSC_LZ4_COMPNAME) == 0)
+    return BLOSC_LZ4_LIB;
+  if (strcmp(compname, BLOSC_LZ4HC_COMPNAME) == 0)
+    return BLOSC_LZ4_LIB;
+  if (strcmp(compname, BLOSC_LIZARD_COMPNAME) == 0)
+    return BLOSC_LIZARD_LIB;
+  if (strcmp(compname, BLOSC_SNAPPY_COMPNAME) == 0)
+    return BLOSC_SNAPPY_LIB;
+  if (strcmp(compname, BLOSC_ZLIB_COMPNAME) == 0)
+    return BLOSC_ZLIB_LIB;
+  if (strcmp(compname, BLOSC_ZSTD_COMPNAME) == 0)
+    return BLOSC_ZSTD_LIB;
+  return -1;
+}
+
+
+static const char* fn_16(int var_139) {
+  if (var_139 == BLOSC_BLOSCLZ_LIB) return BLOSC_BLOSCLZ_LIBNAME;
+  if (var_139 == BLOSC_LZ4_LIB) return BLOSC_LZ4_LIBNAME;
+  if (var_139 == BLOSC_LIZARD_LIB) return BLOSC_LIZARD_LIBNAME;
+  if (var_139 == BLOSC_SNAPPY_LIB) return BLOSC_SNAPPY_LIBNAME;
+  if (var_139 == BLOSC_ZLIB_LIB) return BLOSC_ZLIB_LIBNAME;
+  if (var_139 == BLOSC_ZSTD_LIB) return BLOSC_ZSTD_LIBNAME;
+  return NULL;
+}
+
+
+
+
+
+
+
+int fn_18(int var_21, const char** compname) {
+  int var_128 = -1;
+  const char* name = NULL;
+
+
+  if (var_21 == var_94)
+    name = BLOSC_BLOSCLZ_COMPNAME;
+  else if (var_21 == BLOSC_LZ4)
+    name = BLOSC_LZ4_COMPNAME;
+  else if (var_21 == BLOSC_LZ4HC)
+    name = BLOSC_LZ4HC_COMPNAME;
+  else if (var_21 == BLOSC_LIZARD)
+    name = BLOSC_LIZARD_COMPNAME;
+  else if (var_21 == BLOSC_SNAPPY)
+    name = BLOSC_SNAPPY_COMPNAME;
+  else if (var_21 == BLOSC_ZLIB)
+    name = BLOSC_ZLIB_COMPNAME;
+  else if (var_21 == BLOSC_ZSTD)
+    name = BLOSC_ZSTD_COMPNAME;
+
+  *compname = name;
+
+
+  if (var_21 == var_94)
+    var_128 = var_94;
+
+  return var_128;
+}
+
+
+
+int fn_21(const char* compname) {
+  int var_128 = -1;
+
+  if (strcmp(compname, BLOSC_BLOSCLZ_COMPNAME) == 0) {
+    var_128 = var_94;
+  }
+
+  return var_128;
+}
+
+static int fn_22(const blosc2_context* context) {
+  int var_104 = context->clevel;
+
+  if (context->compcode == BLOSC_LZ4) {
+
+
+
+    return (10 - var_104);
+  }
+  else if (context->compcode == BLOSC_LIZARD) {
+
+      switch (var_104) {
+        case 1 :
+            return 10;
+        case 2 :
+            return 10;
+        case 3 :
+            return 10;
+        case 4 :
+            return 10;
+        case 5 :
+            return 20;
+        case 6 :
+            return 20;
+        case 7 :
+            return 20;
+        case 8 :
+            return 41;
+        case 9 :
+            return 41;
+        default :
+          break;
+      }
+  }
+  return 1;
+}
+
+
+int fn_24(int8_t var_27, char var_32) {
+  if (var_32 == 'c') {
+    return (var_27 == BLOSC_NOFILTER);
+  } else {
+
+    return ((var_27 == BLOSC_NOFILTER) || (var_27 == BLOSC_TRUNC_PREC));
+  }
+}
+
+
+int fn_27(const uint8_t* filters, int var_30, char var_32) {
+  for (int var_146 = var_30 - 1; var_146 >= 0; var_146--) {
+    if (!do_nothing(filters[var_146], var_32)) {
+      return filters[var_146];
+    }
+  }
+  return BLOSC_NOFILTER;
+}
+
+
+int fn_30(const uint8_t* filters, char var_32) {
+  int var_32 = -1;
+  for (int var_146 = BLOSC2_MAX_FILTERS - 1; var_146 >= 0; var_146--) {
+    if (!do_nothing(filters[var_146], var_32)) {
+      var_32 = var_146;
+    }
+  }
+  return var_32;
+}
+
+
+uint8_t* fn_32(struct struct_122* thread_context, const int32_t var_121,
+                    const uint8_t* var_121, const int32_t var_58,
+                    uint8_t* var_121, uint8_t* var_121, uint8_t* var_121) {
+  blosc2_context* context = thread_context->parent_context;
+  uint8_t* _src = (uint8_t*)var_121 + var_58;
+  uint8_t* _tmp = var_121;
+  uint8_t* _dest = var_121;
+  int32_t var_137 = context->typesize;
+  uint8_t* filters = context->filters;
+  uint8_t* filters_meta = context->filters_meta;
+  bool var_121 = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
+
+
+  if (context->prefilter != NULL) {
+
+    blosc2_prefilter_params pparams;
+    memcpy(&pparams, context->pparams, sizeof(pparams));
+    pparams.out = _dest;
+    pparams.out_size = (size_t)var_121;
+    pparams.out_typesize = var_137;
+    pparams.out_offset = var_58;
+    pparams.tid = thread_context->tid;
+    pparams.ttmp = thread_context->tmp;
+    pparams.ttmp_nbytes = thread_context->tmp_nbytes;
+    pparams.ctx = context;
+
+    if (context->prefilter(&pparams) != 0) {
+      fprintf(stderr, "Execution of prefilter function failed\n");
+      return NULL;
+    }
+
+    if (var_121) {
+
+      return _dest;
+    }
+
+    _src = _dest;
+    _dest = _tmp;
+    _tmp = _src;
+  }
+
+
+  for (int var_146 = 0; var_146 < BLOSC2_MAX_FILTERS; var_146++) {
+    switch (filters[var_146]) {
+      case BLOSC_SHUFFLE:
+        for (int var_117 = 0; var_117 <= filters_meta[var_146]; var_117++) {
+          shuffle(var_137, var_121, _src, _dest);
+
+          if (var_117 < filters_meta[var_146]) {
+            _src = _dest;
+            _dest = _tmp;
+            _tmp = _src;
+          }
+        }
+        break;
+      case BLOSC_BITSHUFFLE:
+        bitshuffle(var_137, var_121, _src, _dest, var_121);
+        break;
+      case BLOSC_DELTA:
+        delta_encoder(var_121, var_58, var_121, var_137, _src, _dest);
+        break;
+      case BLOSC_TRUNC_PREC:
+        truncate_precision(filters_meta[var_146], var_137, var_121, _src, _dest);
+        break;
+      default:
+        if (filters[var_146] != BLOSC_NOFILTER) {
+          fprintf(stderr, "Filter %d not handled during compression\n", filters[var_146]);
+          return NULL;
+        }
+    }
+
+    if (filters[var_146] != BLOSC_NOFILTER) {
+      _src = _dest;
+      _dest = _tmp;
+      _tmp = _src;
+    }
+  }
+  return _src;
+}
+
+
+
+static bool fn_43(const uint8_t* ip, const uint8_t* ip_bound) {
+  uint8_t var_46 = *ip;
+  int64_t var_101, value2;
+
+  memset(&var_101, var_46, 8);
+  while (ip < (ip_bound - 8)) {
+
+
+
+    value2 = *(int64_t*)ip;
+
+    if (var_101 != value2) {
+
+      return false;
+    }
+    else {
+      ip += 8;
+    }
+  }
+
+  while ((ip < ip_bound) && (*ip == var_46)) ip++;
+  return ip == ip_bound ? true : false;
+}
+
+
+
+static int fn_46(struct struct_122* thread_context, int32_t var_121,
+                   int32_t var_121, int32_t var_117, int32_t var_121,
+                   const uint8_t* var_121, const int32_t var_58, uint8_t* var_121,
+                   uint8_t* var_121, uint8_t* var_121) {
+  blosc2_context* context = thread_context->parent_context;
+  int var_94 = (context->header_flags & 0x10) >> 4;
+  int var_94 = context->use_dict && context->dict_cdict == NULL;
+  int32_t var_117, neblock, nstreams;
+  int32_t var_136;
+  int32_t var_65 = 0;
+  int64_t maxout;
+  int32_t var_137 = context->typesize;
+  const char* compname;
+  int accel;
+  const uint8_t* _src;
+  uint8_t *_tmp = var_121, *_tmp2 = var_121;
+  uint8_t *_tmp3 = thread_context->tmp4;
+  int var_65 = last_filter(context->filters, 'c');
+  bool var_121 = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
+
+  if (var_65 >= 0 || context->prefilter != NULL) {
+
+    if (var_121 && context->prefilter != NULL) {
+
+      _src = pipeline_c(thread_context, var_121, var_121, var_58, var_121, _tmp2, _tmp3);
+
+      if (_src == NULL) {
+        return -9;
+      }
+      return var_121;
+    }
+
+    _src = pipeline_c(thread_context, var_121, var_121, var_58, _tmp, _tmp2, _tmp3);
+
+    if (_src == NULL) {
+      return -9;
+    }
+  } else {
+    _src = var_121 + var_58;
+  }
+
+  assert(context->clevel > 0);
+
+
+  accel = get_accel(context);
+
+
+  if (!var_94 && !var_121 && !var_94) {
+    nstreams = (int32_t)var_137;
+  }
+  else {
+    nstreams = 1;
+  }
+  neblock = var_121 / nstreams;
+  for (var_117 = 0; var_117 < nstreams; var_117++) {
+    if (!var_94) {
+      var_121 += sizeof(int32_t);
+      var_117 += sizeof(int32_t);
+      var_65 += sizeof(int32_t);
+    }
+
+
+    const uint8_t* ip = (uint8_t*)_src + var_117 * neblock;
+    const uint8_t* ipbound = (uint8_t*)_src + (var_117 + 1) * neblock;
+    if (get_run(ip, ipbound)) {
+
+      int32_t var_101 = _src[var_117 * neblock];
+      _sw32(var_121 - 4, -var_101);
+      continue;
+    }
+
+    maxout = neblock;
+
+
+
+
+
+    if (var_117 + maxout > var_121) {
+
+      maxout = (int64_t)var_121 - (int64_t)var_117;
+      if (maxout <= 0) {
+        return 0;
+      }
+    }
+    if (var_94) {
+
+
+      memcpy(var_121, _src + var_117 * neblock, (unsigned int)neblock);
+      var_136 = (int32_t)neblock;
+    }
+    else if (context->compcode == var_94) {
+      var_136 = blosclz_compress(context->clevel, _src + var_117 * neblock,
+                                (int)neblock, var_121, (int)maxout);
+    }
+
+    else {
+      blosc_compcode_to_compname(context->compcode, &compname);
+      fprintf(stderr, "Blosc has not been compiled with '%s' ", compname);
+      fprintf(stderr, "compression support.  Please use one having it.");
+      return -5;
+    }
+
+    if (var_136 > maxout) {
+
+      return -1;
+    }
+    if (var_136 < 0) {
+
+      return -2;
+    }
+    if (!var_94) {
+      if (var_136 == 0 || var_136 == neblock) {
+
+
+
+        if ((var_117 + neblock) > var_121) {
+          return 0;
+        }
+        memcpy(var_121, _src + var_117 * neblock, (unsigned int)neblock);
+        var_136 = neblock;
+      }
+      _sw32(var_121 - 4, var_136);
+    }
+    var_121 += var_136;
+    var_117 += var_136;
+    var_65 += var_136;
+  }
+
+
+  return var_65;
+}
+
+
+
+int fn_55(blosc2_context* context, const int32_t var_121, uint8_t* var_121,
+               const int32_t var_58, uint8_t* var_121, uint8_t* var_121,
+               uint8_t* var_121, int var_65) {
+  int32_t var_137 = context->typesize;
+  uint8_t* filters = context->filters;
+  uint8_t* filters_meta = context->filters_meta;
+  uint8_t* _src = var_121;
+  uint8_t* _dest = var_121;
+  uint8_t* _tmp = var_121;
+  int var_65 = 0;
+
+  for (int var_146 = BLOSC2_MAX_FILTERS - 1; var_146 >= 0; var_146--) {
+
+    int var_58 = (var_65 == var_146) || (next_filter(filters, var_146, 'd') == BLOSC_DELTA);
+    if (var_58) {
+      _dest = var_121 + var_58;
+    }
+    switch (filters[var_146]) {
+      case BLOSC_SHUFFLE:
+        for (int var_117 = 0; var_117 <= filters_meta[var_146]; var_117++) {
+          unshuffle(var_137, var_121, _src, _dest);
+
+          if (var_117 < filters_meta[var_146]) {
+            _src = _dest;
+            _dest = _tmp;
+            _tmp = _src;
+          }
+
+          if (var_58 && (filters_meta[var_146] % 2) == 1 && var_117 == filters_meta[var_146]) {
+            memcpy(var_121 + var_58, _dest, (unsigned int)var_121);
+          }
+        }
+        break;
+      case BLOSC_BITSHUFFLE:
+        bitunshuffle(var_137, var_121, _src, _dest, _tmp, context->src[0]);
+        break;
+      case BLOSC_DELTA:
+        if (context->nthreads == 1) {
+
+          delta_decoder(var_121, var_58, var_121, var_137, _dest);
+        } else {
+
+          pthread_mutex_lock(&context->delta_mutex);
+          if (context->dref_not_init) {
+            if (var_58 != 0) {
+              pthread_cond_wait(&context->delta_cv, &context->delta_mutex);
+            } else {
+              delta_decoder(var_121, var_58, var_121, var_137, _dest);
+              context->dref_not_init = 0;
+              pthread_cond_broadcast(&context->delta_cv);
+            }
+          }
+          pthread_mutex_unlock(&context->delta_mutex);
+          if (var_58 != 0) {
+            delta_decoder(var_121, var_58, var_121, var_137, _dest);
+          }
+        }
+        break;
+      case BLOSC_TRUNC_PREC:
+
+        break;
+      default:
+        if (filters[var_146] != BLOSC_NOFILTER) {
+          fprintf(stderr, "Filter %d not handled during decompression\n",
+                  filters[var_146]);
+          var_65 = -1;
+        }
+    }
+    if (var_65 == var_146) {
+      return var_65;
+    }
+
+    if ((filters[var_146] != BLOSC_NOFILTER) && (filters[var_146] != BLOSC_TRUNC_PREC)) {
+      _src = _dest;
+      _dest = _tmp;
+      _tmp = _src;
+    }
+  }
+
+  return var_65;
+}
+
+
+
+static int fn_58(
+    struct struct_122* thread_context, int32_t var_121,
+    int32_t var_121, const uint8_t* var_121, int32_t var_121, int32_t var_65,
+    uint8_t* var_121, int32_t var_65, uint8_t* var_121, uint8_t* var_121) {
+  blosc2_context* context = thread_context->parent_context;
+  uint8_t* filters = context->filters;
+  uint8_t *tmp3 = thread_context->tmp4;
+  int32_t var_94 = (context->header_flags & 0xe0) >> 5;
+  int var_94 = (context->header_flags & 0x10) >> 4;
+
+  int nstreams;
+  int32_t neblock;
+  int32_t var_136;
+  int32_t var_136;
+  int32_t var_65 = 0;
+  int32_t var_117 = 0;
+  uint8_t* _dest;
+  int32_t var_137 = context->typesize;
+  int32_t var_65 = var_65 / context->blocksize;
+  const char* compname;
+
+  if (context->block_maskout != NULL && context->block_maskout[var_65]) {
+
+    return var_121;
+  }
+
+  if (var_65 <= 0 || var_65 >= var_121) {
+
+    return -1;
+  }
+
+  var_121 += var_65;
+  var_121 -= var_65;
+
+  int var_65 = last_filter(filters, 'd');
+
+  if ((var_65 >= 0) &&
+          (next_filter(filters, BLOSC2_MAX_FILTERS, 'd') != BLOSC_DELTA)) {
+
+   _dest = var_121;
+  } else {
+
+   _dest = var_121 + var_65;
+  }
+
+
+  if (!var_94 && !var_121 && !context->use_dict) {
+
+    nstreams = (int32_t)var_137;
+  }
+  else {
+    nstreams = 1;
+  }
+
+  neblock = var_121 / nstreams;
+  for (int var_117 = 0; var_117 < nstreams; var_117++) {
+    if (var_121 < sizeof(int32_t)) {
+
+      return -1;
+    }
+    var_121 -= sizeof(int32_t);
+    var_136 = sw32_(var_121);
+    if (var_136 > 0) {
+      if (var_121 < var_136) {
+
+        return -1;
+      }
+      var_121 -= var_136;
+    }
+    var_121 += sizeof(int32_t);
+    var_65 += (int32_t)sizeof(int32_t);
+
+
+    if (var_136 <= 0) {
+
+      if (var_136 < -255) {
+
+        return -2;
+      }
+      uint8_t var_101 = -var_136;
+      memset(_dest, var_101, (unsigned int)neblock);
+      var_136 = neblock;
+      var_136 = 0;
+    }
+    else if (var_136 == neblock) {
+      memcpy(_dest, var_121, (unsigned int)neblock);
+      var_136 = (int32_t)neblock;
+    }
+    else {
+      if (var_94 == BLOSC_BLOSCLZ_FORMAT) {
+        var_136 = blosclz_decompress(var_121, var_136, _dest, (int)neblock);
+      }
+
+      else {
+        compname = clibcode_to_clibname(var_94);
+        fprintf(stderr,
+                "Blosc has not been compiled with decompression "
+                    "support for '%s' format. ", compname);
+        fprintf(stderr, "Please recompile for adding this support.\n");
+        return -5;
+      }
+
+
+      if (var_136 != neblock) {
+        return -2;
+      }
+
+    }
+    var_121 += var_136;
+    var_65 += var_136;
+    _dest += var_136;
+    var_117 += var_136;
+  }
+
+  if (var_65 >= 0) {
+    int var_65 = pipeline_d(context, var_121, var_121, var_65, var_121, var_121, tmp3,
+                             var_65);
+    if (var_65 < 0)
+      return var_65;
+  }
+
+
+  return (int)var_117;
+}
+
+
+
+static int fn_65(struct struct_122* thread_context) {
+  blosc2_context* context = thread_context->parent_context;
+  int32_t var_117, var_121, var_121;
+  int32_t var_136;
+  int32_t var_117 = (int32_t)context->output_bytes;
+  int32_t* bstarts = context->bstarts;
+  uint8_t* var_121 = thread_context->tmp;
+  uint8_t* var_121 = thread_context->tmp2;
+  int var_94 = context->use_dict && (context->dict_cdict == NULL);
+  bool var_121 = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
+
+  for (var_117 = 0; var_117 < context->nblocks; var_117++) {
+    if (context->do_compress && !var_121 && !var_94) {
+      _sw32(bstarts + var_117, var_117);
+    }
+    var_121 = context->blocksize;
+    var_121 = 0;
+    if ((var_117 == context->nblocks - 1) && (context->leftover > 0)) {
+      var_121 = context->leftover;
+      var_121 = 1;
+    }
+    if (context->do_compress) {
+      if (var_121 && !context->prefilter) {
+
+        memcpy(context->dest + BLOSC_MAX_OVERHEAD + var_117 * context->blocksize,
+                 context->src + var_117 * context->blocksize,
+                 (unsigned int)var_121);
+        var_136 = (int32_t)var_121;
+      }
+      else {
+
+        var_136 = blosc_c(thread_context, var_121, var_121, var_117,
+                         context->destsize, context->src, var_117 * context->blocksize,
+                         context->dest + var_117, var_121, var_121);
+        if (var_136 == 0) {
+          var_117 = 0;
+          break;
+        }
+      }
+    }
+    else {
+      if (var_121) {
+
+        int32_t var_67 = sw32_(context->src + 12);
+        if (context->sourcesize + BLOSC_MAX_OVERHEAD != var_67) {
+          return -1;
+        }
+        if (context->srcsize < BLOSC_MAX_OVERHEAD + (var_117 * context->blocksize) + var_121) {
+
+          return -1;
+        }
+        memcpy(context->dest + var_117 * context->blocksize,
+               context->src + BLOSC_MAX_OVERHEAD + var_117 * context->blocksize,
+               (unsigned int)var_121);
+        var_136 = (int32_t)var_121;
+      }
+      else {
+
+        var_136 = blosc_d(thread_context, var_121, var_121,
+                         context->src, context->srcsize, sw32_(bstarts + var_117),
+                         context->dest, var_117 * context->blocksize, var_121, var_121);
+      }
+    }
+
+    if (var_136 < 0) {
+      var_117 = var_136;
+      break;
+    }
+    var_117 += var_136;
+  }
+
+  return var_117;
+}
+
+static void fn_119(void *ctxt);
+
+
+static int fn_68(blosc2_context* context) {
+
+
+
+
+  context->thread_giveup_code = 1;
+  context->thread_nblock = -1;
+
+  if (var_144) {
+    var_144(threads_callback_data, t_blosc_do_job,
+                     context->nthreads, sizeof(struct struct_122), (void*) context->thread_contexts);
+  }
+  else {
+
+    pthread_mutex_lock(&(context)->count_threads_mutex); if ((context)->count_threads < (context)->nthreads) { (context)->count_threads++; pthread_cond_wait(&(context)->count_threads_cv, &(context)->count_threads_mutex); } else { pthread_cond_broadcast(&(context)->count_threads_cv); } pthread_mutex_unlock(&(context)->count_threads_mutex);;
+
+
+    pthread_mutex_lock(&(context)->count_threads_mutex); if ((context)->count_threads > 0) { (context)->count_threads--; pthread_cond_wait(&(context)->count_threads_cv, &(context)->count_threads_mutex); } else { pthread_cond_broadcast(&(context)->count_threads_cv); } pthread_mutex_unlock(&(context)->count_threads_mutex);;
+  }
+
+  if (context->thread_giveup_code <= 0) {
+
+    return context->thread_giveup_code;
+  }
+
+
+  return (int)context->output_bytes;
+}
+
+
+static void fn_69(struct struct_122* thread_context, blosc2_context* context, int32_t var_122)
+{
+  int32_t ebsize;
+
+  thread_context->parent_context = context;
+  thread_context->tid = var_122;
+
+  ebsize = context->blocksize + context->typesize * (int32_t)sizeof(int32_t);
+  thread_context->tmp_nbytes = (size_t)3 * context->blocksize + ebsize;
+  thread_context->tmp = my_malloc(thread_context->tmp_nbytes);
+  thread_context->tmp2 = thread_context->tmp + context->blocksize;
+  thread_context->tmp3 = thread_context->tmp + context->blocksize + ebsize;
+  thread_context->tmp4 = thread_context->tmp + 2 * context->blocksize + ebsize;
+  thread_context->tmp_blocksize = context->blocksize;
+
+}
+
+static struct struct_122*
+fn_71(blosc2_context* context, int32_t var_122) {
+  struct struct_122* thread_context;
+  thread_context = (struct struct_122*)my_malloc(sizeof(struct struct_122));
+  init_thread_context(thread_context, context, var_122);
+  return thread_context;
+}
+
+
+static void fn_72(struct struct_122* thread_context) {
+  my_free(thread_context->tmp);
+
+}
+
+void fn_73(struct struct_122* thread_context) {
+  destroy_thread_context(thread_context);
+  my_free(thread_context);
+}
+
+
+int fn_74(blosc2_context* context) {
+  if (context->nthreads <= 0) {
+    fprintf(stderr, "Error.  nthreads must be a positive integer");
+    return -1;
+  }
+
+  if (context->new_nthreads != context->nthreads) {
+    if (context->nthreads > 1) {
+      release_threadpool(context);
+    }
+    context->nthreads = context->new_nthreads;
+  }
+  if (context->new_nthreads > 1 && context->threads_started == 0) {
+    init_threadpool(context);
+  }
+
+  return context->nthreads;
+}
+
+
+
+static int fn_75(blosc2_context* context) {
+  int32_t var_117;
+
+
+  context->dref_not_init = 1;
+
+
+  check_nthreads(context);
+
+
+
+  if (context->nthreads == 1 || (context->sourcesize / context->blocksize) <= 1) {
+
+    if (context->serial_context == NULL) {
+      context->serial_context = create_thread_context(context, 0);
+    }
+    else if (context->blocksize != context->serial_context->tmp_blocksize) {
+      free_thread_context(context->serial_context);
+      context->serial_context = create_thread_context(context, 0);
+    }
+    var_117 = serial_blosc(context->serial_context);
+  }
+  else {
+    var_117 = parallel_blosc(context);
+  }
+
+  return var_117;
+}
+
+
+
+static uint8_t fn_76(const uint8_t* filters) {
+  uint8_t var_137 = 0;
+
+  for (int var_146 = 0; var_146 < BLOSC2_MAX_FILTERS; var_146++) {
+    switch (filters[var_146]) {
+      case BLOSC_SHUFFLE:
+        var_137 |= BLOSC_DOSHUFFLE;
+        break;
+      case BLOSC_BITSHUFFLE:
+        var_137 |= BLOSC_DOBITSHUFFLE;
+        break;
+      case BLOSC_DELTA:
+        var_137 |= BLOSC_DODELTA;
+        break;
+      default :
+        break;
+    }
+  }
+  return var_137;
+}
+
+
+
+static void fn_78(const uint8_t var_137, uint8_t* filters) {
+
+  memset(filters, 0, BLOSC2_MAX_FILTERS);
+
+  if (var_137 & BLOSC_DOSHUFFLE)
+    filters[BLOSC2_MAX_FILTERS - 1] = BLOSC_SHUFFLE;
+  if (var_137 & BLOSC_DOBITSHUFFLE)
+    filters[BLOSC2_MAX_FILTERS - 1] = BLOSC_BITSHUFFLE;
+  if (var_137 & BLOSC_DODELTA)
+    filters[BLOSC2_MAX_FILTERS - 2] = BLOSC_DELTA;
+}
+
+
+static int fn_79(
+  blosc2_context* context, const void* var_121, int32_t var_121, void* var_121,
+  int32_t var_111, int var_104, uint8_t const *filters,
+  uint8_t const *filters_meta, int32_t var_137, int var_85,
+  int32_t var_135, int var_85, int var_110, blosc2_schunk* schunk) {
+
+
+  context->do_compress = 1;
+  context->src = (const uint8_t*)var_121;
+  context->srcsize = var_121;
+  context->dest = (uint8_t*)var_121;
+  context->output_bytes = 0;
+  context->destsize = var_111;
+  context->sourcesize = var_121;
+  context->typesize = (int32_t)var_137;
+  context->filter_flags = filters_to_flags(filters);
+  for (int var_146 = 0; var_146 < BLOSC2_MAX_FILTERS; var_146++) {
+    context->filters[var_146] = filters[var_146];
+    context->filters_meta[var_146] = filters_meta[var_146];
+  }
+  context->compcode = var_85;
+  context->nthreads = var_110;
+  context->new_nthreads = var_85;
+  context->end_threads = 0;
+  context->clevel = var_104;
+  context->schunk = schunk;
+
+
+  context->blocksize = (int32_t)var_135;
+  if (context->btune != NULL) {
+    btune_next_cparams(context);
+  } else {
+    btune_next_blocksize(context);
+  }
+
+  char* envvar = getenv("BLOSC_WARN");
+  int var_86 = 0;
+  if (envvar != NULL) {
+    var_86 = strtol(envvar, NULL, 10);
+  }
+
+
+  if (var_121 > BLOSC_MAX_BUFFERSIZE) {
+    if (var_86 > 0) {
+      fprintf(stderr, "Input buffer size cannot exceed %d bytes\n",
+              BLOSC_MAX_BUFFERSIZE);
+    }
+    return 0;
+  }
+
+  if (var_111 < BLOSC_MAX_OVERHEAD) {
+    if (var_86 > 0) {
+      fprintf(stderr, "Output buffer size should be larger than %d bytes\n",
+              BLOSC_MAX_OVERHEAD);
+    }
+    return 0;
+  }
+
+  if (var_111 < BLOSC_MAX_OVERHEAD) {
+    if (var_86 > 0) {
+      fprintf(stderr, "Output buffer size should be larger than %d bytes\n",
+              BLOSC_MAX_OVERHEAD);
+    }
+    return -2;
+  }
+  if (var_111 < BLOSC_MAX_OVERHEAD) {
+    fprintf(stderr, "Output buffer size should be larger than %d bytes\n",
+            BLOSC_MAX_OVERHEAD);
+    return -1;
+  }
+
+
+  if (var_104 < 0 || var_104 > 9) {
+
+    fprintf(stderr, "`clevel` parameter must be between 0 and 9!\n");
+    return -10;
+  }
+
+
+  if (context->typesize > BLOSC_MAX_TYPESIZE) {
+
+    context->typesize = 1;
+  }
+
+
+  context->nblocks = context->sourcesize / context->blocksize;
+  context->leftover = context->sourcesize % context->blocksize;
+  context->nblocks = (context->leftover > 0) ?
+                     (context->nblocks + 1) : context->nblocks;
+
+  return 1;
+}
+
+
+
+static uint8_t fn_86(const uint8_t var_88,
+                                const int32_t var_137) {
+  uint8_t var_137 = 0;
+
+  if ((var_88 & BLOSC_DOSHUFFLE) && (var_137 > 1)) {
+    var_137 |= BLOSC_DOSHUFFLE;
+  }
+  if (var_88 & BLOSC_DOBITSHUFFLE) {
+    var_137 |= BLOSC_DOBITSHUFFLE;
+  }
+  if (var_88 & BLOSC_DODELTA) {
+    var_137 |= BLOSC_DODELTA;
+  }
+  if (var_88 & BLOSC_MEMCPYED) {
+    var_137 |= BLOSC_MEMCPYED;
+  }
+  return var_137;
+}
+
+
+static int fn_88(blosc2_context* context, const void* var_121, int32_t var_121,
+                                            void* var_121, int32_t var_111) {
+  uint8_t var_94 = 0;
+  int32_t var_136;
+  int32_t bstarts_offset;
+  int32_t bstarts_end;
+
+  context->do_compress = 0;
+  context->src = (const uint8_t*)var_121;
+  context->srcsize = var_121;
+  context->dest = (uint8_t*)var_121;
+  context->destsize = var_111;
+  context->output_bytes = 0;
+  context->end_threads = 0;
+
+  if (context->srcsize < BLOSC_MIN_HEADER_LENGTH) {
+
+    return -1;
+  }
+
+  context->header_flags = context->src[2];
+  context->typesize = context->src[3];
+  context->sourcesize = sw32_(context->src + 4);
+  context->blocksize = sw32_(context->src + 8);
+  var_136 = sw32_(context->src + 12);
+
+
+  if (context->blocksize <= 0 || context->blocksize > var_111 ||
+      context->typesize <= 0 || context->typesize > BLOSC_MAX_TYPESIZE ||
+      var_136 > var_121) {
+    return -1;
+  }
+
+  if (context->sourcesize > (int32_t)var_111) {
+    return -1;
+  }
+
+
+  context->nblocks = context->sourcesize / context->blocksize;
+  context->leftover = context->sourcesize % context->blocksize;
+  context->nblocks = (context->leftover > 0) ?
+                      context->nblocks + 1 : context->nblocks;
+
+  if (context->block_maskout != NULL && context->block_maskout_nitems != context->nblocks) {
+    fprintf(stderr, "The number of items in block_maskout (%d) must match the number"
+                    " of blocks in chunk (%d)", context->block_maskout_nitems, context->nblocks);
+    return -2;
+  }
+
+  if ((context->header_flags & BLOSC_DOSHUFFLE) &&
+      (context->header_flags & BLOSC_DOBITSHUFFLE)) {
+
+    if (context->srcsize < BLOSC_EXTENDED_HEADER_LENGTH) {
+
+      return -1;
+    }
+    uint8_t* filters = (uint8_t*)(context->src + BLOSC_MIN_HEADER_LENGTH);
+    uint8_t* filters_meta = filters + 8;
+    uint8_t var_92 = context->src[0];
+
+
+    int var_92 = (var_92 == BLOSC2_VERSION_FORMAT_ALPHA) ? 5 : BLOSC2_MAX_FILTERS;
+    for (int var_146 = 0; var_146 < var_92; var_146++) {
+      context->filters[var_146] = filters[var_146];
+      context->filters_meta[var_146] = filters_meta[var_146];
+    }
+    context->filter_flags = filters_to_flags(filters);
+    bstarts_offset = BLOSC_EXTENDED_HEADER_LENGTH;
+    var_94 = context->src[0x1F];
+  } else {
+
+    context->filter_flags = get_filter_flags(context->header_flags,
+                                             context->typesize);
+    flags_to_filters(context->header_flags, context->filters);
+    bstarts_offset = BLOSC_MIN_HEADER_LENGTH;
+  }
+
+  context->bstarts = (int32_t*)(context->src + bstarts_offset);
+  bstarts_end = bstarts_offset + (context->nblocks * sizeof(int32_t));
+  if (var_121 < bstarts_end) {
+
+    return -1;
+  }
+  var_121 -= bstarts_end;
+
+
+  if (var_94 & BLOSC2_USEDICT) {
+
+  }
+
+
+  return 0;
+}
+
+
+static int fn_92(blosc2_context* context,
+                                    bool var_94) {
+  int32_t var_94;
+  int var_94;
+  int var_94 = context->use_dict && (context->dict_cdict == NULL);
+
+
+  if (var_94) {
+    memset(context->dest, 0, BLOSC_EXTENDED_HEADER_LENGTH);
+  }
+  else {
+    memset(context->dest, 0, BLOSC_MIN_HEADER_LENGTH);
+  }
+
+
+  context->dest[0] = BLOSC_VERSION_FORMAT;
+
+
+  var_94 = -1;
+  switch (context->compcode) {
+    case var_94:
+      var_94 = BLOSC_BLOSCLZ_FORMAT;
+      context->dest[1] = BLOSC_BLOSCLZ_VERSION_FORMAT;
+      break;
+
+    default: {
+      const char* compname;
+      compname = clibcode_to_clibname(var_94);
+      fprintf(stderr, "Blosc has not been compiled with '%s' ", compname);
+      fprintf(stderr, "compression support.  Please use one having it.");
+      return -5;
+      break;
+    }
+  }
+
+  if (context->clevel == 0) {
+
+    context->header_flags |= (uint8_t)BLOSC_MEMCPYED;
+  }
+
+  if (context->sourcesize < BLOSC_MIN_BUFFERSIZE) {
+
+    context->header_flags |= (uint8_t)BLOSC_MEMCPYED;
+  }
+  bool var_121 = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
+
+  context->dest[2] = 0;
+  context->dest[3] = (uint8_t)context->typesize;
+  _sw32(context->dest + 4, (int32_t)context->sourcesize);
+  _sw32(context->dest + 8, (int32_t)context->blocksize);
+  if (var_94) {
+
+    context->header_flags |= (BLOSC_DOSHUFFLE | BLOSC_DOBITSHUFFLE);
+
+    uint8_t *filters = context->dest + BLOSC_MIN_HEADER_LENGTH;
+    uint8_t *filters_meta = filters + 8;
+    for (int var_146 = 0; var_146 < BLOSC2_MAX_FILTERS; var_146++) {
+      filters[var_146] = context->filters[var_146];
+      filters_meta[var_146] = context->filters_meta[var_146];
+    }
+    uint8_t* var_94 = context->dest + 0x1F;
+    *var_94 = 0;
+    *var_94 |= is_little_endian() ? 0 : BLOSC2_BIGENDIAN;
+    if (var_94 || var_121) {
+      context->bstarts = NULL;
+      context->output_bytes = BLOSC_EXTENDED_HEADER_LENGTH;
+    } else {
+      context->bstarts = (int32_t*)(context->dest + BLOSC_EXTENDED_HEADER_LENGTH);
+      context->output_bytes = BLOSC_EXTENDED_HEADER_LENGTH +
+                              sizeof(int32_t) * context->nblocks;
+    }
+    if (context->use_dict) {
+      *var_94 |= BLOSC2_USEDICT;
+    }
+  } else {
+
+    if (var_121) {
+      context->bstarts = NULL;
+      context->output_bytes = BLOSC_MIN_HEADER_LENGTH;
+    } else {
+      context->bstarts = (int32_t *) (context->dest + BLOSC_MIN_HEADER_LENGTH);
+      context->output_bytes = BLOSC_MIN_HEADER_LENGTH +
+                              sizeof(int32_t) * context->nblocks;
+    }
+  }
+
+
+  if (!var_121) {
+    if (context->filter_flags & BLOSC_DOSHUFFLE) {
+
+      context->header_flags |= BLOSC_DOSHUFFLE;
+    }
+
+    if (context->filter_flags & BLOSC_DOBITSHUFFLE) {
+
+      context->header_flags |= BLOSC_DOBITSHUFFLE;
+    }
+
+    if (context->filter_flags & BLOSC_DODELTA) {
+
+      context->header_flags |= BLOSC_DODELTA;
+    }
+
+    var_94 = !split_block(context, context->typesize,
+                              context->blocksize, var_94);
+    context->header_flags |= var_94 << 4;
+    context->header_flags |= var_94 << 5;
+  }
+
+
+  context->dest[2] = context->header_flags;
+
+  return 1;
+}
+
+
+int fn_94(blosc2_context* context) {
+  int var_117 = 0;
+  blosc_timestamp_t last, current;
+  bool var_121 = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
+
+  blosc_set_timestamp(&last);
+
+  if (!var_121) {
+
+    var_117 = do_job(context);
+    if (var_117 < 0) {
+      return -1;
+    }
+    if (var_117 == 0) {
+
+      context->header_flags |= (uint8_t)BLOSC_MEMCPYED;
+      var_121 = true;
+    }
+  }
+
+  if (var_121) {
+    if (context->sourcesize + BLOSC_MAX_OVERHEAD > context->destsize) {
+
+      var_117 = 0;
+    }
+    else {
+      context->output_bytes = BLOSC_MAX_OVERHEAD;
+      var_117 = do_job(context);
+      if (var_117 < 0) {
+        return -1;
+      }
+
+      context->dest[2] = context->header_flags;
+
+      context->header_flags &= ~(uint8_t)BLOSC_MEMCPYED;
+    }
+  }
+
+
+  _sw32(context->dest + 12, var_117);
+
+
+  context->destsize = var_117;
+
+  assert(var_117 <= context->destsize);
+
+  if (context->btune != NULL) {
+    blosc_set_timestamp(&current);
+    double var_96 = blosc_elapsed_secs(last, current);
+    btune_update(context, var_96);
+  }
+
+  return var_117;
+}
+
+
+
+int fn_96(blosc2_context* context, const void* var_121, int32_t var_121,
+                        void* var_121, int32_t var_111) {
+  int error, var_136;
+
+  if (context->do_compress != 1) {
+    fprintf(stderr, "Context is not meant for compression.  Giving up.\n");
+    return -10;
+  }
+
+  error = initialize_context_compression(
+    context, var_121, var_121, var_121, var_111,
+    context->clevel, context->filters, context->filters_meta,
+    context->typesize, context->compcode, context->blocksize,
+    context->new_nthreads, context->nthreads, context->schunk);
+  if (error <= 0) {
+    return error;
+  }
+
+
+  error = write_compression_header(context, true);
+  if (error < 0) {
+    return error;
+  }
+
+  var_136 = blosc_compress_context(context);
+  if (var_136 < 0) {
+    return var_136;
+  }
+
+  if (context->use_dict && context->dict_cdict == NULL) {
+
+    if (context->compcode != BLOSC_ZSTD) {
+      const char* compname;
+      compname = clibcode_to_clibname(context->compcode);
+      fprintf(stderr, "Codec %s does not support dicts.  Giving up.\n",
+              compname);
+      return -20;
+    }
+
+  }
+
+  return var_136;
+}
+
+
+void fn_97(const int var_104, const int var_100,
+                   const size_t var_137, uint8_t* filters) {
+
+
+  if ((var_104 == BLOSC_SHUFFLE) && (var_137 > 1))
+    filters[BLOSC2_MAX_FILTERS - 1] = BLOSC_SHUFFLE;
+  if (var_104 == BLOSC_BITSHUFFLE)
+    filters[BLOSC2_MAX_FILTERS - 1] = BLOSC_BITSHUFFLE;
+  if (var_100)
+    filters[BLOSC2_MAX_FILTERS - 2] = BLOSC_DELTA;
+}
+
+
+int fn_100(int var_104, int var_104, int32_t var_137,
+                    const void* var_121, int32_t var_121, void* var_121, int32_t var_111) {
+  int error;
+  int result;
+  char* envvar;
+
+
+  if (!var_145) blosc_init();
+
+
+  envvar = getenv("BLOSC_CLEVEL");
+  if (envvar != NULL) {
+    long var_101;
+    var_101 = strtol(envvar, NULL, 10);
+    if ((var_101 != EINVAL) && (var_101 >= 0)) {
+      var_104 = (int)var_101;
+    }
+  }
+
+
+  envvar = getenv("BLOSC_SHUFFLE");
+  if (envvar != NULL) {
+    if (strcmp(envvar, "NOSHUFFLE") == 0) {
+      var_104 = BLOSC_NOSHUFFLE;
+    }
+    if (strcmp(envvar, "SHUFFLE") == 0) {
+      var_104 = BLOSC_SHUFFLE;
+    }
+    if (strcmp(envvar, "BITSHUFFLE") == 0) {
+      var_104 = BLOSC_BITSHUFFLE;
+    }
+  }
+
+
+  envvar = getenv("BLOSC_DELTA");
+  if (envvar != NULL) {
+    if (strcmp(envvar, "1") == 0) {
+      blosc_set_delta(1);
+    } else {
+      blosc_set_delta(0);
+    }
+  }
+
+
+  envvar = getenv("BLOSC_TYPESIZE");
+  if (envvar != NULL) {
+    long var_101;
+    var_101 = strtol(envvar, NULL, 10);
+    if ((var_101 != EINVAL) && (var_101 > 0)) {
+      var_137 = (size_t)var_101;
+    }
+  }
+
+
+  envvar = getenv("BLOSC_COMPRESSOR");
+  if (envvar != NULL) {
+    result = blosc_set_compressor(envvar);
+    if (result < 0) { return result; }
+  }
+
+
+  envvar = getenv("BLOSC_BLOCKSIZE");
+  if (envvar != NULL) {
+    long var_135;
+    var_135 = strtol(envvar, NULL, 10);
+    if ((var_135 != EINVAL) && (var_135 > 0)) {
+      blosc_set_blocksize((size_t)var_135);
+    }
+  }
+
+
+  envvar = getenv("BLOSC_NTHREADS");
+  if (envvar != NULL) {
+    long var_110;
+    var_110 = strtol(envvar, NULL, 10);
+    if ((var_110 != EINVAL) && (var_110 > 0)) {
+      result = blosc_set_nthreads((int)var_110);
+      if (result < 0) { return result; }
+    }
+  }
+
+
+
+
+  envvar = getenv("BLOSC_NOLOCK");
+  if (envvar != NULL) {
+
+
+    const char *compname;
+    blosc2_context *cctx;
+    blosc2_cparams var_146 = var_102;
+
+    blosc_compcode_to_compname(var_128, &compname);
+
+    build_filters(var_104, var_130, var_137, var_146.filters);
+
+    var_146.typesize = (uint8_t)var_137;
+    var_146.compcode = (uint8_t)var_128;
+    var_146.clevel = (uint8_t)var_104;
+    var_146.nthreads = (uint8_t)var_143;
+    cctx = blosc2_create_cctx(var_146);
+
+    result = blosc2_compress_ctx(cctx, var_121, var_121, var_121, var_111);
+
+    blosc2_free_ctx(cctx);
+    return result;
+  }
+
+  pthread_mutex_lock(&global_comp_mutex);
+
+
+  uint8_t* filters = calloc(1, BLOSC2_MAX_FILTERS);
+  uint8_t* filters_meta = calloc(1, BLOSC2_MAX_FILTERS);
+  build_filters(var_104, var_130, var_137, filters);
+  error = initialize_context_compression(
+    g_global_context, var_121, var_121, var_121, var_111, var_104, filters,
+    filters_meta, (int32_t)var_137, var_128, var_141, var_143, var_143,
+    g_schunk);
+  free(filters);
+  free(filters_meta);
+  if (error <= 0) {
+    pthread_mutex_unlock(&global_comp_mutex);
+    return error;
+  }
+
+
+  error = write_compression_header(g_global_context, false);
+  if (error < 0) {
+    pthread_mutex_unlock(&global_comp_mutex);
+    return error;
+  }
+
+  result = blosc_compress_context(g_global_context);
+
+  pthread_mutex_unlock(&global_comp_mutex);
+
+  return result;
+}
+
+
+
+int fn_103(int var_104, int var_104, size_t var_137, size_t var_136,
+                   const void* var_121, void* var_121, size_t var_111) {
+  return blosc2_compress(var_104, var_104, (int32_t)var_137, var_121, (int32_t)var_136, var_121, (int32_t)var_111);
+}
+
+
+int fn_104(blosc2_context* context, const void* var_121, int32_t var_121,
+                                         void* var_121, int32_t var_111) {
+  int32_t var_117;
+  uint8_t* _src = (uint8_t*)var_121;
+  uint8_t var_138;
+  int error;
+
+  if (var_121 <= 0) {
+
+    return -1;
+  }
+  var_138 = _src[0];
+  if (var_138 > BLOSC_VERSION_FORMAT) {
+
+    return -1;
+  }
+
+  error = initialize_context_decompression(context, var_121, var_121, var_121, var_111);
+  if (error < 0) {
+    return error;
+  }
+
+
+  bool var_121 = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
+  if (var_121) {
+
+    var_117 = context->sourcesize;
+    int32_t var_136 = sw32_(_src + 12);
+    if (var_117 + BLOSC_MAX_OVERHEAD != var_136) {
+      return -1;
+    }
+
+    if (var_111 < var_117) {
+      return -1;
+    }
+    memcpy(var_121, _src + BLOSC_MAX_OVERHEAD, (unsigned int)var_117);
+  }
+  else {
+
+    var_117 = do_job(context);
+    if (var_117 < 0) {
+      return -1;
+    }
+  }
+
+  assert(var_117 <= (int32_t)var_111);
+  return var_117;
+}
+
+
+
+int fn_106(blosc2_context* context, const void* var_121, int32_t var_121,
+                          void* var_121, int32_t var_111) {
+  int result;
+
+  if (context->do_compress != 0) {
+    fprintf(stderr, "Context is not meant for decompression.  Giving up.\n");
+    return -10;
+  }
+
+  result = blosc_run_decompression_with_context(context, var_121, var_121, var_121, var_111);
+
+
+  if (context->block_maskout != NULL) {
+    free(context->block_maskout);
+    context->block_maskout = NULL;
+  }
+  context->block_maskout_nitems = 0;
+
+  return result;
+}
+
+
+
+int fn_107(const void* var_121, int32_t var_121, void* var_121, int32_t var_111) {
+  int result;
+  char* envvar;
+  long var_110;
+  blosc2_context *dctx;
+  blosc2_dparams var_147 = var_109;
+
+
+  if (!var_145) blosc_init();
+
+
+  envvar = getenv("BLOSC_NTHREADS");
+  if (envvar != NULL) {
+    var_110 = strtol(envvar, NULL, 10);
+    if ((var_110 != EINVAL) && (var_110 > 0)) {
+      result = blosc_set_nthreads((int)var_110);
+      if (result < 0) { return result; }
+    }
+  }
+
+
+
+
+  envvar = getenv("BLOSC_NOLOCK");
+  if (envvar != NULL) {
+    var_147.nthreads = var_143;
+    dctx = blosc2_create_dctx(var_147);
+    result = blosc2_decompress_ctx(dctx, var_121, var_121, var_121, var_111);
+    blosc2_free_ctx(dctx);
+    return result;
+  }
+
+  pthread_mutex_lock(&global_comp_mutex);
+
+  result = blosc_run_decompression_with_context(
+          g_global_context, var_121, var_121, var_121, var_111);
+
+  pthread_mutex_unlock(&global_comp_mutex);
+
+  return result;
+}
+
+
+
+int fn_110(const void* var_121, void* var_121, size_t var_111) {
+  return blosc2_decompress(var_121, INT32_MAX, var_121, (int32_t)var_111);
+}
+
+
+
+
+
+int fn_111(blosc2_context* context, const void* var_121, int32_t var_121,
+                   int var_119, int var_119, void* var_121) {
+  uint8_t* _src = NULL;
+  uint8_t var_137;
+  int32_t var_117 = 0;
+  int32_t var_149;
+  int32_t leftover;
+  int32_t* bstarts;
+  int32_t var_137, var_135, var_136;
+  int32_t var_121, bsize2, ebsize, var_121;
+  int32_t var_136;
+  int32_t startb, stopb;
+  int32_t var_116 = var_119 + var_119;
+  int var_117;
+
+  if (var_121 < BLOSC_MIN_HEADER_LENGTH) {
+
+    return -1;
+  }
+  _src = (uint8_t*)(var_121);
+
+
+  var_137 = _src[2];
+  bool var_121 = var_137 & (uint8_t)BLOSC_MEMCPYED;
+  var_137 = (int32_t)_src[3];
+  var_136 = sw32_(_src + 4);
+  var_135 = sw32_(_src + 8);
+  var_136 = sw32_(_src + 12);
+
+  ebsize = var_135 + var_137 * (int32_t)sizeof(int32_t);
+
+  if ((context->header_flags & BLOSC_DOSHUFFLE) &&
+      (context->header_flags & BLOSC_DOBITSHUFFLE)) {
+
+    if (var_121 < BLOSC_EXTENDED_HEADER_LENGTH) {
+
+      return -1;
+    }
+    uint8_t* filters = _src + BLOSC_MIN_HEADER_LENGTH;
+    uint8_t* filters_meta = filters + 8;
+    for (int var_146 = 0; var_146 < BLOSC2_MAX_FILTERS; var_146++) {
+      context->filters[var_146] = filters[var_146];
+      context->filters_meta[var_146] = filters_meta[var_146];
+    }
+    bstarts = (int32_t*)(_src + BLOSC_EXTENDED_HEADER_LENGTH);
+  } else {
+
+    flags_to_filters(var_137, context->filters);
+    bstarts = (int32_t*)(_src + BLOSC_MIN_HEADER_LENGTH);
+  }
+
+
+  if (var_135 <= 0 || var_135 > var_136 || var_137 <= 0 || var_137 > BLOSC_MAX_TYPESIZE) {
+    return -1;
+  }
+
+
+
+  var_149 = var_136 / var_135;
+  leftover = var_136 % var_135;
+  var_149 = (leftover > 0) ? var_149 + 1 : var_149;
+
+
+  if ((var_119 < 0) || (var_119 * var_137 > var_136)) {
+    fprintf(stderr, "`start` out of bounds");
+    return -1;
+  }
+
+  if ((var_116 < 0) || (var_116 * var_137 > var_136)) {
+    fprintf(stderr, "`start`+`nitems` out of bounds");
+    return -1;
+  }
+
+  if (_src + var_121 < (uint8_t *)(bstarts + var_149)) {
+
+    return -1;
+  }
+
+  for (var_117 = 0; var_117 < var_149; var_117++) {
+    var_121 = var_135;
+    var_121 = 0;
+    if ((var_117 == var_149 - 1) && (leftover > 0)) {
+      var_121 = leftover;
+      var_121 = 1;
+    }
+
+
+    startb = var_119 * (int)var_137 - var_117 * (int)var_135;
+    stopb = var_116 * (int)var_137 - var_117 * (int)var_135;
+    if ((startb >= (int)var_135) || (stopb <= 0)) {
+      continue;
+    }
+    if (startb < 0) {
+      startb = 0;
+    }
+    if (stopb > (int)var_135) {
+      stopb = (int)var_135;
+    }
+    bsize2 = stopb - startb;
+
+
+    if (var_121) {
+
+      if (var_136 + BLOSC_MAX_OVERHEAD != var_136) {
+         return -1;
+      }
+      if (var_121 < BLOSC_MAX_OVERHEAD + var_117 * var_135 + startb + bsize2) {
+
+        return -1;
+      }
+      memcpy((uint8_t*)var_121 + var_117,
+             (uint8_t*)var_121 + BLOSC_MAX_OVERHEAD + var_117 * var_135 + startb,
+             (unsigned int)bsize2);
+      var_136 = (int)bsize2;
+    }
+    else {
+      struct struct_122* scontext = context->serial_context;
+
+
+      if (var_135 != scontext->tmp_blocksize) {
+        my_free(scontext->tmp);
+        scontext->tmp_nbytes = (size_t)3 * context->blocksize + ebsize;
+        scontext->tmp = my_malloc(scontext->tmp_nbytes);
+        scontext->tmp2 = scontext->tmp + var_135;
+        scontext->tmp3 = scontext->tmp + var_135 + ebsize;
+        scontext->tmp4 = scontext->tmp + 2 * var_135 + ebsize;
+        scontext->tmp_blocksize = (int32_t)var_135;
+      }
+
+
+
+      bool var_117 = ((startb == 0) && (var_121 == var_119 * var_137));
+      uint8_t* var_121 = var_117 ? var_121 : scontext->tmp2;
+      var_136 = blosc_d(context->serial_context, var_121, var_121,
+                       var_121, var_121, sw32_(bstarts + var_117),
+                       var_121, 0, scontext->tmp, scontext->tmp3);
+      if (var_136 < 0) {
+        var_117 = var_136;
+        break;
+      }
+      if (!var_117) {
+
+        memcpy((uint8_t *) var_121 + var_117, var_121 + startb, (unsigned int) bsize2);
+      }
+      var_136 = (int)bsize2;
+    }
+    var_117 += var_136;
+  }
+
+  return var_117;
+}
+
+
+
+
+int fn_117(const void* var_121, int var_119, int var_119, void* var_121) {
+  uint8_t* _src = (uint8_t*)(var_121);
+  blosc2_context context;
+  int result;
+
+  uint8_t var_138 = _src[0];
+  if (var_138 > BLOSC_VERSION_FORMAT) {
+
+    return -1;
+  }
+
+
+  memset(&context, 0, sizeof(blosc2_context));
+  context.src = var_121;
+  context.dest = var_121;
+  context.typesize = (uint8_t)_src[3];
+  context.blocksize = sw32_(_src + 8);
+  context.header_flags = *(_src + 2);
+  context.filter_flags = get_filter_flags(context.header_flags, context.typesize);
+  context.schunk = g_schunk;
+  context.nthreads = 1;
+  context.serial_context = create_thread_context(&context, 0);
+
+
+  result = _blosc_getitem(&context, var_121, INT32_MAX, var_119, var_119, var_121);
+
+
+  free_thread_context(context.serial_context);
+  return result;
+}
+
+int fn_118(blosc2_context* context, const void* var_121, int32_t var_121,
+    int var_119, int var_119, void* var_121) {
+  uint8_t* _src = (uint8_t*)(var_121);
+  int result;
+
+
+  context->typesize = (uint8_t)_src[3];
+  context->blocksize = sw32_(_src + 8);
+  context->header_flags = *(_src + 2);
+  context->filter_flags = get_filter_flags(*(_src + 2), context->typesize);
+  if (context->serial_context == NULL) {
+    context->serial_context = create_thread_context(context, 0);
+  }
+
+
+  result = _blosc_getitem(context, var_121, var_121, var_119, var_119, var_121);
+
+  return result;
+}
+
+
+static void fn_119(void *ctxt)
+{
+  struct struct_122* thcontext = (struct struct_122*)ctxt;
+  blosc2_context* context = thcontext->parent_context;
+  int32_t var_136;
+  int32_t ntdest;
+  int32_t tblocks;
+  int32_t tblock;
+  int32_t nblock_;
+  int32_t var_121;
+  int32_t var_121;
+
+  int32_t var_135;
+  int32_t ebsize;
+  int32_t var_121;
+  bool var_121 = context->do_compress != 0;
+  int32_t var_121;
+  int32_t var_149;
+  int32_t leftover;
+  int32_t leftover2;
+  int32_t* bstarts;
+  const uint8_t* var_121;
+  uint8_t* var_121;
+  uint8_t* var_121;
+  uint8_t* var_121;
+  uint8_t* tmp3;
+
+
+  var_135 = context->blocksize;
+  ebsize = var_135 + context->typesize * sizeof(int32_t);
+  var_121 = context->destsize;
+  var_149 = context->nblocks;
+  leftover = context->leftover;
+  bstarts = context->bstarts;
+  var_121 = context->src;
+  var_121 = context->srcsize;
+  var_121 = context->dest;
+
+
+  if (var_135 != thcontext->tmp_blocksize) {
+    my_free(thcontext->tmp);
+    thcontext->tmp_nbytes = (size_t)3 * context->blocksize + ebsize;
+    thcontext->tmp = my_malloc(thcontext->tmp_nbytes);
+    thcontext->tmp2 = thcontext->tmp + var_135;
+    thcontext->tmp3 = thcontext->tmp + var_135 + ebsize;
+    thcontext->tmp4 = thcontext->tmp + 2 * var_135 + ebsize;
+    thcontext->tmp_blocksize = var_135;
+  }
+
+  var_121 = thcontext->tmp;
+  var_121 = thcontext->tmp2;
+  tmp3 = thcontext->tmp3;
+
+
+  bool var_121 = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
+  bool var_121 = (!var_121 || var_121) && context->block_maskout == NULL;
+  if (var_121) {
+
+      tblocks = var_149 / context->nthreads;
+      leftover2 = var_149 % context->nthreads;
+      tblocks = (leftover2 > 0) ? tblocks + 1 : tblocks;
+      nblock_ = thcontext->tid * tblocks;
+      tblock = nblock_ + tblocks;
+      if (tblock > var_149) {
+          tblock = var_149;
+      }
+  }
+  else {
+
+    pthread_mutex_lock(&context->count_mutex);
+    context->thread_nblock++;
+    nblock_ = context->thread_nblock;
+    pthread_mutex_unlock(&context->count_mutex);
+    tblock = var_149;
+  }
+
+
+  var_121 = 0;
+  while ((nblock_ < tblock) && (context->thread_giveup_code > 0)) {
+    var_121 = var_135;
+    if (nblock_ == (var_149 - 1) && (leftover > 0)) {
+      var_121 = leftover;
+      var_121 = 1;
+    }
+    if (var_121) {
+      if (var_121) {
+        if (!context->prefilter) {
+
+          memcpy(var_121 + BLOSC_MAX_OVERHEAD + nblock_ * var_135,
+                 var_121 + nblock_ * var_135, (unsigned int) var_121);
+          var_136 = (int32_t) var_121;
+        }
+        else {
+
+
+
+          var_136 = blosc_c(thcontext, var_121, var_121, 0,
+                           ebsize, var_121, nblock_ * var_135,
+                           var_121 + BLOSC_MAX_OVERHEAD + nblock_ * var_135,
+                           var_121, tmp3);
+        }
+      }
+      else {
+
+        var_136 = blosc_c(thcontext, var_121, var_121, 0,
+                          ebsize, var_121, nblock_ * var_135, var_121, var_121, tmp3);
+      }
+    }
+    else {
+      if (var_121) {
+
+        if (var_121 < BLOSC_MAX_OVERHEAD + (nblock_ * var_135) + var_121) {
+
+
+          var_136 = -1;
+        } else {
+          memcpy(var_121 + nblock_ * var_135,
+                  var_121 + BLOSC_MAX_OVERHEAD + nblock_ * var_135, (unsigned int)var_121);
+          var_136 = (int32_t)var_121;
+        }
+      }
+      else {
+        if (var_121 < (int32_t)(BLOSC_MAX_OVERHEAD + (sizeof(int32_t) * var_149))) {
+
+          var_136 = -1;
+        } else {
+          var_136 = blosc_d(thcontext, var_121, var_121,
+                            var_121, var_121, sw32_(bstarts + nblock_),
+                            var_121, nblock_ * var_135, var_121, var_121);
+        }
+      }
+    }
+
+
+    if (context->thread_giveup_code <= 0) {
+      break;
+    }
+
+
+    if (var_136 < 0) {
+
+      pthread_mutex_lock(&context->count_mutex);
+      context->thread_giveup_code = var_136;
+      pthread_mutex_unlock(&context->count_mutex);
+      break;
+    }
+
+    if (var_121 && !var_121) {
+
+      pthread_mutex_lock(&context->count_mutex);
+      ntdest = context->output_bytes;
+
+
+
+      if (!(context->use_dict && context->dict_cdict == NULL)) {
+        _sw32(bstarts + nblock_, (int32_t) ntdest);
+      }
+
+      if ((var_136 == 0) || (ntdest + var_136 > var_121)) {
+        context->thread_giveup_code = 0;
+        pthread_mutex_unlock(&context->count_mutex);
+        break;
+      }
+      context->thread_nblock++;
+      nblock_ = context->thread_nblock;
+      context->output_bytes += var_136;
+      pthread_mutex_unlock(&context->count_mutex);
+
+
+
+      memcpy(var_121 + ntdest, var_121, (unsigned int) var_136);
+    }
+    else if (var_121) {
+      nblock_++;
+    }
+    else {
+      pthread_mutex_lock(&context->count_mutex);
+      context->thread_nblock++;
+      nblock_ = context->thread_nblock;
+      context->output_bytes += var_136;
+      pthread_mutex_unlock(&context->count_mutex);
+    }
+
+  }
+
+  if (var_121) {
+    context->output_bytes = context->sourcesize;
+    if (var_121) {
+      context->output_bytes += BLOSC_MAX_OVERHEAD;
+    }
+  }
+
+}
+
+
+static void* fn_121(void* ctxt) {
+  struct struct_122* thcontext = (struct struct_122*)ctxt;
+  blosc2_context* context = thcontext->parent_context;
+
+
+
+
+  while 1 {
+
+    pthread_mutex_lock(&(context)->count_threads_mutex); if ((context)->count_threads < (context)->nthreads) { (context)->count_threads++; pthread_cond_wait(&(context)->count_threads_cv, &(context)->count_threads_mutex); } else { pthread_cond_broadcast(&(context)->count_threads_cv); } pthread_mutex_unlock(&(context)->count_threads_mutex);;
+
+    if (context->end_threads) {
+      break;
+    }
+
+    t_blosc_do_job(ctxt);
+
+
+    pthread_mutex_lock(&(context)->count_threads_mutex); if ((context)->count_threads > 0) { (context)->count_threads--; pthread_cond_wait(&(context)->count_threads_cv, &(context)->count_threads_mutex); } else { pthread_cond_broadcast(&(context)->count_threads_cv); } pthread_mutex_unlock(&(context)->count_threads_mutex);;
+  }
+
+
+  free_thread_context(thcontext);
+
+  return (NULL);
+}
+
+
+int fn_122(blosc2_context *context) {
+  int32_t var_122;
+  int rc2;
+
+
+  pthread_mutex_init(&context->count_mutex, NULL);
+  pthread_mutex_init(&context->delta_mutex, NULL);
+  pthread_cond_init(&context->delta_cv, NULL);
+
+
+  context->thread_giveup_code = 1;
+  context->thread_nblock = -1;
+
+
+
+
+
+
+  pthread_mutex_init(&context->count_threads_mutex, NULL);
+  pthread_cond_init(&context->count_threads_cv, NULL);
+  context->count_threads = 0;
+
+
+  if (var_144) {
+
+    context->thread_contexts = (struct struct_122 *)my_malloc(
+            context->nthreads * sizeof(struct struct_122));
+    for (var_122 = 0; var_122 < context->nthreads; var_122++)
+      init_thread_context(context->thread_contexts + var_122, context, var_122);
+  }
+  else {
+
+
+      pthread_attr_init(&context->ct_attr);
+      pthread_attr_setdetachstate(&context->ct_attr, PTHREAD_CREATE_JOINABLE);
+
+
+
+    context->threads = (pthread_t*)my_malloc(
+            context->nthreads * sizeof(pthread_t));
+
+    for (var_122 = 0; var_122 < context->nthreads; var_122++) {
+
+      struct struct_122 *thread_context = create_thread_context(context, var_122);
+
+
+        rc2 = pthread_create(&context->threads[var_122], &context->ct_attr, t_blosc,
+                            (void*)thread_context);
+
+
+
+
+      if (rc2) {
+        fprintf(stderr, "ERROR; return code from pthread_create() is %d\n", rc2);
+        fprintf(stderr, "\tError detail: %s\n", strerror(rc2));
+        return -1;
+      }
+    }
+  }
+
+
+  context->threads_started = context->nthreads;
+  context->new_nthreads = context->nthreads;
+
+  return 0;
+}
+
+int fn_122(void)
+{
+  return var_143;
+}
+
+int fn_123(int var_126) {
+  int var_132 = var_143;
+
+
+  if (!var_145) blosc_init();
+
+ if (var_126 != var_132) {
+   var_143 = var_126;
+   g_global_context->new_nthreads = var_126;
+   check_nthreads(g_global_context);
+ }
+
+  return var_132;
+}
+
+
+const char* fn_126(void)
+{
+  const char* compname;
+  blosc_compcode_to_compname(var_128, &compname);
+
+  return compname;
+}
+
+int fn_127(const char* compname) {
+  int var_128 = blosc_compname_to_compcode(compname);
+
+  var_128 = var_128;
+
+
+  if (!var_145) blosc_init();
+
+  return var_128;
+}
+
+void fn_128(int var_130) {
+
+  var_130 = var_130;
+
+
+  if (!var_145) blosc_init();
+
+}
+
+const char* fn_130(void) {
+  static int var_132 = 0;
+  static char var_132[256];
+
+  if (var_132) return var_132;
+  var_132[0] = '\0';
+  strcat(var_132, BLOSC_BLOSCLZ_COMPNAME);
+
+  var_132 = 1;
+  return var_132;
+}
+
+
+const char* fn_132(void) {
+  return BLOSC_VERSION_STRING;
+}
+
+
+int fn_133(const char* compname, char** complib, char** var_138) {
+  int var_139;
+  const char* clibname;
+  const char* clibversion = "unknown";
+
+  var_139 = compname_to_clibcode(compname);
+  clibname = clibcode_to_clibname(var_139);
+
+
+  if (var_139 == BLOSC_BLOSCLZ_LIB) {
+    clibversion = BLOSCLZ_VERSION_STRING;
+  }
+
+  *complib = strdup(clibname);
+  *var_138 = strdup(clibversion);
+
+  return var_139;
+}
+
+
+void fn_134(const void* cbuffer, size_t* var_136,
+                         size_t* var_136, size_t* var_135) {
+  uint8_t* _src = (uint8_t*)(cbuffer);
+  uint8_t var_138 = _src[0];
+  if (var_138 > BLOSC_VERSION_FORMAT) {
+
+    *var_136 = *var_135 = *var_136 = 0;
+    return;
+  }
+
+
+  *var_136 = (size_t)sw32_(_src + 4);
+  *var_135 = (size_t)sw32_(_src + 8);
+  *var_136 = (size_t)sw32_(_src + 12);
+}
+
+int fn_135(const void* cbuffer, size_t var_136, size_t* var_136) {
+  size_t header_cbytes, header_blocksize;
+  if (var_136 < BLOSC_MIN_HEADER_LENGTH) {
+
+    *var_136 = 0;
+    return -1;
+  }
+  blosc_cbuffer_sizes(cbuffer, var_136, &header_cbytes, &header_blocksize);
+  if (header_cbytes != var_136) {
+
+    *var_136 = 0;
+    return -1;
+  }
+  if (*var_136 > BLOSC_MAX_BUFFERSIZE) {
+
+    return -1;
+  }
+  return 0;
+}
+
+
+void fn_136(const void* cbuffer, size_t* var_137, int* var_137) {
+  uint8_t* _src = (uint8_t*)(cbuffer);
+  uint8_t var_138 = _src[0];
+  if (var_138 > BLOSC_VERSION_FORMAT) {
+
+    *var_137 = 0;
+    *var_137 = 0;
+    return;
+  }
+
+
+  *var_137 = (int)_src[2];
+  *var_137 = (size_t)_src[3];
+}
+
+
+
+void fn_137(const void* cbuffer, int* var_138,
+                            int* versionlz) {
+  uint8_t* _src = (uint8_t*)(cbuffer);
+
+
+  *var_138 = (int)_src[0];
+  *versionlz = (int)_src[1];
+}
+
+
+
+const char* fn_138(const void* cbuffer) {
+  uint8_t* _src = (uint8_t*)(cbuffer);
+  int var_139;
+  const char* complib;
+
+
+  var_139 = (_src[2] & 0xe0) >> 5;
+  complib = clibcode_to_clibname(var_139);
+  return complib;
+}
+
+
+
+
+int fn_139(void)
+{
+  return (int)var_141;
+}
+
+
+
+
+void fn_140(size_t var_141) {
+  var_141 = (int32_t)var_141;
+}
+
+
+
+
+void fn_141(blosc2_schunk* schunk) {
+  g_schunk = schunk;
+  g_global_context->schunk = schunk;
+}
+
+
+void fn_142(void) {
+
+  if (var_145) return;
+
+  pthread_mutex_init(&global_comp_mutex, NULL);
+
+  g_global_context = (blosc2_context*)my_malloc(sizeof(blosc2_context));
+  memset(g_global_context, 0, sizeof(blosc2_context));
+  g_global_context->nthreads = var_143;
+  g_global_context->new_nthreads = var_143;
+  var_145 = 1;
+}
+
+
+void fn_143(void) {
+
+  if (!var_145) return;
+
+  var_145 = 0;
+  release_threadpool(g_global_context);
+  if (g_global_context->serial_context != NULL) {
+    free_thread_context(g_global_context->serial_context);
+  }
+  my_free(g_global_context);
+  pthread_mutex_destroy(&global_comp_mutex);
+}
+
+
+int fn_144(blosc2_context *context) {
+  int32_t t;
+  void* status;
+  int rc;
+
+  if (context->threads_started > 0) {
+    if (var_144) {
+
+      for (t=0; t<context->threads_started; t++)
+        destroy_thread_context(context->thread_contexts + t);
+      my_free(context->thread_contexts);
+    }
+    else {
+
+      context->end_threads = 1;
+      pthread_mutex_lock(&(context)->count_threads_mutex); if ((context)->count_threads < (context)->nthreads) { (context)->count_threads++; pthread_cond_wait(&(context)->count_threads_cv, &(context)->count_threads_mutex); } else { pthread_cond_broadcast(&(context)->count_threads_cv); } pthread_mutex_unlock(&(context)->count_threads_mutex);;
+
+
+      for (t = 0; t < context->threads_started; t++) {
+        rc = pthread_join(context->threads[t], &status);
+        if (rc) {
+          fprintf(stderr, "ERROR; return code from pthread_join() is %d\n", rc);
+          fprintf(stderr, "\tError detail: %s\n", strerror(rc));
+        }
+      }
+
+
+
+        pthread_attr_destroy(&context->ct_attr);
+
+
+
+      my_free(context->threads);
+    }
+
+
+    pthread_mutex_destroy(&context->count_mutex);
+    pthread_mutex_destroy(&context->delta_mutex);
+    pthread_cond_destroy(&context->delta_cv);
+
+
+
+
+
+
+    pthread_mutex_destroy(&context->count_threads_mutex);
+    pthread_cond_destroy(&context->count_threads_cv);
+    context->count_threads = 0;
+
+
+
+    context->end_threads = 0;
+    context->threads_started = 0;
+  }
+
+
+  return 0;
+}
+
+int fn_144(void) {
+
+  if (!var_145) return -1;
+
+  return release_threadpool(g_global_context);
+}
+
+
+
+
+
+blosc2_context* fn_145(blosc2_cparams var_146) {
+  blosc2_context* context = (blosc2_context*)my_malloc(sizeof(blosc2_context));
+
+
+  memset(context, 0, sizeof(blosc2_context));
+  context->do_compress = 1;
+  context->compcode = var_146.compcode;
+  context->clevel = var_146.clevel;
+  context->use_dict = var_146.use_dict;
+  context->typesize = var_146.typesize;
+  for (int var_146 = 0; var_146 < BLOSC2_MAX_FILTERS; var_146++) {
+    context->filters[var_146] = var_146.filters[var_146];
+    context->filters_meta[var_146] = var_146.filters_meta[var_146];
+  }
+  context->nthreads = var_146.nthreads;
+  context->new_nthreads = context->nthreads;
+  context->blocksize = var_146.blocksize;
+  context->threads_started = 0;
+  context->schunk = var_146.schunk;
+
+  if (var_146.prefilter != NULL) {
+    context->prefilter = var_146.prefilter;
+    context->pparams = (blosc2_prefilter_params*)my_malloc(sizeof(blosc2_prefilter_params));
+    memcpy(context->pparams, var_146.pparams, sizeof(blosc2_prefilter_params));
+  }
+
+  return context;
+}
+
+
+
+blosc2_context* fn_146(blosc2_dparams var_147) {
+  blosc2_context* context = (blosc2_context*)my_malloc(sizeof(blosc2_context));
+
+
+  memset(context, 0, sizeof(blosc2_context));
+  context->do_compress = 0;
+  context->nthreads = var_147.nthreads;
+  context->new_nthreads = context->nthreads;
+  context->threads_started = 0;
+  context->block_maskout = NULL;
+  context->block_maskout_nitems = 0;
+  context->schunk = var_147.schunk;
+
+  return context;
+}
+
+
+void fn_147(blosc2_context* context) {
+  release_threadpool(context);
+  if (context->serial_context != NULL) {
+    free_thread_context(context->serial_context);
+  }
+  if (context->dict_cdict != NULL) {
+
+
+
+  }
+  if (context->dict_ddict != NULL) {
+
+
+
+  }
+  if (context->btune != NULL) {
+    btune_free(context);
+  }
+  if (context->prefilter != NULL) {
+    my_free(context->pparams);
+  }
+
+  if (context->block_maskout != NULL) {
+    free(context->block_maskout);
+  }
+
+  my_free(context);
+}
+
+
+
+int fn_148(blosc2_context *ctx, bool *maskout, int var_149) {
+
+  if (ctx->block_maskout != NULL) {
+
+    free(ctx->block_maskout);
+  }
+
+  bool *maskout_ = malloc(var_149);
+  memcpy(maskout_, maskout, var_149);
+  ctx->block_maskout = maskout_;
+  ctx->block_maskout_nitems = var_149;
+
+  return 0;
+}

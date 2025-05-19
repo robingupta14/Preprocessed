@@ -1,0 +1,802 @@
+<?php
+
+
+
+
+
+
+
+
+global $var_0;
+
+$var_0 = NULL;
+
+param( 'action', 'string', '' );
+
+
+if( $var_1 != 'test_api' && ( empty($var_2) || ! $var_2->check_perm( 'admin', 'restricted' ) ) )
+{	
+}
+
+
+evo_sendcookies();
+
+
+header_nocache();
+header_content_type( 'text/html', $var_4 );
+
+
+$var_5 = $var_6;
+$var_7 = $var_8;
+
+
+$var_6 = false;
+
+
+$var_8 = false;
+
+
+$var_9 = new class_0();
+
+$var_9->add( sprintf( T_('action: %s'), $var_1 ), 'note' );
+
+$var_11 = false;
+
+$var_12 = true;
+
+
+
+
+
+
+
+switch( $var_1 )
+{
+	case 'get_whois_info':
+		param( 'query', 'string' );
+		param( 'window_height', 'integer' );
+
+		load_class('_ext/phpwhois/whois.main.php', 'whois' );
+
+		$var_13 = new class_1();
+
+		
+		$var_14 = false;
+
+		
+		$var_13->var_15 = empty( $_GET['fast'] );
+
+		
+		
+		
+
+		
+		$var_13->var_16 = true;
+
+		$var_17 = $var_13->Lookup( $var_19 );
+
+		$var_20 = '<pre style="height: '.( $var_21 - 200 ).'px; overflow: auto;">';
+		if( ! empty( $var_17['rawdata'] ) )
+		{
+			
+			for( $var_22 = 0; $var_22 < count( $var_17['rawdata'] ); $var_22++ )
+			{
+				if( preg_match( '/^(orgname:|org-name:|descr:)/i', $var_17['rawdata'][$var_22] ) )
+				{
+					$var_17['rawdata'][$var_22] = '<span style="font-weight: bold; background-color: yellow;">'.$var_17['rawdata'][$var_22].'</span>';
+				}
+			}
+			$var_20 .= format_to_output( implode( $var_17['rawdata'], "\n" ) );
+		}
+		else
+		{
+			$var_20 = format_to_output( implode( $var_13->Query['errstr'], "\n" ) )."<br></br>";
+		}
+		$var_20 .= '</pre>';
+
+		
+		break;
+
+	case 'add_plugin_sett_set':
+		
+
+		
+
+		
+		$var_2->check_perm( 'options', 'view', true );
+
+		
+		$var_23 = $var_24->get( 'admin_skin', $var_2->var_26 );
+		$var_27 = new class_2();
+
+		param( 'plugin_ID', 'integer', true );
+
+		$var_28 = & get_Plugins_admin(); 
+		$var_29 = & $var_28->get_by_ID($var_31);
+		if( ! $var_29 )
+		{
+			bad_request_die('Invalid Plugin.');
+		}
+		param( 'set_type', 'string', '' ); 
+		if( $var_32 != 'Settings'  )
+		{
+			bad_request_die('Invalid set_type param!');
+		}
+		param( 'set_path', '/^\w+(?:\[\w+\])+$/', '' );
+
+		load_funcs('plugins/_plugin.funcs.php');
+
+		
+		_set_setting_by_path( $var_29, $var_32, $var_33, array() );
+
+		
+		$var_34 = get_plugin_settings_node_by_path( $var_29, $var_32, $var_33,  false );
+
+		$var_35 = new class_3(); 
+		autoform_display_field( $var_33, $var_34['set_meta'], $var_35, $var_32, $var_29, NULL, $var_34['set_node'] );
+		break;
+
+	case 'edit_comment':
+		
+
+		
+		$var_36->assert_received_crumb( 'comment' );
+
+		$var_38 = param( 'commentid', 'integer' );
+
+		
+		$var_39 = & get_CommentCache();
+		$var_40 = & $var_39->get_by_ID( $var_38 );
+		
+		$var_41 = & $var_40->get_Item();
+
+		
+		$var_2->check_perm( 'meta_comment', 'edit', true, $var_40 );
+
+		
+		$var_43 = $var_44 = & $var_41->get_Blog();
+
+		$var_46 = param( 'comment_action', 'string' );
+
+		switch( $var_46 )
+		{
+			case 'form':
+				
+				$var_47 = '';
+				$var_48 = htmlspecialchars_decode( $var_40->var_49 );
+
+				
+				$var_50 = & get_Plugins_admin();
+				$var_51 = array( 'object_type' => 'Comment', 'object_Blog' => & $var_44 );
+				$var_50->unfilter_contents( $var_47 , $var_48 , $var_41->get_renderers_validated(), $var_51 );
+
+				
+				$var_54 = round( strlen( $var_48 ) / 200 );
+				$var_55 = substr_count( $var_48, "\n" );
+				$var_55 = ( ( $var_55 > 3 && $var_55 > $var_54 ) ? $var_55 : $var_54 ) + 2;
+				
+				
+				
+				
+				
+				break;
+
+			case 'update':
+				
+				if( $var_44->get_setting( 'allow_html_comment' ) )
+				{ 
+					$var_57 = 'html';
+				}
+				else
+				{ 
+					$var_57 = 'htmlspecialchars';
+				}
+
+				$var_48 = param( 'comment_content', $var_57 );
+
+				
+				
+				
+				$var_58->trigger_event( 'CommentFormSent', array(
+						'dont_remove_pre' => true,
+						'comment_item_ID' => $var_41->var_26,
+						'comment' => & $var_48,
+						'renderers' => $var_40->get_renderers_validated(),
+					) );
+
+				
+				$var_40->set( 'content', $var_48 );
+				$var_40->dbupdate();
+
+				
+				$var_40->content( 'htmlbody', 'true' );
+				break;
+
+			case 'cancel':
+				
+				$var_40->content( 'htmlbody', 'true' );
+				break;
+		}
+
+		break;
+
+	case 'get_opentrash_link':
+		
+
+		
+		$var_36->assert_received_crumb( 'comment' );
+
+		
+		$var_23 = $var_24->get( 'admin_skin', $var_2->var_26 );
+		$var_27 = new class_2();
+
+		param( 'blog', 'integer', 0 );
+
+		
+		break;
+
+	case 'delete_comment':
+		
+
+		
+		$var_36->assert_received_crumb( 'comment' );
+
+		$var_62 = false;
+
+		
+		$var_23 = $var_24->get( 'admin_skin', $var_2->var_26 );
+		$var_27 = new class_2();
+
+		
+
+		$var_63 = true;
+		$var_0 = param( 'blogid', 'integer' );
+		$var_38 = param( 'commentid', 'integer' );
+		$var_64 = param( 'statuses', 'string', NULL );
+		$var_65 = param( 'expiry_status', 'string', 'active' );
+		$var_66 = param( 'itemid', 'integer' );
+		$var_67 = param( 'currentpage', 'integer', 1 );
+		$var_68 = param( 'limit', 'integer', 0 );
+		$var_69 = param( 'request_from', 'string', NULL );
+		$var_70 = param( 'comment_type', 'string', 'feedback' );
+
+		$var_40 = & Comment_get_by_ID( $var_38, false );
+		if( $var_40 !== false )
+		{ 
+			
+			$var_2->check_perm( 'comment!CURSTATUS', 'delete', true, $var_40 );
+
+			$var_62 = $var_40->dbdelete();
+		}
+
+		if( $var_62 === false )
+		{ 
+			header_http_response( '500 '.T_('Comment cannot be deleted!'), 500 );
+			exit(0);
+		}
+
+		if( in_array( $var_69, array( 'items', 'comments' ) ) )
+		{	
+
+			
+			
+			
+			$var_72 = ( $var_66 > 0 ) ? '' : 'fullview';
+
+			echo_item_comments( $var_0, $var_66, $var_64, $var_67, $var_68, array(), $var_72, $var_65, $var_70 );
+		}
+		break;
+
+	case 'delete_comment_url':
+		
+
+		
+		$var_36->assert_received_crumb( 'comment' );
+
+		
+
+		$var_0 = param( 'blogid', 'integer' );
+		$var_40 = & Comment_get_by_ID( param( 'commentid', 'integer' ), false );
+		if( $var_40 !== false && $var_40->var_73 != NULL )
+		{	
+			
+			$var_2->check_perm( 'comment!CURSTATUS', 'edit', true, $var_40 );
+
+			$var_40->set( 'author_url', NULL );
+			$var_40->dbupdate();
+		}
+
+		break;
+
+	case 'refresh_comments':
+		
+		
+		
+		
+		
+		
+
+		$var_63 = true;
+		$var_0 = param( 'blogid', 'integer' );
+		$var_66 = param( 'itemid', 'integer', NULL );
+		$var_64 = param( 'statuses', 'string', NULL );
+		$var_65 = param( 'expiry_status', 'string', 'active' );
+		$var_67 = param( 'currentpage', 'string', 1 );
+		$var_69 = param( 'request_from', 'string', 'items' );
+		$var_70 = param( 'comment_type', 'string', 'feedback' );
+
+		
+		$var_2->check_perm( 'blog_ismember', 'view', true, $var_0 );
+
+		
+		$var_23 = $var_24->get( 'admin_skin', $var_2->var_26 );
+		$var_27 = new class_2();
+
+		if( in_array( $var_69, array( 'items', 'comments' ) ) )
+		{	
+			echo_item_comments( $var_0, $var_66, $var_64, $var_67, NULL, array(), '', $var_65, $var_70 );
+		}
+		elseif( $var_69 == 'dashboard' || $var_69 == 'coll_settings' )
+		{ 
+			load_funcs( 'dashboard/model/_dashboard.funcs.php' );
+			show_comments_awaiting_moderation( $var_0, NULL, 10, array(), false );
+		}
+		break;
+
+	case 'dom_type_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'domtype' );
+
+		
+		$var_2->check_perm( 'stats', 'edit', true );
+
+		load_funcs('sessions/model/_hitlog.funcs.php');
+
+		$var_74 = param( 'new_dom_type', 'string' );
+		$var_75 = param( 'dom_name', 'string' );
+
+		$var_76->query( 'UPDATE T_basedomains
+						SET dom_type = '.$var_76->quote($var_74).'
+						WHERE dom_name =' . $var_76->quote($var_75));
+		
+
+	case 'dom_status_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'domstatus' );
+
+		
+		$var_2->check_perm( 'stats', 'edit', true );
+
+		load_funcs('sessions/model/_hitlog.funcs.php');
+
+		$var_78 = param( 'new_dom_status', 'string' );
+		$var_75 = param( 'dom_name', 'string' );
+
+		$var_76->query( 'UPDATE T_basedomains
+						SET dom_status = '.$var_76->quote($var_78).'
+						WHERE dom_name =' . $var_76->quote($var_75));
+		
+
+	case 'iprange_status_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'iprange' );
+
+		
+		$var_2->check_perm( 'spamblacklist', 'edit', true );
+
+		$var_79 = param( 'new_status', 'string' );
+		$var_80 = param( 'iprange_ID', 'integer', true );
+
+		$var_76->query( 'UPDATE T_antispam__iprange
+						SET aipr_status = '.( empty( $var_79 ) ? 'NULL' : $var_76->quote( $var_79 ) ).'
+						WHERE aipr_ID =' . $var_76->quote( $var_80 ) );
+		
+
+	case 'emadr_status_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'emadrstatus' );
+
+		
+		$var_2->check_perm( 'emails', 'edit', true );
+
+		$var_79 = param( 'new_status', 'string' );
+		$var_81 = param( 'emadr_ID', 'integer', true );
+
+		load_funcs('tools/model/_email.funcs.php');
+
+		$var_76->query( 'UPDATE T_email__address
+						SET emadr_status = '.( empty( $var_79 ) ? 'NULL' : $var_76->quote( $var_79 ) ).'
+						WHERE emadr_ID =' . $var_76->quote( $var_81 ) );
+		
+
+	case 'user_level_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'userlevel' );
+
+		$var_82 = param( 'new_user_level', 'integer' );
+		$var_83 = param( 'user_ID', 'integer' );
+
+		
+		$var_2->can_moderate_user( $var_83, true );
+
+		$var_85 = & get_UserCache();
+		if( $var_86 = & $var_85->get_by_ID( $var_83, false ) )
+		{
+			$var_86->set( 'level', $var_82 );
+			$var_86->dbupdate();
+			
+
+	var_87 'group_level_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'grouplevel' );
+
+		
+		$var_2->check_perm( 'users', 'edit', true );
+
+		$var_88 = param( 'new_group_level', 'integer' );
+		$var_89 = param( 'group_ID', 'integer' );
+
+		$var_90 = & get_GroupCache();
+		if( $var_91 = & $var_90->get_by_ID( $var_89, false, false ) )
+		{
+			$var_91->set( 'level', $var_88 );
+			$var_91->dbupdate();
+			
+
+	var_87 'country_status_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'country' );
+
+		
+		$var_2->check_perm( 'options', 'edit', true );
+
+		load_funcs( 'regional/model/_regional.funcs.php' );
+
+		$var_79 = param( 'new_status', 'string' );
+		$var_92 = param( 'ctry_ID', 'integer', true );
+
+		$var_76->query( 'UPDATE T_regional__country
+						SET ctry_status = '.( empty( $var_79 ) ? 'NULL' : $var_76->quote( $var_79 ) ).'
+						WHERE ctry_ID =' . $var_76->quote( $var_92 ) );
+		
+
+	var_87 'item_task_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'itemtask' );
+
+		$var_93 = param( 'field', 'string' );
+		if( ! in_array( $var_93, array( 'priority', 'status', 'assigned' ) ) )
+		{ 
+			$var_9->add( sprintf( 'Invalid field: %s', $var_93 ), 'error' );
+			break;
+		}
+
+		$var_94 = param( 'post_ID', 'integer', true );
+
+		$var_95 = & get_ItemCache();
+		$var_96 = & $var_95->get_by_ID( $var_94 );
+
+		
+		$var_2->check_perm( 'item_post!CURSTATUS', 'edit', true, $var_96 );
+
+		$var_97 = '';
+		switch( $var_93 )
+		{
+			case 'priority':
+				
+				$var_98 = param( 'new_priority', 'integer', NULL );
+				$var_97 = ' color="'.item_priority_color( $var_99 ).'"';
+				$var_100 = item_priority_title( $var_99 );
+				$var_96->set_from_Request( 'priority', 'new_priority', true );
+				$var_96->dbupdate();
+				break;
+
+			case 'assigned':
+				
+				$var_102 = param( 'new_assigned_ID', 'integer', NULL );
+				$var_103 = param( 'new_assigned_login', 'string', NULL );
+				if( $var_96->assign_to( $var_102, $var_103 ) )
+				{ 
+					$var_96->dbupdate();
+				}
+				else
+				{ 
+					load_funcs('_core/_template.funcs.php');
+					headers_content_mightcache( 'text/html', 0, '
+					header_http_response('400 var_105 var_106');
+					
+					
+					die(2); 
+					
+				}
+
+				if( empty( $var_96->var_107 ) )
+				{
+					$var_100 = T_('No user');
+				}
+				else
+				{
+					$var_63 = true;
+					$var_85 = & get_UserCache();
+					$var_86 = & $var_85->get_by_ID( $var_96->var_107 );
+					$var_100 = $var_86->get_colored_login( array( 'mask' => '$avatar$ $login$' ) );
+				}
+				$var_98 = $var_96->var_107;
+				break;
+
+			case 'status':
+				
+				$var_98 = param( 'new_status', 'string', NULL );
+				
+				$var_98 = intval( str_replace( '_', '', $var_98 ) );
+				set_param( 'new_status', $var_98 );
+
+				$var_96->set_from_Request( 'pst_ID', 'new_status', true );
+				$var_96->dbupdate();
+
+				$var_100 = empty( $var_96->var_109 ) ? T_('No status') : $var_96->get( 't_extra_status' );
+				if( ! empty( $var_98 ) )
+				{	
+					$var_98 = '_'.$var_98;
+				}
+				break;
+		}
+
+		
+		
+
+	var_87 'item_order_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'itemorder' );
+
+		$var_110 = param( 'new_item_order', 'string' );
+		$var_94 = param( 'post_ID', 'integer' );
+
+		$var_95 = & get_ItemCache();
+		$var_96 = & $var_95->get_by_ID( $var_94 );
+
+		
+		$var_2->check_perm( 'item_post!CURSTATUS', 'edit', true, $var_96 );
+
+		if( $var_110 === '-' || $var_110 === '' )
+		{	
+			$var_110 = NULL;
+		}
+		else
+		{	
+			$var_110 = intval( $var_110 );
+		}
+
+		$var_96->set( 'order', $var_110, true );
+		$var_96->dbupdate();
+
+		
+		
+
+	var_87 'cat_order_edit':
+		
+
+		
+		$var_36->assert_received_crumb( 'catorder' );
+
+		$var_0 = param( 'blogid', 'integer' );
+		$var_111 = param( 'new_cat_order', 'string' );
+		$var_112 = param( 'cat_ID', 'integer' );
+
+		
+		$var_2->check_perm( 'blog_cats', 'edit', true, $var_0 );
+
+		if( $var_111 === '-' || $var_111 === '' || intval( $var_111 ) == '' )
+		{ 
+			$var_111 = NULL;
+		}
+
+		$var_113 = & get_ChapterCache();
+		if( $var_114 = & $var_113->get_by_ID( $var_112, false ) )
+		{ 
+			$var_114->set( 'order', ( $var_111 === '' ? NULL : $var_111 ), true );
+			$var_114->dbupdate();
+			
+
+	var_87 'get_goals':
+		
+		$var_0 = param( 'blogid', 'integer' );
+
+		
+		$var_36->assert_received_crumb( 'itemgoal' );
+
+		
+		$var_2->check_perm( 'blog_post_statuses', 'edit', true, $var_0 );
+
+		$var_112 = param( 'cat_id', 'integer', 0 );
+
+		$var_115 = new class_4();
+		$var_115->SELECT( 'goal_ID, goal_name' );
+		$var_115->FROM( 'T_track__goal' );
+		$var_115->WHERE( 'goal_redir_url IS NULL' );
+		if( empty( $var_112 ) )
+		{ 
+			$var_115->WHERE_and( 'goal_gcat_ID IS NULL' );
+		}
+		else
+		{ 
+			$var_115->WHERE_and( 'goal_gcat_ID = '.$var_76->quote( $var_112 ) );
+		}
+		$var_120 = $var_76->get_assoc( $var_115->get() );
+
+		
+
+		foreach( $var_120 as $var_122 => $var_123 )
+		{
+			
+		}
+
+		break;
+
+	var_87 'conflict_files':
+		
+
+		
+		$var_36->assert_received_crumb( 'conflictfiles' );
+
+		param( 'fileroot_ID', 'string' );
+
+		
+		$var_2->check_perm( 'files', 'add', true, $var_124 );
+
+		param( 'path', 'filepath' );
+		param( 'oldfile', 'filepath' );
+		param( 'newfile', 'filepath' );
+		param( 'format', 'string' );
+
+		$var_125 = explode( '_', $var_124 );
+		$var_126 = $var_125[0];
+		$var_127 = empty( $var_125[1] ) ? 0 : $var_125[1];
+
+		$var_17 = replace_old_file_with_new( $var_126, $var_127, $var_128, $var_129, $var_130, false );
+
+		$var_131 = array();
+		if( $var_132 == 'full_path_link' )
+		{ 
+			$var_133 = & get_FileCache();
+			$var_134 = & $var_133->get_by_root_and_path( $var_126, $var_127, trailing_slash( $var_128 ).$var_129, true );
+			$var_136 = & $var_133->get_by_root_and_path( $var_126, $var_127, trailing_slash( $var_128 ).$var_130, true );
+			$var_131['new'] = $var_134->get_view_link();
+			$var_131['old'] = $var_136->get_view_link();
+		}
+		else
+		{ 
+			$var_131['new'] = $var_129;
+			$var_131['old'] = $var_130;
+		}
+		if( $var_17 !== true )
+		{ 
+			$var_131['error'] = $var_17;
+		}
+
+		
+		exit(0);
+
+	var_87 'link_attachment':
+		
+
+		
+		$var_36->assert_received_crumb( 'link' );
+
+		
+		$var_2->check_perm( 'files', 'view' );
+
+		param( 'iframe_name', 'string', '' );
+		param( 'link_owner_type', 'string', true );
+		param( 'link_owner_ID', 'integer', true );
+		
+		param( 'root', 'string', '' );
+		param( 'path', 'filepath', '' );
+		param( 'fm_highlight', 'string', '' );
+
+		$var_138 = empty( $var_139 ) ? '' : '&amp;root='.$var_139;
+		$var_138 .= empty( $var_128 ) ? '' : '&amp;path='.$var_128;
+		$var_138 .= empty( $var_140 ) ? '' : '&amp;fm_highlight='.$var_140;
+
+		var_141=var_142&var_143;var_144=1&var_143;var_145='.$var_145.'&amp;fm_mode=link_object&amp;link_type='.$var_146.'&amp;link_object_ID='.$var_147.$var_138.'"'
+					.' width="100%" height="100%" marginwidth="0" marginheight="0" align="top" scrolling="auto" frameborder="0"'
+					.' onload="document.getElementById(\'link_attachment_loader\').style.display=\'none\'">loading</iframe>'
+			.'</div>';
+
+		break;
+
+	var_87 'file_attachment':
+		
+
+		
+		$var_36->assert_received_crumb( 'file' );
+
+		
+		$var_2->check_perm( 'files', 'view' );
+
+		param( 'iframe_name', 'string', '' );
+		param( 'field_name', 'string', '' );
+		
+		param( 'root', 'string', '' );
+		param( 'path', 'string', '' );
+		param( 'fm_highlight', 'string', '' );
+
+		$var_138 = empty( $var_139 ) ? '' : '&amp;root='.$var_139;
+		$var_138 .= empty( $var_128 ) ? '' : '&amp;path='.$var_128;
+		$var_138 .= empty( $var_140 ) ? '' : '&amp;fm_highlight='.$var_140;
+		
+
+		var_141=var_142&var_143;var_148='.$var_148.'&amp;ajax_request=1&amp;iframe_name='.$var_145.'&amp;fm_mode=file_select'.$var_138.'"'
+					.' width="100%" height="100%" marginwidth="0" marginheight="0" align="top" scrolling="auto" frameborder="0"'
+					.' onload="document.getElementById(\'link_attachment_loader\').style.display=\'none\'">loading</iframe>'
+			.'</div>';
+
+		break;
+
+	var_87 'import_files':
+		
+
+		
+		$var_36->assert_received_crumb( 'import' );
+
+		$var_149 = & get_FileRootCache();
+		$var_150 = & $var_149->get_by_type_and_ID( 'import', '0', true );
+
+		
+		$var_2->check_perm( 'files', 'view', true, $var_150 );
+
+		var_141=var_152&var_143;var_144=1&var_143;var_139=var_153"'
+					.' width="100%" height="100%" marginwidth="0" marginheight="0" align="top" scrolling="auto" frameborder="0"'
+					.' onload="document.getElementById(\'import_files_loader\').style.display=\'none\'">loading</iframe>'
+			.'</div>';
+
+		break;
+
+	var_87 'test_api':
+		
+		
+		break;
+
+	var_154:
+		$var_11 = true;
+		break;
+}
+
+if( !$var_11 )
+{
+	if( $var_5 || $var_7 )
+	{	
+		$var_9->display( NULL, NULL, true, 'all',
+						array(
+								'error' => array( 'class' => 'jslog_error', 'divClass' => false ),
+								'note'  => array( 'class' => 'jslog_note',  'divClass' => false ),
+							), 'ul', 'jslog' );
+	}
+
+	if( $var_12 )
+	{ 
+		
+	}
+
+	exit(0);
+}
+
+?>

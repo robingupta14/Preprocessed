@@ -1,0 +1,472 @@
+<?php
+
+
+
+
+
+	if (permission_exists('dialplan_add')
+		|| permission_exists('dialplan_edit')
+		|| permission_exists('inbound_route_add')
+		|| permission_exists('inbound_route_edit')
+		|| permission_exists('outbound_route_add')
+		|| permission_exists('outbound_route_edit')
+		|| permission_exists('fifo_edit')
+		|| permission_exists('fifo_add')
+		|| permission_exists('time_condition_add')
+		|| permission_exists('time_condition_edit')) {
+		
+	}
+	else {
+		
+		exit;
+	}
+
+
+	$language = new text;
+	$text = $language->get();
+
+
+	if (is_uuid($_REQUEST["id"])) {
+		$action = "update";
+		$dialplan_detail_uuid = $_REQUEST["id"];
+	}
+	else {
+		$action = "add";
+	}
+
+
+	if (count($_POST) > 0) {
+		$dialplan_uuid = $_POST["dialplan_uuid"];
+		$dialplan_detail_tag = $_POST["dialplan_detail_tag"];
+		$dialplan_detail_order = $_POST["dialplan_detail_order"];
+		$dialplan_detail_type = $_POST["dialplan_detail_type"];
+		$dialplan_detail_data = $_POST["dialplan_detail_data"];
+		$dialplan_detail_break = $_POST["dialplan_detail_break"];
+		$dialplan_detail_inline = $_POST["dialplan_detail_inline"];
+		$dialplan_detail_group = $_POST["dialplan_detail_group"];
+	}
+	if (is_uuid($_REQUEST["app_uuid"])) {
+		$app_uuid = $_REQUEST["app_uuid"];
+	}
+	if (is_uuid($_REQUEST["dialplan_uuid"])) {
+		$dialplan_uuid = $_REQUEST["dialplan_uuid"];
+	}
+
+if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
+
+	$msg = '';
+	if ($action == "update") {
+		$dialplan_detail_uuid = $_POST["dialplan_detail_uuid"];
+	}
+
+	
+		$token = new token;
+		if (!$token->validate($_SERVER['PHP_SELF'])) {
+			message::add($text['message-invalid_token'],'negative');
+			header('Location: dialplans.php');
+			exit;
+		}
+
+	
+		if (strlen($dialplan_detail_tag) == 0) { $msg .= $text['message-required'].$text['label-tag']."<br>\n"; }
+		if (strlen($dialplan_detail_order) == 0) { $msg .= $text['message-required'].$text['label-order']."<br>\n"; }
+		
+		
+		if (strlen($msg) > 0 && strlen($_POST["persistformvar"]) == 0) {
+			
+			
+			
+			
+			persistformvar($_POST);
+			
+			return;
+		}
+
+	
+		if ($_POST["persistformvar"] != "true") {
+			if ($action == "add" && permission_exists('dialplan_add')) {
+				$dialplan_detail_uuid = uuid();
+				$array['dialplan_details'][0]['dialplan_uuid'] = $dialplan_uuid;
+				$array['dialplan_details'][0]['dialplan_detail_uuid'] = $dialplan_detail_uuid;
+				$array['dialplan_details'][0]['dialplan_detail_tag'] = $dialplan_detail_tag;
+				$array['dialplan_details'][0]['dialplan_detail_order'] = $dialplan_detail_order;
+				$array['dialplan_details'][0]['dialplan_detail_type'] = $dialplan_detail_type;
+				$array['dialplan_details'][0]['dialplan_detail_data'] = $dialplan_detail_data;
+				$array['dialplan_details'][0]['dialplan_detail_break'] = $dialplan_detail_break;
+				$array['dialplan_details'][0]['dialplan_detail_inline'] = $dialplan_detail_inline;
+				$array['dialplan_details'][0]['dialplan_detail_group'] = $dialplan_detail_group != '' ? $dialplan_detail_group : null;
+				$array['dialplan_details'][0]['domain_uuid'] = $_SESSION['domain_uuid'];
+
+				$p = new permissions;
+				$p->add('dialplan_detail_add', 'temp');
+
+				$database = new database;
+				$database->app_name = 'dialplans';
+				$database->app_uuid = '742714e5-8cdf-32fd-462c-cbe7e3d655db';
+				$database->save($array);
+				unset($array);
+
+				$p->delete('dialplan_detail_add', 'temp');
+
+				
+				save_dialplan_xml();
+
+				
+				$cache = new cache;
+				$cache->delete("dialplan:".$_SESSION["context"]);
+
+				
+				message::add($text['message-add']);
+				header("Location: dialplan_edit.php?id=".$dialplan_uuid."&app_uuid=".$app_uuid);
+				return;
+			}
+
+			if ($action == "update" && permission_exists('dialplan_edit')) {
+				$sql = "update v_dialplan_details set ";
+				$sql .= "dialplan_uuid = :dialplan_uuid ";
+				$sql .= "dialplan_detail_tag = :dialplan_detail_tag, ";
+				$sql .= "dialplan_detail_order = :dialplan_detail_order, ";
+				$sql .= "dialplan_detail_type = :dialplan_detail_type, ";
+				$sql .= "dialplan_detail_data = :dialplan_detail_data, ";
+				$sql .= "dialplan_detail_break = :dialplan_detail_break, ";
+				$sql .= "dialplan_detail_inline = :dialplan_detail_inline, ";
+				$sql .= "dialplan_detail_group = :dialplan_detail_group ";
+				$sql .= "where (domain_uuid = :domain_uuid or domain_uuid is null) ";
+				$sql .= "and dialplan_detail_uuid = :dialplan_detail_uuid ";
+				$parameters['dialplan_uuid'] = $dialplan_uuid;
+				$parameters['dialplan_detail_tag'] = $dialplan_detail_tag;
+				$parameters['dialplan_detail_order'] = $dialplan_detail_order;
+				$parameters['dialplan_detail_type'] = $dialplan_detail_type;
+				$parameters['dialplan_detail_data'] = $dialplan_detail_data;
+				$parameters['dialplan_detail_break'] = $dialplan_detail_break;
+				$parameters['dialplan_detail_inline'] = $dialplan_detail_inline;
+				$parameters['dialplan_detail_group'] = $dialplan_detail_group != '' ? $dialplan_detail_group : null;
+				$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+				$parameters['dialplan_detail_uuid'] = $dialplan_detail_uuid;
+				$database = new database;
+				$database->execute($sql, $parameters);
+				unset($sql, $parameters);
+
+				
+				save_dialplan_xml();
+
+				
+				$fp = event_socket_create($_SESSION['event_socket_ip_address'], $_SESSION['event_socket_port'], $_SESSION['event_socket_password']);
+				if ($fp) {
+					$switch_cmd = "memcache delete dialplan:".$_SESSION["context"]."@".$_SESSION['domain_name'];
+					$switch_result = event_socket_request($fp, 'api '.$switch_cmd);
+				}
+
+				message::add($text['message-update']);
+				header("Location: dialplan_edit.php?id=".$dialplan_uuid."&app_uuid=".$app_uuid);
+				return;
+		   } 
+		} 
+} 
+
+
+	if (count($_GET)>0 && $_POST["persistformvar"] != "true") {
+		$dialplan_detail_uuid = $_GET["id"];
+		$sql = "select * from v_dialplan_details ";
+		$sql .= "where domain_uuid = :domain_uuid ";
+		$sql .= "and dialplan_detail_uuid = :dialplan_detail_uuid ";
+		$parameters['domain_uuid'] = $domain_uuid;
+		$parameters['dialplan_detail_uuid'] = $dialplan_detail_uuid;
+		$database = new database;
+		$row = $database->select($sql, $parameters, 'row');
+		if (is_array($row) && @sizeof($row) != 0) {
+			$dialplan_uuid = $row["dialplan_uuid"];
+			$dialplan_detail_tag = $row["dialplan_detail_tag"];
+			$dialplan_detail_order = $row["dialplan_detail_order"];
+			$dialplan_detail_type = $row["dialplan_detail_type"];
+			$dialplan_detail_data = $row["dialplan_detail_data"];
+			$dialplan_detail_break = $row["dialplan_detail_break"];
+			$dialplan_detail_inline = $row["dialplan_detail_inline"];
+			$dialplan_detail_group = $row["dialplan_detail_group"];
+		}
+		unset($sql, $parameters, $row);
+	}
+
+
+	$object = new token;
+	$token = $object->create($_SERVER['PHP_SELF']);
+
+
+	$document['title'] = $text['title-dialplan_detail'];
+
+
+	
+	
+	
+	
+	\" value='".$text['button-back']."'></td>\n";
+	
+
+	
+	
+	\n";
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	if (strlen($dialplan_detail_order)> 0) {
+		
+	}
+	$i=0;
+	while($i<=999) {
+		if (strlen($i) == 1) {
+			
+		}
+		if (strlen($i) == 2) {
+			
+		}
+		if (strlen($i) == 3) {
+			
+		}
+		$i++;
+	}
+	
+	
+	
+	
+	
+?>
+<script language="javascript">
+var Objs;
+
+function change_to_input(obj){
+	tb=document.createElement('INPUT');
+	tb.type='text';
+	tb.name=obj.name;
+	tb.className='formfld';
+	tb.setAttribute('id', 'ivr_menu_option_param');
+	tb.setAttribute('style', '');
+	tb.value=obj.options[obj.selectedIndex].value;
+	document.getElementById('btn_select_to_input_dialplan_detail_type').style.visibility = 'hidden';
+	tbb=document.createElement('INPUT');
+	tbb.setAttribute('class', 'btn');
+	tbb.setAttribute('style', 'margin-left: 4px;');
+	tbb.type='button';
+	tbb.value=$("<div />").html('&
+	tbb.objs=[obj,tb,tbb];
+	tbb.onclick=function(){ replace_param(this.objs); }
+	obj.parentNode.insertBefore(tb,obj);
+	obj.parentNode.insertBefore(tbb,obj);
+	obj.parentNode.removeChild(obj);
+	replace_param(this.objs);
+}
+
+function replace_param(obj){
+	obj[2].parentNode.insertBefore(obj[0],obj[2]);
+	obj[0].parentNode.removeChild(obj[1]);
+	obj[0].parentNode.removeChild(obj[2]);
+	document.getElementById('btn_select_to_input_dialplan_detail_type').style.visibility = 'visible';
+}
+</script>
+<?php
+	
+	
+	
+	
+	
+	'>\n";
+	if (strlen($dialplan_detail_type) > 0) {
+		
+		
+		
+	}
+	else {
+		
+	}
+	if (strlen($dialplan_detail_tag) == 0 || $dialplan_detail_tag == "condition" || $dialplan_detail_tag == "regex") {
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+	}
+	if (strlen($dialplan_detail_tag) == 0 || $dialplan_detail_tag == "action" || $dialplan_detail_tag == "anti-action") {
+		
+		
+		$fp = event_socket_create($_SESSION['event_socket_ip_address'], $_SESSION['event_socket_port'], $_SESSION['event_socket_password']);
+		$result = event_socket_request($fp, 'api show application');
+		$tmp = explode("\n\n", $result);
+		$tmp = explode("\n", $tmp[0]);
+		foreach ($tmp as $row) {
+			if (strlen($row) > 0) {
+				$application = explode(",", $row);
+				if ($application[0] != "name" && stristr($application[0], "[") != true) {
+					
+				}
+			}
+		}
+		
+	}
+	this.style.visibility = \"hidden\";' value='&
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+	if (strlen($dialplan_detail_group)> 0) {
+		
+	}
+	$i=0;
+	while($i<=999) {
+		
+		$i++;
+	}
+	
+	
+	
+	
+	
+
+	if ($action == "update") {
+		if ($dialplan_detail_tag == "condition") {
+			
+			
+			
+			
+			
+			
+			
+			if ($dialplan_detail_break == "on-true") {
+				
+			}
+			else {
+				
+			}
+			if ($dialplan_detail_break == "on-false") {
+				
+			}
+			else {
+				
+			}
+			if ($dialplan_detail_break == "always") {
+				
+			}
+			else {
+				
+			}
+			if ($dialplan_detail_break == "never") {
+				
+			}
+			else {
+				
+			}
+			
+			
+			
+			
+			
+		}
+
+		if ($dialplan_detail_tag == "action") {
+			
+			
+			
+			
+			
+			
+			
+			if ($dialplan_detail_inline == "true") {
+				
+			}
+			else {
+				
+			}
+			if ($dialplan_detail_inline == "false") {
+				
+			}
+			else {
+				
+			}
+			
+			
+			
+			
+			
+		}
+	}
+
+	
+	
+	
+	
+	if ($action == "update") {
+		
+	}
+	
+	
+	
+	
+	
+	
+	
+	
+
+
+
+?>

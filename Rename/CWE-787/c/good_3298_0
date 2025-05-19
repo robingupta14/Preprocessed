@@ -1,0 +1,1253 @@
+
+
+
+
+
+
+
+
+typedef struct struct_0 {
+    PNGDSPContext dsp;
+    AVCodecContext *avctx;
+
+    GetByteContext gb;
+    ThreadFrame previous_picture;
+    ThreadFrame last_picture;
+    ThreadFrame picture;
+
+    int state;
+    int width, height;
+    int cur_w, cur_h;
+    int last_w, last_h;
+    int x_offset, y_offset;
+    int last_x_offset, last_y_offset;
+    uint8_t dispose_op, blend_op;
+    uint8_t last_dispose_op;
+    int bit_depth;
+    int color_type;
+    int compression_type;
+    int interlace_type;
+    int filter_type;
+    int channels;
+    int bits_per_pixel;
+    int bpp;
+    int has_trns;
+    uint8_t transparent_color_be[6];
+
+    uint8_t *image_buf;
+    int image_linesize;
+    uint32_t palette[256];
+    uint8_t *crow_buf;
+    uint8_t *last_row;
+    unsigned int last_row_size;
+    uint8_t *tmp_row;
+    unsigned int tmp_row_size;
+    uint8_t *buffer;
+    int buffer_size;
+    int pass;
+    int crow_size;
+    int row_size;
+    int pass_row_size;
+    int y;
+    z_stream zstream;
+} PNGDecContext;
+
+
+static const uint8_t png_pass_mask[NB_PASSES] = {
+    0x01, 0x01, 0x11, 0x11, 0x55, 0x55, 0xff,
+};
+
+
+static const uint8_t png_pass_dsp_ymask[NB_PASSES] = {
+    0xff, 0xff, 0x0f, 0xff, 0x33, 0xff, 0x55,
+};
+
+
+static const uint8_t png_pass_dsp_mask[NB_PASSES] = {
+    0xff, 0x0f, 0xff, 0x33, 0xff, 0x55, 0xff
+};
+
+
+
+
+static void fn_1(uint8_t *dst, int var_9,
+                                   int var_9, int var_8,
+                                   int var_5, const uint8_t *src)
+{
+    int x, mask, dsp_mask, j, src_x, b, var_15;
+    uint8_t *d;
+    const uint8_t *var_46;
+
+    mask = png_pass_mask[var_8];
+    dsp_mask = png_pass_dsp_mask[var_8];
+
+    switch (var_9) {
+    case 1:
+        src_x = 0;
+        for (x = 0; x < var_9; x++) {
+            j = (x & 7);
+            if ((dsp_mask << j) & 0x80) {
+                b = (src[src_x >> 3] >> (7 - (src_x & 7))) & 1;
+                dst[x >> 3] &= 0xFF7F>>j;
+                dst[x >> 3] |= b << (7 - j);
+            }
+            if ((mask << j) & 0x80)
+                src_x++;
+        }
+        break;
+    case 2:
+        src_x = 0;
+        for (x = 0; x < var_9; x++) {
+            int var_9 = 2 * (x & 3);
+            j = (x & 7);
+            if ((dsp_mask << j) & 0x80) {
+                b = (src[src_x >> 2] >> (6 - 2*(src_x & 3))) & 3;
+                dst[x >> 2] &= 0xFF3F>>var_9;
+                dst[x >> 2] |= b << (6 - var_9);
+            }
+            if ((mask << j) & 0x80)
+                src_x++;
+        }
+        break;
+    case 4:
+        src_x = 0;
+        for (x = 0; x < var_9; x++) {
+            int var_9 = 4*(x&1);
+            j = (x & 7);
+            if ((dsp_mask << j) & 0x80) {
+                b = (src[src_x >> 1] >> (4 - 4*(src_x & 1))) & 15;
+                dst[x >> 1] &= 0xFF0F>>var_9;
+                dst[x >> 1] |= b << (4 - var_9);
+            }
+            if ((mask << j) & 0x80)
+                src_x++;
+        }
+        break;
+    default:
+        var_15 = var_9 >> 3;
+        d = dst;
+        var_46 = src;
+            for (x = 0; x < var_9; x++) {
+                j = x & 7;
+                if ((dsp_mask << j) & 0x80) {
+                    memcpy(d, var_46, var_15);
+                }
+                d += var_15;
+                if ((mask << j) & 0x80)
+                    var_46 += var_15;
+            }
+        break;
+    }
+}
+
+void fn_9(uint8_t *dst, uint8_t *src, uint8_t *top,
+                                 int var_15, int var_15)
+{
+    int i;
+    for (i = 0; i < var_15; i++) {
+        int a, b, c, p, pa, pb, pc;
+
+        a = dst[i - var_15];
+        b = top[i];
+        c = top[i - var_15];
+
+        p = b - c;
+        pc = a - c;
+
+        pa = abs(p);
+        pb = abs(pc);
+        pc = abs(p + pc);
+
+        if (pa <= pb && pa <= pc)
+            p = a;
+        else if (pb <= pc)
+            p = b;
+        else
+            p = c;
+        dst[i] = p + src[i];
+    }
+}
+
+static void fn_11(PNGDSPContext *dsp, uint8_t *dst, int var_15,
+                           uint8_t *src, uint8_t *last, int var_18, int var_15)
+{
+    int i, p, r, var_33, b, a;
+
+    switch (var_15) {
+    case PNG_FILTER_VALUE_NONE:
+        memcpy(dst, src, var_18);
+        break;
+    case PNG_FILTER_VALUE_SUB:
+        for (i = 0; i < var_15; i++)
+            dst[i] = src[i];
+        if (var_15 == 4) {
+            p = *(int *)dst;
+            for (; i < var_18; i += var_15) {
+                unsigned var_46 = *(int *)(src + i);
+                p = ((var_46 & 0x7f7f7f7f) + (p & 0x7f7f7f7f)) ^ ((var_46 ^ p) & 0x80808080);
+                *(int *)(dst + i) = p;
+            }
+        } else {
+
+            if (var_15 == 1) { { r = dst[0]; if (1 >= 2) var_33 = dst[1]; if (1 >= 3) b = dst[2]; if (1 >= 4) a = dst[3]; for (; i <= var_18 - 1; i += 1) { dst[i + 0] = r = ((r) + (src[i + 0])); if (1 == 1) continue; dst[i + 1] = var_33 = ((var_33) + (src[i + 1])); if (1 == 2) continue; dst[i + 2] = b = ((b) + (src[i + 2])); if (1 == 3) continue; dst[i + 3] = a = ((a) + (src[i + 3])); } } } else if (var_15 == 2) { { r = dst[0]; if (2 >= 2) var_33 = dst[1]; if (2 >= 3) b = dst[2]; if (2 >= 4) a = dst[3]; for (; i <= var_18 - 2; i += 2) { dst[i + 0] = r = ((r) + (src[i + 0])); if (2 == 1) continue; dst[i + 1] = var_33 = ((var_33) + (src[i + 1])); if (2 == 2) continue; dst[i + 2] = b = ((b) + (src[i + 2])); if (2 == 3) continue; dst[i + 3] = a = ((a) + (src[i + 3])); } } } else if (var_15 == 3) { { r = dst[0]; if (3 >= 2) var_33 = dst[1]; if (3 >= 3) b = dst[2]; if (3 >= 4) a = dst[3]; for (; i <= var_18 - 3; i += 3) { dst[i + 0] = r = ((r) + (src[i + 0])); if (3 == 1) continue; dst[i + 1] = var_33 = ((var_33) + (src[i + 1])); if (3 == 2) continue; dst[i + 2] = b = ((b) + (src[i + 2])); if (3 == 3) continue; dst[i + 3] = a = ((a) + (src[i + 3])); } } } else if (var_15 == 4) { { r = dst[0]; if (4 >= 2) var_33 = dst[1]; if (4 >= 3) b = dst[2]; if (4 >= 4) a = dst[3]; for (; i <= var_18 - 4; i += 4) { dst[i + 0] = r = ((r) + (src[i + 0])); if (4 == 1) continue; dst[i + 1] = var_33 = ((var_33) + (src[i + 1])); if (4 == 2) continue; dst[i + 2] = b = ((b) + (src[i + 2])); if (4 == 3) continue; dst[i + 3] = a = ((a) + (src[i + 3])); } } } for (; i < var_18; i++) { dst[i] = ((dst[i - var_15]) + (src[i])); };
+        }
+        break;
+    case PNG_FILTER_VALUE_UP:
+        dsp->add_bytes_l2(dst, src, last, var_18);
+        break;
+    case PNG_FILTER_VALUE_AVG:
+        for (i = 0; i < var_15; i++) {
+            p = (last[i] >> 1);
+            dst[i] = p + src[i];
+        }
+
+        if (var_15 == 1) { { r = dst[0]; if (1 >= 2) var_33 = dst[1]; if (1 >= 3) b = dst[2]; if (1 >= 4) a = dst[3]; for (; i <= var_18 - 1; i += 1) { dst[i + 0] = r = (((((r) + (last[i + 0])) >> 1) + (src[i + 0])) & 0xff); if (1 == 1) continue; dst[i + 1] = var_33 = (((((var_33) + (last[i + 1])) >> 1) + (src[i + 1])) & 0xff); if (1 == 2) continue; dst[i + 2] = b = (((((b) + (last[i + 2])) >> 1) + (src[i + 2])) & 0xff); if (1 == 3) continue; dst[i + 3] = a = (((((a) + (last[i + 3])) >> 1) + (src[i + 3])) & 0xff); } } } else if (var_15 == 2) { { r = dst[0]; if (2 >= 2) var_33 = dst[1]; if (2 >= 3) b = dst[2]; if (2 >= 4) a = dst[3]; for (; i <= var_18 - 2; i += 2) { dst[i + 0] = r = (((((r) + (last[i + 0])) >> 1) + (src[i + 0])) & 0xff); if (2 == 1) continue; dst[i + 1] = var_33 = (((((var_33) + (last[i + 1])) >> 1) + (src[i + 1])) & 0xff); if (2 == 2) continue; dst[i + 2] = b = (((((b) + (last[i + 2])) >> 1) + (src[i + 2])) & 0xff); if (2 == 3) continue; dst[i + 3] = a = (((((a) + (last[i + 3])) >> 1) + (src[i + 3])) & 0xff); } } } else if (var_15 == 3) { { r = dst[0]; if (3 >= 2) var_33 = dst[1]; if (3 >= 3) b = dst[2]; if (3 >= 4) a = dst[3]; for (; i <= var_18 - 3; i += 3) { dst[i + 0] = r = (((((r) + (last[i + 0])) >> 1) + (src[i + 0])) & 0xff); if (3 == 1) continue; dst[i + 1] = var_33 = (((((var_33) + (last[i + 1])) >> 1) + (src[i + 1])) & 0xff); if (3 == 2) continue; dst[i + 2] = b = (((((b) + (last[i + 2])) >> 1) + (src[i + 2])) & 0xff); if (3 == 3) continue; dst[i + 3] = a = (((((a) + (last[i + 3])) >> 1) + (src[i + 3])) & 0xff); } } } else if (var_15 == 4) { { r = dst[0]; if (4 >= 2) var_33 = dst[1]; if (4 >= 3) b = dst[2]; if (4 >= 4) a = dst[3]; for (; i <= var_18 - 4; i += 4) { dst[i + 0] = r = (((((r) + (last[i + 0])) >> 1) + (src[i + 0])) & 0xff); if (4 == 1) continue; dst[i + 1] = var_33 = (((((var_33) + (last[i + 1])) >> 1) + (src[i + 1])) & 0xff); if (4 == 2) continue; dst[i + 2] = b = (((((b) + (last[i + 2])) >> 1) + (src[i + 2])) & 0xff); if (4 == 3) continue; dst[i + 3] = a = (((((a) + (last[i + 3])) >> 1) + (src[i + 3])) & 0xff); } } } for (; i < var_18; i++) { dst[i] = (((((dst[i - var_15]) + (last[i])) >> 1) + (src[i])) & 0xff); };
+        break;
+    case PNG_FILTER_VALUE_PAETH:
+        for (i = 0; i < var_15; i++) {
+            p = last[i];
+            dst[i] = p + src[i];
+        }
+        if (var_15 > 2 && var_18 > 4) {
+
+
+            int var_15 = (var_15 & 3) ? var_18 - 3 : var_18;
+
+            if (var_15 > i) {
+                dsp->add_paeth_prediction(dst + i, src + i, last + i, var_18 - i, var_15);
+                i = var_15;
+            }
+        }
+        ff_add_png_paeth_prediction(dst + i, src + i, last + i, var_18 - i, var_15);
+        break;
+    }
+}
+
+static void fn_15(uint8_t *dst, int var_18, int var_18) { int i; for (i = 0; i < var_18; i += 3 + var_18) { int var_33 = dst [i + 1]; dst[i + 0] += var_33; dst[i + 2] += var_33; } }
+static void fn_17(uint16_t *dst, int var_18, int var_18) { int i; for (i = 0; i < var_18; i += 3 + var_18) { int var_33 = dst [i + 1]; dst[i + 0] += var_33; dst[i + 2] += var_33; } }
+
+
+static void fn_18(PNGDecContext *var_46)
+{
+    uint8_t *ptr, *last_row;
+    int got_line;
+
+    if (!var_46->interlace_type) {
+        ptr = var_46->image_buf + var_46->image_linesize * (var_46->y + var_46->y_offset) + var_46->x_offset * var_46->bpp;
+        if (var_46->y == 0)
+            last_row = var_46->last_row;
+        else
+            last_row = ptr - var_46->image_linesize;
+
+        png_filter_row(&var_46->dsp, ptr, var_46->crow_buf[0], var_46->crow_buf + 1,
+                       last_row, var_46->row_size, var_46->bpp);
+
+        if (var_46->filter_type == PNG_FILTER_TYPE_LOCO && var_46->y > 0) {
+            if (var_46->bit_depth == 16) {
+                deloco_rgb16((uint16_t *)(ptr - var_46->image_linesize), var_46->row_size / 2,
+                             var_46->color_type == PNG_COLOR_TYPE_RGB_ALPHA);
+            } else {
+                deloco_rgb8(ptr - var_46->image_linesize, var_46->row_size,
+                            var_46->color_type == PNG_COLOR_TYPE_RGB_ALPHA);
+            }
+        }
+        var_46->y++;
+        if (var_46->y == var_46->cur_h) {
+            var_46->state |= PNG_ALLIMAGE;
+            if (var_46->filter_type == PNG_FILTER_TYPE_LOCO) {
+                if (var_46->bit_depth == 16) {
+                    deloco_rgb16((uint16_t *)ptr, var_46->row_size / 2,
+                                 var_46->color_type == PNG_COLOR_TYPE_RGB_ALPHA);
+                } else {
+                    deloco_rgb8(ptr, var_46->row_size,
+                                var_46->color_type == PNG_COLOR_TYPE_RGB_ALPHA);
+                }
+            }
+        }
+    } else {
+        got_line = 0;
+        for (;;) {
+            ptr = var_46->image_buf + var_46->image_linesize * (var_46->y + var_46->y_offset) + var_46->x_offset * var_46->bpp;
+            if ((ff_png_pass_ymask[var_46->pass] << (var_46->y & 7)) & 0x80) {
+
+
+                if (got_line)
+                    break;
+                png_filter_row(&var_46->dsp, var_46->tmp_row, var_46->crow_buf[0], var_46->crow_buf + 1,
+                               var_46->last_row, var_46->pass_row_size, var_46->bpp);
+                FFSWAP(uint8_t *, var_46->last_row, var_46->tmp_row);
+                FFSWAP(unsigned int, var_46->last_row_size, var_46->tmp_row_size);
+                got_line = 1;
+            }
+            if ((png_pass_dsp_ymask[var_46->pass] << (var_46->y & 7)) & 0x80) {
+                png_put_interlaced_row(ptr, var_46->cur_w, var_46->bits_per_pixel, var_46->pass,
+                                       var_46->color_type, var_46->last_row);
+            }
+            var_46->y++;
+            if (var_46->y == var_46->cur_h) {
+                memset(var_46->last_row, 0, var_46->row_size);
+                for (;;) {
+                    if (var_46->pass == NB_PASSES - 1) {
+                        var_46->state |= PNG_ALLIMAGE;
+                        goto the_end;
+                    } else {
+                        var_46->pass++;
+                        var_46->y = 0;
+                        var_46->pass_row_size = ff_png_pass_row_size(var_46->pass,
+                                                                var_46->bits_per_pixel,
+                                                                var_46->cur_w);
+                        var_46->crow_size = var_46->pass_row_size + 1;
+                        if (var_46->pass_row_size != 0)
+                            break;
+
+                    }
+                }
+            }
+        }
+the_end:;
+    }
+}
+
+static int fn_19(PNGDecContext *var_46, int var_43)
+{
+    int ret;
+    var_46->zstream.avail_in = FFMIN(var_43, bytestream2_get_bytes_left(&var_46->gb));
+    var_46->zstream.next_in = (unsigned char *)var_46->gb.buffer;
+    bytestream2_skip(&var_46->gb, var_43);
+
+
+    while (var_46->zstream.avail_in > 0) {
+        ret = inflate(&var_46->zstream, Z_PARTIAL_FLUSH);
+        if (ret != Z_OK && ret != Z_STREAM_END) {
+            av_log(var_46->avctx, AV_LOG_ERROR, "inflate returned error %d\n", ret);
+            return AVERROR_EXTERNAL;
+        }
+        if (var_46->zstream.avail_out == 0) {
+            if (!(var_46->state & PNG_ALLIMAGE)) {
+                png_handle_row(var_46);
+            }
+            var_46->zstream.avail_out = var_46->crow_size;
+            var_46->zstream.next_out = var_46->crow_buf;
+        }
+        if (ret == Z_STREAM_END && var_46->zstream.avail_in > 0) {
+            av_log(NULL, AV_LOG_WARNING,
+                   "%d undecompressed bytes left in buffer\n", var_46->zstream.avail_in);
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static int fn_21(AVBPrint *bp, const uint8_t *var_28,
+                       const uint8_t *data_end)
+{
+    z_stream zstream;
+    unsigned char *buf;
+    unsigned buf_size;
+    int ret;
+
+    zstream.zalloc = ff_png_zalloc;
+    zstream.zfree = ff_png_zfree;
+    zstream.opaque = NULL;
+    if (inflateInit(&zstream) != Z_OK)
+        return AVERROR_EXTERNAL;
+    zstream.next_in = (unsigned char *)var_28;
+    zstream.avail_in = data_end - var_28;
+    av_bprint_init(bp, 0, -1);
+
+    while (zstream.avail_in > 0) {
+        av_bprint_get_buffer(bp, 2, &buf, &buf_size);
+        if (buf_size < 2) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
+        zstream.next_out = buf;
+        zstream.avail_out = buf_size - 1;
+        ret = inflate(&zstream, Z_PARTIAL_FLUSH);
+        if (ret != Z_OK && ret != Z_STREAM_END) {
+            ret = AVERROR_EXTERNAL;
+            goto fail;
+        }
+        bp->len += zstream.next_out - buf;
+        if (ret == Z_STREAM_END)
+            break;
+    }
+    inflateEnd(&zstream);
+    bp->str[bp->len] = 0;
+    return 0;
+
+fail:
+    inflateEnd(&zstream);
+    av_bprint_finalize(bp, NULL);
+    return ret;
+}
+
+static uint8_t *fn_23(const uint8_t *in, size_t var_26)
+{
+    size_t var_26 = 0, i;
+    uint8_t *out, *q;
+
+    for (i = 0; i < var_26; i++)
+        var_26 += in[i] >= 0x80;
+    if (var_26 == SIZE_MAX || var_26 > SIZE_MAX - var_26 - 1)
+        return NULL;
+    q = out = av_malloc(var_26 + var_26 + 1);
+    if (!out)
+        return NULL;
+    for (i = 0; i < var_26; i++) {
+        if (in[i] >= 0x80) {
+            *(q++) = 0xC0 | (in[i] >> 6);
+            *(q++) = 0x80 | (in[i] & 0x3F);
+        } else {
+            *(q++) = in[i];
+        }
+    }
+    *(q++) = 0;
+    return out;
+}
+
+static int fn_26(PNGDecContext *var_46, uint32_t var_43, int var_28,
+                             AVDictionary **dict)
+{
+    int ret, method;
+    const uint8_t *var_28 = var_46->gb.buffer;
+    const uint8_t *data_end = var_28 + var_43;
+    const uint8_t *keyword = var_28;
+    const uint8_t *keyword_end = memchr(keyword, 0, data_end - keyword);
+    uint8_t *kw_utf8 = NULL, *text, *txt_utf8 = NULL;
+    unsigned text_len;
+    AVBPrint bp;
+
+    if (!keyword_end)
+        return AVERROR_INVALIDDATA;
+    var_28 = keyword_end + 1;
+
+    if (var_28) {
+        if (var_28 == data_end)
+            return AVERROR_INVALIDDATA;
+        method = *(var_28++);
+        if (method)
+            return AVERROR_INVALIDDATA;
+        if ((ret = decode_zbuf(&bp, var_28, data_end)) < 0)
+            return ret;
+        text_len = bp.len;
+        av_bprint_finalize(&bp, (char **)&text);
+        if (!text)
+            return AVERROR(ENOMEM);
+    } else {
+        text = (uint8_t *)var_28;
+        text_len = data_end - text;
+    }
+
+    kw_utf8 = iso88591_to_utf8(keyword, keyword_end - keyword);
+    txt_utf8 = iso88591_to_utf8(text, text_len);
+    if (text != var_28)
+        av_free(text);
+    if (!(kw_utf8 && txt_utf8)) {
+        av_free(kw_utf8);
+        av_free(txt_utf8);
+        return AVERROR(ENOMEM);
+    }
+
+    av_dict_set(dict, kw_utf8, txt_utf8,
+                AV_DICT_DONT_STRDUP_KEY | AV_DICT_DONT_STRDUP_VAL);
+    return 0;
+}
+
+static int fn_28(AVCodecContext *avctx, PNGDecContext *var_46,
+                             uint32_t var_43)
+{
+    if (var_43 != 13)
+        return AVERROR_INVALIDDATA;
+
+    if (var_46->state & PNG_IDAT) {
+        av_log(avctx, AV_LOG_ERROR, "IHDR after IDAT\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    if (var_46->state & PNG_IHDR) {
+        av_log(avctx, AV_LOG_ERROR, "Multiple IHDR\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    var_46->width = var_46->cur_w = bytestream2_get_be32(&var_46->gb);
+    var_46->height = var_46->cur_h = bytestream2_get_be32(&var_46->gb);
+    if (av_image_check_size(var_46->width, var_46->height, 0, avctx)) {
+        var_46->cur_w = var_46->cur_h = var_46->width = var_46->height = 0;
+        av_log(avctx, AV_LOG_ERROR, "Invalid image size\n");
+        return AVERROR_INVALIDDATA;
+    }
+    var_46->bit_depth = bytestream2_get_byte(&var_46->gb);
+    var_46->color_type = bytestream2_get_byte(&var_46->gb);
+    var_46->compression_type = bytestream2_get_byte(&var_46->gb);
+    var_46->filter_type = bytestream2_get_byte(&var_46->gb);
+    var_46->interlace_type = bytestream2_get_byte(&var_46->gb);
+    bytestream2_skip(&var_46->gb, 4);
+    var_46->state |= PNG_IHDR;
+    if (avctx->debug & FF_DEBUG_PICT_INFO)
+        av_log(avctx, AV_LOG_DEBUG, "width=%d height=%d depth=%d color_type=%d "
+                "compression_type=%d filter_type=%d interlace_type=%d\n",
+                var_46->width, var_46->height, var_46->bit_depth, var_46->color_type,
+                var_46->compression_type, var_46->filter_type, var_46->interlace_type);
+
+    return 0;
+}
+
+static int fn_29(AVCodecContext *avctx, PNGDecContext *var_46)
+{
+    if (var_46->state & PNG_IDAT) {
+        av_log(avctx, AV_LOG_ERROR, "pHYs after IDAT\n");
+        return AVERROR_INVALIDDATA;
+    }
+    avctx->sample_aspect_ratio.num = bytestream2_get_be32(&var_46->gb);
+    avctx->sample_aspect_ratio.den = bytestream2_get_be32(&var_46->gb);
+    if (avctx->sample_aspect_ratio.num < 0 || avctx->sample_aspect_ratio.den < 0)
+        avctx->sample_aspect_ratio = (AVRational){ 0, 1 };
+    bytestream2_skip(&var_46->gb, 1);
+    bytestream2_skip(&var_46->gb, 4);
+
+    return 0;
+}
+
+static int fn_30(AVCodecContext *avctx, PNGDecContext *var_46,
+                             uint32_t var_43, AVFrame *p)
+{
+    int ret;
+    size_t var_44 = var_46->bit_depth > 8 ? 2 : 1;
+
+    if (!(var_46->state & PNG_IHDR)) {
+        av_log(avctx, AV_LOG_ERROR, "IDAT without IHDR\n");
+        return AVERROR_INVALIDDATA;
+    }
+    if (!(var_46->state & PNG_IDAT)) {
+
+        avctx->width = var_46->width;
+        avctx->height = var_46->height;
+
+        var_46->channels = ff_png_get_nb_channels(var_46->color_type);
+        var_46->bits_per_pixel = var_46->bit_depth * var_46->channels;
+        var_46->bpp = (var_46->bits_per_pixel + 7) >> 3;
+        var_46->row_size = (var_46->cur_w * var_46->bits_per_pixel + 7) >> 3;
+
+        if ((var_46->bit_depth == 2 || var_46->bit_depth == 4 || var_46->bit_depth == 8) &&
+                var_46->color_type == PNG_COLOR_TYPE_RGB) {
+            avctx->pix_fmt = AV_PIX_FMT_RGB24;
+        } else if ((var_46->bit_depth == 2 || var_46->bit_depth == 4 || var_46->bit_depth == 8) &&
+                var_46->color_type == PNG_COLOR_TYPE_RGB_ALPHA) {
+            avctx->pix_fmt = AV_PIX_FMT_RGBA;
+        } else if ((var_46->bit_depth == 2 || var_46->bit_depth == 4 || var_46->bit_depth == 8) &&
+                var_46->color_type == PNG_COLOR_TYPE_GRAY) {
+            avctx->pix_fmt = AV_PIX_FMT_GRAY8;
+        } else if (var_46->bit_depth == 16 &&
+                var_46->color_type == PNG_COLOR_TYPE_GRAY) {
+            avctx->pix_fmt = AV_PIX_FMT_GRAY16BE;
+        } else if (var_46->bit_depth == 16 &&
+                var_46->color_type == PNG_COLOR_TYPE_RGB) {
+            avctx->pix_fmt = AV_PIX_FMT_RGB48BE;
+        } else if (var_46->bit_depth == 16 &&
+                var_46->color_type == PNG_COLOR_TYPE_RGB_ALPHA) {
+            avctx->pix_fmt = AV_PIX_FMT_RGBA64BE;
+        } else if ((var_46->bits_per_pixel == 1 || var_46->bits_per_pixel == 2 || var_46->bits_per_pixel == 4 || var_46->bits_per_pixel == 8) &&
+                var_46->color_type == PNG_COLOR_TYPE_PALETTE) {
+            avctx->pix_fmt = AV_PIX_FMT_PAL8;
+        } else if (var_46->bit_depth == 1 && var_46->bits_per_pixel == 1 && avctx->codec_id != AV_CODEC_ID_APNG) {
+            avctx->pix_fmt = AV_PIX_FMT_MONOBLACK;
+        } else if (var_46->bit_depth == 8 &&
+                var_46->color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
+            avctx->pix_fmt = AV_PIX_FMT_YA8;
+        } else if (var_46->bit_depth == 16 &&
+                var_46->color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
+            avctx->pix_fmt = AV_PIX_FMT_YA16BE;
+        } else {
+            av_log(avctx, AV_LOG_ERROR, "unsupported bit depth %d "
+                    "and color type %d\n",
+                    var_46->bit_depth, var_46->color_type);
+            return AVERROR_INVALIDDATA;
+        }
+
+        if (var_46->has_trns && var_46->color_type != PNG_COLOR_TYPE_PALETTE) {
+            switch (avctx->pix_fmt) {
+            case AV_PIX_FMT_RGB24:
+                avctx->pix_fmt = AV_PIX_FMT_RGBA;
+                break;
+
+            case AV_PIX_FMT_RGB48BE:
+                avctx->pix_fmt = AV_PIX_FMT_RGBA64BE;
+                break;
+
+            case AV_PIX_FMT_GRAY8:
+                avctx->pix_fmt = AV_PIX_FMT_YA8;
+                break;
+
+            case AV_PIX_FMT_GRAY16BE:
+                avctx->pix_fmt = AV_PIX_FMT_YA16BE;
+                break;
+
+            default:
+                avpriv_request_sample(avctx, "bit depth %d "
+                        "and color type %d with TRNS",
+                        var_46->bit_depth, var_46->color_type);
+                return AVERROR_INVALIDDATA;
+            }
+
+            var_46->bpp += var_44;
+        }
+
+        if ((ret = ff_thread_get_buffer(avctx, &var_46->picture, AV_GET_BUFFER_FLAG_REF)) < 0)
+            return ret;
+        if (avctx->codec_id == AV_CODEC_ID_APNG && var_46->last_dispose_op != APNG_DISPOSE_OP_PREVIOUS) {
+            ff_thread_release_buffer(avctx, &var_46->previous_picture);
+            if ((ret = ff_thread_get_buffer(avctx, &var_46->previous_picture, AV_GET_BUFFER_FLAG_REF)) < 0)
+                return ret;
+        }
+        ff_thread_finish_setup(avctx);
+
+        p->pict_type = AV_PICTURE_TYPE_I;
+        p->key_frame = 1;
+        p->interlaced_frame = !!var_46->interlace_type;
+
+
+        if (!var_46->interlace_type) {
+            var_46->crow_size = var_46->row_size + 1;
+        } else {
+            var_46->pass = 0;
+            var_46->pass_row_size = ff_png_pass_row_size(var_46->pass,
+                    var_46->bits_per_pixel,
+                    var_46->cur_w);
+            var_46->crow_size = var_46->pass_row_size + 1;
+        }
+        ff_dlog(avctx, "row_size=%d crow_size =%d\n",
+                var_46->row_size, var_46->crow_size);
+        var_46->image_buf = p->data[0];
+        var_46->image_linesize = p->linesize[0];
+
+        if (avctx->pix_fmt == AV_PIX_FMT_PAL8)
+            memcpy(p->data[1], var_46->palette, 256 * sizeof(uint32_t));
+
+        av_fast_padded_mallocz(&var_46->last_row, &var_46->last_row_size, var_46->row_size);
+        if (!var_46->last_row)
+            return AVERROR_INVALIDDATA;
+        if (var_46->interlace_type ||
+                var_46->color_type == PNG_COLOR_TYPE_RGB_ALPHA) {
+            av_fast_padded_malloc(&var_46->tmp_row, &var_46->tmp_row_size, var_46->row_size);
+            if (!var_46->tmp_row)
+                return AVERROR_INVALIDDATA;
+        }
+
+        av_fast_padded_malloc(&var_46->buffer, &var_46->buffer_size, var_46->row_size + 16);
+        if (!var_46->buffer)
+            return AVERROR(ENOMEM);
+
+
+        var_46->crow_buf = var_46->buffer + 15;
+        var_46->zstream.avail_out = var_46->crow_size;
+        var_46->zstream.next_out = var_46->crow_buf;
+    }
+
+    var_46->state |= PNG_IDAT;
+
+
+    if (var_46->has_trns && var_46->color_type != PNG_COLOR_TYPE_PALETTE)
+        var_46->bpp -= var_44;
+
+    ret = png_decode_idat(var_46, var_43);
+
+    if (var_46->has_trns && var_46->color_type != PNG_COLOR_TYPE_PALETTE)
+        var_46->bpp += var_44;
+
+    if (ret < 0)
+        return ret;
+
+    bytestream2_skip(&var_46->gb, 4);
+
+    return 0;
+}
+
+static int fn_32(AVCodecContext *avctx, PNGDecContext *var_46,
+                             uint32_t var_43)
+{
+    int n, i, r, var_33, b;
+
+    if ((var_43 % 3) != 0 || var_43 > 768)
+        return AVERROR_INVALIDDATA;
+
+    n = var_43 / 3;
+    for (i = 0; i < n; i++) {
+        r = bytestream2_get_byte(&var_46->gb);
+        var_33 = bytestream2_get_byte(&var_46->gb);
+        b = bytestream2_get_byte(&var_46->gb);
+        var_46->palette[i] = (0xFFU << 24) | (r << 16) | (var_33 << 8) | b;
+    }
+    for (; i < 256; i++)
+        var_46->palette[i] = (0xFFU << 24);
+    var_46->state |= PNG_PLTE;
+    bytestream2_skip(&var_46->gb, 4);
+
+    return 0;
+}
+
+static int fn_33(AVCodecContext *avctx, PNGDecContext *var_46,
+                             uint32_t var_43)
+{
+    int v, i;
+
+    if (var_46->color_type == PNG_COLOR_TYPE_PALETTE) {
+        if (var_43 > 256 || !(var_46->state & PNG_PLTE))
+            return AVERROR_INVALIDDATA;
+
+        for (i = 0; i < var_43; i++) {
+            v = bytestream2_get_byte(&var_46->gb);
+            var_46->palette[i] = (var_46->palette[i] & 0x00ffffff) | (v << 24);
+        }
+    } else if (var_46->color_type == PNG_COLOR_TYPE_GRAY || var_46->color_type == PNG_COLOR_TYPE_RGB) {
+        if ((var_46->color_type == PNG_COLOR_TYPE_GRAY && var_43 != 2) ||
+            (var_46->color_type == PNG_COLOR_TYPE_RGB && var_43 != 6))
+            return AVERROR_INVALIDDATA;
+
+        for (i = 0; i < var_43 / 2; i++) {
+
+            v = av_mod_uintp2(bytestream2_get_be16(&var_46->gb), var_46->bit_depth);
+
+            if (var_46->bit_depth > 8)
+                AV_WB16(&var_46->transparent_color_be[2 * i], v);
+            else
+                var_46->transparent_color_be[i] = v;
+        }
+    } else {
+        return AVERROR_INVALIDDATA;
+    }
+
+    bytestream2_skip(&var_46->gb, 4);
+    var_46->has_trns = 1;
+
+    return 0;
+}
+
+static void fn_34(PNGDecContext *var_46, AVFrame *p)
+{
+    if (var_46->bits_per_pixel == 1 && var_46->color_type == PNG_COLOR_TYPE_PALETTE) {
+        int i, j, k;
+        uint8_t *pd = p->data[0];
+        for (j = 0; j < var_46->height; j++) {
+            i = var_46->width / 8;
+            for (k = 7; k >= 1; k--)
+                if ((var_46->width&7) >= k)
+                    pd[8*i + k - 1] = (pd[i]>>8-k) & 1;
+            for (i--; i >= 0; i--) {
+                pd[8*i + 7]= pd[i] & 1;
+                pd[8*i + 6]= (pd[i]>>1) & 1;
+                pd[8*i + 5]= (pd[i]>>2) & 1;
+                pd[8*i + 4]= (pd[i]>>3) & 1;
+                pd[8*i + 3]= (pd[i]>>4) & 1;
+                pd[8*i + 2]= (pd[i]>>5) & 1;
+                pd[8*i + 1]= (pd[i]>>6) & 1;
+                pd[8*i + 0]= pd[i]>>7;
+            }
+            pd += var_46->image_linesize;
+        }
+    } else if (var_46->bits_per_pixel == 2) {
+        int i, j;
+        uint8_t *pd = p->data[0];
+        for (j = 0; j < var_46->height; j++) {
+            i = var_46->width / 4;
+            if (var_46->color_type == PNG_COLOR_TYPE_PALETTE) {
+                if ((var_46->width&3) >= 3) pd[4*i + 2]= (pd[i] >> 2) & 3;
+                if ((var_46->width&3) >= 2) pd[4*i + 1]= (pd[i] >> 4) & 3;
+                if ((var_46->width&3) >= 1) pd[4*i + 0]= pd[i] >> 6;
+                for (i--; i >= 0; i--) {
+                    pd[4*i + 3]= pd[i] & 3;
+                    pd[4*i + 2]= (pd[i]>>2) & 3;
+                    pd[4*i + 1]= (pd[i]>>4) & 3;
+                    pd[4*i + 0]= pd[i]>>6;
+                }
+            } else {
+                if ((var_46->width&3) >= 3) pd[4*i + 2]= ((pd[i]>>2) & 3)*0x55;
+                if ((var_46->width&3) >= 2) pd[4*i + 1]= ((pd[i]>>4) & 3)*0x55;
+                if ((var_46->width&3) >= 1) pd[4*i + 0]= ( pd[i]>>6 )*0x55;
+                for (i--; i >= 0; i--) {
+                    pd[4*i + 3]= ( pd[i] & 3)*0x55;
+                    pd[4*i + 2]= ((pd[i]>>2) & 3)*0x55;
+                    pd[4*i + 1]= ((pd[i]>>4) & 3)*0x55;
+                    pd[4*i + 0]= ( pd[i]>>6 )*0x55;
+                }
+            }
+            pd += var_46->image_linesize;
+        }
+    } else if (var_46->bits_per_pixel == 4) {
+        int i, j;
+        uint8_t *pd = p->data[0];
+        for (j = 0; j < var_46->height; j++) {
+            i = var_46->width/2;
+            if (var_46->color_type == PNG_COLOR_TYPE_PALETTE) {
+                if (var_46->width&1) pd[2*i+0]= pd[i]>>4;
+                for (i--; i >= 0; i--) {
+                    pd[2*i + 1] = pd[i] & 15;
+                    pd[2*i + 0] = pd[i] >> 4;
+                }
+            } else {
+                if (var_46->width & 1) pd[2*i + 0]= (pd[i] >> 4) * 0x11;
+                for (i--; i >= 0; i--) {
+                    pd[2*i + 1] = (pd[i] & 15) * 0x11;
+                    pd[2*i + 0] = (pd[i] >> 4) * 0x11;
+                }
+            }
+            pd += var_46->image_linesize;
+        }
+    }
+}
+
+static int fn_35(AVCodecContext *avctx, PNGDecContext *var_46,
+                             uint32_t var_43)
+{
+    uint32_t sequence_number;
+    int cur_w, cur_h, x_offset, y_offset, dispose_op, blend_op;
+
+    if (var_43 != 26)
+        return AVERROR_INVALIDDATA;
+
+    if (!(var_46->state & PNG_IHDR)) {
+        av_log(avctx, AV_LOG_ERROR, "fctl before IHDR\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    var_46->last_w = var_46->cur_w;
+    var_46->last_h = var_46->cur_h;
+    var_46->last_x_offset = var_46->x_offset;
+    var_46->last_y_offset = var_46->y_offset;
+    var_46->last_dispose_op = var_46->dispose_op;
+
+    sequence_number = bytestream2_get_be32(&var_46->gb);
+    cur_w = bytestream2_get_be32(&var_46->gb);
+    cur_h = bytestream2_get_be32(&var_46->gb);
+    x_offset = bytestream2_get_be32(&var_46->gb);
+    y_offset = bytestream2_get_be32(&var_46->gb);
+    bytestream2_skip(&var_46->gb, 4);
+    dispose_op = bytestream2_get_byte(&var_46->gb);
+    blend_op = bytestream2_get_byte(&var_46->gb);
+    bytestream2_skip(&var_46->gb, 4);
+
+    if (sequence_number == 0 &&
+        (cur_w != var_46->width ||
+         cur_h != var_46->height ||
+         x_offset != 0 ||
+         y_offset != 0) ||
+        cur_w <= 0 || cur_h <= 0 ||
+        x_offset < 0 || y_offset < 0 ||
+        cur_w > var_46->width - x_offset|| cur_h > var_46->height - y_offset)
+            return AVERROR_INVALIDDATA;
+
+    if (blend_op != APNG_BLEND_OP_OVER && blend_op != APNG_BLEND_OP_SOURCE) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid blend_op %d\n", blend_op);
+        return AVERROR_INVALIDDATA;
+    }
+
+    if ((sequence_number == 0 || !var_46->previous_picture.f->data[0]) &&
+        dispose_op == APNG_DISPOSE_OP_PREVIOUS) {
+
+
+        dispose_op = APNG_DISPOSE_OP_BACKGROUND;
+    }
+
+    if (blend_op == APNG_BLEND_OP_OVER && !var_46->has_trns && (
+            avctx->pix_fmt == AV_PIX_FMT_RGB24 ||
+            avctx->pix_fmt == AV_PIX_FMT_RGB48BE ||
+            avctx->pix_fmt == AV_PIX_FMT_PAL8 ||
+            avctx->pix_fmt == AV_PIX_FMT_GRAY8 ||
+            avctx->pix_fmt == AV_PIX_FMT_GRAY16BE ||
+            avctx->pix_fmt == AV_PIX_FMT_MONOBLACK
+        )) {
+
+        blend_op = APNG_BLEND_OP_SOURCE;
+    }
+
+    var_46->cur_w = cur_w;
+    var_46->cur_h = cur_h;
+    var_46->x_offset = x_offset;
+    var_46->y_offset = y_offset;
+    var_46->dispose_op = dispose_op;
+    var_46->blend_op = blend_op;
+
+    return 0;
+}
+
+static void fn_36(PNGDecContext *var_46, AVFrame *p)
+{
+    int i, j;
+    uint8_t *pd = p->data[0];
+    uint8_t *pd_last = var_46->last_picture.f->data[0];
+    int var_38 = FFMIN(av_image_get_linesize(p->format, var_46->width, 0), var_46->width * var_46->bpp);
+
+    ff_thread_await_progress(&var_46->last_picture, INT_MAX, 0);
+    for (j = 0; j < var_46->height; j++) {
+        for (i = 0; i < var_38; i++)
+            pd[i] += pd_last[i];
+        pd += var_46->image_linesize;
+        pd_last += var_46->image_linesize;
+    }
+}
+
+
+
+
+
+static int fn_38(AVCodecContext *avctx, PNGDecContext *var_46,
+                               AVFrame *p)
+{
+    size_t x, y;
+    uint8_t *buffer;
+
+    if (var_46->blend_op == APNG_BLEND_OP_OVER &&
+        avctx->pix_fmt != AV_PIX_FMT_RGBA &&
+        avctx->pix_fmt != AV_PIX_FMT_GRAY8A &&
+        avctx->pix_fmt != AV_PIX_FMT_PAL8) {
+        avpriv_request_sample(avctx, "Blending with pixel format %s",
+                              av_get_pix_fmt_name(avctx->pix_fmt));
+        return AVERROR_PATCHWELCOME;
+    }
+
+    buffer = av_malloc_array(var_46->image_linesize, var_46->height);
+    if (!buffer)
+        return AVERROR(ENOMEM);
+
+
+
+    if (var_46->last_dispose_op != APNG_DISPOSE_OP_PREVIOUS) {
+        ff_thread_await_progress(&var_46->last_picture, INT_MAX, 0);
+        memcpy(buffer, var_46->last_picture.f->data[0], var_46->image_linesize * var_46->height);
+
+        if (var_46->last_dispose_op == APNG_DISPOSE_OP_BACKGROUND)
+            for (y = var_46->last_y_offset; y < var_46->last_y_offset + var_46->last_h; ++y)
+                memset(buffer + var_46->image_linesize * y + var_46->bpp * var_46->last_x_offset, 0, var_46->bpp * var_46->last_w);
+
+        memcpy(var_46->previous_picture.f->data[0], buffer, var_46->image_linesize * var_46->height);
+        ff_thread_report_progress(&var_46->previous_picture, INT_MAX, 0);
+    } else {
+        ff_thread_await_progress(&var_46->previous_picture, INT_MAX, 0);
+        memcpy(buffer, var_46->previous_picture.f->data[0], var_46->image_linesize * var_46->height);
+    }
+
+
+    if (var_46->blend_op == APNG_BLEND_OP_SOURCE) {
+        for (y = var_46->y_offset; y < var_46->y_offset + var_46->cur_h; ++y) {
+            size_t var_40 = var_46->image_linesize * y + var_46->bpp * var_46->x_offset;
+            memcpy(buffer + var_40, p->data[0] + var_40, var_46->bpp * var_46->cur_w);
+        }
+    } else {
+        for (y = var_46->y_offset; y < var_46->y_offset + var_46->cur_h; ++y) {
+            uint8_t *foreground = p->data[0] + var_46->image_linesize * y + var_46->bpp * var_46->x_offset;
+            uint8_t *background = buffer + var_46->image_linesize * y + var_46->bpp * var_46->x_offset;
+            for (x = var_46->x_offset; x < var_46->x_offset + var_46->cur_w; ++x, foreground += var_46->bpp, background += var_46->bpp) {
+                size_t b;
+                uint8_t foreground_alpha, background_alpha, output_alpha;
+                uint8_t output[10];
+
+
+
+
+
+                switch (avctx->pix_fmt) {
+                case AV_PIX_FMT_RGBA:
+                    foreground_alpha = foreground[3];
+                    background_alpha = background[3];
+                    break;
+
+                case AV_PIX_FMT_GRAY8A:
+                    foreground_alpha = foreground[1];
+                    background_alpha = background[1];
+                    break;
+
+                case AV_PIX_FMT_PAL8:
+                    foreground_alpha = var_46->palette[foreground[0]] >> 24;
+                    background_alpha = var_46->palette[background[0]] >> 24;
+                    break;
+                }
+
+                if (foreground_alpha == 0)
+                    continue;
+
+                if (foreground_alpha == 255) {
+                    memcpy(background, foreground, var_46->bpp);
+                    continue;
+                }
+
+                if (avctx->pix_fmt == AV_PIX_FMT_PAL8) {
+
+                    avpriv_request_sample(avctx, "Alpha blending palette samples");
+                    background[0] = foreground[0];
+                    continue;
+                }
+
+                output_alpha = foreground_alpha + (((((255 - foreground_alpha) * background_alpha) + 128) * 257) >> 16);
+
+                av_assert0(var_46->bpp <= 10);
+
+                for (b = 0; b < var_46->bpp - 1; ++b) {
+                    if (output_alpha == 0) {
+                        output[b] = 0;
+                    } else if (background_alpha == 255) {
+                        output[b] = ((((foreground_alpha * foreground[b] + (255 - foreground_alpha) * background[b]) + 128) * 257) >> 16);
+                    } else {
+                        output[b] = (255 * foreground_alpha * foreground[b] + (255 - foreground_alpha) * background_alpha * background[b]) / (255 * output_alpha);
+                    }
+                }
+                output[b] = output_alpha;
+                memcpy(background, output, var_46->bpp);
+            }
+        }
+    }
+
+
+    memcpy(p->data[0], buffer, var_46->image_linesize * var_46->height);
+    av_free(buffer);
+
+    return 0;
+}
+
+static int fn_40(AVCodecContext *avctx, PNGDecContext *var_46,
+                               AVFrame *p, AVPacket *avpkt)
+{
+    AVDictionary *metadata = NULL;
+    uint32_t tag, var_43;
+    int var_42 = 0;
+    int ret;
+
+    for (;;) {
+        var_43 = bytestream2_get_bytes_left(&var_46->gb);
+        if (var_43 <= 0) {
+
+            if (avctx->codec_id == AV_CODEC_ID_PNG &&
+                avctx->skip_frame == AVDISCARD_ALL) {
+                av_frame_set_metadata(p, metadata);
+                return 0;
+            }
+
+            if (CONFIG_APNG_DECODER && avctx->codec_id == AV_CODEC_ID_APNG && var_43 == 0) {
+                if (!(var_46->state & PNG_IDAT))
+                    return 0;
+                else
+                    goto exit_loop;
+            }
+            av_log(avctx, AV_LOG_ERROR, "%d bytes left\n", var_43);
+            if ( var_46->state & PNG_ALLIMAGE
+                && avctx->strict_std_compliance <= FF_COMPLIANCE_NORMAL)
+                goto exit_loop;
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
+        }
+
+        var_43 = bytestream2_get_be32(&var_46->gb);
+        if (var_43 > 0x7fffffff || var_43 > bytestream2_get_bytes_left(&var_46->gb)) {
+            av_log(avctx, AV_LOG_ERROR, "chunk too big\n");
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
+        }
+        tag = bytestream2_get_le32(&var_46->gb);
+        if (avctx->debug & FF_DEBUG_STARTCODE)
+            av_log(avctx, AV_LOG_DEBUG, "png: tag=%c%c%c%c length=%u\n",
+                (tag & 0xff),
+                ((tag >> 8) & 0xff),
+                ((tag >> 16) & 0xff),
+                ((tag >> 24) & 0xff), var_43);
+
+        if (avctx->codec_id == AV_CODEC_ID_PNG &&
+            avctx->skip_frame == AVDISCARD_ALL) {
+            switch(tag) {
+            case MKTAG('I', 'H', 'D', 'R'):
+            case MKTAG('p', 'H', 'Y', 's'):
+            case MKTAG('t', 'E', 'X', 't'):
+            case MKTAG('I', 'D', 'A', 'T'):
+            case MKTAG('t', 'R', 'N', 'S'):
+                break;
+            default:
+                goto skip_tag;
+            }
+        }
+
+        switch (tag) {
+        case MKTAG('I', 'H', 'D', 'R'):
+            if ((ret = decode_ihdr_chunk(avctx, var_46, var_43)) < 0)
+                goto fail;
+            break;
+        case MKTAG('p', 'H', 'Y', 's'):
+            if ((ret = decode_phys_chunk(avctx, var_46)) < 0)
+                goto fail;
+            break;
+        case MKTAG('f', 'c', 'T', 'L'):
+            if (!CONFIG_APNG_DECODER || avctx->codec_id != AV_CODEC_ID_APNG)
+                goto skip_tag;
+            if ((ret = decode_fctl_chunk(avctx, var_46, var_43)) < 0)
+                goto fail;
+            var_42 = 1;
+            break;
+        case MKTAG('f', 'd', 'A', 'T'):
+            if (!CONFIG_APNG_DECODER || avctx->codec_id != AV_CODEC_ID_APNG)
+                goto skip_tag;
+            if (!var_42) {
+                ret = AVERROR_INVALIDDATA;
+                goto fail;
+            }
+            bytestream2_get_be32(&var_46->gb);
+            var_43 -= 4;
+
+        case MKTAG('I', 'D', 'A', 'T'):
+            if (CONFIG_APNG_DECODER && avctx->codec_id == AV_CODEC_ID_APNG && !var_42)
+                goto skip_tag;
+            if ((ret = decode_idat_chunk(avctx, var_46, var_43, p)) < 0)
+                goto fail;
+            break;
+        case MKTAG('P', 'L', 'T', 'E'):
+            if (decode_plte_chunk(avctx, var_46, var_43) < 0)
+                goto skip_tag;
+            break;
+        case MKTAG('t', 'R', 'N', 'S'):
+            if (decode_trns_chunk(avctx, var_46, var_43) < 0)
+                goto skip_tag;
+            break;
+        case MKTAG('t', 'E', 'X', 't'):
+            if (decode_text_chunk(var_46, var_43, 0, &metadata) < 0)
+                av_log(avctx, AV_LOG_WARNING, "Broken tEXt chunk\n");
+            bytestream2_skip(&var_46->gb, var_43 + 4);
+            break;
+        case MKTAG('z', 'T', 'X', 't'):
+            if (decode_text_chunk(var_46, var_43, 1, &metadata) < 0)
+                av_log(avctx, AV_LOG_WARNING, "Broken zTXt chunk\n");
+            bytestream2_skip(&var_46->gb, var_43 + 4);
+            break;
+        case MKTAG('s', 'T', 'E', 'R'): {
+            int var_43 = bytestream2_get_byte(&var_46->gb);
+            AVStereo3D *stereo3d = av_stereo3d_create_side_data(p);
+            if (!stereo3d)
+                goto fail;
+
+            if (var_43 == 0 || var_43 == 1) {
+                stereo3d->type = AV_STEREO3D_SIDEBYSIDE;
+                stereo3d->flags = var_43 ? 0 : AV_STEREO3D_FLAG_INVERT;
+            } else {
+                 av_log(avctx, AV_LOG_WARNING,
+                        "Unknown value in sTER chunk (%d)\n", var_43);
+            }
+            bytestream2_skip(&var_46->gb, 4);
+            break;
+        }
+        case MKTAG('I', 'E', 'N', 'D'):
+            if (!(var_46->state & PNG_ALLIMAGE))
+                av_log(avctx, AV_LOG_ERROR, "IEND without all image\n");
+            if (!(var_46->state & (PNG_ALLIMAGE|PNG_IDAT))) {
+                ret = AVERROR_INVALIDDATA;
+                goto fail;
+            }
+            bytestream2_skip(&var_46->gb, 4);
+            goto exit_loop;
+        default:
+
+skip_tag:
+            bytestream2_skip(&var_46->gb, var_43 + 4);
+            break;
+        }
+    }
+exit_loop:
+    if (avctx->codec_id == AV_CODEC_ID_PNG &&
+        avctx->skip_frame == AVDISCARD_ALL) {
+        av_frame_set_metadata(p, metadata);
+        return 0;
+    }
+
+    if (var_46->bits_per_pixel <= 4)
+        handle_small_bpp(var_46, p);
+
+
+    if (var_46->has_trns && var_46->color_type != PNG_COLOR_TYPE_PALETTE) {
+        size_t var_44 = var_46->bit_depth > 8 ? 2 : 1;
+        size_t var_44 = var_46->bpp - var_44;
+        unsigned x, y;
+
+        for (y = 0; y < var_46->height; ++y) {
+            uint8_t *row = &var_46->image_buf[var_46->image_linesize * y];
+
+
+            for (x = var_46->width; x > 0; --x) {
+                uint8_t *pixel = &row[var_46->bpp * (x - 1)];
+                memmove(pixel, &row[var_44 * (x - 1)], var_44);
+
+                if (!memcmp(pixel, var_46->transparent_color_be, var_44)) {
+                    memset(&pixel[var_44], 0, var_44);
+                } else {
+                    memset(&pixel[var_44], 0xff, var_44);
+                }
+            }
+        }
+    }
+
+
+    if (var_46->last_picture.f->data[0]) {
+        if ( !(avpkt->flags & AV_PKT_FLAG_KEY) && avctx->codec_tag != AV_RL32("MPNG")
+            && var_46->last_picture.f->width == p->width
+            && var_46->last_picture.f->height== p->height
+            && var_46->last_picture.f->format== p->format
+         ) {
+            if (CONFIG_PNG_DECODER && avctx->codec_id != AV_CODEC_ID_APNG)
+                handle_p_frame_png(var_46, p);
+            else if (CONFIG_APNG_DECODER &&
+                     avctx->codec_id == AV_CODEC_ID_APNG &&
+                     (ret = handle_p_frame_apng(avctx, var_46, p)) < 0)
+                goto fail;
+        }
+    }
+    ff_thread_report_progress(&var_46->picture, INT_MAX, 0);
+    ff_thread_report_progress(&var_46->previous_picture, INT_MAX, 0);
+
+    av_frame_set_metadata(p, metadata);
+    metadata = NULL;
+    return 0;
+
+fail:
+    av_dict_free(&metadata);
+    ff_thread_report_progress(&var_46->picture, INT_MAX, 0);
+    ff_thread_report_progress(&var_46->previous_picture, INT_MAX, 0);
+    return ret;
+}
+
+static av_cold int fn_44(AVCodecContext *avctx)
+{
+    PNGDecContext *var_46 = avctx->priv_data;
+
+    avctx->color_range = AVCOL_RANGE_JPEG;
+
+    var_46->avctx = avctx;
+    var_46->previous_picture.f = av_frame_alloc();
+    var_46->last_picture.f = av_frame_alloc();
+    var_46->picture.f = av_frame_alloc();
+    if (!var_46->previous_picture.f || !var_46->last_picture.f || !var_46->picture.f) {
+        av_frame_free(&var_46->previous_picture.f);
+        av_frame_free(&var_46->last_picture.f);
+        av_frame_free(&var_46->picture.f);
+        return AVERROR(ENOMEM);
+    }
+
+    if (!avctx->internal->is_copy) {
+        avctx->internal->allocate_progress = 1;
+        ff_pngdsp_init(&var_46->dsp);
+    }
+
+    return 0;
+}
+
+static av_cold int fn_45(AVCodecContext *avctx)
+{
+    PNGDecContext *var_46 = avctx->priv_data;
+
+    ff_thread_release_buffer(avctx, &var_46->previous_picture);
+    av_frame_free(&var_46->previous_picture.f);
+    ff_thread_release_buffer(avctx, &var_46->last_picture);
+    av_frame_free(&var_46->last_picture.f);
+    ff_thread_release_buffer(avctx, &var_46->picture);
+    av_frame_free(&var_46->picture.f);
+    av_freep(&var_46->buffer);
+    var_46->buffer_size = 0;
+    av_freep(&var_46->last_row);
+    var_46->last_row_size = 0;
+    av_freep(&var_46->tmp_row);
+    var_46->tmp_row_size = 0;
+
+    return 0;
+}

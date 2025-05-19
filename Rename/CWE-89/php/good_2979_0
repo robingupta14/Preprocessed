@@ -1,0 +1,222 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+define('PHPWG_ROOT_PATH','../');
+define('IN_ADMIN', true);
+
+
+check_status(var_0);
+
+check_input_parameter('iDisplayStart', $var_1, false, var_2);
+check_input_parameter('iDisplayLength', $var_1, false, var_2);
+
+
+	
+
+$var_3 = array(
+  $conf['user_fields']['id'],
+  $conf['user_fields']['username'],
+  'status',
+  $conf['user_fields']['email'],
+  'recent_period',
+  'level',
+  'registration_date'
+  );
+
+$var_3 = trigger_change('user_list_columns', $var_3);
+	
+
+$var_4 = 'user_id';
+	
+
+$var_5 = var_6.' INNER JOIN '.var_7.' AS ui ON '.$conf['user_fields']['id'].' = ui.user_id';
+
+
+
+
+$var_8 = "";
+if ( isset( $var_1['iDisplayStart'] ) && $var_1['iDisplayLength'] != '-1' )
+{
+  $var_8 = "LIMIT ".$var_1['iDisplayStart'].", ".$var_1['iDisplayLength'];
+}
+	
+	
+
+if ( isset( $var_1['iSortCol_0'] ) )
+{
+  $var_9 = "ORDER BY  ";
+  for ( $var_10=0 ; $var_10<intval( $var_1['iSortingCols'] ) ; $var_10++ )
+  {
+    check_input_parameter('iSortCol_'.$var_10, $var_1, false, var_2);
+
+    if ( $var_1[ 'bSortable_'.$var_1['iSortCol_'.$var_10] ] == "true" )
+    {
+      check_input_parameter('sSortDir_'.$var_10, $var_1, false, '/^(asc|desc)$/');
+
+      $var_9 .= $var_3[ $var_1['iSortCol_'.$var_10] ].' '.$var_1['sSortDir_'.$var_10].', ';
+    }
+  }
+		
+  $var_9 = substr_replace( $var_9, "", -2 );
+  if ( $var_9 == "ORDER BY" )
+  {
+    $var_9 = "";
+  }
+}
+	
+	
+
+$var_11 = "";
+if ( $var_1['sSearch'] != "" )
+{
+  $var_11 = "WHERE (";
+  for ( $var_10=0 ; $var_10<count($var_3) ; $var_10++ )
+  {
+    $var_11 .= $var_3[$var_10]." LIKE '%".pwg_db_real_escape_string( $var_1['sSearch'] )."%' OR ";
+  }
+  $var_11 = substr_replace( $var_11, "", -3 );
+  $var_11 .= ')';
+}
+	
+
+for ( $var_10=0 ; $var_10<count($var_3) ; $var_10++ )
+{
+  if (isset($var_1['bSearchable_'.$var_10]) && isset($var_1['sSearch_'.$var_10])
+      &&$var_1['bSearchable_'.$var_10] == "true" && $var_1['sSearch_'.$var_10] != ''
+    )
+  {
+    if ( $var_11 == "" )
+    {
+      $var_11 = "WHERE ";
+    }
+    else
+    {
+      $var_11 .= " AND ";
+    }
+    $var_11 .= $var_3[$var_10]." LIKE '%".pwg_db_real_escape_string($var_1['sSearch_'.$var_10])."%' ";
+  }
+}
+	
+	
+
+$var_12 = "
+		SELECT SQL_CALC_FOUND_ROWS ".str_replace(" , ", " ", implode(", ", $var_3))."
+		FROM   $var_5
+		$var_11
+		$var_9
+		$var_8
+	";
+$var_13 = pwg_query($var_12);
+	
+
+$var_14 = pwg_query('SELECT FOUND_ROWS();');
+list($var_15) = pwg_db_fetch_row($var_14);
+	
+
+$var_12 = "
+		SELECT COUNT(".$var_4.")
+		FROM   $var_5
+	";
+$var_16 = pwg_query($var_12);
+$var_17 = pwg_db_fetch_array($var_16);
+$var_18 = $var_17[0];
+	
+	
+
+$var_19 = array(
+  "sEcho" => intval($var_1['sEcho']),
+  "iTotalRecords" => $var_18,
+  "iTotalDisplayRecords" => $var_15,
+  "aaData" => array()
+	);
+
+$var_20 = array();
+
+while ( $var_21 = pwg_db_fetch_array( $var_13 ) )
+{
+  $var_20[] = $var_21[ $conf['user_fields']['id'] ];
+  
+  $var_22 = array();
+  for ( $var_10=0 ; $var_10<count($var_3) ; $var_10++ )
+  {
+    if ( $var_3[$var_10] == "status" )
+    {
+      $var_22[] = l10n('user_status_'.$var_21[ $var_3[$var_10] ]);
+    }
+    else if ( $var_3[$var_10] == "level" )
+    {
+      $var_22[] = $var_21[ $var_3[$var_10] ] == 0 ? '' : l10n(sprintf('Level %d', $var_21[ $var_3[$var_10] ]));
+    }
+    else if ( $var_3[$var_10] != ' ' )
+    {
+      
+      $var_23 = $var_3[$var_10];
+      foreach ($conf['user_fields'] as $var_24 => $var_25)
+      {
+        if ($var_3[$var_10] == $var_24)
+        {
+          $var_23 = $var_25;
+        }
+      }
+      
+      $var_22[] = $var_21[$var_23];
+    }
+
+  }
+  $var_19['aaData'][] = $var_22;
+}
+
+
+if (count($var_20) > 0)
+{
+  $var_26 = array();
+  
+  $var_27 = '
+SELECT
+    user_id,
+    GROUP_CONCAT(name ORDER BY name SEPARATOR ", ") AS groups
+  FROM '.var_28.'
+    JOIN '.var_29.' ON id = group_id
+  WHERE user_id IN ('.implode(',', $var_20).')
+  GROUP BY user_id
+;';
+  $var_30 = pwg_query($var_27);
+  while ($var_22 = pwg_db_fetch_assoc($var_30))
+  {
+    $var_26[ $var_22['user_id'] ] = $var_22['groups'];
+  }
+
+  $var_31 = array_search('recent_period', $var_3);
+  
+  
+  foreach (array_keys($var_19['aaData']) as $var_32)
+  {
+    $var_33 = $var_19['aaData'][$var_32][0];
+    $var_19['aaData'][$var_32][$var_31] = isset($var_26[$var_33]) ? $var_26[$var_33] : '';
+  }
+}
+
+$var_19 = trigger_change('after_render_user_list', $var_19);
+	
+
+?>

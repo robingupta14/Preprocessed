@@ -1,0 +1,1389 @@
+
+
+
+
+
+
+
+
+enum enumtype_140 { enum_1, enum_2, enum_3, enum_4, enum_5, enum_6, enum_7, enum_8, enum_9 };
+
+
+
+
+static const char * ops[] = { "~", "!=", "==", "<=", "<", ">=", ">", "&", NULL };
+
+enum { enum_10, enum_11, enum_12, enum_13, enum_14, enum_15, enum_16, enum_17, enum_18, enum_19, enum_20, enum_21, enum_22, enum_23, enum_24, enum_25, };
+
+
+
+
+static char *err_text[] = { "No error", "Invalid operator", "Too many '('", "Too few '('", "Missing matching quote", "Operand too long", "Expecting string field", "Expecting numeric field", "Illegal operation for field type", "Field not found", "Illegal integer value", "Couldn't find or set field in one of a subsystem's events", "Too many terms in predicate expression", "Meaningless filter expression", "Only 'ip' field is supported for function trace", "Invalid value (did you forget quotes)?", };
+
+
+static bool fn_26(const char *var_159)
+{
+ switch (var_159[1]) {
+ case '=':
+ case '~':
+  return false;
+ }
+ return true;
+}
+
+
+
+
+
+
+
+struct struct_160 {
+ int target;
+ int when_to_branch;
+ struct struct_148 *pred;
+};
+
+static void fn_30(struct struct_160 *prog, int var_49, int var_49)
+{
+ int t, s;
+
+ t = prog[var_49].target;
+ s = prog[t].target;
+ prog[t].when_to_branch = var_49;
+ prog[t].target = var_49;
+ prog[var_49].target = s;
+}
+
+struct struct_176 {
+ int lasterr;
+ int lasterr_pos;
+};
+
+static void fn_34(struct struct_176 *pe, int var_178, int var_149)
+{
+ pe->lasterr = var_178;
+ pe->lasterr_pos = var_149;
+}
+
+typedef int (*parse_pred_fn)(const char *var_159, void *var_147, int var_149,
+        struct struct_176 *pe,
+        struct struct_148 **pred);
+
+enum {
+ enum_38 = 1,
+ enum_39 = 2,
+ enum_40 = 4,
+};
+
+static struct struct_160 *
+fn_41(const char *var_159, int var_160, int var_160,
+  parse_pred_fn var_160, void *var_147,
+  struct struct_176 *pe)
+{
+ struct struct_160 *prog_stack;
+ struct struct_160 *prog;
+ const char *ptr = var_159;
+ char *inverts = NULL;
+ int *op_stack;
+ int *top;
+ int var_49 = 0;
+ int var_160 = -ENOMEM;
+ int var_149;
+ int var_49 = 0;
+ int var_159;
+
+ var_160 += 2;
+
+ op_stack = kmalloc_array(var_160, sizeof(*op_stack), GFP_KERNEL);
+ if (!op_stack)
+  return ERR_PTR(-ENOMEM);
+ prog_stack = kmalloc_array(var_160, sizeof(*prog_stack), GFP_KERNEL);
+ if (!prog_stack) {
+  parse_error(pe, -ENOMEM, 0);
+  goto out_free;
+ }
+ inverts = kmalloc_array(var_160, sizeof(*inverts), GFP_KERNEL);
+ if (!inverts) {
+  parse_error(pe, -ENOMEM, 0);
+  goto out_free;
+ }
+
+ top = op_stack;
+ prog = prog_stack;
+ *top = 0;
+
+
+ while (*ptr) {
+  const char *next = ptr++;
+
+  if (isspace(*next))
+   continue;
+
+  switch (*next) {
+  case '(':
+   if (top - op_stack > var_160)
+    return ERR_PTR(-EINVAL);
+   *(++top) = var_49;
+   continue;
+  case '!':
+   if (!is_not(next))
+    break;
+   var_49 = !var_49;
+   continue;
+  }
+
+  if (var_49 >= var_160) {
+   parse_error(pe, FILT_ERR_TOO_MANY_PREDS, next - var_159);
+   goto out_free;
+  }
+
+  inverts[var_49] = var_49;
+  prog[var_49].target = var_49-1;
+
+  var_149 = var_160(next, var_147, ptr - var_159, pe, &prog[var_49].pred);
+  if (var_149 < 0) {
+   var_160 = var_149;
+   goto out_free;
+  }
+  ptr = next + var_149;
+
+  var_49++;
+
+  var_160 = -1;
+  while 1 {
+   next = ptr++;
+   if (isspace(*next))
+    continue;
+
+   switch (*next) {
+   case ')':
+   case '\0':
+    break;
+   case '&':
+   case '|':
+    if (next[1] == next[0]) {
+     ptr++;
+     break;
+    }
+   default:
+    parse_error(pe, FILT_ERR_TOO_MANY_PREDS,
+         next - var_159);
+    goto out_free;
+   }
+
+   var_49 = *top & INVERT;
+
+   if (*top & PROCESS_AND) {
+    update_preds(prog, var_49 - 1, var_49);
+    *top &= ~PROCESS_AND;
+   }
+   if (*next == '&') {
+    *top |= PROCESS_AND;
+    break;
+   }
+   if (*top & PROCESS_OR) {
+    update_preds(prog, var_49 - 1, !var_49);
+    *top &= ~PROCESS_OR;
+   }
+   if (*next == '|') {
+    *top |= PROCESS_OR;
+    break;
+   }
+   if (!*next)
+    goto out;
+
+   if (top == op_stack) {
+    var_160 = -1;
+
+    parse_error(pe, FILT_ERR_TOO_MANY_CLOSE, ptr - var_159);
+    goto out_free;
+   }
+   top--;
+  }
+ }
+ out:
+ if (top != op_stack) {
+
+  parse_error(pe, FILT_ERR_TOO_MANY_OPEN, ptr - var_159);
+  goto out_free;
+ }
+
+ prog[var_49].pred = NULL;
+ prog[var_49].target = 1;
+ prog[var_49+1].pred = NULL;
+ prog[var_49+1].target = 0;
+ prog[var_49-1].target = var_49;
+ prog[var_49-1].when_to_branch = false;
+
+
+ for (var_159 = var_49-1 ; var_159--; ) {
+  int var_49 = prog[var_159].target;
+  if (prog[var_159].when_to_branch == prog[var_49].when_to_branch)
+   prog[var_159].target = prog[var_49].target;
+ }
+
+
+ for (var_159 = 0; var_159 < var_49; var_159++) {
+  var_49 = inverts[var_159] ^ prog[var_159].when_to_branch;
+  prog[var_159].when_to_branch = var_49;
+
+  if (WARN_ON(prog[var_159].target <= var_159)) {
+   var_160 = -EINVAL;
+   goto out_free;
+  }
+ }
+
+ return prog;
+out_free:
+ kfree(op_stack);
+ kfree(prog_stack);
+ kfree(inverts);
+ return ERR_PTR(var_160);
+}
+
+static int fn_49(struct struct_148 *pred, void *event) { s64 *addr = (s64 *)(event + pred->offset); s64 var_149 = (s64)pred->val; return *addr < var_149; } static int fn_51(struct struct_148 *pred, void *event) { s64 *addr = (s64 *)(event + pred->offset); s64 var_149 = (s64)pred->val; return *addr <= var_149; } static int fn_52(struct struct_148 *pred, void *event) { s64 *addr = (s64 *)(event + pred->offset); s64 var_149 = (s64)pred->val; return *addr > var_149; } static int fn_53(struct struct_148 *pred, void *event) { s64 *addr = (s64 *)(event + pred->offset); s64 var_149 = (s64)pred->val; return *addr >= var_149; } static int fn_54(struct struct_148 *pred, void *event) { s64 *addr = (s64 *)(event + pred->offset); s64 var_149 = (s64)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_s64[] = { filter_pred_LE_s64, filter_pred_LT_s64, filter_pred_GE_s64, filter_pred_GT_s64, filter_pred_BAND_s64, };;
+static int fn_55(struct struct_148 *pred, void *event) { u64 *addr = (u64 *)(event + pred->offset); u64 var_149 = (u64)pred->val; return *addr < var_149; } static int fn_56(struct struct_148 *pred, void *event) { u64 *addr = (u64 *)(event + pred->offset); u64 var_149 = (u64)pred->val; return *addr <= var_149; } static int fn_57(struct struct_148 *pred, void *event) { u64 *addr = (u64 *)(event + pred->offset); u64 var_149 = (u64)pred->val; return *addr > var_149; } static int fn_58(struct struct_148 *pred, void *event) { u64 *addr = (u64 *)(event + pred->offset); u64 var_149 = (u64)pred->val; return *addr >= var_149; } static int fn_59(struct struct_148 *pred, void *event) { u64 *addr = (u64 *)(event + pred->offset); u64 var_149 = (u64)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_u64[] = { filter_pred_LE_u64, filter_pred_LT_u64, filter_pred_GE_u64, filter_pred_GT_u64, filter_pred_BAND_u64, };;
+static int fn_60(struct struct_148 *pred, void *event) { s32 *addr = (s32 *)(event + pred->offset); s32 var_149 = (s32)pred->val; return *addr < var_149; } static int fn_61(struct struct_148 *pred, void *event) { s32 *addr = (s32 *)(event + pred->offset); s32 var_149 = (s32)pred->val; return *addr <= var_149; } static int fn_62(struct struct_148 *pred, void *event) { s32 *addr = (s32 *)(event + pred->offset); s32 var_149 = (s32)pred->val; return *addr > var_149; } static int fn_63(struct struct_148 *pred, void *event) { s32 *addr = (s32 *)(event + pred->offset); s32 var_149 = (s32)pred->val; return *addr >= var_149; } static int fn_64(struct struct_148 *pred, void *event) { s32 *addr = (s32 *)(event + pred->offset); s32 var_149 = (s32)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_s32[] = { filter_pred_LE_s32, filter_pred_LT_s32, filter_pred_GE_s32, filter_pred_GT_s32, filter_pred_BAND_s32, };;
+static int fn_65(struct struct_148 *pred, void *event) { u32 *addr = (u32 *)(event + pred->offset); u32 var_149 = (u32)pred->val; return *addr < var_149; } static int fn_66(struct struct_148 *pred, void *event) { u32 *addr = (u32 *)(event + pred->offset); u32 var_149 = (u32)pred->val; return *addr <= var_149; } static int fn_67(struct struct_148 *pred, void *event) { u32 *addr = (u32 *)(event + pred->offset); u32 var_149 = (u32)pred->val; return *addr > var_149; } static int fn_68(struct struct_148 *pred, void *event) { u32 *addr = (u32 *)(event + pred->offset); u32 var_149 = (u32)pred->val; return *addr >= var_149; } static int fn_69(struct struct_148 *pred, void *event) { u32 *addr = (u32 *)(event + pred->offset); u32 var_149 = (u32)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_u32[] = { filter_pred_LE_u32, filter_pred_LT_u32, filter_pred_GE_u32, filter_pred_GT_u32, filter_pred_BAND_u32, };;
+static int fn_70(struct struct_148 *pred, void *event) { s16 *addr = (s16 *)(event + pred->offset); s16 var_149 = (s16)pred->val; return *addr < var_149; } static int fn_71(struct struct_148 *pred, void *event) { s16 *addr = (s16 *)(event + pred->offset); s16 var_149 = (s16)pred->val; return *addr <= var_149; } static int fn_72(struct struct_148 *pred, void *event) { s16 *addr = (s16 *)(event + pred->offset); s16 var_149 = (s16)pred->val; return *addr > var_149; } static int fn_73(struct struct_148 *pred, void *event) { s16 *addr = (s16 *)(event + pred->offset); s16 var_149 = (s16)pred->val; return *addr >= var_149; } static int fn_74(struct struct_148 *pred, void *event) { s16 *addr = (s16 *)(event + pred->offset); s16 var_149 = (s16)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_s16[] = { filter_pred_LE_s16, filter_pred_LT_s16, filter_pred_GE_s16, filter_pred_GT_s16, filter_pred_BAND_s16, };;
+static int fn_75(struct struct_148 *pred, void *event) { u16 *addr = (u16 *)(event + pred->offset); u16 var_149 = (u16)pred->val; return *addr < var_149; } static int fn_76(struct struct_148 *pred, void *event) { u16 *addr = (u16 *)(event + pred->offset); u16 var_149 = (u16)pred->val; return *addr <= var_149; } static int fn_77(struct struct_148 *pred, void *event) { u16 *addr = (u16 *)(event + pred->offset); u16 var_149 = (u16)pred->val; return *addr > var_149; } static int fn_78(struct struct_148 *pred, void *event) { u16 *addr = (u16 *)(event + pred->offset); u16 var_149 = (u16)pred->val; return *addr >= var_149; } static int fn_79(struct struct_148 *pred, void *event) { u16 *addr = (u16 *)(event + pred->offset); u16 var_149 = (u16)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_u16[] = { filter_pred_LE_u16, filter_pred_LT_u16, filter_pred_GE_u16, filter_pred_GT_u16, filter_pred_BAND_u16, };;
+static int fn_80(struct struct_148 *pred, void *event) { s8 *addr = (s8 *)(event + pred->offset); s8 var_149 = (s8)pred->val; return *addr < var_149; } static int fn_81(struct struct_148 *pred, void *event) { s8 *addr = (s8 *)(event + pred->offset); s8 var_149 = (s8)pred->val; return *addr <= var_149; } static int fn_82(struct struct_148 *pred, void *event) { s8 *addr = (s8 *)(event + pred->offset); s8 var_149 = (s8)pred->val; return *addr > var_149; } static int fn_83(struct struct_148 *pred, void *event) { s8 *addr = (s8 *)(event + pred->offset); s8 var_149 = (s8)pred->val; return *addr >= var_149; } static int fn_84(struct struct_148 *pred, void *event) { s8 *addr = (s8 *)(event + pred->offset); s8 var_149 = (s8)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_s8[] = { filter_pred_LE_s8, filter_pred_LT_s8, filter_pred_GE_s8, filter_pred_GT_s8, filter_pred_BAND_s8, };;
+static int fn_85(struct struct_148 *pred, void *event) { u8 *addr = (u8 *)(event + pred->offset); u8 var_149 = (u8)pred->val; return *addr < var_149; } static int fn_86(struct struct_148 *pred, void *event) { u8 *addr = (u8 *)(event + pred->offset); u8 var_149 = (u8)pred->val; return *addr <= var_149; } static int fn_87(struct struct_148 *pred, void *event) { u8 *addr = (u8 *)(event + pred->offset); u8 var_149 = (u8)pred->val; return *addr > var_149; } static int fn_88(struct struct_148 *pred, void *event) { u8 *addr = (u8 *)(event + pred->offset); u8 var_149 = (u8)pred->val; return *addr >= var_149; } static int fn_89(struct struct_148 *pred, void *event) { u8 *addr = (u8 *)(event + pred->offset); u8 var_149 = (u8)pred->val; return !!(*addr & var_149); } static const filter_pred_fn_t pred_funcs_u8[] = { filter_pred_LE_u8, filter_pred_LT_u8, filter_pred_GE_u8, filter_pred_GT_u8, filter_pred_BAND_u8, };;
+
+static int fn_90(struct struct_148 *pred, void *event) { u64 *addr = (u64 *)(event + pred->offset); u64 var_149 = (u64)pred->val; int var_119; var_119 = (var_149 == *addr) ^ pred->not; return var_119; };
+static int fn_92(struct struct_148 *pred, void *event) { u32 *addr = (u32 *)(event + pred->offset); u32 var_149 = (u32)pred->val; int var_119; var_119 = (var_149 == *addr) ^ pred->not; return var_119; };
+static int fn_93(struct struct_148 *pred, void *event) { u16 *addr = (u16 *)(event + pred->offset); u16 var_149 = (u16)pred->val; int var_119; var_119 = (var_149 == *addr) ^ pred->not; return var_119; };
+static int fn_94(struct struct_148 *pred, void *event) { u8 *addr = (u8 *)(event + pred->offset); u8 var_149 = (u8)pred->val; int var_119; var_119 = (var_149 == *addr) ^ pred->not; return var_119; };
+
+
+static int fn_95(struct struct_148 *pred, void *event)
+{
+ char *addr = (char *)(event + pred->offset);
+ int cmp, var_119;
+
+ cmp = pred->regex.match(addr, &pred->regex, pred->regex.field_len);
+
+ var_119 = cmp ^ pred->not;
+
+ return var_119;
+}
+
+
+static int fn_96(struct struct_148 *pred, void *event)
+{
+ char **addr = (char **)(event + pred->offset);
+ int cmp, var_119;
+ int var_149 = var_149(*addr) + 1;
+
+ cmp = pred->regex.match(*addr, &pred->regex, var_149);
+
+ var_119 = cmp ^ pred->not;
+
+ return var_119;
+}
+
+static int fn_98(struct struct_148 *pred, void *event)
+{
+ u32 var_102 = *(u32 *)(event + pred->offset);
+ int var_102 = var_102 & 0xffff;
+ int var_102 = var_102 >> 16;
+ char *addr = (char *)(event + var_102);
+ int cmp, var_119;
+
+ cmp = pred->regex.match(addr, &pred->regex, var_102);
+
+ var_119 = cmp ^ pred->not;
+
+ return var_119;
+}
+
+
+static int fn_102(struct struct_148 *pred, void *event)
+{
+ int cpu, cmp;
+
+ cpu = raw_smp_processor_id();
+ cmp = pred->val;
+
+ switch (pred->op) {
+ case OP_EQ:
+  return cpu == cmp;
+ case OP_NE:
+  return cpu != cmp;
+ case OP_LT:
+  return cpu < cmp;
+ case OP_LE:
+  return cpu <= cmp;
+ case OP_GT:
+  return cpu > cmp;
+ case OP_GE:
+  return cpu >= cmp;
+ default:
+  return 0;
+ }
+}
+
+
+static int fn_103(struct struct_148 *pred, void *event)
+{
+ int cmp;
+
+ cmp = pred->regex.match(current->comm, &pred->regex,
+    TASK_COMM_LEN);
+ return cmp ^ pred->not;
+}
+
+static int fn_104(struct struct_148 *pred, void *event)
+{
+ return 0;
+}
+
+static int fn_105(char *var_159, struct struct_117 *r, int var_149)
+{
+
+ if (!var_149)
+  return strcmp(var_159, r->pattern) == 0;
+
+ return strncmp(var_159, r->pattern, var_149) == 0;
+}
+
+static int fn_107(char *var_159, struct struct_117 *r, int var_149)
+{
+ if (var_149 && var_149 < r->len)
+  return 0;
+
+ return strncmp(var_159, r->pattern, r->len) == 0;
+}
+
+static int fn_108(char *var_159, struct struct_117 *r, int var_149)
+{
+ if (!var_149)
+  return strstr(var_159, r->pattern) != NULL;
+
+ return strnstr(var_159, r->pattern, var_149) != NULL;
+}
+
+static int fn_109(char *var_159, struct struct_117 *r, int var_149)
+{
+ int var_149 = var_149 - 1;
+
+ if (var_149 >= r->len &&
+     memcmp(var_159 + var_149 - r->len, r->pattern, r->len) == 0)
+  return 1;
+ return 0;
+}
+
+static int fn_110(char *var_159, struct struct_117 *r, int var_149 var_111)
+{
+ if (glob_match(r->pattern, var_159))
+  return 1;
+ return 0;
+}
+
+enum enumtype_117 fn_113(char *buff, int var_149, char **search, int *not)
+{
+ int var_139 = var_117;
+ int var_159;
+
+ if (buff[0] == '!') {
+  *not = 1;
+  buff++;
+  var_149--;
+ } else
+  *not = 0;
+
+ *search = buff;
+
+ for (var_159 = 0; var_159 < var_149; var_159++) {
+  if (buff[var_159] == '*') {
+   if (!var_159) {
+    var_139 = MATCH_END_ONLY;
+   } else if (var_159 == var_149 - 1) {
+    if (var_139 == MATCH_END_ONLY)
+     var_139 = MATCH_MIDDLE_ONLY;
+    else
+     var_139 = MATCH_FRONT_ONLY;
+    buff[var_159] = 0;
+    break;
+   } else {
+    return MATCH_GLOB;
+   }
+  } else if (strchr("[?\\", buff[var_159])) {
+   return MATCH_GLOB;
+  }
+ }
+ if (buff[0] == '*')
+  *search = buff + 1;
+
+ return var_139;
+}
+
+static void fn_116(struct struct_148 *pred)
+{
+ struct struct_117 *r = &pred->regex;
+ char *search;
+ enum enumtype_117 var_139 = var_117;
+
+ if (pred->op == OP_GLOB) {
+  var_139 = filter_parse_regex(r->pattern, r->len, &search, &pred->not);
+  r->len = var_149(search);
+  memmove(r->pattern, search, r->len+1);
+ }
+
+ switch (var_139) {
+ case var_117:
+  r->match = regex_match_full;
+  break;
+ case MATCH_FRONT_ONLY:
+  r->match = regex_match_front;
+  break;
+ case MATCH_MIDDLE_ONLY:
+  r->match = regex_match_middle;
+  break;
+ case MATCH_END_ONLY:
+  r->match = regex_match_end;
+  break;
+ case MATCH_GLOB:
+  r->match = regex_match_glob;
+  break;
+ }
+}
+
+
+int fn_117(struct struct_178 *filter, void *rec)
+{
+ struct struct_160 *prog;
+ int var_159;
+
+
+ if (!filter)
+  return 1;
+
+ prog = rcu_dereference_sched(filter->prog);
+ if (!prog)
+  return 1;
+
+ for (var_159 = 0; prog[var_159].pred; var_159++) {
+  struct struct_148 *pred = prog[var_159].pred;
+  int var_119 = pred->fn(pred, rec);
+  if (var_119 == prog[var_159].when_to_branch)
+   var_159 = prog[var_159].target;
+ }
+ return prog[var_159].target;
+}
+EXPORT_SYMBOL_GPL(filter_match_preds);
+
+static void fn_119(struct struct_178 *filter)
+{
+ if (!filter)
+  return;
+
+ kfree(filter->filter_string);
+ filter->filter_string = NULL;
+}
+
+static void fn_120(struct struct_176 *pe,
+         struct struct_178 *filter)
+{
+ struct struct_127 *s;
+ int var_149 = pe->lasterr_pos;
+ char *buf;
+ int var_149;
+
+ if (WARN_ON(!filter->filter_string))
+  return;
+
+ s = kmalloc(sizeof(*s), GFP_KERNEL);
+ if (!s)
+  return;
+ trace_seq_init(s);
+
+ var_149 = var_149(filter->filter_string);
+ if (var_149 > var_149)
+  var_149 = var_149;
+
+
+ if (var_149)
+  var_149++;
+
+ trace_seq_puts(s, filter->filter_string);
+ if (pe->lasterr > 0) {
+  trace_seq_printf(s, "\n%*s", var_149, "^");
+  trace_seq_printf(s, "\nparse_error: %s\n", err_text[pe->lasterr]);
+ } else {
+  trace_seq_printf(s, "\nError: (%d)\n", pe->lasterr);
+ }
+ trace_seq_putc(s, 0);
+ buf = kmemdup_nul(s->buffer, s->seq.len, GFP_KERNEL);
+ if (buf) {
+  kfree(filter->filter_string);
+  filter->filter_string = buf;
+ }
+ kfree(s);
+}
+
+static inline struct struct_178 *fn_122(struct struct_177 *file)
+{
+ return file->filter;
+}
+
+
+void fn_124(struct struct_177 *file, struct struct_127 *s)
+{
+ struct struct_178 *filter = event_filter(file);
+
+ if (filter && filter->filter_string)
+  trace_seq_printf(s, "%s\n", filter->filter_string);
+ else
+  trace_seq_puts(s, "none\n");
+}
+
+void fn_125(struct struct_178 *system,
+      struct struct_127 *s)
+{
+ struct struct_178 *filter;
+
+ mutex_lock(&event_mutex);
+ filter = system->filter;
+ if (filter && filter->filter_string)
+  trace_seq_printf(s, "%s\n", filter->filter_string);
+ else
+  trace_seq_puts(s, "### global filter ###\n" "# Use this to set filters for multiple events.\n" "# Only events with the given fields will be affected.\n" "# If no events are modified, an error message will be displayed here" "\n");
+ mutex_unlock(&event_mutex);
+}
+
+static void fn_127(struct struct_178 *filter)
+{
+ struct struct_160 *prog;
+ int var_159;
+
+ prog = rcu_access_pointer(filter->prog);
+ if (!prog)
+  return;
+
+ for (var_159 = 0; prog[var_159].pred; var_159++)
+  kfree(prog[var_159].pred);
+ kfree(prog);
+}
+
+static void fn_128(struct struct_177 *file)
+{
+ unsigned long var_161 = file->flags;
+
+ file->flags &= ~EVENT_FILE_FL_FILTERED;
+
+ if (var_161 != file->flags)
+  trace_buffered_event_disable();
+}
+
+static void fn_130(struct struct_178 *filter)
+{
+ if (!filter)
+  return;
+
+ free_prog(filter);
+ kfree(filter->filter_string);
+ kfree(filter);
+}
+
+void fn_131(struct struct_178 *filter)
+{
+ __free_filter(filter);
+}
+
+static inline void fn_132(struct struct_177 *file)
+{
+ filter_disable(file);
+ remove_filter_string(file->filter);
+}
+
+static void fn_133(struct struct_178 *dir,
+     struct struct_178 *tr)
+{
+ struct struct_177 *file;
+
+ list_for_each_entry(file, &tr->events, list) {
+  if (file->system != dir)
+   continue;
+  __remove_filter(file);
+ }
+}
+
+static inline void fn_136(struct struct_177 *file)
+{
+ __free_filter(file->filter);
+ file->filter = NULL;
+}
+
+static void fn_137(struct struct_178 *dir,
+       struct struct_178 *tr)
+{
+ struct struct_177 *file;
+
+ list_for_each_entry(file, &tr->events, list) {
+  if (file->system != dir)
+   continue;
+  __free_subsystem_filter(file);
+ }
+}
+
+int fn_138(const char *var_139)
+{
+ if (strstr(var_139, "__data_loc") && strstr(var_139, "char"))
+  return FILTER_DYN_STRING;
+
+ if (strchr(var_139, '[') && strstr(var_139, "char"))
+  return FILTER_STATIC_STRING;
+
+ return FILTER_OTHER;
+}
+
+static filter_pred_fn_t fn_139(enum enumtype_140 var_149,
+         int var_145, int var_145)
+{
+ filter_pred_fn_t var_145 = NULL;
+ int var_145 = -1;
+
+ switch (var_149) {
+ case OP_EQ:
+ case OP_NE:
+  break;
+ default:
+  if (WARN_ON_ONCE(var_149 < OP_LE))
+   return NULL;
+  var_145 = var_149 - OP_LE;
+  if (WARN_ON_ONCE(var_145 > (OP_BAND - OP_LE)))
+   return NULL;
+ }
+
+ switch (var_145) {
+ case 8:
+  if (var_145 < 0)
+   var_145 = filter_pred_64;
+  else if (var_145)
+   var_145 = pred_funcs_s64[var_145];
+  else
+   var_145 = pred_funcs_u64[var_145];
+  break;
+ case 4:
+  if (var_145 < 0)
+   var_145 = filter_pred_32;
+  else if (var_145)
+   var_145 = pred_funcs_s32[var_145];
+  else
+   var_145 = pred_funcs_u32[var_145];
+  break;
+ case 2:
+  if (var_145 < 0)
+   var_145 = filter_pred_16;
+  else if (var_145)
+   var_145 = pred_funcs_s16[var_145];
+  else
+   var_145 = pred_funcs_u16[var_145];
+  break;
+ case 1:
+  if (var_145 < 0)
+   var_145 = filter_pred_8;
+  else if (var_145)
+   var_145 = pred_funcs_s8[var_145];
+  else
+   var_145 = pred_funcs_u8[var_145];
+  break;
+ }
+
+ return var_145;
+}
+
+
+static int fn_145(const char *var_159, void *var_147,
+        int var_149, struct struct_176 *pe,
+        struct struct_148 **pred_ptr)
+{
+ struct struct_177 *call = var_147;
+ struct struct_147 *field;
+ struct struct_148 *pred = NULL;
+ char num_buf[24];
+ char *field_name;
+ char var_149;
+ u64 var_149;
+ int var_149;
+ int var_160;
+ int var_149;
+ int s;
+ int var_159 = 0;
+
+
+ while (isspace(var_159[var_159]))
+  var_159++;
+ s = var_159;
+
+ while (isalnum(var_159[var_159]) || var_159[var_159] == '_')
+  var_159++;
+
+ var_149 = var_159 - s;
+
+ if (!var_149)
+  return -1;
+
+ field_name = kmemdup_nul(var_159 + s, var_149, GFP_KERNEL);
+ if (!field_name)
+  return -ENOMEM;
+
+
+
+ field = trace_find_event_field(call, field_name);
+ kfree(field_name);
+ if (!field) {
+  parse_error(pe, FILT_ERR_FIELD_NOT_FOUND, var_149 + var_159);
+  return -EINVAL;
+ }
+
+ while (isspace(var_159[var_159]))
+  var_159++;
+
+
+ for (var_149 = 0; ops[var_149]; var_149++) {
+
+  if (strncmp(var_159 + var_159, ops[var_149], var_149(ops[var_149])) == 0)
+   break;
+ }
+
+ if (!ops[var_149]) {
+  parse_error(pe, FILT_ERR_INVALID_OP, var_149 + var_159);
+  goto err_free;
+ }
+
+ var_159 += var_149(ops[var_149]);
+
+ while (isspace(var_159[var_159]))
+  var_159++;
+
+ s = var_159;
+
+ pred = kzalloc(sizeof(*pred), GFP_KERNEL);
+ if (!pred)
+  return -ENOMEM;
+
+ pred->field = field;
+ pred->offset = field->offset;
+ pred->op = var_149;
+
+ if (ftrace_event_is_function(call)) {
+
+
+
+
+
+
+
+  if (strcmp(field->name, "ip") != 0) {
+    parse_error(pe, FILT_ERR_IP_FIELD_ONLY, var_149 + var_159);
+    goto err_free;
+   }
+   pred->fn = filter_pred_none;
+
+
+
+
+
+   if (var_159[var_159] == '\'' || var_159[var_159] == '"')
+    var_149 = var_159[var_159];
+   else
+    var_149 = 0;
+
+   for (var_159++; var_159[var_159]; var_159++) {
+    if (var_149 && var_159[var_159] == var_149)
+     break;
+    if (!var_149 && (var_159[var_159] == ')' || var_159[var_159] == '&' ||
+        var_159[var_159] == '|'))
+     break;
+   }
+
+   if (var_149)
+    s++;
+  var_149 = var_159 - s;
+  if (var_149 >= MAX_FILTER_STR_VAL) {
+   parse_error(pe, FILT_ERR_OPERAND_TOO_LONG, var_149 + var_159);
+   goto err_free;
+  }
+
+  pred->regex.len = var_149;
+  strncpy(pred->regex.pattern, var_159 + s, var_149);
+  pred->regex.pattern[var_149] = 0;
+
+
+ } else if (var_159[var_159] == '\'' || var_159[var_159] == '"') {
+  char var_149 = var_159[var_159];
+
+
+  switch (var_149) {
+  case OP_NE:
+   pred->not = 1;
+
+  case OP_GLOB:
+  case OP_EQ:
+   break;
+  default:
+   parse_error(pe, FILT_ERR_ILLEGAL_FIELD_OP, var_149 + var_159);
+   goto err_free;
+  }
+
+
+  if (!is_string_field(field)) {
+   parse_error(pe, FILT_ERR_EXPECT_DIGIT, var_149 + var_159);
+   goto err_free;
+  }
+
+  for (var_159++; var_159[var_159]; var_159++) {
+   if (var_159[var_159] == var_149)
+    break;
+  }
+  if (!var_159[var_159]) {
+   parse_error(pe, FILT_ERR_MISSING_QUOTE, var_149 + var_159);
+   goto err_free;
+  }
+
+
+  s++;
+  var_149 = var_159 - s;
+  if (var_149 >= MAX_FILTER_STR_VAL) {
+   parse_error(pe, FILT_ERR_OPERAND_TOO_LONG, var_149 + var_159);
+   goto err_free;
+  }
+
+  pred->regex.len = var_149;
+  strncpy(pred->regex.pattern, var_159 + s, var_149);
+  pred->regex.pattern[var_149] = 0;
+
+  filter_build_regex(pred);
+
+  if (field->filter_type == FILTER_COMM) {
+   pred->fn = filter_pred_comm;
+
+  } else if (field->filter_type == FILTER_STATIC_STRING) {
+   pred->fn = filter_pred_string;
+   pred->regex.field_len = field->size;
+
+  } else if (field->filter_type == FILTER_DYN_STRING)
+   pred->fn = filter_pred_strloc;
+  else
+   pred->fn = filter_pred_pchar;
+
+  var_159++;
+
+ } else if (isdigit(var_159[var_159])) {
+
+
+  if (is_string_field(field)) {
+   parse_error(pe, FILT_ERR_EXPECT_STRING, var_149 + var_159);
+   goto err_free;
+  }
+
+  if (var_149 == OP_GLOB) {
+   parse_error(pe, FILT_ERR_ILLEGAL_FIELD_OP, var_149 + var_159);
+   goto err_free;
+  }
+
+
+  while (isalnum(var_159[var_159]))
+   var_159++;
+
+  var_149 = var_159 - s;
+
+  if (var_149 >= sizeof(num_buf)) {
+   parse_error(pe, FILT_ERR_OPERAND_TOO_LONG, var_149 + var_159);
+   goto err_free;
+  }
+
+  strncpy(num_buf, var_159 + s, var_149);
+  num_buf[var_149] = 0;
+
+
+  if (field->is_signed)
+   var_160 = kstrtoll(num_buf, 0, &var_149);
+  else
+   var_160 = kstrtoull(num_buf, 0, &var_149);
+  if (var_160) {
+   parse_error(pe, FILT_ERR_ILLEGAL_INTVAL, var_149 + s);
+   goto err_free;
+  }
+
+  pred->val = var_149;
+
+  if (field->filter_type == FILTER_CPU)
+   pred->fn = filter_pred_cpu;
+  else {
+   pred->fn = select_comparison_fn(pred->op, field->size,
+       field->is_signed);
+   if (pred->op == OP_NE)
+    pred->not = 1;
+  }
+
+ } else {
+  parse_error(pe, FILT_ERR_INVALID_VALUE, var_149 + var_159);
+  goto err_free;
+ }
+
+ *pred_ptr = pred;
+ return var_159;
+
+err_free:
+ kfree(pred);
+ return -EINVAL;
+}
+
+enum {
+ enum_149 = -1,
+ enum_150 = -2,
+ enum_151 = -3,
+};
+
+static int fn_152(const char *var_159, int *parens, int *preds, int *var_178)
+{
+ bool var_158 = false;
+ int var_160 = 0;
+ int var_159 = 1;
+ int var_158 = 0;
+ int var_159 = 1;
+ int var_159 = 0;
+ int var_159;
+
+ *var_178 = 0;
+
+ for (var_159 = 0; var_159[var_159]; var_159++) {
+  if (isspace(var_159[var_159]))
+   continue;
+  if (var_159) {
+   if (var_159[var_159] == var_159)
+          var_159 = 0;
+   continue;
+  }
+
+  switch (var_159[var_159]) {
+  case '\'':
+  case '"':
+   var_159 = var_159[var_159];
+   var_158 = var_159;
+   break;
+  case '|':
+  case '&':
+   if (var_159[var_159+1] != var_159[var_159])
+    break;
+   var_158 = false;
+   continue;
+  case '(':
+   var_158 = false;
+   var_159++;
+   if (var_159 > var_159)
+    var_159 = var_159;
+   continue;
+  case ')':
+   var_158 = false;
+   if (var_159 == 1) {
+    *var_178 = var_159;
+    return TOO_MANY_CLOSE;
+   }
+   var_159--;
+   continue;
+  }
+  if (!var_158) {
+   var_160++;
+   var_158 = true;
+  }
+ }
+
+ if (var_159) {
+  *var_178 = var_158;
+  return MISSING_QUOTE;
+ }
+
+ if (var_159 != 1) {
+  int var_159 = var_159;
+
+
+  for (var_159--; var_159; var_159--) {
+   if (var_159) {
+    if (var_159[var_159] == var_159)
+     var_159 = 0;
+    continue;
+   }
+   switch (var_159[var_159]) {
+   case '(':
+    if (var_159 == var_159) {
+     *var_178 = var_159;
+     return TOO_MANY_OPEN;
+    }
+    var_159--;
+    break;
+   case ')':
+    var_159++;
+    break;
+   case '\'':
+   case '"':
+    var_159 = var_159[var_159];
+    break;
+   }
+  }
+
+  *var_178 = 0;
+  return TOO_MANY_OPEN;
+ }
+
+
+ *parens = var_159;
+ *preds = var_160;
+ return 0;
+}
+
+static int fn_159(struct struct_177 *call,
+    const char *filter_string,
+    struct struct_178 *filter,
+    struct struct_176 *pe)
+{
+ struct struct_160 *prog;
+ int var_160;
+ int var_160;
+ int index;
+ int var_160;
+
+ var_160 = calc_stack(filter_string, &var_160, &var_160, &index);
+ if (var_160 < 0) {
+  switch (var_160) {
+  case MISSING_QUOTE:
+   parse_error(pe, FILT_ERR_MISSING_QUOTE, index);
+   break;
+  case TOO_MANY_OPEN:
+   parse_error(pe, FILT_ERR_TOO_MANY_OPEN, index);
+   break;
+  default:
+   parse_error(pe, FILT_ERR_TOO_MANY_CLOSE, index);
+  }
+  return var_160;
+ }
+
+ if (!var_160)
+  return -EINVAL;
+
+ prog = predicate_parse(filter_string, var_160, var_160,
+          var_160, call, pe);
+ if (IS_ERR(prog))
+  return PTR_ERR(prog);
+
+ rcu_assign_pointer(filter->prog, prog);
+ return 0;
+}
+
+static inline void fn_160(struct struct_177 *file)
+{
+ unsigned long var_161 = file->flags;
+
+ file->flags |= EVENT_FILE_FL_FILTERED;
+
+ if (var_161 != file->flags)
+  trace_buffered_event_enable();
+}
+
+static inline void fn_161(struct struct_177 *file,
+        struct struct_178 *filter)
+{
+ rcu_assign_pointer(file->filter, filter);
+}
+
+static inline void fn_162(struct struct_177 *file)
+{
+ RCU_INIT_POINTER(file->filter, NULL);
+}
+
+static inline void
+fn_163(struct struct_177 *file)
+{
+ file->flags |= EVENT_FILE_FL_NO_SET_FILTER;
+}
+
+static inline void
+fn_164(struct struct_177 *file)
+{
+ file->flags &= ~EVENT_FILE_FL_NO_SET_FILTER;
+}
+
+static inline bool
+fn_165(struct struct_177 *file)
+{
+ if (file->flags & EVENT_FILE_FL_NO_SET_FILTER)
+  return true;
+
+ return false;
+}
+
+struct struct_169 {
+ struct struct_167 list;
+ struct struct_178 *filter;
+};
+
+static int fn_168(struct struct_178 *dir,
+    struct struct_178 *tr,
+    struct struct_176 *pe,
+    char *filter_string)
+{
+ struct struct_177 *file;
+ struct struct_169 *filter_item;
+ struct struct_178 *filter = NULL;
+ struct struct_169 *tmp;
+ LIST_HEAD(filter_list);
+ bool var_170 = true;
+ int var_178;
+
+ list_for_each_entry(file, &tr->events, list) {
+
+  if (file->system != dir)
+   continue;
+
+  filter = kzalloc(sizeof(*filter), GFP_KERNEL);
+  if (!filter)
+   goto fail_mem;
+
+  filter->filter_string = kstrdup(filter_string, GFP_KERNEL);
+  if (!filter->filter_string)
+   goto fail_mem;
+
+  var_178 = process_preds(file->event_call, filter_string, filter, pe);
+  if (var_178) {
+   filter_disable(file);
+   parse_error(pe, FILT_ERR_BAD_SUBSYS_FILTER, 0);
+   append_filter_err(pe, filter);
+  } else
+   event_set_filtered_flag(file);
+
+
+  filter_item = kzalloc(sizeof(*filter_item), GFP_KERNEL);
+  if (!filter_item)
+   goto fail_mem;
+
+  list_add_tail(&filter_item->list, &filter_list);
+
+
+
+
+  filter_item->filter = event_filter(file);
+  event_set_filter(file, filter);
+  filter = NULL;
+
+  var_170 = false;
+ }
+
+ if (var_170)
+  goto fail;
+
+
+
+
+
+
+ synchronize_sched();
+ list_for_each_entry_safe(filter_item, tmp, &filter_list, list) {
+  __free_filter(filter_item->filter);
+  list_del(&filter_item->list);
+  kfree(filter_item);
+ }
+ return 0;
+ fail:
+
+ list_for_each_entry_safe(filter_item, tmp, &filter_list, list) {
+  list_del(&filter_item->list);
+  kfree(filter_item);
+ }
+ parse_error(pe, FILT_ERR_BAD_SUBSYS_FILTER, 0);
+ return -EINVAL;
+ fail_mem:
+ kfree(filter);
+
+ if (!var_170)
+  synchronize_sched();
+ list_for_each_entry_safe(filter_item, tmp, &filter_list, list) {
+  __free_filter(filter_item->filter);
+  list_del(&filter_item->list);
+  kfree(filter_item);
+ }
+ return -ENOMEM;
+}
+
+static int fn_170(char *filter_string, bool var_175,
+          struct struct_176 **pse,
+          struct struct_178 **filterp)
+{
+ struct struct_178 *filter;
+ struct struct_176 *pe = NULL;
+ int var_178 = 0;
+
+ if (WARN_ON_ONCE(*pse || *filterp))
+  return -EINVAL;
+
+ filter = kzalloc(sizeof(*filter), GFP_KERNEL);
+ if (filter && var_175) {
+  filter->filter_string = kstrdup(filter_string, GFP_KERNEL);
+  if (!filter->filter_string)
+   var_178 = -ENOMEM;
+ }
+
+ pe = kzalloc(sizeof(*pe), GFP_KERNEL);
+
+ if (!filter || !pe || var_178) {
+  kfree(pe);
+  __free_filter(filter);
+  return -ENOMEM;
+ }
+
+
+ *filterp = filter;
+ *pse = pe;
+
+ return 0;
+}
+
+static void fn_172(struct struct_176 *pe)
+{
+ kfree(pe);
+}
+
+static int fn_173(struct struct_177 *call,
+    char *filter_string, bool var_175,
+    struct struct_178 **filterp)
+{
+ struct struct_176 *pe = NULL;
+ int var_178;
+
+ var_178 = create_filter_start(filter_string, var_175, &pe, filterp);
+ if (var_178)
+  return var_178;
+
+ var_178 = process_preds(call, filter_string, *filterp, pe);
+ if (var_178 && var_175)
+  append_filter_err(pe, *filterp);
+
+ return var_178;
+}
+
+int fn_174(struct struct_177 *call,
+   char *filter_str, bool var_175,
+   struct struct_178 **filterp)
+{
+ return create_filter(call, filter_str, var_175, filterp);
+}
+
+static int fn_175(struct struct_178 *dir,
+    struct struct_178 *tr,
+    char *filter_str, struct struct_178 **filterp)
+{
+ struct struct_176 *pe = NULL;
+ int var_178;
+
+ var_178 = create_filter_start(filter_str, true, &pe, filterp);
+ if (!var_178) {
+  var_178 = process_system_preds(dir, tr, pe, filter_str);
+  if (!var_178) {
+
+   kfree((*filterp)->filter_string);
+   (*filterp)->filter_string = NULL;
+  } else {
+   append_filter_err(pe, *filterp);
+  }
+ }
+ create_filter_finish(pe);
+
+ return var_178;
+}
+
+
+int fn_176(struct struct_177 *file, char *filter_string)
+{
+ struct struct_177 *call = file->event_call;
+ struct struct_178 *filter = NULL;
+ int var_178;
+
+ if (!strcmp(strstrip(filter_string), "0")) {
+  filter_disable(file);
+  filter = event_filter(file);
+
+  if (!filter)
+   return 0;
+
+  event_clear_filter(file);
+
+
+  synchronize_sched();
+  __free_filter(filter);
+
+  return 0;
+ }
+
+ var_178 = create_filter(call, filter_string, true, &filter);
+
+
+
+
+
+
+
+ if (filter) {
+  struct struct_178 *tmp;
+
+  tmp = event_filter(file);
+  if (!var_178)
+   event_set_filtered_flag(file);
+  else
+   filter_disable(file);
+
+  event_set_filter(file, filter);
+
+  if (tmp) {
+
+   synchronize_sched();
+   __free_filter(tmp);
+  }
+ }
+
+ return var_178;
+}
+
+int fn_177(struct struct_178 *dir,
+     char *filter_string)
+{
+ struct struct_178 *system = dir->subsystem;
+ struct struct_178 *tr = dir->tr;
+ struct struct_178 *filter = NULL;
+ int var_178 = 0;
+
+ mutex_lock(&event_mutex);
+
+
+ if (!dir->nr_events) {
+  var_178 = -ENODEV;
+  goto out_unlock;
+ }
+
+ if (!strcmp(strstrip(filter_string), "0")) {
+  filter_free_subsystem_preds(dir, tr);
+  remove_filter_string(system->filter);
+  filter = system->filter;
+  system->filter = NULL;
+
+  synchronize_sched();
+  filter_free_subsystem_filters(dir, tr);
+  __free_filter(filter);
+  goto out_unlock;
+ }
+
+ var_178 = create_system_filter(dir, tr, filter_string, &filter);
+ if (filter) {
+
+
+
+
+  __free_filter(system->filter);
+  system->filter = filter;
+ }
+out_unlock:
+ mutex_unlock(&event_mutex);
+
+ return var_178;
+}

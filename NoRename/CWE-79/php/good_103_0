@@ -1,0 +1,117 @@
+<?php
+
+
+
+ini_set("soap.wsdl_cache_enabled", "0"); 
+
+
+
+
+
+
+
+
+
+
+
+
+if (isset($_GET['return']) && isset($_GET['action']) && $_GET['action'] == 'logout') {
+
+	
+
+	
+	
+	$GLOBALS['DIC']['ilAuthSession']->logout();
+
+	
+	ilUtil::redirect($_GET['return']);
+}
+
+
+
+
+
+
+
+
+
+elseif (!empty($HTTP_RAW_POST_DATA)) {
+
+	ilContext::init(ilContext::CONTEXT_SOAP);
+
+	
+	ilInitialisation::initILIAS();
+
+	
+	$server = new SoapServer('https:
+	$server->addFunction("LogoutNotification");
+	$server->handle();
+}
+
+
+
+
+
+
+
+
+else {
+
+	header('Content-Type: text/xml');
+
+	$url = filter_var("https:
+
+	
+	exit;
+}
+
+
+
+function LogoutNotification($SessionID) {
+
+	
+	
+	
+	
+	
+
+	global $ilDB;
+
+	$q = "SELECT session_id, data FROM usr_session WHERE expires > 'NOW()'";
+	$r = $ilDB->query($q);
+
+	while ($session_entry = $r->fetchRow(ilDBConstants::FETCHMODE_ASSOC)) {
+
+		$user_session = unserializesession($session_entry['data']);
+
+		
+		
+		foreach ($user_session as $user_session_entry) {
+			if (is_array($user_session_entry)
+				&& array_key_exists('shibboleth_session_id', $user_session_entry)
+				&& $user_session_entry['shibboleth_session_id'] == $SessionID
+			) {
+
+				
+				if (ilSession::_destroy($session_entry['session_id']) !== true) {
+					return new SoapFault('LogoutError', 'Could not delete session entry in database.');
+				}
+			}
+		}
+	}
+	
+}
+
+
+
+function unserializesession($serialized_string) {
+	$variables = array();
+	$a = preg_split("/(\w+)\|/", $serialized_string, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+	for ($i = 0; $i < count($a); $i = $i + 2) {
+		$variables[$a[$i]] = unserialize($a[$i + 1]);
+	}
+
+	return ($variables);
+}
+
+?>

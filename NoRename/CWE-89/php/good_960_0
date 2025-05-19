@@ -1,0 +1,706 @@
+<?php
+
+
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+
+class Give_Payments_Query extends Give_Stats {
+
+	
+	public $_args = array();
+
+	
+	public $args = array();
+
+	
+	public $payments = array();
+
+	
+	public function __construct( $args = array() ) {
+		$defaults = array(
+			'output'          => 'payments',
+			'post_type'       => array( 'give_payment' ),
+			'start_date'      => false,
+			'end_date'        => false,
+			'number'          => 20,
+			'page'            => null,
+			'orderby'         => 'ID',
+			'order'           => 'DESC',
+			'user'            => null, 
+			'donor'           => null,
+			'status'          => give_get_payment_status_keys(),
+			'meta_key'        => null,
+			'year'            => null,
+			'month'           => null,
+			'day'             => null,
+			's'               => null,
+			'search_in_notes' => false,
+			'children'        => false,
+			'fields'          => null,
+			'gateway'         => null,
+			'give_forms'      => null,
+			'offset'          => null,
+
+			
+			'group_by'        => '',
+			'count'           => false,
+		);
+
+		
+		
+		$args['update_post_meta_cache'] = false;
+
+		$this->args = $this->_args = wp_parse_args( $args, $defaults );
+
+		$this->init();
+	}
+
+	
+	public function __set( $query_var, $value ) {
+		if ( in_array( $query_var, array( 'meta_query', 'tax_query' ) ) ) {
+			$this->args[ $query_var ][] = $value;
+		} else {
+			$this->args[ $query_var ] = $value;
+		}
+	}
+
+	
+	public function __unset( $query_var ) {
+		unset( $this->args[ $query_var ] );
+	}
+
+	
+	public function init() {
+	}
+
+
+	
+	private function set_filters() {
+		
+		
+		$this->args = $this->_args;
+
+		
+		$this->args['order'] = in_array( strtoupper( $this->args['order'] ), array( 'ASC', 'DESC' ) ) ? $this->args['order'] : 'DESC' ;
+
+		$this->date_filter_pre();
+		$this->orderby();
+		$this->status();
+		$this->month();
+		$this->per_page();
+		$this->page();
+		$this->user();
+		$this->donor();
+		$this->search();
+		$this->mode();
+		$this->children();
+		$this->give_forms();
+		$this->gateway_filter();
+
+		add_filter( 'posts_orderby', array( $this, 'custom_orderby' ), 10, 2 );
+
+		
+		do_action( 'give_pre_get_payments', $this );
+	}
+
+	
+	private function unset_filters() {
+		remove_filter( 'posts_orderby', array( $this, 'custom_orderby' ) );
+
+		
+		do_action( 'give_post_get_payments', $this );
+	}
+
+
+	
+	public function get_payments() {
+		global $post;
+
+		$results        = array();
+		$this->payments = array();
+		$cache_key      = Give_Cache::get_key( 'give_payment_query', $this->args, false );
+		$this->payments = Give_Cache::get_db_query( $cache_key );
+
+		
+		if ( ! is_null( $this->payments ) ) {
+			return $this->payments;
+		}
+
+
+		
+		$this->set_filters();
+
+		
+		$query = new WP_Query( $this->args );
+
+		$custom_output = array(
+			'payments',
+			'give_payments',
+		);
+
+		if ( $query->have_posts() ) {
+
+			
+			
+			if (
+				( isset( $this->args['nopaging'] ) && true !== (bool) $this->args['nopaging'] )
+				|| ( isset( $this->args['posts_per_page'] ) && 0 < $this->args['posts_per_page'] )
+			) {
+				self::update_meta_cache( wp_list_pluck( $query->posts, 'ID' ) );
+			}
+
+			if ( ! in_array( $this->args['output'], $custom_output ) ) {
+				$results = $query->posts;
+
+			} else{
+				$previous_post = $post;
+
+				while ( $query->have_posts() ) {
+					$query->the_post();
+
+					$payment_id = get_post()->ID;
+					$payment    = new Give_Payment( $payment_id );
+
+					$this->payments[] = apply_filters( 'give_payment', $payment, $payment_id, $this );
+				}
+
+				wp_reset_postdata();
+
+				
+				if ( $previous_post instanceof WP_Post ) {
+					$post = $previous_post;
+					setup_postdata( $post );
+				}
+
+				$results = $this->payments;
+			}
+		}
+
+		Give_Cache::set_db_query( $cache_key, $results );
+
+		
+		$this->unset_filters();
+
+		return $results;
+	}
+
+	
+	public function get_payment_by_group() {
+		global $wpdb;
+
+		$allowed_groups = array( 'post_status' );
+		$result         = array();
+
+
+		if ( in_array( $this->args['group_by'], $allowed_groups ) ) {
+			
+			if ( $this->args['count'] ) {
+
+				$this->set_filters();
+
+				$new_results = $wpdb->get_results( $this->get_sql(), ARRAY_N );
+
+				$this->unset_filters();
+
+				foreach ( $new_results as $results ) {
+					$result[ $results[0] ] = $results[1];
+				}
+
+				switch ( $this->args['group_by'] ) {
+					case 'post_status':
+
+						
+						foreach ( give_get_payment_status_keys() as $status ) {
+							if ( ! isset( $result[ $status ] ) ) {
+								$result[ $status ] = 0;
+							}
+						}
+
+						break;
+				}
+			} else {
+				$donations = $this->get_payments();
+
+				
+				foreach ( $donations as $donation ) {
+					$result[ $donation->{$this->args['group_by']} ][] = $donation;
+				}
+			}
+		}
+
+
+		
+		return apply_filters( 'give_get_payment_by_group', $result, $this );
+	}
+
+	
+	public function date_filter_pre() {
+		if ( ! ( $this->args['start_date'] || $this->args['end_date'] ) ) {
+			return;
+		}
+
+		$this->setup_dates( $this->args['start_date'], $this->args['end_date'] );
+
+		$is_start_date = property_exists( __CLASS__, 'start_date' );
+		$is_end_date   = property_exists( __CLASS__, 'end_date' );
+
+		if ( $is_start_date || $is_end_date ) {
+			$date_query = array();
+
+			if ( $is_start_date && ! is_wp_error( $this->start_date ) ) {
+				$date_query['after'] = date( 'Y-m-d H:i:s', $this->start_date );
+			}
+
+			if ( $is_end_date && ! is_wp_error( $this->end_date ) ) {
+				$date_query['before'] = date( 'Y-m-d H:i:s', $this->end_date );
+			}
+
+			
+			$date_query['inclusive'] = true;
+
+			$this->__set( 'date_query', $date_query );
+
+		}
+	}
+
+	
+	public function status() {
+		if ( ! isset( $this->args['status'] ) ) {
+			return;
+		}
+
+		$this->__set( 'post_status', $this->args['status'] );
+		$this->__unset( 'status' );
+	}
+
+	
+	public function page() {
+		if ( ! isset( $this->args['page'] ) ) {
+			return;
+		}
+
+		$this->__set( 'paged', $this->args['page'] );
+		$this->__unset( 'page' );
+	}
+
+	
+	public function per_page() {
+
+		if ( ! isset( $this->args['number'] ) ) {
+			return;
+		}
+
+		if ( $this->args['number'] == - 1 ) {
+			$this->__set( 'nopaging', true );
+		} else {
+			$this->__set( 'posts_per_page', $this->args['number'] );
+		}
+
+		$this->__unset( 'number' );
+	}
+
+	
+	public function month() {
+		if ( ! isset( $this->args['month'] ) ) {
+			return;
+		}
+
+		$this->__set( 'monthnum', $this->args['month'] );
+		$this->__unset( 'month' );
+	}
+
+	
+	public function orderby() {
+		switch ( $this->args['orderby'] ) {
+			case 'amount':
+				$this->__set( 'orderby', 'meta_value_num' );
+				$this->__set( 'meta_key', '_give_payment_total' );
+				break;
+
+			case 'status':
+				$this->__set( 'orderby', 'post_status' );
+				break;
+
+			case 'donation_form':
+				$this->__set( 'orderby', 'meta_value' );
+				$this->__set( 'meta_key', '_give_payment_form_title' );
+				break;
+
+			default:
+				$this->__set( 'orderby', $this->args['orderby'] );
+				break;
+		}
+	}
+
+	
+	public function custom_orderby( $order, $query ) {
+
+		if ( ! empty( $query->query['post_type'] ) ) {
+			$post_types = is_array( $query->query['post_type'] ) ? $query->query['post_type'] : array( $query->query['post_type'] );
+
+			if ( ! in_array( 'give_payment', $post_types ) || ! isset( $query->query['orderby'] ) || is_array( $query->query['orderby'] ) ) {
+				return $order;
+			}
+
+			global $wpdb;
+			switch ( $query->query['orderby'] ) {
+				case 'post_status':
+					$order = $wpdb->posts . '.post_status ' . strtoupper( $query->query['order'] );
+					break;
+			}
+		}
+
+		return $order;
+	}
+
+	
+	public function user() {
+		if ( is_null( $this->args['user'] ) ) {
+			return;
+		}
+
+
+		$args = array();
+
+		if ( is_numeric( $this->args['user'] ) ) {
+			
+			$donor_id = Give()->donors->get_column_by( 'id', is_numeric( $this->args['user'] ) ? 'user_id' : 'email', $this->args['user'] );
+
+			$args = array(
+				'key'   => '_give_payment_donor_id',
+				'value' => absint( $donor_id ),
+			);
+		} elseif ( is_email( $this->args['user'] ) ) {
+			$args = array(
+				'key'   => '_give_payment_donor_email',
+				'value' => $this->args['user'],
+			);
+		}
+
+		$this->__set( 'meta_query', $args );
+	}
+
+	
+	public function donor() {
+		if ( is_null( $this->args['donor'] ) || ! is_numeric( $this->args['donor'] ) ) {
+			return;
+		}
+
+		$donor_meta_type = Give()->donor_meta->meta_type;
+
+		$this->__set( 'meta_query', array(
+			'key'   => "_give_payment_{$donor_meta_type}_id",
+			'value' => (int) $this->args['donor'],
+		) );
+	}
+
+	
+	public function search() {
+
+		if ( ! isset( $this->args['s'] ) ) {
+			return;
+		}
+
+		$search = trim( $this->args['s'] );
+
+		if ( empty( $search ) ) {
+			return;
+		}
+
+		$is_email = is_email( $search ) || strpos( $search, '@' ) !== false;
+		$is_user  = strpos( $search, strtolower( 'user:' ) ) !== false;
+
+		if ( ! empty( $this->args['search_in_notes'] ) ) {
+
+			$notes = give_get_payment_notes( 0, $search );
+
+			if ( ! empty( $notes ) ) {
+
+				$payment_ids = wp_list_pluck( (array) $notes, 'comment_post_ID' );
+
+				$this->__set( 'post__in', $payment_ids );
+			}
+
+			$this->__unset( 's' );
+
+		} elseif ( $is_email || strlen( $search ) == 32 ) {
+
+			$key         = $is_email ? '_give_payment_donor_email' : '_give_payment_purchase_key';
+			$search_meta = array(
+				'key'     => $key,
+				'value'   => $search,
+				'compare' => 'LIKE',
+			);
+
+			$this->__set( 'meta_query', $search_meta );
+			$this->__unset( 's' );
+
+		} elseif ( $is_user ) {
+
+			$search_meta = array(
+				'key'   => '_give_payment_donor_id',
+				'value' => trim( str_replace( 'user:', '', strtolower( $search ) ) ),
+			);
+
+			$this->__set( 'meta_query', $search_meta );
+
+			$this->__unset( 's' );
+
+		} elseif ( is_numeric( $search ) ) {
+
+			$post = get_post( $search );
+
+			if ( is_object( $post ) && $post->post_type == 'give_payment' ) {
+
+				$arr   = array();
+				$arr[] = $search;
+				$this->__set( 'post__in', $arr );
+				$this->__unset( 's' );
+			}
+		} elseif ( '
+
+			$search = str_replace( '
+			$search = str_replace( '
+			$this->__set( 'give_forms', $search );
+			$this->__unset( 's' );
+
+		} else if ( ! empty( $search ) ) {
+			$search_parts = preg_split( '/\s+/', $search );
+
+			if ( is_array( $search_parts ) && 2 === count( $search_parts ) ) {
+				$search_meta = array(
+					'relation' => 'AND',
+					array(
+						'key'     => '_give_donor_billing_first_name',
+						'value'   => $search_parts[0],
+						'compare' => '=',
+					),
+					array(
+						'key'     => '_give_donor_billing_last_name',
+						'value'   => $search_parts[1],
+						'compare' => '=',
+					),
+				);
+			} else {
+				$search_meta = array(
+					'relation' => 'OR',
+					array(
+						'key'     => '_give_donor_billing_first_name',
+						'value'   => $search,
+						'compare' => 'LIKE',
+					),
+					array(
+						'key'     => '_give_donor_billing_last_name',
+						'value'   => $search,
+						'compare' => 'LIKE',
+					),
+				);
+			}
+
+			$this->__set( 'meta_query', $search_meta );
+
+			$this->__unset( 's' );
+
+		} else {
+			$this->__set( 's', $search );
+
+		}
+
+	}
+
+	
+	public function mode() {
+		if ( empty( $this->args['mode'] ) || $this->args['mode'] == 'all' ) {
+			$this->__unset( 'mode' );
+
+			return;
+		}
+
+		$this->__set(
+			'meta_query', array(
+				'key'   => '_give_payment_mode',
+				'value' => $this->args['mode'],
+			)
+		);
+	}
+
+	
+	public function children() {
+		if ( empty( $this->args['children'] ) ) {
+			$this->__set( 'post_parent', 0 );
+		}
+		$this->__unset( 'children' );
+	}
+
+	
+	public function give_forms() {
+
+		if ( empty( $this->args['give_forms'] ) ) {
+			return;
+		}
+
+		$compare = '=';
+
+		if ( is_array( $this->args['give_forms'] ) ) {
+			$compare = 'IN';
+		}
+
+		$this->__set(
+			'meta_query',
+			array(
+				'key'     => '_give_payment_form_id',
+				'value'   => $this->args['give_forms'],
+				'compare' => $compare,
+			)
+		);
+
+		$this->__unset( 'give_forms' );
+
+	}
+
+	
+	public function gateway_filter() {
+
+		if ( empty( $this->args['gateway'] ) ) {
+			return;
+		}
+
+		$compare = '=';
+
+		if ( is_array( $this->args['gateway'] ) ) {
+			$compare = 'IN';
+		}
+
+		$this->__set(
+			'meta_query', array(
+				'key'     => '_give_payment_gateway',
+				'value'   => $this->args['gateway'],
+				'compare' => $compare,
+			)
+		);
+
+		$this->__unset( 'gateway' );
+
+	}
+
+
+	
+	private function get_sql() {
+		global $wpdb;
+
+		$allowed_keys = array(
+			'post_name',
+			'post_author',
+			'post_date',
+			'post_title',
+			'post_status',
+			'post_modified',
+			'post_parent',
+			'post_type',
+			'menu_order',
+			'comment_count',
+		);
+
+		$this->args['orderby'] = 'post_parent__in';
+
+		
+		if( ! in_array( $this->args['orderby'], $allowed_keys ) ) {
+			$this->args['orderby'] = 'ID';
+		}
+
+		$where = "WHERE {$wpdb->posts}.post_type = 'give_payment'";
+		$where .= " AND {$wpdb->posts}.post_status IN ('" . implode( "','", $this->args['post_status'] ) . "')";
+
+		if ( is_numeric( $this->args['post_parent'] ) ) {
+			$where .= " AND {$wpdb->posts}.post_parent={$this->args['post_parent']}";
+		}
+
+		
+		$orderby  = "ORDER BY {$wpdb->posts}.{$this->args['orderby']}";
+		$group_by = '';
+
+		
+		if ( ! empty( $this->args['group_by'] ) ) {
+			$group_by = "GROUP BY {$wpdb->posts}.{$this->args['group_by']}";
+		}
+
+		
+		if (
+			empty( $this->args['nopaging'] ) &&
+			empty( $this->args['offset'] ) &&
+			( ! empty( $this->args['page'] ) && 0 < $this->args['page'] )
+		) {
+			$this->args['offset'] = $this->args['posts_per_page'] * ( $this->args['page'] - 1 );
+		}
+
+		
+		$fields = "{$wpdb->posts}.*";
+		if ( ! empty( $this->args['fields'] ) && 'all' !== $this->args['fields'] ) {
+			if ( is_string( $this->args['fields'] ) ) {
+				$fields = "{$wpdb->posts}.{$this->args['fields']}";
+			} elseif ( is_array( $this->args['fields'] ) ) {
+				$fields = "{$wpdb->posts}." . implode( " , {$wpdb->posts}.", $this->args['fields'] );
+			}
+		}
+
+		
+		if ( ! empty( $this->args['count'] ) ) {
+			$fields = "COUNT({$wpdb->posts}.ID)";
+
+			if ( ! empty( $this->args['group_by'] ) ) {
+				$fields = "{$wpdb->posts}.{$this->args['group_by']}, {$fields}";
+			}
+		}
+
+		
+		if ( ! empty( $this->args['date_query'] ) ) {
+			$date_query_obj = new WP_Date_Query( $this->args['date_query'] );
+			$where          .= str_replace(
+				array(
+					"\n",
+					'(   (',
+					'))',
+				),
+				array(
+					'',
+					'( (',
+					') )',
+				),
+				$date_query_obj->get_sql()
+			);
+		}
+
+		
+		if ( ! empty( $this->args['meta_query'] ) ) {
+			$meta_query_obj = new WP_Meta_Query( $this->args['meta_query'] );
+			$where          = implode( ' ', $meta_query_obj->get_sql( 'post', $wpdb->posts, 'ID' ) ) . " {$where}";
+			$where          = Give()->payment_meta->__rename_meta_table_name( $where, 'posts_where' );
+		}
+
+		
+		$sql = $wpdb->prepare(
+			"SELECT {$fields} FROM {$wpdb->posts} LIMIT %d,%d;",
+			absint( $this->args['offset'] ),
+			( empty( $this->args['nopaging'] ) ? absint( $this->args['posts_per_page'] ) : 99999999999 )
+		);
+
+		
+		
+		$sql = str_replace( 'LIMIT', "{$where} {$group_by} {$orderby} {$this->args['order']} LIMIT", $sql );
+
+		return $sql;
+	}
+
+	
+	public static function update_meta_cache( $donation_ids ) {
+		
+		if ( empty( $donation_ids ) ) {
+			return;
+		}
+
+		update_meta_cache( Give()->payment_meta->get_meta_type(), $donation_ids );
+	}
+}

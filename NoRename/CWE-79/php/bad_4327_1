@@ -1,0 +1,63 @@
+<?php namespace BookStack\Providers;
+
+
+class AppServiceProvider extends ServiceProvider
+{
+    
+    public function boot()
+    {
+        
+        $appUrl = config('app.url');
+        if ($appUrl) {
+            $isHttps = (strpos($appUrl, 'https:
+            URL::forceRootUrl($appUrl);
+            URL::forceScheme($isHttps ? 'https' : 'http');
+        }
+
+        
+        Validator::extend('image_extension', function ($attribute, $value, $parameters, $validator) {
+            $validImageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+            return in_array(strtolower($value->getClientOriginalExtension()), $validImageExtensions);
+        });
+
+        Validator::extend('no_double_extension', function ($attribute, $value, $parameters, $validator) {
+            $uploadName = $value->getClientOriginalName();
+            return substr_count($uploadName, '.') < 2;
+        });
+
+        
+        Blade::directive('icon', function ($expression) {
+            return "<?php  ?>";
+        });
+
+        Blade::directive('exposeTranslations', function ($expression) {
+            return "<?php \$__env->startPush('translations'); ?>" .
+                "<?php foreach({$expression} as \$key): ?>" .
+                '<meta name="translation" key="<?php  ?>" value="<?php  ?>">' . "\n" .
+                "<?php endforeach; ?>" .
+                '<?php $__env->stopPush(); ?>';
+        });
+
+        
+        Schema::defaultStringLength(191);
+
+        
+        Illuminate\Database\Eloquent\Relations\Relation::morphMap([
+            'BookStack\\Bookshelf' => BookStack\Entities\Bookshelf::class,
+            'BookStack\\Book' => BookStack\Entities\Book::class,
+            'BookStack\\Chapter' => BookStack\Entities\Chapter::class,
+            'BookStack\\Page' => BookStack\Entities\Page::class,
+        ]);
+
+        
+        Illuminate\Support\Facades\View::composer('partials.breadcrumbs', BookStack\Entities\BreadcrumbsViewComposer::class);
+    }
+
+    
+    public function register()
+    {
+        $this->app->singleton(BookStack\Settings\SettingService::class, function ($app) {
+            return new SettingService($app->make(BookStack\Settings\Setting::class), $app->make('Illuminate\Contracts\Cache\Repository'));
+        });
+    }
+}

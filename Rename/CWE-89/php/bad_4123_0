@@ -1,0 +1,761 @@
+<?php
+
+
+
+class class_0 extends var_0
+{
+    
+    public $var_1;
+
+    
+    public $var_2;
+
+    
+    public $var_3;
+
+    
+    public $var_4;
+
+    
+    public $var_5 = 0;
+
+    
+    public $var_6 = false;
+
+    
+    public $var_7 = false;
+
+    
+    public $var_8 = '';
+
+    
+    public static $var_9 = array(
+        'table' => 'stock_available',
+        'primary' => 'id_stock_available',
+        'fields' => array(
+            'id_product' => array('type' => self::var_10, 'validate' => 'isUnsignedId', 'required' => true),
+            'id_product_attribute' => array('type' => self::var_10, 'validate' => 'isUnsignedId', 'required' => true),
+            'id_shop' => array('type' => self::var_10, 'validate' => 'isUnsignedId'),
+            'id_shop_group' => array('type' => self::var_10, 'validate' => 'isUnsignedId'),
+            'quantity' => array('type' => self::var_10, 'validate' => 'isInt', 'required' => true),
+            'depends_on_stock' => array('type' => self::var_11, 'validate' => 'isBool', 'required' => true),
+            'out_of_stock' => array('type' => self::var_10, 'validate' => 'isInt', 'required' => true),
+            'location' => array('type' => self::var_12, 'validate' => 'isString', 'size' => 255),
+        ),
+    );
+
+    
+    protected $var_13 = array(
+        'fields' => array(
+            'id_product' => array('xlink_resource' => 'products'),
+            'id_product_attribute' => array('xlink_resource' => 'combinations'),
+            'id_shop' => array('xlink_resource' => 'shops'),
+            'id_shop_group' => array('xlink_resource' => 'shop_groups'),
+        ),
+        'hidden_fields' => array(
+        ),
+        'objectMethods' => array(
+            'add' => 'addWs',
+            'update' => 'updateWs',
+        ),
+    );
+
+    
+    public function fn_0()
+    {
+        if ($var_14->var_6) {
+            return WebserviceRequest::getInstance()->setError(500, $var_14->trans('You cannot update the available stock when it depends on stock.', array(), 'Admin.Catalog.Notification'), 133);
+        }
+
+        return $var_14->fn_1();
+    }
+
+    public static function fn_2($var_1, $var_2 = null, $var_3 = null)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+
+        $var_18 = new class_1();
+        $var_18->select('id_stock_available');
+        $var_18->from('stock_available');
+        $var_18->where('id_product = ' . (int) $var_1);
+
+        if ($var_2 !== null) {
+            $var_18->where('id_product_attribute = ' . (int) $var_2);
+        }
+
+        $var_18 = class_5::fn_17($var_18, $var_3);
+
+        return (int) Db::getInstance(var_22)->getValue($var_18);
+    }
+
+    
+    public static function fn_3($var_1, $var_24 = null)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+
+        
+        if (Pack::isPack($var_1)) {
+            if (Validate::isLoadedObject($var_25 = new class_2((int) $var_1))) {
+                if ($var_25->var_26 == var_27::var_28
+                    || $var_25->var_26 == var_27::var_29
+                    || ($var_25->var_26 == var_27::var_30
+                        && Configuration::get('PS_PACK_STOCK_TYPE') > 0)
+                ) {
+                    $var_31 = Pack::getItems($var_1, (int) Configuration::get('PS_LANG_DEFAULT'));
+                    foreach ($var_31 as $var_32) {
+                        class_5::fn_3($var_32->var_33, $var_24);
+                    }
+                }
+            } else {
+                return false;
+            }
+        }
+
+        
+        $var_34 = Warehouse::getWarehousesGroupedByShops();
+        if ($var_24 !== null) {
+            $var_35 = array();
+            $var_36 = Warehouse::getWarehouses(false, (int) $var_24);
+            foreach ($var_36 as $var_37) {
+                $var_35[] = $var_37['id_warehouse'];
+            }
+        }
+
+        
+        $var_38 = array();
+        foreach (class_2::getProductAttributesIds($var_1) as $var_2) {
+            $var_38[] = $var_2['id_product_attribute'];
+        }
+
+        
+        $var_7 = class_5::fn_15($var_1);
+
+        $var_39 = StockManagerFactory::getManager();
+        
+        foreach ($var_34 as $var_3 => $var_40) {
+            
+            if (class_5::fn_14($var_1, $var_3)) {
+                
+                $var_41 = 0;
+
+                
+                if (empty($var_38)) {
+                    $var_42 = WareHouse::getProductWarehouseList((int) $var_1, 0, (int) $var_3);
+                    $var_43 = array();
+                    foreach ($var_42 as $var_37) {
+                        $var_43[] = (int) $var_37['id_warehouse'];
+                    }
+                    $var_43 = array_intersect($var_43, $var_40);
+                    if ($var_24 != null && !count(array_intersect($var_43, $var_35))) {
+                        continue;
+                    }
+
+                    $var_41 = $var_39->getProductRealQuantities($var_1, null, $var_43, true);
+
+                    Hook::exec(
+                        'actionUpdateQuantity',
+                                    array(
+                                        'id_product' => $var_1,
+                                        'id_product_attribute' => 0,
+                                        'quantity' => $var_41,
+                                        'id_shop' => $var_3,
+                                    )
+                    );
+                } else {
+                    
+                    foreach ($var_38 as $var_2) {
+                        $var_45 = WareHouse::getProductWarehouseList((int) $var_1, (int) $var_2, (int) $var_3);
+                        $var_46 = array();
+                        foreach ($var_45 as $var_37) {
+                            $var_46[] = (int) $var_37['id_warehouse'];
+                        }
+                        $var_46 = array_intersect($var_46, $var_40);
+                        if ($var_24 != null && !count(array_intersect($var_46, $var_35))) {
+                            continue;
+                        }
+
+                        $var_5 = $var_39->getProductRealQuantities($var_1, $var_2, $var_46, true);
+
+                        $var_18 = new class_1();
+                        $var_18->select('COUNT(*)');
+                        $var_18->from('stock_available');
+                        $var_18->where('id_product = ' . (int) $var_1 . ' AND id_product_attribute = ' . (int) $var_2 .
+                            class_5::fn_17(null, $var_3));
+
+                        if ((int) Db::getInstance(var_22)->getValue($var_18)) {
+                            $var_18 = array(
+                                'table' => 'stock_available',
+                                'data' => array('quantity' => $var_5),
+                                'where' => 'id_product = ' . (int) $var_1 . ' AND id_product_attribute = ' . (int) $var_2 .
+                                class_5::fn_17(null, $var_3),
+                            );
+                            Db::getInstance()->fn_1($var_18['table'], $var_18['data'], $var_18['where']);
+                        } else {
+                            $var_18 = array(
+                                'table' => 'stock_available',
+                                'data' => array(
+                                    'quantity' => $var_5,
+                                    'depends_on_stock' => 1,
+                                    'out_of_stock' => $var_7,
+                                    'id_product' => (int) $var_1,
+                                    'id_product_attribute' => (int) $var_2,
+                                ),
+                            );
+                            class_5::fn_18($var_18['data'], $var_3);
+                            Db::getInstance()->insert($var_18['table'], $var_18['data']);
+                        }
+
+                        $var_41 += $var_5;
+
+                        Hook::exec(
+                            'actionUpdateQuantity',
+                                    array(
+                                        'id_product' => $var_1,
+                                        'id_product_attribute' => $var_2,
+                                        'quantity' => $var_5,
+                                        'id_shop' => $var_3,
+                                    )
+                        );
+                    }
+                }
+                
+                
+                if (($var_24 != null && array_intersect($var_40, $var_35)) || $var_24 == null) {
+                    $var_18 = array(
+                        'table' => 'stock_available',
+                        'data' => array('quantity' => $var_41),
+                        'where' => 'id_product = ' . (int) $var_1 . ' AND id_product_attribute = 0' .
+                        class_5::fn_17(null, $var_3),
+                    );
+                    Db::getInstance()->fn_1($var_18['table'], $var_18['data'], $var_18['where']);
+                }
+            }
+        }
+        
+        if (count($var_34) == 0 && class_5::fn_14((int) $var_1)) {
+            Db::getInstance()->fn_1('stock_available', array('quantity' => 0), 'id_product = ' . (int) $var_1);
+        }
+
+        Cache::clean('StockAvailable::getQuantityAvailableByProduct_' . (int) $var_1 . '*');
+    }
+
+    
+    public static function fn_4($var_1, $var_6 = true, $var_3 = null, $var_2 = 0)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+
+        $var_48 = class_5::fn_2((int) $var_1, (int) $var_2, $var_3);
+        if ($var_48 > 0) {
+            Db::getInstance()->fn_1('stock_available', array(
+                'depends_on_stock' => (int) $var_6,
+            ), 'id_stock_available = ' . (int) $var_48);
+        } else {
+            $var_49 = array(
+                'depends_on_stock' => (int) $var_6,
+                'id_product' => (int) $var_1,
+                'id_product_attribute' => (int) $var_2,
+            );
+
+            class_5::fn_18($var_49, $var_3);
+
+            Db::getInstance()->insert('stock_available', $var_49);
+        }
+
+        
+        if ($var_6) {
+            class_5::fn_3($var_1);
+        }
+    }
+
+    
+    public static function fn_5($var_1, $var_7 = false, $var_3 = null, $var_2 = 0)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+
+        $var_48 = (int) class_5::fn_2((int) $var_1, (int) $var_2, $var_3);
+
+        if ($var_48 > 0) {
+            Db::getInstance()->fn_1(
+                'stock_available',
+                array('out_of_stock' => (int) $var_7),
+                'id_product = ' . (int) $var_1 .
+                (($var_2) ? ' AND id_product_attribute = ' . (int) $var_2 : '') .
+                class_5::fn_17(null, $var_3)
+            );
+        } else {
+            $var_49 = array(
+                'out_of_stock' => (int) $var_7,
+                'id_product' => (int) $var_1,
+                'id_product_attribute' => (int) $var_2,
+            );
+
+            class_5::fn_18($var_49, $var_3);
+            Db::getInstance()->insert('stock_available', $var_49, false, true, var_50::var_51);
+        }
+    }
+
+    
+    public static function fn_6($var_1, $var_8, $var_3 = null, $var_2 = 0)
+    {
+        if (
+            false === Validate::isUnsignedId($var_1)
+            || (((false === Validate::isUnsignedId($var_3)) && (null !== $var_3)))
+            || (false === Validate::isUnsignedId($var_2))
+            || (false === Validate::isString($var_8))
+        ) {
+            $var_52 = [
+                'id_product' => $var_1,
+                'id_shop' => $var_3,
+                'id_product_attribute' => $var_2,
+                'location' => $var_8,
+            ];
+
+            throw new \var_53(sprintf(
+                'Could not update location as input data is not valid: %s',
+                json_encode($var_52)
+            ));
+        }
+
+        $var_48 = class_5::fn_2($var_1, $var_2, $var_3);
+
+        if ($var_48 > 0) {
+            Db::getInstance()->fn_1(
+                'stock_available',
+                array('location' => $var_8),
+                'id_product = ' . $var_1 .
+                (($var_2) ? ' AND id_product_attribute = ' . $var_2 : '') .
+                class_5::fn_17(null, $var_3)
+            );
+        } else {
+            $var_49 = array(
+                'location' => $var_8,
+                'id_product' => $var_1,
+                'id_product_attribute' => $var_2,
+            );
+
+            class_5::fn_18($var_49, $var_3);
+            Db::getInstance()->insert('stock_available', $var_49, false, true, var_50::var_51);
+        }
+    }
+
+    
+    public static function fn_7($var_1 = null, $var_2 = null, $var_3 = null)
+    {
+        
+        if ($var_2 === null) {
+            $var_2 = 0;
+        }
+
+        $var_54 = 'StockAvailable::getQuantityAvailableByProduct_' . (int) $var_1 . '-' . (int) $var_2 . '-' . (int) $var_3;
+        if (!Cache::isStored($var_54)) {
+            $var_18 = new class_1();
+            $var_18->select('SUM(quantity)');
+            $var_18->from('stock_available');
+
+            
+            if ($var_1 !== null) {
+                $var_18->where('id_product = ' . (int) $var_1);
+            }
+
+            $var_18->where('id_product_attribute = ' . (int) $var_2);
+            $var_18 = class_5::fn_17($var_18, $var_3);
+            $var_55 = (int) Db::getInstance(var_22)->getValue($var_18);
+            Cache::store($var_54, $var_55);
+
+            return $var_55;
+        }
+
+        return Cache::retrieve($var_54);
+    }
+
+    
+    public function fn_8($var_57 = true, $var_58 = false)
+    {
+        if (!$var_55 = parent::fn_8($var_57, $var_58)) {
+            return false;
+        }
+
+        $var_55 &= $var_14->fn_9();
+
+        return $var_55;
+    }
+
+    
+    public function fn_1($var_58 = false)
+    {
+        if (!$var_55 = parent::fn_1($var_58)) {
+            return false;
+        }
+
+        $var_55 &= $var_14->fn_9();
+
+        return $var_55;
+    }
+
+    
+    public function fn_9()
+    {
+        if ($var_14->var_2 == 0) {
+            return true;
+        }
+
+        $var_3 = (class_3::getContext() != var_60::var_61 && $var_14->var_3 ? $var_14->var_3 : null);
+
+        if (!Configuration::get('PS_DISP_UNAVAILABLE_ATTR')) {
+            $var_62 = new class_4((int) $var_14->var_2);
+            if ($var_63 = $var_62->getColorsAttributes()) {
+                $var_25 = new class_2((int) $var_14->var_1);
+                foreach ($var_63 as $var_65) {
+                    if ($var_25->isColorUnavailable((int) $var_65['id_attribute'], (int) $var_14->var_3)) {
+                        Tools::clearColorListCache($var_25->var_33);
+
+                        break;
+                    }
+                }
+            }
+        }
+
+        $var_67 = (int) Db::getInstance(var_22)->getValue(
+            '
+			SELECT SUM(quantity) as quantity
+			FROM ' . var_68 . 'stock_available
+			WHERE id_product = ' . (int) $var_14->var_1 . '
+			AND id_product_attribute <> 0 ' .
+            class_5::fn_17(null, $var_3)
+        );
+        $var_14->fn_10($var_14->var_1, 0, $var_67, $var_3, false);
+
+        return true;
+    }
+
+    
+    public static function fn_11($var_1, $var_2, $var_71, $var_3 = null, $var_72 = false, $var_49 = array())
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+        $var_25 = new class_2((int) $var_1);
+        if (!Validate::isLoadedObject($var_25)) {
+            return false;
+        }
+
+        $var_73 = var_74\var_74\var_75\var_76::get('\\PrestaShop\\PrestaShop\\Core\\Stock\\StockManager');
+        $var_73->fn_11($var_25, $var_2, $var_71, $var_3, $var_72, $var_49);
+
+        return true;
+    }
+
+    
+    public static function fn_10($var_1, $var_2, $var_5, $var_3 = null, $var_72 = true)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+        $var_77 = Context::getContext();
+        
+        if ($var_3 === null && class_3::getContext() != var_60::var_61) {
+            $var_3 = (int) $var_77->var_78->var_33;
+        }
+        $var_6 = class_5::fn_14($var_1);
+        
+        if (!$var_6) {
+            $var_73 = var_74\var_74\var_75\var_76::get('\\PrestaShop\\PrestaShop\\Core\\Stock\\StockManager');
+
+            $var_79 = (int) class_5::fn_2($var_1, $var_2, $var_3);
+            if ($var_79) {
+                $var_80 = new class_5($var_79);
+
+                $var_81 = -1 * ((int) $var_80->var_5 - (int) $var_5);
+
+                $var_80->var_5 = (int) $var_5;
+                $var_80->fn_1();
+
+                if (true === $var_72 && 0 != $var_81) {
+                    $var_73->saveMovement($var_1, $var_2, $var_81);
+                }
+            } else {
+                $var_7 = class_5::fn_15($var_1, $var_3);
+                $var_80 = new class_5();
+                $var_80->var_7 = (int) $var_7;
+                $var_80->var_1 = (int) $var_1;
+                $var_80->var_2 = (int) $var_2;
+                $var_80->var_5 = (int) $var_5;
+                if ($var_3 === null) {
+                    $var_83 = class_3::getContextShopGroup();
+                } else {
+                    $var_83 = new class_6((int) class_3::getGroupFromShop((int) $var_3));
+                }
+                
+                if ($var_83->var_85) {
+                    $var_80->var_3 = 0;
+                    $var_80->var_4 = (int) $var_83->var_33;
+                } else {
+                    $var_80->var_3 = (int) $var_3;
+                    $var_80->var_4 = 0;
+                }
+                $var_80->fn_8();
+
+                if (true === $var_72 && 0 != $var_5) {
+                    $var_73->saveMovement($var_1, $var_2, (int) $var_5);
+                }
+            }
+
+            Hook::exec(
+                'actionUpdateQuantity',
+                array(
+                    'id_product' => $var_1,
+                    'id_product_attribute' => $var_2,
+                    'quantity' => $var_80->var_5,
+                )
+            );
+        }
+        Cache::clean('StockAvailable::getQuantityAvailableByProduct_' . (int) $var_1 . '*');
+    }
+
+    
+    public static function fn_12($var_1, $var_2 = null, $var_78 = null)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+
+        if (class_3::getContext() == var_86::var_87) {
+            if (class_3::getContextShopGroup()->var_85 == 1) {
+                $var_88 = '';
+                if ($var_2 !== null) {
+                    $var_88 = '_attribute';
+                    $var_89 = $var_2;
+                } else {
+                    $var_89 = $var_1;
+                }
+
+                if ((int) Db::getInstance()->getValue('SELECT COUNT(*)
+						FROM ' . var_68 . 'product' . $var_88 . '_shop
+						WHERE id_product' . $var_88 . '=' . (int) $var_89 . '
+							AND id_shop IN (' . implode(',', array_map('intval', class_3::getContextListShopID(var_86::var_90))) . ')')) {
+                    return true;
+                }
+            }
+        }
+
+        $var_91 = Db::getInstance()->execute('
+		DELETE FROM ' . var_68 . 'stock_available
+		WHERE id_product = ' . (int) $var_1 .
+        ($var_2 ? ' AND id_product_attribute = ' . (int) $var_2 : '') .
+        class_5::fn_17(null, $var_78));
+
+        if ($var_2) {
+            if ($var_78 === null || !Validate::isLoadedObject($var_78)) {
+                $var_93 = array();
+                class_5::fn_18($var_93);
+                $var_3 = (int) $var_93['id_shop'];
+            } else {
+                $var_3 = (int) $var_78->var_33;
+            }
+
+            $var_80 = new class_5();
+            $var_80->var_1 = (int) $var_1;
+            $var_80->var_2 = (int) $var_2;
+            $var_80->var_3 = (int) $var_3;
+            $var_80->fn_9();
+        }
+
+        Cache::clean('StockAvailable::getQuantityAvailableByProduct_' . (int) $var_1 . '*');
+
+        return $var_91;
+    }
+
+    
+    public static function fn_13(var_84 $var_83)
+    {
+        if ($var_83->var_85) {
+            $var_94 = class_3::getShops(false, $var_83->var_33, true);
+        }
+
+        if (count($var_94) > 0) {
+            $var_95 = implode(', ', $var_94);
+
+            return Db::getInstance()->fn_1('stock_available', array('quantity' => 0), 'id_shop IN (' . $var_95 . ')');
+        } else {
+            return Db::getInstance()->fn_1('stock_available', array('quantity' => 0), 'id_shop_group = ' . $var_83->var_33);
+        }
+    }
+
+    
+    public static function fn_14($var_1, $var_3 = null)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+
+        $var_18 = new class_1();
+        $var_18->select('depends_on_stock');
+        $var_18->from('stock_available');
+        $var_18->where('id_product = ' . (int) $var_1);
+        $var_18->where('id_product_attribute = 0');
+
+        $var_18 = class_5::fn_17($var_18, $var_3);
+
+        return (bool) Db::getInstance(var_22)->getValue($var_18);
+    }
+
+    
+    public static function fn_15($var_1, $var_3 = null)
+    {
+        if (!Validate::isUnsignedId($var_1)) {
+            return false;
+        }
+
+        $var_18 = new class_1();
+        $var_18->select('out_of_stock');
+        $var_18->from('stock_available');
+        $var_18->where('id_product = ' . (int) $var_1);
+        $var_18->where('id_product_attribute = 0');
+
+        $var_18 = class_5::fn_17($var_18, $var_3);
+
+        return (int) Db::getInstance(var_22)->getValue($var_18);
+    }
+
+    
+    public static function fn_16($var_1, $var_2 = null, $var_3 = null)
+    {
+        $var_1 = (int) $var_1;
+
+        if (null === $var_2) {
+            $var_2 = 0;
+        } else {
+            $var_2 = (int) $var_2;
+        }
+
+        $var_18 = new class_1();
+        $var_18->select('location');
+        $var_18->from('stock_available');
+        $var_18->where('id_product = ' . $var_1);
+        $var_18->where('id_product_attribute = ' . $var_2);
+
+        $var_18 = class_5::fn_17($var_18, $var_3);
+
+        return Db::getInstance(var_22)->getValue($var_18);
+    }
+
+    
+    public static function fn_17($var_96 = null, $var_78 = null, $var_97 = null)
+    {
+        $var_77 = Context::getContext();
+
+        if (!empty($var_97)) {
+            $var_97 .= '.';
+        }
+
+        
+        
+        if ($var_78 === null || $var_78 === $var_77->var_78->var_33) {
+            if (class_3::getContext() == var_60::var_61) {
+                $var_83 = class_3::getContextShopGroup();
+            } else {
+                $var_83 = $var_77->var_78->getGroup();
+            }
+            $var_78 = $var_77->var_78;
+        } elseif (is_object($var_78)) {
+            
+            $var_83 = $var_78->getGroup();
+        } else {
+            $var_78 = new class_3($var_78);
+            $var_83 = $var_78->getGroup();
+        }
+
+        
+        if ($var_83->var_85) {
+            if (is_object($var_96)) {
+                $var_96->where(pSQL($var_97) . 'id_shop_group = ' . (int) $var_83->var_33);
+                $var_96->where(pSQL($var_97) . 'id_shop = 0');
+            } else {
+                $var_96 = ' AND ' . pSQL($var_97) . 'id_shop_group = ' . (int) $var_83->var_33 . ' ';
+                $var_96 .= ' AND ' . pSQL($var_97) . 'id_shop = 0 ';
+            }
+        } else {
+            if (is_object($var_96)) {
+                $var_96->where(pSQL($var_97) . 'id_shop = ' . (int) $var_78->var_33);
+                $var_96->where(pSQL($var_97) . 'id_shop_group = 0');
+            } else {
+                $var_96 = ' AND ' . pSQL($var_97) . 'id_shop = ' . (int) $var_78->var_33 . ' ';
+                $var_96 .= ' AND ' . pSQL($var_97) . 'id_shop_group = 0 ';
+            }
+        }
+
+        return $var_96;
+    }
+
+    
+    public static function fn_18(&$var_49, $var_3 = null)
+    {
+        $var_77 = Context::getContext();
+        $var_99 = false;
+
+        
+        
+        if ($var_3 === null) {
+            if (class_3::getContext() == var_60::var_61) {
+                $var_83 = class_3::getContextShopGroup();
+            } else {
+                $var_83 = $var_77->var_78->getGroup();
+                $var_3 = $var_77->var_78->var_33;
+            }
+        } else {
+            $var_78 = new class_3($var_3);
+            $var_83 = $var_78->getGroup();
+        }
+
+        
+        if ($var_83->var_85) {
+            $var_49['id_shop_group'] = (int) $var_83->var_33;
+            $var_49['id_shop'] = 0;
+
+            $var_99 = true;
+        } else {
+            $var_49['id_shop_group'] = 0;
+        }
+
+        
+        if (!$var_99) {
+            $var_49['id_shop'] = (int) $var_3;
+        }
+    }
+
+    
+    public static function fn_19($var_100, $var_101)
+    {
+        if (!$var_100 || !$var_101) {
+            return false;
+        }
+
+        $var_18 = '
+			INSERT INTO ' . var_68 . 'stock_available
+			(
+				id_product,
+				id_product_attribute,
+				id_shop,
+				id_shop_group,
+				quantity,
+				depends_on_stock,
+				out_of_stock,
+				location
+			)
+			(
+				SELECT id_product, id_product_attribute, ' . (int) $var_101 . ', 0, quantity, depends_on_stock, out_of_stock, location
+				FROM ' . var_68 . 'stock_available
+				WHERE id_shop = ' . (int) $var_100 .
+            ')';
+
+        return Db::getInstance()->execute($var_18);
+    }
+}

@@ -1,0 +1,434 @@
+
+
+
+
+
+
+
+
+static bool func_0(QIODevice &func_17, QIODevice &func_4)
+{
+    while (!func_17.atEnd()) {
+        char buf[4096];
+        qint64 readLen = func_17.read(buf, 4096);
+        if (readLen <= 0)
+            return false;
+        if (func_4.write(buf, readLen) != readLen)
+            return false;
+    }
+    return true;
+}
+
+bool JlCompress::compressFile(QuaZip* func_23, QString fileName, QString fileDest) {
+
+
+
+
+
+    if (!func_23) return false;
+    if (func_23->getMode()!=QuaZip::mdCreate &&
+        func_23->getMode()!=QuaZip::mdAppend &&
+        func_23->getMode()!=QuaZip::mdAdd) return false;
+
+
+    QFile func_17;
+    func_17.setFileName(fileName);
+    if(!func_17.open(QIODevice::ReadOnly)) return false;
+
+
+    QuaZipFile func_4(func_23);
+    if(!func_4.open(QIODevice::WriteOnly, QuaZipNewInfo(fileDest, func_17.fileName()))) return false;
+
+
+    if (!func_0(func_17, func_4) || func_4.getZipError()!=UNZ_OK) {
+        return false;
+    }
+
+
+    func_4.close();
+    if (func_4.getZipError()!=UNZ_OK) return false;
+    func_17.close();
+
+    return true;
+}
+
+bool JlCompress::compressSubDir(QuaZip* func_23, QString dir, QString origDir, bool recursive, QDir::Filters filters) {
+
+
+
+
+
+
+    if (!func_23) return false;
+    if (func_23->getMode()!=QuaZip::mdCreate &&
+        func_23->getMode()!=QuaZip::mdAppend &&
+        func_23->getMode()!=QuaZip::mdAdd) return false;
+
+
+    QDir func_9(dir);
+    if (!func_9.exists()) return false;
+
+    QDir func_10(origDir);
+ if (dir != origDir) {
+  QuaZipFile func_11(func_23);
+  if (!func_11.open(QIODevice::WriteOnly,
+   QuaZipNewInfo(func_10.relativeFilePath(dir) + "/", dir), 0, 0, 0)) {
+    return false;
+  }
+  func_11.close();
+ }
+
+
+
+    if (recursive) {
+
+        QFileInfoList files = func_9.entryInfoList(QDir::AllDirs|QDir::NoDotAndDotDot|filters);
+        for (int index = 0; index < files.size(); ++index ) {
+            const QFileInfo & func_14( files.at( index ) );
+
+
+
+
+
+            if(!compressSubDir(func_23,func_14.absoluteFilePath(),origDir,recursive,filters)) return false;
+        }
+    }
+
+
+    QFileInfoList files = func_9.entryInfoList(QDir::Files|filters);
+    for (int index = 0; index < files.size(); ++index ) {
+        const QFileInfo & func_14( files.at( index ) );
+
+        if(!func_14.isFile()||func_14.absoluteFilePath()==func_23->getZipName()) continue;
+
+
+        QString filename = func_10.relativeFilePath(func_14.absoluteFilePath());
+
+
+        if (!compressFile(func_23,func_14.absoluteFilePath(),filename)) return false;
+    }
+
+    return true;
+}
+
+bool JlCompress::extractFile(QuaZip* func_23, QString fileName, QString fileDest) {
+
+
+
+
+
+    if (!func_23) return false;
+    if (func_23->getMode()!=QuaZip::mdUnzip) return false;
+
+
+    if (!fileName.isEmpty())
+        func_23->setCurrentFile(fileName);
+    QuaZipFile func_17(func_23);
+    if(!func_17.open(QIODevice::ReadOnly) || func_17.getZipError()!=UNZ_OK) return false;
+
+
+    QDir curDir;
+    if (fileDest.endsWith('/')) {
+        if (!curDir.mkpath(fileDest)) {
+            return false;
+        }
+    } else {
+        if (!curDir.mkpath(QFileInfo(fileDest).absolutePath())) {
+            return false;
+        }
+    }
+
+    QuaZipFileInfo64 info;
+    if (!func_23->getCurrentFileInfo(&info))
+        return false;
+
+    QFile::Permissions srcPerm = info.getPermissions();
+    if (fileDest.endsWith('/') && QFileInfo(fileDest).isDir()) {
+        if (srcPerm != 0) {
+            QFile(fileDest).setPermissions(srcPerm);
+        }
+        return true;
+    }
+
+
+    QFile func_4;
+    func_4.setFileName(fileDest);
+    if(!func_4.open(QIODevice::WriteOnly)) return false;
+
+
+    if (!func_0(func_17, func_4) || func_17.getZipError()!=UNZ_OK) {
+        func_4.close();
+        removeFile(QStringList(fileDest));
+        return false;
+    }
+    func_4.close();
+
+
+    func_17.close();
+    if (func_17.getZipError()!=UNZ_OK) {
+        removeFile(QStringList(fileDest));
+        return false;
+    }
+
+    if (srcPerm != 0) {
+        func_4.setPermissions(srcPerm);
+    }
+    return true;
+}
+
+bool JlCompress::removeFile(QStringList listFile) {
+    bool ret = true;
+
+    for (int i=0; i<listFile.count(); i++) {
+
+        ret = ret && QFile::remove(listFile.at(i));
+    }
+    return ret;
+}
+
+bool JlCompress::compressFile(QString fileCompressed, QString file) {
+
+    QuaZip func_23(fileCompressed);
+    QDir().mkpath(QFileInfo(fileCompressed).absolutePath());
+    if(!func_23.open(QuaZip::mdCreate)) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+
+    if (!compressFile(&func_23,func_14,QFileInfo(func_14).fileName())) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+
+    func_23.close();
+    if(func_23.getZipError()!=0) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+    return true;
+}
+
+bool JlCompress::compressFiles(QString fileCompressed, QStringList files) {
+
+    QuaZip func_23(fileCompressed);
+    QDir().mkpath(QFileInfo(fileCompressed).absolutePath());
+    if(!func_23.open(QuaZip::mdCreate)) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+
+    QFileInfo info;
+    for (int index = 0; index < files.size(); ++index ) {
+        const QString & func_14( files.at( index ) );
+        info.setFile(func_14);
+        if (!info.exists() || !compressFile(&func_23,func_14,info.fileName())) {
+            QFile::remove(fileCompressed);
+            return false;
+        }
+    }
+
+
+    func_23.close();
+    if(func_23.getZipError()!=0) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+    return true;
+}
+
+bool JlCompress::compressDir(QString fileCompressed, QString dir, bool recursive) {
+    return compressDir(fileCompressed, dir, recursive, 0);
+}
+
+bool JlCompress::compressDir(QString fileCompressed, QString dir,
+                             bool recursive, QDir::Filters filters)
+{
+
+    QuaZip func_23(fileCompressed);
+    QDir().mkpath(QFileInfo(fileCompressed).absolutePath());
+    if(!func_23.open(QuaZip::mdCreate)) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+
+    if (!compressSubDir(&func_23,dir,dir,recursive, filters)) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+
+    func_23.close();
+    if(func_23.getZipError()!=0) {
+        QFile::remove(fileCompressed);
+        return false;
+    }
+
+    return true;
+}
+
+QString JlCompress::extractFile(QString fileCompressed, QString fileName, QString fileDest) {
+
+    QuaZip func_23(fileCompressed);
+    return extractFile(func_23, fileName, fileDest);
+}
+
+QString JlCompress::extractFile(QuaZip &func_23, QString fileName, QString fileDest)
+{
+    if(!func_23.open(QuaZip::mdUnzip)) {
+        return QString();
+    }
+
+
+    if (fileDest.isEmpty())
+        fileDest = fileName;
+    if (!extractFile(&func_23,fileName,fileDest)) {
+        return QString();
+    }
+
+
+    func_23.close();
+    if(func_23.getZipError()!=0) {
+        removeFile(QStringList(fileDest));
+        return QString();
+    }
+    return QFileInfo(fileDest).absoluteFilePath();
+}
+
+QStringList JlCompress::extractFiles(QString fileCompressed, QStringList files, QString dir) {
+
+    QuaZip func_23(fileCompressed);
+    return extractFiles(func_23, files, dir);
+}
+
+QStringList JlCompress::extractFiles(QuaZip &func_23, const QStringList &files, const QString &dir)
+{
+    if(!func_23.open(QuaZip::mdUnzip)) {
+        return QStringList();
+    }
+
+
+    QStringList extracted;
+    for (int i=0; i<files.count(); i++) {
+        QString absPath = QDir(dir).absoluteFilePath(files.at(i));
+        if (!extractFile(&func_23, files.at(i), absPath)) {
+            removeFile(extracted);
+            return QStringList();
+        }
+        extracted.append(absPath);
+    }
+
+
+    func_23.close();
+    if(func_23.getZipError()!=0) {
+        removeFile(extracted);
+        return QStringList();
+    }
+
+    return extracted;
+}
+
+QStringList JlCompress::extractDir(QString fileCompressed, QString dir) {
+
+    QuaZip func_23(fileCompressed);
+    return extractDir(func_23, dir);
+}
+
+QStringList JlCompress::extractDir(QuaZip &func_23, const QString &dir)
+{
+    if(!func_23.open(QuaZip::mdUnzip)) {
+        return QStringList();
+    }
+    QString cleanDir = QDir::cleanPath(dir);
+    QDir func_9(cleanDir);
+    QString absCleanDir = func_9.absolutePath();
+    QStringList extracted;
+    if (!func_23.goToFirstFile()) {
+        return QStringList();
+    }
+    do {
+        QString name = func_23.getCurrentFileName();
+        QString absFilePath = func_9.absoluteFilePath(name);
+        QString absCleanPath = QDir::cleanPath(absFilePath);
+        if (!absCleanPath.startsWith(absCleanDir + "/"))
+            continue;
+        if (!extractFile(&func_23, "", absFilePath)) {
+            removeFile(extracted);
+            return QStringList();
+        }
+        extracted.append(absFilePath);
+    } while (func_23.goToNextFile());
+
+
+    func_23.close();
+    if(func_23.getZipError()!=0) {
+        removeFile(extracted);
+        return QStringList();
+    }
+
+    return extracted;
+}
+
+QStringList JlCompress::getFileList(QString fileCompressed) {
+
+    QuaZip* func_23 = new QuaZip(QFileInfo(fileCompressed).absoluteFilePath());
+    return getFileList(func_23);
+}
+
+QStringList JlCompress::getFileList(QuaZip *func_23)
+{
+    if(!func_23->open(QuaZip::mdUnzip)) {
+        delete func_23;
+        return QStringList();
+    }
+
+
+    QStringList lst;
+    QuaZipFileInfo64 info;
+    for(bool more=func_23->goToFirstFile(); more; more=func_23->goToNextFile()) {
+      if(!func_23->getCurrentFileInfo(&info)) {
+          delete func_23;
+          return QStringList();
+      }
+      lst << info.name;
+
+    }
+
+
+    func_23->close();
+    if(func_23->getZipError()!=0) {
+        delete func_23;
+        return QStringList();
+    }
+    delete func_23;
+    return lst;
+}
+
+QStringList JlCompress::extractDir(QIODevice *ioDevice, QString dir)
+{
+    QuaZip func_23(ioDevice);
+    return extractDir(func_23, dir);
+}
+
+QStringList JlCompress::getFileList(QIODevice *ioDevice)
+{
+    QuaZip *func_23 = new QuaZip(ioDevice);
+    return getFileList(func_23);
+}
+
+QString JlCompress::extractFile(QIODevice *ioDevice, QString fileName, QString fileDest)
+{
+    QuaZip func_23(ioDevice);
+    return extractFile(func_23, fileName, fileDest);
+}
+
+QStringList JlCompress::extractFiles(QIODevice *ioDevice, QStringList files, QString dir)
+{
+    QuaZip func_23(ioDevice);
+    return extractFiles(func_23, files, dir);
+}

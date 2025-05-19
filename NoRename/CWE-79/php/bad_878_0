@@ -1,0 +1,358 @@
+<?php
+
+
+class Pages {
+	
+	public static function active() {
+		return ( has_filter( 'wp_statistics_active_pages' ) ) ? apply_filters( 'wp_statistics_active_pages', true ) : Option::get( 'pages' );
+	}
+
+	
+	public static function get_page_type() {
+
+		
+		$current_page = array( "type" => "unknown", "id" => 0 );
+
+		
+		$id = get_queried_object_id();
+		if ( is_numeric( $id ) and $id > 0 ) {
+			$current_page['id'] = $id;
+		}
+
+		
+		if ( class_exists( 'WooCommerce' ) ) {
+			if ( is_product() ) {
+				return wp_parse_args( array( "type" => "product" ), $current_page );
+			}
+		}
+
+		
+		if ( is_front_page() || is_home() ) {
+			return wp_parse_args( array( "type" => "home" ), $current_page );
+		}
+
+		
+		if ( is_attachment() ) {
+			$current_page['type'] = "attachment";
+		}
+
+		
+		if ( is_archive() ) {
+			$current_page['type'] = "archive";
+		}
+
+		
+		if ( is_singular() ) {
+			$current_page['type'] = "post";
+		}
+
+		
+		if ( is_page() ) {
+			$current_page['type'] = "page";
+		}
+
+		
+		if ( is_category() ) {
+			$current_page['type'] = "category";
+		}
+
+		
+		if ( is_tag() ) {
+			$current_page['type'] = "post_tag";
+		}
+
+		
+		if ( is_tax() ) {
+			$current_page['type'] = "tax";
+		}
+
+		
+		if ( is_author() ) {
+			$current_page['type'] = "author";
+		}
+
+		
+		$search_query = filter_var( get_search_query( false ), FILTER_SANITIZE_STRING );
+		if ( trim( $search_query ) != "" ) {
+			return array( "type" => "search", "id" => 0, "search_query" => $search_query );
+		}
+
+		
+		if ( is_404() ) {
+			$current_page['type'] = "404";
+		}
+
+		
+		if ( is_feed() ) {
+			$current_page['type'] = "feed";
+		}
+
+		
+		if ( Helper::is_login_page() ) {
+			$current_page['type'] = "loginpage";
+		}
+
+		return apply_filters( 'wp_statistics_current_page', $current_page );
+	}
+
+	
+	public static function is_track_all_page() {
+		return apply_filters( 'wp_statistics_track_all_pages', Option::get( 'track_all_pages' ) || is_single() || is_page() || is_front_page() );
+	}
+
+	
+	public static function get_page_uri() {
+
+		
+		$site_uri     = parse_url( site_url(), PHP_URL_PATH );
+		$site_uri_len = strlen( $site_uri );
+
+		
+		$home_uri     = parse_url( home_url(), PHP_URL_PATH );
+		$home_uri_len = strlen( $home_uri );
+
+		
+		$page_uri = $_SERVER["REQUEST_URI"];
+
+		
+		if ( $site_uri_len > $home_uri_len ) {
+			if ( substr( $page_uri, 0, $site_uri_len ) == $site_uri ) {
+				$page_uri = substr( $page_uri, $site_uri_len );
+			}
+
+			if ( substr( $page_uri, 0, $home_uri_len ) == $home_uri ) {
+				$page_uri = substr( $page_uri, $home_uri_len );
+			}
+		} else {
+			if ( substr( $page_uri, 0, $home_uri_len ) == $home_uri ) {
+				$page_uri = substr( $page_uri, $home_uri_len );
+			}
+
+			if ( substr( $page_uri, 0, $site_uri_len ) == $site_uri ) {
+				$page_uri = substr( $page_uri, $site_uri_len );
+			}
+		}
+
+		
+		$page_uri = filter_var( $page_uri, FILTER_SANITIZE_STRING );
+
+		
+		if ( $page_uri == '' ) {
+			$page_uri = '/';
+		}
+
+		return apply_filters( 'wp_statistics_page_uri', $page_uri );
+	}
+
+	
+	public static function sanitize_page_uri() {
+
+		
+		$current_page = self::get_page_type();
+
+		
+		$page_uri = Pages::get_page_uri();
+
+		
+		if ( array_key_exists( "search_query", $current_page ) and ! empty( $current_page["search_query"] ) ) {
+			$page_uri = "?s=" . $current_page['search_query'];
+		}
+
+		
+		if ( $current_page['type'] == "loginpage" ) {
+			$page_uri = Helper::RemoveQueryStringUrl( $page_uri );
+		}
+
+		
+		if ( Option::get( 'strip_uri_parameters' ) and array_key_exists( "search_query", $current_page ) === false ) {
+			$temp = explode( '?', $page_uri );
+			if ( $temp !== false ) {
+				$page_uri = $temp[0];
+			}
+		}
+
+		
+		return substr( $page_uri, 0, 255 );
+	}
+
+	
+	public static function record() {
+		global $wpdb;
+
+		
+		$current_page = self::get_page_type();
+
+		
+		if ( $current_page['type'] == "unknown" ) {
+			return false;
+		}
+
+		
+		$page_uri = self::sanitize_page_uri();
+
+		
+		$exist = $wpdb->get_row( "SELECT `page_id` FROM `" . DB::table( 'pages' ) . "` WHERE `date` = '" . TimeZone::getCurrentDate( 'Y-m-d' ) . "' " . ( array_key_exists( "search_query", $current_page ) === true ? "AND `uri` = '" . $page_uri . "'" : "" ) . "AND `type` = '{$current_page['type']}' AND `id` = {$current_page['id']}", ARRAY_A );
+
+		
+		if ( null !== $exist ) {
+
+			$wpdb->query( $wpdb->prepare( "UPDATE `" . DB::table( 'pages' ) . "` SET `count` = `count` + 1 WHERE `date` = '" . TimeZone::getCurrentDate( 'Y-m-d' ) . "' " . ( array_key_exists( "search_query", $current_page ) === true ? "AND `uri` = '" . $page_uri . "'" : "" ) . "AND `type` = '{$current_page['type']}' AND `id` = %d", $current_page['id'] ) );
+			$page_id = $exist['page_id'];
+
+		} else {
+
+			
+			$pages = array(
+				'uri'   => $page_uri,
+				'date'  => TimeZone::getCurrentDate( 'Y-m-d' ),
+				'count' => 1,
+				'id'    => $current_page['id'],
+				'type'  => $current_page['type']
+			);
+			$pages = apply_filters( 'wp_statistics_pages_information', $pages );
+
+			
+			$page_id = self::save_page( $pages );
+		}
+
+		return ( isset( $page_id ) ? $page_id : false );
+	}
+
+	
+	public static function save_page( $page = array() ) {
+		global $wpdb;
+
+		
+		add_filter( 'query', array( '\WP_STATISTICS\DB', 'insert_ignore' ), 10 );
+
+		
+		$wpdb->insert( DB::table( 'pages' ), $page );
+
+		
+		$page_id = $wpdb->insert_id;
+
+		
+		remove_filter( 'query', array( '\WP_STATISTICS\DB', 'insert_ignore' ), 10 );
+
+		
+		do_action( 'wp_statistics_save_page', $page_id, $page );
+
+		return $page_id;
+	}
+
+	
+	public static function get_page_info( $page_id, $type = 'post' ) {
+
+		
+		$arg      = array();
+		$defaults = array(
+			'link'      => '',
+			'edit_link' => '',
+			'object_id' => $page_id,
+			'title'     => '-',
+			'meta'      => array()
+		);
+
+		if ( ! empty( $type ) ) {
+			switch ( $type ) {
+				case "product":
+				case "attachment":
+				case "post":
+				case "page":
+					$arg = array(
+						'title'     => get_the_title( $page_id ),
+						'link'      => get_the_permalink( $page_id ),
+						'edit_link' => get_edit_post_link( $page_id ),
+						'meta'      => array(
+							'post_type' => get_post_type( $page_id )
+						)
+					);
+					break;
+				case "category":
+				case "post_tag":
+				case "tax":
+					$term = get_term( $page_id );
+					$arg  = array(
+						'title'     => $term->name,
+						'link'      => ( is_wp_error( get_term_link( $page_id ) ) === true ? '' : get_term_link( $page_id ) ),
+						'edit_link' => get_edit_term_link( $page_id ),
+						'meta'      => array(
+							'taxonomy'         => $term->taxonomy,
+							'term_taxonomy_id' => $term->term_taxonomy_id,
+							'count'            => $term->count,
+						)
+					);
+					break;
+				case "home":
+					$arg = array(
+						'title' => __( 'Home Page', 'wp-statistics' ),
+						'link'  => get_site_url()
+					);
+					break;
+				case "author":
+					$user_info = get_userdata( $page_id );
+					$arg       = array(
+						'title'     => ( $user_info->display_name != "" ? $user_info->display_name : $user_info->first_name . ' ' . $user_info->last_name ),
+						'link'      => get_author_posts_url( $page_id ),
+						'edit_link' => get_edit_user_link( $page_id ),
+					);
+					break;
+				case "feed":
+					$result['title'] = __( 'Feed', 'wp-statistics' );
+					break;
+				case "loginpage":
+					$result['title'] = __( 'Login Page', 'wp-statistics' );
+					break;
+				case "search":
+					$result['title'] = __( 'Search Page', 'wp-statistics' );
+					break;
+				case "404":
+					$result['title'] = __( '404 not found', 'wp-statistics' );
+					break;
+				case "archive":
+					$result['title'] = __( 'Post Archive', 'wp-statistics' );
+					break;
+			}
+		}
+
+		return wp_parse_args( $arg, $defaults );
+	}
+
+	
+	public static function getTop( $args = array() ) {
+		global $wpdb;
+
+		
+		$defaults = array(
+			'per_page' => 10,
+			'paged'    => 1
+		);
+		$args     = wp_parse_args( $args, $defaults );
+
+		
+		$list   = array();
+		$result = $wpdb->get_results( "SELECT `pages`.`uri`,`pages`.`id`,`pages`.`type`, SUM(`pages`.`count`) + IFNULL(`historical`.`value`, 0) AS `count_sum` FROM `" . DB::table( 'pages' ) . "` `pages` LEFT JOIN `" . DB::table( 'historical' ) . "` `historical` ON `pages`.`uri`=`historical`.`uri` AND `historical`.`category`='uri' GROUP BY `uri` ORDER BY `count_sum` DESC LIMIT " . ( $args['paged'] - 1 ) * $args['per_page'] . "," . $args['per_page'] );
+		foreach ( $result as $item ) {
+
+			
+			$page_info = Pages::get_page_info( $item->id, $item->type );
+
+			
+			$list[] = array(
+				'title'     => $page_info['title'],
+				'link'      => $page_info['link'],
+				'str_url'   => htmlentities( urldecode( $item->uri ), ENT_QUOTES ),
+				'hits_page' => Menus::admin_url( 'pages', array( 'page-uri' => htmlentities( $item->uri, ENT_QUOTES ) ) ), 
+				'number'    => number_format_i18n( $item->count_sum )
+			);
+		}
+
+		return $list;
+	}
+
+	
+	public static function TotalCount( $group_by = 'uri' ) {
+		global $wpdb;
+		return $wpdb->get_var( "SELECT COUNT(*) FROM `" . DB::table( 'pages' ) . "` `pages` GROUP BY `{$group_by}`" );
+	}
+}

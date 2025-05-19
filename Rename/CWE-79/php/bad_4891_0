@@ -1,0 +1,1239 @@
+<?php
+
+
+defined( 'ABSPATH' ) or die( "Cheatin' uh?" );
+
+class var_0 {
+
+	function fn_0() {
+		add_action( 'wp_ajax_sf_forward_conversation', array( $var_1, 'action_wp_ajax_sf_email_conversation' ) );
+		add_filter( 'heartbeat_received', array( $var_1, 'filter_heartbeat_received' ), 10, 2 );
+		add_action( 'supportflow_after_setup_actions', array( $var_1, 'setup_actions' ) );
+		add_action( 'add_attachment', array( $var_1, 'action_add_attachment' ) );
+	}
+
+	public function fn_1() {
+
+		
+		add_action( 'add_meta_boxes', array( $var_1, 'action_add_meta_boxes' ) );
+		add_action( 'save_post', array( $var_1, 'action_save_post' ) );
+		add_action( 'map_meta_cap', array( $var_1, 'filter_map_meta_cap' ), 10, 4 );
+
+		if ( ! $var_1->fn_2() ) {
+			return;
+		}
+
+		
+		add_action( 'admin_enqueue_scripts', array( $var_1, 'action_admin_enqueue_scripts' ) );
+		add_filter( 'post_updated_messages', array( $var_1, 'filter_post_updated_messages' ) );
+		add_action( 'admin_init', array( $var_1, 'action_admin_init' ) );
+
+		
+		add_filter( 'manage_' . SupportFlow()->var_3 . '_posts_columns', array( $var_1, 'filter_manage_post_columns' ) );
+		add_filter( 'manage_edit-' . SupportFlow()->var_3 . '_sortable_columns', array( $var_1, 'manage_sortable_columns' ) );
+		add_action( 'manage_posts_custom_column', array( $var_1, 'action_manage_posts_custom_column' ), 10, 2 );
+		add_filter( 'views_edit-' . SupportFlow()->var_3, array( $var_1, 'filter_views' ) );
+		add_filter( 'post_row_actions', array( $var_1, 'filter_post_row_actions' ), 10, 2 );
+		add_filter( 'bulk_actions-edit-' . SupportFlow()->var_3, array( $var_1, 'filter_bulk_actions' ) );
+		add_action( 'pre_get_posts', array( $var_1, 'action_pre_get_posts' ) );
+		add_action( 'admin_action_change_status', array( $var_1, 'handle_action_change_status' ) );
+		add_action( 'restrict_manage_posts', array( $var_1, 'action_restrict_manage_posts' ) );
+
+	}
+
+	
+	function fn_3() {
+		global $var_4, $var_5;
+
+		$var_6 = $var_4['trash'];
+		unset( $var_4['trash'] );
+		$var_4['trash'] = $var_6;
+
+		if ( 'edit.php' == $var_5 ) {
+			add_filter( 'get_the_excerpt', array( $var_1, 'filter_get_the_excerpt' ) );
+		}
+	}
+
+	
+	public function fn_4( $var_7, $var_8, $var_9, $var_10 ) {
+		if ( $var_8 == 'edit_post' && ! empty( $var_10[0] ) ) {
+			$var_11 = get_post( absint( $var_10[0] ) );
+			if ( $var_11->var_3 == SupportFlow()->var_12 && $var_11->var_13 > 0 ) {
+				$var_7[] = 'do_not_allow';
+			}
+		}
+
+		return $var_7;
+	}
+
+	
+	public function fn_5() {
+		global $var_5;
+
+		$var_14 = SupportFlow()->enqueue_style( 'supportflow-admin', 'admin.css' );
+
+		if ( in_array( $var_5, array( 'post.php', 'post-new.php' ) ) ) {
+			wp_enqueue_media();
+
+			$var_16   = SupportFlow()->enqueue_script( 'supportflow-customers-autocomplete', 'customers-autocomplete.js', array( 'jquery', 'jquery-ui-autocomplete' ) );
+			$var_18        = SupportFlow()->enqueue_script( 'supportflow-ticket-attachments', 'ticket_attachments.js' );
+			$var_19      = SupportFlow()->enqueue_script( 'supportflow-tickets', 'tickets.js' );
+			$var_20                = SupportFlow()->enqueue_script( 'supportflow-auto-save', 'auto_save.js', array( 'jquery', 'heartbeat' ) );
+
+			wp_localize_script( $var_16, 'SFCustomersAc', array(
+				'ajax_url'            => add_query_arg( 'action', SupportFlow()->var_21->var_22->var_23, admin_url( 'admin-ajax.php' ) ),
+				'get_customers_nonce' => wp_create_nonce( 'get_customers' ),
+			) );
+
+			wp_localize_script( $var_18, 'SFTicketAttachments', array(
+				'frame_title'       => __( 'Attach files', 'supportflow' ),
+				'button_title'      => __( 'Insert as attachment', 'supportflow' ),
+				'remove_attachment' => __( 'Remove', 'supportflow' ),
+				'sure_remove'       => __( 'Are you sure want to remove this attachment?', 'supportflow' ),
+			) );
+
+			wp_localize_script( $var_19, 'SFTickets', array(
+				'no_title_msg'      => __( 'You must need to specify the subject of the ticket', 'supportpress' ),
+				'no_customer_msg'   => __( 'You must need to add atleast one customer', 'supportpress' ),
+				'pagenow'           => $var_5,
+				'send_msg'          => __( 'Send Message', 'supportflow' ),
+				'add_private_note'  => __( 'Add Private Note', 'supportflow' ),
+			) );
+
+			wp_localize_script( $var_20, 'SFAutoSave', array(
+				'ticket_id' => get_the_ID(),
+			) );
+
+		}
+
+		if ( 'post.php' == $var_5 ) {
+			$var_24 = SupportFlow()->enqueue_script( 'supportflow-email-conversation', 'email_conversation.js' );
+
+			wp_localize_script( $var_24, 'SFEmailConversation', array(
+				'post_id'                   => get_the_ID(),
+				'sending_emails'            => __( 'Please wait while sending E-Mail(s)', 'supportflow' ),
+				'failed_sending'            => __( 'Failed sending E-Mails', 'supportflow' ),
+				'_email_conversation_nonce' => wp_create_nonce( 'sf_email_conversation' ),
+			) );
+		}
+	}
+
+	
+	public function fn_6() {
+		if ( false === check_ajax_referer( 'sf_email_conversation', '_email_conversation_nonce', false ) ) {
+			_e( 'Invalid request. Please try refreshing the page.', 'supportflow' );
+			var_25;
+		}
+
+		if ( ! isset( $_REQUEST['email_ids'] ) || ! isset( $_REQUEST['post_id'] ) ) {
+			_e( 'Invalid request. Please try refreshing the page.', 'supportflow' );
+			var_25;
+		}
+
+		$var_26 = SupportFlow()->extract_email_ids( $_REQUEST['email_ids'] );
+		$var_28 = (int) $_REQUEST['post_id'];
+
+		if ( ! current_user_can( 'edit_post', $var_28 ) ) {
+			_e( 'You are not allowed to edit this item.' );
+			var_25;
+		}
+
+		if ( empty( $var_26 ) ) {
+			_e( 'No valid E-Mail ID found', 'supportflow' );
+			var_25;
+		}
+
+		SupportFlow()->var_21->var_29->email_conversation( $var_28, $var_26 );
+
+		_e( 'Successfully sented E-Mails', 'supportflow' );
+		var_31;
+
+	}
+
+	
+	function fn_7( $var_32 ) {
+		if ( empty( $_SERVER['HTTP_REFERER'] ) ) {
+			return;
+		}
+
+		$var_3 = SupportFlow()->var_3;
+		$var_33   = $_SERVER['HTTP_REFERER'];
+
+		$var_34  = parse_url( $var_33 );
+		$var_35 = $var_34['scheme'] . ':
+
+		if ( isset( $url['var_36'] ) ) {
+			parse_str( $var_34['query'], $var_36 );
+		}
+
+		
+		var_37 ( admin_url( 'post-new.php' ) == $var_35 ) {
+			if ( empty( $var_36['post_type'] ) || $var_36['post_type'] != $var_3 ) {
+				var_39;
+			}
+		} var_38 ( admin_url( 'post.php' ) == $var_35 ) {
+			if ( empty( $var_36['post'] ) || get_post_type( (int) $var_36['post'] ) != $var_3 ) {
+				var_39;
+			}
+		} else {
+			var_39;
+		}
+
+		var_40()->var_21->var_41->secure_attachment_file( $var_32 );
+	}
+
+	
+	public function fn_8( $var_43 ) {
+		global $var_11;
+
+		$var_43[SupportFlow()->var_3] = array(
+			0  => '', 
+			1  => __( 'Ticket updated.', 'supportflow' ),
+			2  => __( 'Custom field updated.', 'supportflow' ),
+			3  => __( 'Custom field deleted.', 'supportflow' ),
+			4  => __( 'Ticket updated.', 'supportflow' ),
+			
+			5  => isset( $_GET['revision'] ) ? sprintf( __( 'Ticket restored to revision from %s', 'supportflow' ), wp_post_revision_title( (int) $_GET['revision'], false ) ) : false,
+			6  => __( 'Ticket updated.', 'supportflow' ),
+			7  => __( 'Ticket updated.', 'supportflow' ),
+			8  => __( 'Ticket updated.', 'supportflow' ),
+			9  => __( 'Ticket updated.', 'supportflow' ),
+			10 => __( 'Ticket updated.', 'supportflow' ),
+		);
+
+		return $var_43;
+	}
+
+	public function fn_9( $var_44, $var_45 ) {
+		if (
+			isset( $var_45['supportflow-autosave'] ) &&
+			is_array( $var_45['supportflow-autosave'] ) &&
+			isset( $var_45['supportflow-autosave']['ticket_id'] ) &&
+			current_user_can( 'edit_post', (int) $var_45['supportflow-autosave']['ticket_id'] )
+		) {
+			
+
+			$var_28 = (int) $var_45['supportflow-autosave']['ticket_id'];
+			unset( $var_45['supportflow-autosave']['ticket_id'] );
+
+			if ( 'auto-draft' == get_post_status( $var_28 ) ) {
+				wp_update_post( array( 'ID' => $var_28, 'post_status' => 'draft' ) );
+			}
+
+			foreach ( $var_45['supportflow-autosave'] as $var_46 => $var_47 ) {
+				update_post_meta( $var_28, "_sf_autosave_$var_46", $var_47 );
+			}
+
+			
+			if ( ! empty( $var_45['supportflow-autosave']['post_title'] ) ) {
+				wp_update_post( array( 'ID' => $var_28, 'post_title' => $var_45['supportflow-autosave']['post_title'] ) );
+			}
+		}
+
+		return $var_44;
+	}
+
+
+	
+	public function fn_10( $var_48 ) {
+		$var_3    = SupportFlow()->var_3;
+		$var_49     = SupportFlow()->var_50;
+		$var_51 = array();
+
+		foreach ( $var_49 as $var_52 => $var_53 ) {
+			if ( true == $var_53['show_tickets'] ) {
+				$var_51[] = $var_52;
+			}
+		}
+
+		$var_54    = new class_0( array(
+			'post_type'      => $var_3,
+			'post_parent'    => 0,
+			'posts_per_page' => 1,
+			'post_status'    => $var_51,
+		) );
+		$var_55 = $var_54->var_56;
+
+		$var_57    = empty( $var_57 ) && empty( $_REQUEST['post_status'] ) && empty( $_REQUEST['show_sticky'] ) ? ' class="current"' : '';
+		$var_58 = "<a href='edit.php?post_type=$var_3'$var_57>" . sprintf( _nx( 'All <span class="count">(%s)</span>', 'All <span class="count">(%s)</span>', $var_55, 'posts' ), number_format_i18n( $var_55 ) ) . '</a>';
+
+		$var_50 = SupportFlow()->var_50;
+		array_pop( $var_50 );
+		$var_50 = "'" . implode( "','", array_map( 'sanitize_key', array_keys( $var_50 ) ) ) . "'";
+
+		
+		$var_59 = array(
+			'post_type' => SupportFlow()->var_3,
+			'author'    => get_current_user_id(),
+		);
+		$var_54  = new class_0( array(
+			'post_type'      => SupportFlow()->var_3,
+			'author'         => get_current_user_id(),
+			'post_status'    => $var_50,
+			'posts_per_page' => 1,
+		) );
+
+		$var_60  = $var_54->var_56;
+		$var_61 = '<a href="' . add_query_arg( $var_59, admin_url( 'edit.php' ) ) . '">' . sprintf( _nx( 'Mine <span class="count">(%s)</span>', 'Mine <span class="count">(%s)</span>', $var_60, 'posts' ), number_format_i18n( $var_60 ) ) . '</a>';
+
+		$var_62 = array(
+			'post_type' => SupportFlow()->var_3,
+			'author'    => 0,
+		);
+		$var_54        = new class_0( array(
+			'post_type'      => SupportFlow()->var_3,
+			'author'         => 0,
+			'post_status'    => $var_50,
+			'posts_per_page' => 1,
+		) );
+
+		$var_63 = $var_54->var_56;
+		$var_64  = '<a href="' . add_query_arg( $var_62, admin_url( 'edit.php' ) ) . '">' . sprintf( _nx( 'Unassigned <span class="count">(%s)</span>', 'Unassigned <span class="count">(%s)</span>', $var_63, 'posts' ), number_format_i18n( $var_63 ) ) . '</a>';
+
+		
+		array_shift( $var_48 );
+		$var_48               = array_reverse( $var_48 );
+		$var_48['unassigned'] = $var_64;
+		$var_48['mine']       = $var_61;
+		$var_48['all']        = $var_58;
+		$var_48               = array_reverse( $var_48 );
+
+		
+		unset( $var_48['private'] );
+
+		return $var_48;
+	}
+
+	
+	public function fn_11() {
+
+		
+		$var_65 = array(
+			'show_option_all' => __( 'Show all agents', 'supportflow' ),
+			'name'            => 'author',
+			'selected'        => ( ! empty( $_REQUEST['author'] ) ) ? (int) $_REQUEST['author'] : false,
+			'who'             => 'authors',
+		);
+		$var_65 = apply_filters( 'supportflow_admin_agent_dropdown_args', $var_65 );
+		wp_dropdown_users( $var_65 );
+
+		
+		$var_66 = SupportFlow()->var_67;
+		$var_68    = get_terms( SupportFlow()->var_67, array( 'hide_empty' => false ) );
+
+		
+		
+		foreach ( $var_68 as $var_69 ) {
+			$var_70 = selected( isset( $_REQUEST[$var_66] ) && ( $_REQUEST[$var_66] == $var_69->var_71 ), true, false );
+			
+		}
+		
+
+
+		
+		$var_72 = SupportFlow()->var_21->var_72->get_email_accounts( true );
+		
+		
+		foreach ( $var_72 as $var_74 => $var_75 ) {
+			$var_70 = selected( isset( $_REQUEST['email_account'] ) && ( $_REQUEST['email_account'] == $var_74 ), true, false );
+			
+		}
+		
+
+	}
+
+	
+	function fn_12( $var_76, $var_11 ) {
+
+		
+		if ( isset( $var_76['edit'] ) ) {
+			$var_76['edit'] = str_replace( __( 'Edit' ), __( 'View', 'supportflow' ), str_replace( __( 'Edit this item' ), __( 'View Ticket', 'supportflow' ), $var_76['edit'] ) );
+		}
+
+		
+		if ( isset( $var_76['trash'] ) ) {
+			$var_77 = $var_76['trash'];
+			unset( $var_76['trash'] );
+		} else {
+			$var_77 = false;
+		}
+
+		
+		$var_49     = SupportFlow()->var_50;
+		$var_51 = array_keys( $var_49 );
+		$var_78  = array_pop( $var_51 );
+		if ( ! in_array( get_query_var( 'post_status' ), array( 'trash' ) ) ) {
+
+			if ( $var_78 == get_post_status( $var_11->var_79 ) ) {
+				$var_80 = $var_51[2];
+			} else {
+				$var_80 = $var_78;
+			}
+
+			$var_10        = array(
+				'action'      => 'change_status',
+				'sf_nonce'    => wp_create_nonce( 'sf-change-status' ),
+				'post_status' => $var_80,
+				'ticket_id'   => $var_11->var_79,
+				'post_type'   => SupportFlow()->var_3,
+			);
+			$var_81 = add_query_arg( $var_10, admin_url( 'edit.php' ) );
+			if ( $var_78 == $var_80 ) {
+				$var_82  = esc_attr__( 'Close Ticket', 'supportflow' );
+				$var_83 = esc_html__( 'Close', 'supportflow' );
+			} else {
+				$var_82  = esc_attr__( 'Reopen Ticket', 'supportflow' );
+				$var_83 = esc_html__( 'Reopen', 'supportflow' );
+			}
+
+			if ( current_user_can( 'edit_post', $var_11->var_79 ) ) {
+				$var_76['change_status'] = '<a href="' . esc_url( $var_81 ) . '" title="' . $var_82 . '">' . $var_83 . '</a>';
+			}
+		}
+
+		
+		unset( $var_76['inline hide-if-no-js'] );
+		unset( $var_76['view'] );
+
+		if ( $var_77 ) {
+			$var_76['trash'] = $var_77;
+		}
+
+		return $var_76;
+	}
+
+	
+	public function fn_13( $var_84 ) {
+		unset( $var_84['edit'] );
+
+		return $var_84;
+	}
+
+	
+	function fn_14( $var_36 ) {
+		global $var_5;
+
+		if ( 'edit.php' != $var_5 || ! $var_36->is_main_query() ) {
+			return;
+		}
+
+		$var_49     = SupportFlow()->var_50;
+		$var_51 = array();
+
+		foreach ( $var_49 as $var_52 => $var_53 ) {
+			if ( true == $var_53['show_tickets'] ) {
+				$var_51[] = $var_52;
+			}
+		}
+
+		
+		if ( ! $var_36->get( 'orderby' ) ) {
+			$var_36->set( 'orderby', 'modified' );
+			$var_36->set( 'order', 'DESC' );
+		}
+
+		
+		if ( $var_88 = $var_36->get( 's' ) ) {
+
+			
+			$var_10             = array(
+				'search' => $var_88,
+				'status' => 'any',
+			);
+			$var_89 = SupportFlow()->get_replies( $var_10 );
+			$var_91         = wp_list_pluck( $var_89, 'post_parent' );
+
+			$var_10       = array(
+				's'                      => $var_88,
+				'post_type'              => SupportFlow()->var_3,
+				'no_found_rows'          => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+				'fields'                 => 'ids',
+			);
+			$var_92 = new class_0( $var_10 );
+			if ( ! is_wp_error( $var_92 ) ) {
+				$var_91 = array_merge( $var_91, $var_92->var_93 );
+			}
+
+			$var_36->set( 'post__in', $var_91 );
+			
+			add_filter( 'posts_search', array( $var_1, 'filter_posts_search' ) );
+		}
+
+		
+		$var_94 = $var_36->get( 'post_status' );
+		if ( ! $var_36->get( 's' ) && empty( $var_94 ) ) {
+			$var_36->set( 'post_status', $var_51 );
+		}
+
+		add_action( 'posts_clauses', array( $var_1, 'filter_author_clause' ), 10, 2 );
+
+		if ( isset( $_GET['email_account'] ) && ! empty( $_GET['email_account'] ) ) {
+			$var_36->set( 'meta_key', 'email_account' );
+			$var_36->set( 'meta_value', (int) $_GET['email_account'] );
+		}
+	}
+
+	
+	public function fn_15( $var_95, $var_36 ) {
+
+		if ( isset( $var_36->var_36['author'] ) && 0 == $var_36->var_36['author'] ) {
+			$var_95['where'] .= ' AND post_author = 0 ';
+		}
+
+		return $var_95;
+	}
+
+	
+	public function fn_16( $var_96 ) {
+		return '';
+	}
+
+	
+	function fn_17() {
+
+		if ( ! isset( $_GET['action'], $_GET['sf_nonce'], $_GET['post_status'], $_GET['ticket_id'] ) ) {
+			return;
+		}
+
+		if ( ! wp_verify_nonce( $_GET['sf_nonce'], 'sf-change-status' ) ) {
+			wp_die( __( "Doin' something phishy, huh?", 'supportflow' ) );
+		}
+
+		$var_28 = (int) $_GET['ticket_id'];
+
+		if ( ! current_user_can( 'edit_post', $var_28 ) ) {
+			wp_die( __( 'You are not allowed to edit this item.' ) );
+		}
+
+		$var_94 = sanitize_key( $_GET['post_status'] );
+		$var_97  = array(
+			'ID'          => $var_28,
+			'post_status' => $var_94,
+		);
+		wp_update_post( $var_97 );
+		wp_safe_redirect( wp_get_referer() );
+		var_31;
+	}
+
+	
+	public function fn_18() {
+		global $var_5;
+
+		if ( ! $var_1->fn_2() ) {
+			return;
+		}
+
+		$var_98 = 'tagsdiv-' . SupportFlow()->var_99;
+		remove_meta_box( 'submitdiv', SupportFlow()->var_3, 'side' );
+		remove_meta_box( $var_98, SupportFlow()->var_3, 'side' );
+		remove_meta_box( 'slugdiv', SupportFlow()->var_3, 'normal' );
+
+		add_meta_box( 'supportflow-details', __( 'Details', 'supportflow' ), array( $var_1, 'meta_box_details' ), SupportFlow()->var_3, 'side', 'high' );
+		add_meta_box( 'supportflow-subject', __( 'Subject', 'supportflow' ), array( $var_1, 'meta_box_subject' ), SupportFlow()->var_3, 'normal' );
+		add_meta_box( 'supportflow-customers', __( 'Customers', 'supportflow' ), array( $var_1, 'meta_box_customers' ), SupportFlow()->var_3, 'normal' );
+		add_meta_box( 'supportflow-cc-bcc', __( 'CC and BCC', 'supportflow' ), array( $var_1, 'meta_box_cc_bcc' ), SupportFlow()->var_3, 'normal' );
+		add_meta_box( 'supportflow-replies', __( 'Replies', 'supportflow' ), array( $var_1, 'meta_box_replies' ), SupportFlow()->var_3, 'normal' );
+
+		if ( 'post.php' == $var_5 ) {
+			add_meta_box( 'supportflow-other-customers-tickets', __( 'Customer(s) recent Tickets', 'supportflow' ), array( $var_1, 'meta_box_other_customers_tickets' ), SupportFlow()->var_3, 'side' );
+			add_meta_box( 'supportflow-forward_conversation', __( 'Forward this conversation', 'supportflow' ), array( $var_1, 'meta_box_email_conversation' ), SupportFlow()->var_3, 'side' );
+		}
+	}
+
+	public function fn_19() {
+		$var_100 = SupportFlow()->get_ticket_customers( get_the_ID(), array( 'fields' => 'slugs' ) );
+		$var_49         = SupportFlow()->var_50;
+		$var_51     = array_keys($var_49);
+
+		$var_102 = new class_1( '', false, false );
+
+		if ( empty( $var_100 ) ) {
+			$var_103 = array();
+
+		} else {
+			$var_10 = array(
+				'post_type'    => SupportFlow()->var_3,
+				'post_parent'  => 0,
+				'post_status'  => $var_51,
+				'posts_per_page'  => 10,
+				'post__not_in' => array( get_the_id() ),
+				'tax_query'    => array(
+					array(
+						'taxonomy' => SupportFlow()->var_99,
+						'field'    => 'slug',
+						'terms'    => $var_100,
+					),
+				),
+			);
+
+			$var_54 = new class_0( $var_10 );
+			$var_103  = $var_54->var_93;
+		}
+
+		$var_104 = __( 'No recent tickets found.', 'supportflow' );
+		$var_102->set_no_items( $var_104 );
+
+		$var_102->set_columns( array(
+			'title'  => __( 'Subject', 'supportflow' ),
+			'status' => __( 'Status', 'supportflow' ),
+		) );
+
+		$var_45 = array();
+		foreach ( $var_103 as $var_107 ) {
+			$var_108     = strtotime( $var_107->var_108 );
+			$var_109 = strtotime( $var_107->var_109 );
+			$var_110         = '<b>' . esc_html( $var_107->var_111 ) . '</b>';
+			$var_110         = "<a href='post.php?post=" . $var_107->var_79 . "&action=edit'>" . $var_110 . "</a>";
+			$var_45[]        = array(
+				'title'  => $var_110,
+				'status' => $var_49[$var_107->var_94]['label'],
+			);
+		}
+		$var_102->set_data( $var_45 );
+		$var_102->display();
+	}
+
+	public function fn_20() {
+		?>
+		<p class="description"><?php _e( "Please enter E-Mail address separated by comma to whom you want to send this conversation.", 'supportflow' ) ?></p>
+		<br />
+		<input type="text" id="email_conversation_to" />
+		<?php submit_button( __( 'Send', 'supportflow' ), '', 'email_conversation_submit', false ); ?>
+		<p id="email_conversation_status"></p>
+	<?php
+	}
+
+	
+	public function fn_21() {
+		
+
+		$var_1->render_meta_box_details_email_account();
+		$var_1->render_meta_box_details_opened();
+		$var_1->fn_22();
+		$var_1->fn_23();
+		$var_1->render_meta_box_details_notifications();
+		$var_1->render_meta_box_details_actions();
+
+		
+
+	}
+
+	public function var_114() {
+		
+		$var_72 = SupportFlow()->var_21->var_72->get_email_accounts( true );
+
+		$var_120 = SupportFlow()->var_21->var_121->get_user_permissions_data( get_current_user_id() );
+		$var_120 = $var_120['email_accounts'];
+
+		$var_123 = get_post_meta( get_the_id(), 'email_account', true );
+
+		if ( '' == $var_123 ) {
+			$var_124 = '<select class="meta-item-dropdown">';
+			foreach ( $var_72 as $var_74 => $var_75 ) {
+				if ( empty( $var_75 ) || ( ! current_user_can( 'manage_options' ) && ! in_array( $var_74, $var_120 ) ) ) {
+					continue;
+				}
+				$var_124 .= '<option value="' . esc_attr( $var_74 ) . '" ' . '>' . esc_html( $var_75['username'] ) . '</option>';
+			}
+			$var_124 .= '</select>';
+
+			$var_125  = array_keys( $var_72 );
+			$var_126 = $var_125[0];
+			$var_127 = $var_72[$var_126]['username'];
+		}
+
+		if ( '' == $var_123 ) {
+			?>
+			<div class="misc-pub-section meta-item">
+				<label class="meta-item-toggle-button"><?php _e( 'Account', 'supportflow' ) ?>:</label>
+				<span class="meta-item-label"><?php _e( $var_127, 'supportflow' ) ?></span>
+				<a href="
+					<span aria-hidden="true"><?php _e( 'Edit' ) ?></span>
+				</a>
+				<input name="post_email_account" class="meta-item-name" value="<?php 
+
+		
+		if ( 'post.php' == $var_5 ) {
+			$var_128        = get_the_date() . ' ' . get_the_time();
+			$var_129  = get_post_modified_time( 'U', true, get_the_ID() );
+			$var_130 = sprintf( __( '%s ago', 'supportflow' ), human_time_diff( $var_129 ) );
+			?>
+			<div class="misc-pub-section meta-item">
+				<label><?php _e( 'Opened', 'supportflow' ) ?>:</label>
+				<span class="meta-item-label"><?php esc_html_e( $var_128 ) ?></span>
+			</div>
+
+			<!--Last ticket update time-->
+			<div class="misc-pub-section meta-item">
+				<label><?php _e( 'Last Activity', 'supportflow' ) ?>:</label>
+				<span class="meta-item-label"><?php esc_html_e( $var_130 ) ?></span>
+			</div>
+		<?php
+		}
+	}
+
+	public function fn_22() {
+		
+		$var_50     = SupportFlow()->var_50;
+		$var_131 = get_post_status( get_the_ID() );
+
+		if ( ! isset( $var_50[$var_131] ) ) {
+			$var_132 = array_keys( $var_50 );
+			$var_131 = $var_132[0];
+		}
+
+		$var_133 = $var_50[$var_131]['label'];
+		?>
+		<!--Ticket status box-->
+		<div class="misc-pub-section meta-item">
+			<label class="meta-item-toggle-button"><?php _e( 'Status', 'supportflow' ) ?>:</label>
+			<span class="meta-item-label"><?php esc_html_e( $var_133, 'supportflow' ) ?></span>
+			<a href="
+				<span aria-hidden="true"><?php _e( 'Edit' ) ?></span>
+			</a>
+			<input name="post_status" class="meta-item-name" value="<?php esc_attr_e( $var_131 ) ?>" type="hidden" />
+
+			<div class="meta-item-toggle-content hide-if-js">
+				<select class="meta-item-dropdown">
+					<?php foreach ( $var_50 as $var_71 => $var_94 ) : ?>
+						<option value="<?php esc_attr_e( $var_71 ) ?>"<?php selected( $var_131, $var_71 ) ?>><?php esc_html_e( $var_94['label'] ) ?></option>;
+					<?php endforeach; ?>
+				</select>
+				<a href="
+				<a href="
+			</div>
+		</div>
+	<?php
+	}
+
+	public function fn_23() {
+		
+		$var_134 = get_post( get_the_ID() )->var_135;
+
+		
+		if ( 0 == $var_134 ) {
+			$var_134 = - 1;
+		}
+
+		if ( 0 < $var_134 ) {
+			$var_136 = get_userdata( $var_134 )->var_45->var_137;
+		} else {
+			$var_136 = __( '-- Unassigned --', 'supportflow' );
+		}
+		$var_10                  = array(
+			'show_option_none' => __( '-- Unassigned --', 'supportflow' ),
+			'selected'         => $var_134,
+			'id'               => '',
+			'name'             => '',
+			'who'              => 'author',
+			'class'            => 'meta-item-dropdown',
+			'echo'             => false
+		);
+		$var_138 = wp_dropdown_users( $var_10 );
+		?>
+		<div class="misc-pub-section meta-item">
+			<label class="meta-item-toggle-button"><?php _e( 'Owner', 'supportflow' ) ?>:</label>
+			<span class="meta-item-label"><?php _e( $var_136, 'supportflow' ) ?></span>
+			<a href="
+				<span aria-hidden="true"><?php _e( 'Edit' ) ?></span>
+			</a>
+			<input name="post_author" class="meta-item-name" value="<?php esc_attr_e( $var_134 ) ?>" type="hidden" />
+
+			<div class="meta-item-toggle-content hide-if-js">
+				<?php 
+
+		
+		$var_139          = 0;
+		$var_140       = 'Default';
+		$var_141 = 'Choose default if you want to receive E-Mail notifications based on what you set in `E-Mail notification` page. Choose Enable/Disable if you want to override those settings';
+		$var_142    = '';
+		$var_142 .= '<select class="meta-item-dropdown">';
+
+		if ( 'post-new.php' == $var_5 ) {
+			$var_142 .= '<option value="default">' . __( 'Default', 'supportflow' ) . '</option>';
+			$var_142 .= '<option value="enable">' . __( 'Subscribed', 'supportflow' ) . '</option>';
+			$var_142 .= '<option value="disable">' . __( 'Unsubscribed', 'supportflow' ) . '</option>';
+		} elseif ( 'post.php' == $var_5 ) {
+			$var_143 = get_post_meta( get_the_ID(), 'email_notifications_override', true );
+			$var_144              = get_current_user_id();
+
+			if ( isset( $var_143[$var_144] ) ) {
+				$var_145 = $var_143[$var_144];
+				if ( 'enable' == $var_145 ) {
+					$var_140 = 'Subscribed';
+					$var_139    = 1;
+				} elseif ( 'disable' == $var_145 ) {
+					$var_140 = 'Unsubscribed';
+					$var_139    = 2;
+				}
+			}
+
+			$var_142 .= '<option value="default"' . selected( $var_139, 0, false ) . '>' . __( 'Default', 'supportflow' ) . '</option>';
+			$var_142 .= '<option value="enable"' . selected( $var_139, 1, false ) . '>' . __( 'Subscribed', 'supportflow' ) . '</option>';
+			$var_142 .= '<option value="disable"' . selected( $var_139, 2, false ) . '>' . __( 'Unsubscribed', 'supportflow' ) . '</option>';
+		}
+
+		$var_142 .= '</select>';
+		?>
+		<div class="misc-pub-section meta-item">
+			<label class="meta-item-toggle-button" title="<?php _e( $var_141, 'supportflow' ) ?>"><?php _e( 'E-Mail Notifications', 'supportflow' ) ?>:</label>
+			<span class="meta-item-label"><?php esc_html_e( $var_140, 'supportflow' ) ?></span>
+			<a href="
+				<span aria-hidden="true"><?php _e( 'Edit' ) ?></span>
+			</a>
+			<input name="post_email_notifications_override" class="meta-item-name" value="<?php 
+
+		$var_50     = SupportFlow()->var_50;
+		$var_131 = get_post_status( get_the_ID() );
+
+		if ( ! isset( $var_50[$var_131] ) ) {
+			$var_132 = array_keys( $var_50 );
+			$var_131 = $var_132[0];
+		}
+
+		$var_133 = $var_50[$var_131]['label'];
+
+		$var_146 = __( 'Close ticket', 'supportflow' );
+
+		
+		if ( 'post-new.php' == $var_5 ) {
+			$var_147 = __( 'Start Ticket', 'supportflow' );
+		} else {
+			$var_147 = __( 'Update Ticket', 'supportflow' );
+		}
+		?>
+		<div id="major-publishing-actions">
+			<?php if ( 'post.php' == $var_5 && $var_131 != 'sf_closed' ) : ?>
+				<div id="delete-action">
+					<?php submit_button( $var_146, '', 'close-ticket-submit', false, array( 'id' => 'close-ticket-submit' ) ); ?>
+				</div>
+			<?php endif; ?>
+			<div id="publishing-action">
+				<?php submit_button( $var_147, 'save-button primary', 'update-ticket', false ); ?>
+			</div>
+			<div class="clear"></div>
+		</div>
+	<?php
+	}
+
+	
+	public function fn_24() {
+		?>
+
+		<h4><?php _e( 'Subject', 'supportflow' ); ?></h4>
+
+		<input
+			type="text"
+			id="subject"
+			name="post_title"
+			class="sf_autosave"
+			placeholder="<?php _e( 'What is your conversation about?', 'supportflow' ); ?>"
+			value="<?php  ?>"
+			autocomplete="off"
+		/>
+
+		<p class="description">
+			<?php _e( 'Please describe what this ticket is about in several words', 'supportflow' ) ?>
+		</p>
+
+		<?php
+	}
+
+	
+	public function fn_25() {
+
+		$var_148 = __( 'Who are you starting a conversation with?', 'supportflow' );
+		if ( 'draft' == get_post_status( get_the_ID() ) ) {
+			$var_149 = get_post_meta( get_the_ID(), '_sf_autosave_customers', true );
+		} else {
+			$var_150        = SupportFlow()->get_ticket_customers( get_the_ID(), array( 'fields' => 'emails' ) );
+			$var_149 = implode( ', ', $var_150 );
+			$var_149 .= empty( $var_149 ) ? '' : ', ';
+		}
+		
+		
+		
+	}
+
+	
+	public function fn_26() {
+		$var_151 = esc_attr( get_post_meta( get_the_ID(), '_sf_autosave_cc', true ) );
+		$var_152      = esc_attr( get_post_meta( get_the_ID(), '_sf_autosave_bcc', true ) );
+		?>
+		<p class="description"> <?php _e( "Please add all the E-Mail ID's seperated by comma.", 'supportflow' ) ?></p>
+		<h4 class="inline"><?php _e( "CC: ", 'supportflow' ) ?></h4>
+		<input type="text" class="sf_autosave" id="cc" name="cc" value="<?php 
+
+		$var_153 = get_posts( array( 'post_type' => SupportFlow()->var_154, 'posts_per_page' => -1 ) );
+		$var_155           = array( array( 'title' => __( 'Pre-defined Replies', 'supportflow' ), 'content' => '' ) );
+
+		foreach ( $var_153 as $var_156 ) {
+			$var_157 = $var_156->var_158;
+
+			if ( ! empty( $var_156->var_111 ) ) {
+				$var_110 = $var_156->var_111;
+			} else {
+				$var_110 = $var_156->var_158;
+			}
+
+			
+			if ( strlen( $var_110 ) > 75 ) {
+				$var_110 = substr( $var_110, 0, 72 ) . '...';
+			}
+
+			if ( 0 != strlen( $var_157 ) ) {
+				$var_155[] = array( 'title' => $var_110, 'content' => $var_157 );
+			}
+		}
+
+		$var_123 = get_post_meta( get_the_ID(), 'email_account', true );
+		$var_75    = SupportFlow()->var_21->var_72->get_email_account( $var_123 );
+
+		$var_160       = ( null == $var_75 && '' != $var_123 );
+		$var_161     = disabled( $var_160, true, false );
+		$var_162 = $var_160 ? array( 'disabled' => 'true' ) : array();
+
+		if ( $var_160 ) {
+			$var_148 = __( "Ticket is locked permanently because E-Mail account associated with it is deleted. Please create a new ticket now. You can't now reply to it.", 'supportflow' );
+		} else {
+			$var_163 = array(
+				__( "What's burning?", 'supportflow' ),
+				__( 'What do you need to get off your chest?', 'supportflow' ),
+			);
+			$var_164         = array_rand( $var_163 );
+			$var_148  = $var_163[$var_164];
+		}
+
+		
+		
+		
+		foreach ( $var_155 as $var_165 ) {
+			
+		}
+		
+
+		
+		
+		
+		
+
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		$var_166 = __( 'Append your signature at the bottom of the reply. Signature can be removed or changed in preferences page', 'supportflow' );
+		$var_167 = (boolean) get_user_meta( get_current_user_id(), 'sf_insert_signature_default', true );
+		
+		
+		
+		
+		if ( 'post-new.php' == $var_5 ) {
+			$var_147 = __( 'Start Ticket', 'supportflow' );
+		} else {
+			$var_147 = __( 'Send Message', 'supportflow' );
+		}
+		submit_button( $var_147, 'primary save-button', 'insert-reply', false, $var_162 );
+		
+		
+
+		
+
+		
+
+		$var_1->fn_27();
+	}
+
+	public function fn_27() {
+		$var_169 = SupportFlow()->get_ticket_replies( get_the_ID(), array( 'status' => 'private' ) );
+
+		if ( ! empty( $var_169 ) ) {
+			
+			foreach ( $var_169 as $var_171 ) {
+				
+				
+				$var_158 = stripslashes( $var_171->var_158 );
+				$var_158 = $var_1->hide_quoted_text( $var_158 );
+				$var_158 = wpautop( make_clickable( $var_158 ) );
+				
+				if ( $var_173 = get_post_meta( $var_171->var_79, 'sf_attachments' ) ) {
+					
+					foreach ( $var_173 as $var_32 ) {
+						$var_174 = SupportFlow()->var_21->var_41->get_attachment_url( $var_32 );
+						
+					}
+					
+				}
+				
+				$var_176    = get_post_meta( $var_171->var_79, 'reply_author', true );
+				$var_177 = sprintf( __( 'Noted by %1$s on %2$s at %3$s', 'supportflow' ), $var_176, get_the_date( '', $var_171->var_79 ), get_the_time( '', $var_171->var_79 ) );
+				$var_129    = get_post_modified_time( 'U', true, $var_171->var_79 );
+				$var_130   = sprintf( __( '%s ago', 'supportflow' ), human_time_diff( $var_129 ) );
+				
+				
+			}
+			
+		}
+
+		$var_178 = SupportFlow()->get_ticket_replies( get_the_ID(), array( 'status' => 'public' ) );
+		if ( ! empty( $var_178 ) ) {
+			
+			foreach ( $var_178 as $var_171 ) {
+				$var_176       = get_post_meta( $var_171->var_79, 'reply_author', true );
+				$var_179 = get_post_meta( $var_171->var_79, 'reply_author_email', true );
+				
+				
+				
+				
+				
+
+				$var_180 = get_post_meta( $var_171->var_79, '_sf_mail_status', true );
+				if ( isset( $var_180['result'] ) && $var_180['result'] === false ) {
+					printf( '<span class="sf-delivery-failed"><span class="dashicons dashicons-info"></span> %s</span>', esc_html__( 'Delivery failed! Please check your SMTP settings and try again.', 'supportflow' ) );
+				}
+
+				$var_158 = stripslashes( $var_171->var_158 );
+				$var_158 = $var_1->hide_quoted_text( $var_158 );
+				$var_158 = wpautop( make_clickable( $var_158 ) );
+
+				
+				if ( $var_173 = get_post_meta( $var_171->var_79, 'sf_attachments' ) ) {
+					
+					foreach ( $var_173 as $var_32 ) {
+						$var_174 = SupportFlow()->var_21->var_41->get_attachment_url( $var_32 );
+						
+					}
+					
+				}
+				
+				$var_177 = sprintf( __( '%s at %s', 'supportflow' ), get_the_date( '', $var_171->var_79 ), get_the_time( '', $var_171->var_79 ) );
+				$var_129    = get_post_modified_time( 'U', true, $var_171->var_79 );
+				$var_130   = sprintf( __( '%s ago', 'supportflow' ), human_time_diff( $var_129 ) );
+				
+				
+			}
+			
+		}
+
+		
+
+	}
+
+	
+	public function fn_28( $var_181 ) {
+
+		$var_182 = array(
+			'cb'          => $var_181['cb'],
+			'updated'     => __( 'Updated', 'supportflow' ),
+			'title'       => __( 'Subject', 'supportflow' ),
+			'sf_excerpt'  => __( 'Excerpt', 'supportflow' ),
+			'customers' => __( 'Customers', 'supportflow' ),
+			'status'      => __( 'Status', 'supportflow' ),
+			'author'      => __( 'Agent', 'supportflow' ),
+			'sf_replies'  => '<span title="' . __( 'Reply count', 'supportflow' ) . '" class="comment-grey-bubble"></span>',
+			'email'       => __( 'E-Mail account', 'supportflow' ),
+			'created'     => __( 'Created', 'support' ),
+		);
+
+		return $var_182;
+	}
+
+	
+	public function fn_29( $var_181 ) {
+		$var_181['updated'] = 'modified';
+		$var_181['created'] = 'date';
+
+		return $var_181;
+	}
+
+	
+	public function fn_30( $var_183 ) {
+		if ( $var_171 = array_pop( SupportFlow()->get_ticket_replies( get_the_ID() ) ) ) {
+			$var_176 = get_post_meta( $var_171->var_79, 'reply_author' );
+
+			return $var_176 . ': "' . wp_trim_excerpt( $var_171->var_158 ) . '"';
+		} else {
+			return $var_183;
+		}
+	}
+
+	
+	function fn_31( $var_184, $var_28 ) {
+
+		switch ( $var_184 ) {
+			case 'updated':
+				$var_129 = get_post_modified_time( 'U', true, $var_28 );
+				
+				break;
+			case 'sf_excerpt':
+				$var_178 = SupportFlow()->get_ticket_replies( $var_28, array( 'posts_per_page' => 1, 'order' => 'ASC' ) );
+				if ( ! isset( $var_178[0] ) ) {
+					
+					break;
+				}
+				$var_185 = $var_178[0]->var_158;
+				if ( strlen( $var_185 ) > 50 ) {
+					$var_185 = substr( $var_185, 0, 50 );
+				}
+				
+				break;
+			case 'customers':
+				$var_150 = SupportFlow()->get_ticket_customers( $var_28, array( 'fields' => 'emails' ) );
+				if ( empty( $var_150 ) ) {
+					
+					break;
+				}
+				foreach ( $var_150 as $var_186 => $var_187 ) {
+					$var_10              = array(
+						SupportFlow()->var_99 => SupportFlow()->get_email_hash( $var_187 ),
+						'post_type'                    => SupportFlow()->var_3,
+					);
+					$var_189  = get_avatar( $var_187, 16 );
+					$var_190   = '<a class="customer_link" href="' . esc_url( add_query_arg( $var_10, admin_url( 'edit.php' ) ) ) . '">' . $var_187 . '</a>';
+					$var_150[$var_186] = $var_189 . '&nbsp;' . $var_190;
+				}
+				
+				break;
+			case 'status':
+				$var_94 = get_post_status( $var_28 );
+				$var_10        = array(
+					'post_type'   => SupportFlow()->var_3,
+					'post_status' => $var_94,
+				);
+				$var_191 = get_post_status_object( $var_94 )->var_192;
+				$var_193 = add_query_arg( $var_10, admin_url( 'edit.php' ) );
+				
+				break;
+			case 'email':
+				$var_123 = get_post_meta( $var_28, 'email_account', true );
+				$var_72   = SupportFlow()->var_21->var_72->get_email_accounts();
+				$var_10             = array(
+					'post_type'     => SupportFlow()->var_3,
+					'email_account' => $var_123,
+				);
+				if ( ! isset( $var_72[$var_123] ) ) {
+					
+					break;
+				}
+				$var_194 = $var_72[$var_123]['username'];
+				$var_193            = add_query_arg( $var_10, admin_url( 'edit.php' ) );
+				
+				break;
+			case 'sf_replies':
+				$var_178 = SupportFlow()->get_ticket_replies_count( $var_28 );
+				
+				
+				
+				break;
+			case 'created':
+				$var_196 = get_the_time( get_option( 'time_format' ) . ' T', $var_28 );
+				$var_197 = get_the_time( get_option( 'date_format' ), $var_28 );
+				
+				break;
+		}
+	}
+
+	
+	public function fn_2() {
+		global $var_5;
+
+		if ( in_array( $var_5, array( 'edit.php', 'post-new.php' ) ) && ! empty( $_GET['post_type'] ) && $_GET['post_type'] == SupportFlow()->var_3 ) {
+			return $var_5;
+		} elseif ( 'post.php' == $var_5 && ! empty( $_GET['action'] ) && 'edit' == $_GET['action'] && ! empty( $_GET['post'] ) ) {
+			$var_198 = get_post( absint( $_GET['post'] ) );
+
+			return ( is_a( $var_198, 'WP_Post' ) && $var_198->var_3 == SupportFlow()->var_3 ) ? $var_5 : false;
+		} else {
+			return false;
+		}
+
+	}
+
+	
+	public function fn_32( $var_28 ) {
+		$var_123 = get_post_meta( $var_28, 'email_account', true );
+		$var_75    = SupportFlow()->var_21->var_72->get_email_account( $var_123 );
+		$var_160      = ( null == $var_75 && '' != $var_75 );
+
+		if ( SupportFlow()->var_3 != get_post_type( $var_28 ) ) {
+			return;
+		}
+
+		if ( isset( $_POST['customers'] ) ) {
+			$var_150 = array_map( 'sanitize_email', explode( ',', $_POST['customers'] ) );
+			SupportFlow()->update_ticket_customers( $var_28, $var_150 );
+		}
+
+		if ( isset( $_POST['post_email_account'] ) && is_numeric( $_POST['post_email_account'] ) && '' == $var_123 ) {
+			$var_75 = (int) $_POST['post_email_account'];
+			update_post_meta( $var_28, 'email_account', $var_75 );
+		}
+
+		if ( isset( $_POST['post_email_notifications_override'] ) && in_array( $_POST['post_email_notifications_override'], array( 'default', 'enable', 'disable' ) ) ) {
+			$var_143                        = get_post_meta( $var_28, 'email_notifications_override', true );
+			$var_143[get_current_user_id()] = $_POST['post_email_notifications_override'];
+			update_post_meta( $var_28, 'email_notifications_override', $var_143 );
+		}
+
+		if ( isset( $_POST['reply'] ) && ! empty( $_POST['reply'] ) && ! $var_160 ) {
+			$var_171 = $_POST['reply'];
+
+			if ( isset( $_POST['insert-signature'] ) && 'on' == $_POST['insert-signature'] ) {
+				$var_200 = get_user_meta( get_current_user_id(), 'sf_user_signature', true );
+				if ( ! empty( $var_200 ) ) {
+					$var_171 .= "\n\n-----\n$var_200";
+				}
+			}
+
+			$var_171 = SupportFlow()->sanitize_ticket_reply( $var_171 );
+
+			$var_202 = ( ! empty( $_POST['mark-private'] ) ) ? 'private' : 'public';
+			if ( ! empty( $_POST['reply-attachments'] ) ) {
+				$var_203   = explode( ',', trim( $_POST['reply-attachments'], ',' ) );
+				
+				$var_203   = array_unique($var_203);
+				
+				$var_203   = array_filter( $var_203, function ( $var_204 ) {
+					return (string) (int) $var_204 === (string) $var_204;
+				} );
+				$var_173 = array_map( 'intval', $var_203 );
+			} else {
+				$var_173 = '';
+			}
+			$var_205  = ( ! empty( $_POST['cc'] ) ) ? SupportFlow()->extract_email_ids( $_POST['cc'] ) : '';
+			$var_152 = ( ! empty( $_POST['bcc'] ) ) ? SupportFlow()->extract_email_ids( $_POST['bcc'] ) : '';
+
+			$var_206 = array(
+				'post_status'    => $var_202,
+				'attachment_ids' => $var_173,
+				'cc'             => $var_205,
+				'bcc'            => $var_152,
+			);
+			SupportFlow()->add_ticket_reply( $var_28, $var_171, $var_206 );
+		}
+
+	}
+
+	
+	public function var_172( $var_208 ) {
+		$var_209 = var_210( "
+		return $var_209;
+	}
+
+	
+	protected function hide_quoted_text_regex_callback( $var_211 ) {
+		$var_212    = esc_attr( $var_211[0] );
+		$var_213 = __( 'Show quoted content', 'supportflow' );
+
+		return "<var_214><var_215 var_216='' class='var_217' var_45-var_218='$var_212'><br />$show_msg</a><br /></span>";
+	}
+}
+
+SupportFlow()->extend->admin = new SupportFlow_Admin();

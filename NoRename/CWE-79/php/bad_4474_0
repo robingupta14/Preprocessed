@@ -1,0 +1,1709 @@
+<?php
+
+class Envira_Gallery_Metaboxes {
+
+    
+    public static $instance;
+
+    
+    public $file = __FILE__;
+
+    
+    public $base;
+
+    
+    public function __construct() {
+
+        
+        $this->base = Envira_Gallery_Lite::get_instance();
+
+        
+        if ( ! $this->has_gd_extension() && ! $this->has_imagick_extension() ) {
+            add_action( 'admin_notices', array( $this, 'notice_missing_extensions' ) );
+        }
+
+        
+        add_action( 'admin_enqueue_scripts', array( $this, 'styles' ) );
+        add_action( 'admin_enqueue_scripts', array( $this, 'scripts' ) );
+
+        
+        add_action( 'admin_enqueue_scripts', array( $this, 'fix_plugin_js_conflicts' ), 100 );
+        add_action( 'wp_print_scripts', array( $this, 'fix_plugin_js_conflicts' ), 100 );
+
+        
+        add_action( 'add_meta_boxes_envira', array( $this, 'add_meta_boxes' ), 1 );
+
+        
+        add_action( 'post_edit_form_tag', array( $this, 'add_form_class' ) );
+
+        
+        add_filter( 'media_view_strings', array( $this, 'media_view_strings' ) );
+
+        
+        add_action( 'envira_gallery_tab_images', array( $this, 'images_tab' ) );
+        add_action( 'envira_gallery_tab_config', array( $this, 'config_tab' ) );
+        add_action( 'envira_gallery_tab_lightbox', array( $this, 'lightbox_tab' ) );
+        add_action( 'envira_gallery_tab_misc', array( $this, 'misc_tab' ) );
+
+		add_filter( 'envira_gallery_tab_nav', array( $this, 'lite_tabs' ) );
+        add_action( 'envira_gallery_tab_mobile', array( $this, 'lite_mobile_tab' ) );
+        add_action( 'envira_gallery_tab_videos', array( $this, 'lite_videos_tab' ) );
+        add_action( 'envira_gallery_tab_social', array( $this, 'lite_social_tab' ) );
+        add_action( 'envira_gallery_tab_tags', array( $this, 'lite_tags_tab' ) );
+        add_action( 'envira_gallery_tab_pagination', array( $this, 'lite_pagination_tab' ) );
+
+        
+        add_action( 'save_post', array( $this, 'save_meta_boxes' ), 10, 2 );
+
+    }
+
+    
+    public function notice_missing_extensions() {
+
+        ?>
+        <div class="error">
+            <p><strong><?php esc_html_e( 'The GD or Imagick libraries are not installed on your server. Envira Gallery requires at least one (preferably Imagick) in order to crop images and may not work properly without it. Please contact your webhost and ask them to compile GD or Imagick for your PHP install.', 'envira-gallery-lite' ); ?></strong></p>
+        </div>
+        <?php
+
+    }
+
+    
+    public function media_view_strings( $strings ) {
+
+        
+        
+        if ( ! function_exists( 'get_current_screen' ) ) {
+            return $strings;
+        }
+
+        
+        $screen = get_current_screen();
+
+        
+        if ( ! $screen ) {
+            return $strings;
+        }
+        if ( $screen->post_type != 'envira' ) {
+            return $strings;
+        }
+
+        
+        
+        $strings['insertIntoPost'] = __( 'Insert into Gallery', 'envira-gallery-lite' );
+        $strings['inserting'] = __( 'Inserting...', 'envira-gallery-lite' );
+
+        
+        $strings = apply_filters( 'envira_gallery_media_view_strings', $strings, $screen );
+
+        
+        return $strings;
+
+    }
+
+    
+    public function append_media_upload_form() {
+
+        ?>
+        <!-- Add from Media Library -->
+        <a href="
+            <?php _e( 'Select Files from Other Sources', 'envira-gallery-lite' ); ?>
+        </a>
+
+        <!-- Progress Bar -->
+        <div class="envira-progress-bar">
+            <div class="envira-progress-bar-inner"></div>
+            <div class="envira-progress-bar-status">
+                <span class="uploading">
+                    <?php esc_html_e( 'Uploading Image', 'envira-gallery-lite' ); ?>
+                    <span class="current">1</span>
+                    <?php esc_html_e( 'of', 'envira-gallery-lite' ); ?>
+                    <span class="total">3</span>
+                </span>
+
+                <span class="done"><?php esc_html_e( 'All images uploaded.', 'envira-gallery-lite' ); ?></span>
+            </div>
+        </div>
+
+        <div class="envira-progress-adding-images">
+            <div class="envira-progress-status">
+                <span class="spinner"></span><span class="adding_images"><?php esc_html_e( 'Adding items to gallery.', 'envira-gallery-lite' ); ?></span>
+            </div>
+        </div>
+        <?php
+
+    }
+
+    
+    public function styles() {
+
+        
+        $screen = get_current_screen();
+
+        
+        if ( 'envira' !== $screen->post_type ) {
+            return;
+        }
+
+        
+        if ( 'post' !== $screen->base ) {
+            return;
+        }
+
+        
+        wp_register_style( $this->base->plugin_slug . '-metabox-style', plugins_url( 'assets/css/metabox.css', $this->base->file ), array(), $this->base->version );
+        wp_enqueue_style( $this->base->plugin_slug . '-metabox-style' );
+
+        
+        do_action( 'envira_gallery_metabox_styles' );
+
+    }
+
+    
+    public function scripts( $hook ) {
+
+        global $id, $post;
+
+        
+        $screen = get_current_screen();
+
+        
+        if ( 'envira' !== $screen->post_type ) {
+            return;
+        }
+
+        
+        if ( 'post' !== $screen->base ) {
+            return;
+        }
+
+        
+        $post_id = isset( $post->ID ) ? $post->ID : (int) $id;
+
+        
+        wp_enqueue_script( 'jquery-ui-sortable' );
+
+        
+        wp_enqueue_media( array(
+            'post' => $post_id,
+        ) );
+        add_filter( 'plupload_init', array( $this, 'plupload_init' ) );
+
+        
+        wp_register_script( $this->base->plugin_slug . '-tabs-script', plugins_url( 'assets/js/min/tabs-min.js', $this->base->file ), array( 'jquery' ), $this->base->version, true );
+        wp_enqueue_script( $this->base->plugin_slug . '-tabs-script' );
+
+        
+        wp_register_script( $this->base->plugin_slug . '-clipboard-script', plugins_url( 'assets/js/min/clipboard-min.js', $this->base->file ), array( 'jquery' ), $this->base->version, true );
+        wp_enqueue_script( $this->base->plugin_slug . '-clipboard-script' );
+
+        
+        wp_register_script( $this->base->plugin_slug . '-conditional-fields-script', plugins_url( 'assets/js/min/conditional-fields-min.js', $this->base->file ), array( 'jquery' ), $this->base->version, true );
+        wp_enqueue_script( $this->base->plugin_slug . '-conditional-fields-script' );
+
+        
+        wp_enqueue_script( $this->base->plugin_slug . '-gallery-select-script', plugins_url( 'assets/js/gallery-select.js', $this->base->file ), array( 'jquery' ), $this->base->version, true );
+        wp_localize_script( $this->base->plugin_slug . '-gallery-select-script', 'envira_gallery_select', array(
+            'get_galleries_nonce'   => wp_create_nonce( 'envira-gallery-editor-get-galleries' ),
+            'modal_title'           => __( 'Insert', 'envira-gallery-lite' ),
+            'insert_button_label'   => __( 'Insert', 'envira-gallery-lite' ),
+        ) );
+
+        
+        wp_register_script( $this->base->plugin_slug . '-metabox-script', plugins_url( 'assets/js/min/metabox-min.js', $this->base->file ), array( 'jquery', 'plupload-handlers', 'quicktags', 'jquery-ui-sortable' ), $this->base->version, true );
+        wp_enqueue_script( $this->base->plugin_slug . '-metabox-script' );
+        wp_localize_script(
+            $this->base->plugin_slug . '-metabox-script',
+            'envira_gallery_metabox',
+            array(
+                'ajax'                  => admin_url( 'admin-ajax.php' ),
+                'change_nonce'          => wp_create_nonce( 'envira-gallery-change-type' ),
+                'id'                    => $post_id,
+                'import'                => __( 'You must select a file to import before continuing.', 'envira-gallery-lite' ),
+                'insert_nonce'          => wp_create_nonce( 'envira-gallery-insert-images' ),
+                'inserting'             => __( 'Inserting...', 'envira-gallery-lite' ),
+                'library_search'        => wp_create_nonce( 'envira-gallery-library-search' ),
+                'load_gallery'          => wp_create_nonce( 'envira-gallery-load-gallery' ),
+                'load_image'            => wp_create_nonce( 'envira-gallery-load-image' ),
+                'move_media_nonce'      => wp_create_nonce( 'envira-gallery-move-media' ),
+                'move_media_modal_title'=> __( 'Move Media to Gallery', 'envira-gallery-lite' ),
+                'move_media_insert_button_label' => __( 'Move Media to Selected Gallery', 'envira-gallery-lite' ),
+                'preview_nonce'         => wp_create_nonce( 'envira-gallery-change-preview' ),
+                'refresh_nonce'         => wp_create_nonce( 'envira-gallery-refresh' ),
+                'remove'                => __( 'Are you sure you want to remove this image from the gallery?', 'envira-gallery-lite' ),
+                'remove_multiple'       => __( 'Are you sure you want to remove these images from the gallery?', 'envira-gallery-lite' ),
+                'remove_nonce'          => wp_create_nonce( 'envira-gallery-remove-image' ),
+                'save_nonce'            => wp_create_nonce( 'envira-gallery-save-meta' ),
+                'set_user_setting_nonce'=> wp_create_nonce( 'envira-gallery-set-user-setting' ),
+                'saving'                => __( 'Saving...', 'envira-gallery-lite' ),
+                'saved'                 => __( 'Saved!', 'envira-gallery-lite' ),
+                'sort'                  => wp_create_nonce( 'envira-gallery-sort' ),
+                'uploader_files_computer' => __( 'Select Files from Your Computer', 'envira-gallery-lite' ),
+            )
+        );
+
+        
+        wp_enqueue_script( 'wp-link' );
+
+        
+        add_action( 'admin_head', array( $this, 'meta_box_css' ) );
+
+        
+        do_action( 'envira_gallery_metabox_scripts' );
+
+    }
+
+    
+    public function fix_plugin_js_conflicts(){
+
+        global $id, $post;
+
+        
+
+        if ( ! function_exists( 'get_current_screen' ) ) {
+            return;
+        }
+
+        $screen = get_current_screen();
+
+        
+        if ( 'envira' !== $screen->post_type ) {
+            return;
+        }
+
+        wp_dequeue_style ( 'thrive-theme-options'  );
+        wp_dequeue_script( 'thrive-theme-options' );
+        wp_dequeue_script( 'ngg-igw' );
+        wp_dequeue_script( 'yoast_ga_admin' ); 
+
+    }
+
+    
+    public function plupload_init( $params ) {
+
+        global $post_ID;
+
+        
+        
+        $params['multipart_params']['post_id'] = $post_ID;
+
+        
+        $supported_file_types = Envira_Gallery_Common::get_instance()->get_supported_filetypes();
+
+        
+        $params['filters']['mime_types'] = $supported_file_types;
+
+        
+        $params = apply_filters( 'envira_gallery_plupload_init', $params, $post_ID );
+        return $params;
+
+    }
+
+    
+    public function meta_box_css() {
+
+        ?>
+        <style type="text/css">.misc-pub-section:not(.misc-pub-post-status) { display: none; }</style>
+        <?php
+
+        
+        do_action( 'envira_gallery_admin_css' );
+
+    }
+
+    
+    public function add_meta_boxes() {
+
+        global $post;
+
+        
+        if ( 'envira' != $post->post_type ) {
+            return;
+        }
+
+        
+        $this->remove_all_the_metaboxes();
+
+        
+
+        
+        
+        
+        $type = $this->get_config( 'type', $this->get_config_default( 'type' ) );
+        if ( ! in_array( $type, array( 'defaults', 'dynamic' ) ) ) {
+            add_meta_box( 'envira-gallery', __( 'Envira Gallery', 'envira-gallery-lite' ), array( $this, 'meta_box_gallery_callback' ), 'envira', 'normal', 'high' );
+        }
+
+        
+        add_meta_box( 'envira-gallery-settings', __( 'Envira Gallery Settings', 'envira-gallery-lite' ), array( $this, 'meta_box_callback' ), 'envira', 'normal', 'high' );
+
+        
+        
+        
+        add_meta_box( 'envira-gallery-preview', __( 'Envira Gallery Preview', 'envira-gallery-lite' ), array( $this, 'meta_box_preview_callback' ), 'envira', 'normal', 'high' );
+
+        
+        if ( $post->post_status != 'auto-draft' ) {
+            add_meta_box( 'envira-gallery-code', __( 'Envira Gallery Code', 'envira-gallery-lite' ), array( $this, 'meta_box_gallery_code_callback' ), 'envira', 'side', 'default' );
+        }
+
+        
+        add_action( 'post-plupload-upload-ui', array( $this, 'append_media_upload_form' ), 1 );
+        add_action( 'post-html-upload-ui', array( $this, 'append_media_upload_form' ), 1 );
+
+    }
+
+    
+    public function remove_all_the_metaboxes() {
+
+        global $wp_meta_boxes;
+
+        
+        $post_type  = 'envira';
+
+        
+        $pass_over_defaults = array( 'submitdiv', 'envira' );
+        $pass_over  = apply_filters( 'envira_gallery_metabox_ids', $pass_over_defaults );
+
+        
+        $contexts_defaults = array( 'normal', 'advanced', 'side' );
+        $contexts   = apply_filters( 'envira_gallery_metabox_contexts', $contexts_defaults );
+
+        
+        $priorities_defaults = array( 'high', 'core', 'default', 'low' );
+        $priorities = apply_filters( 'envira_gallery_metabox_priorities', $priorities_defaults );
+
+        
+        foreach ( $contexts as $context ) {
+            
+            foreach ( $priorities as $priority ) {
+                if ( isset( $wp_meta_boxes[$post_type][$context][$priority] ) ) {
+                    foreach ( (array) $wp_meta_boxes[$post_type][$context][$priority] as $id => $metabox_data ) {
+                        
+                        if ( in_array( $id, $pass_over ) ) {
+                            unset( $pass_over[$id] );
+                            continue;
+                        }
+
+                        
+                        foreach ( $pass_over as $to_pass ) {
+                            if ( preg_match( '
+                                continue;
+                            }
+                        }
+
+                        
+                        unset( $wp_meta_boxes[$post_type][$context][$priority][$id] );
+                    }
+                }
+            }
+        }
+
+    }
+
+    
+    public function add_form_class( $post ) {
+
+        
+        if ( 'envira' != get_post_type( $post ) ) {
+            return;
+        }
+
+        
+
+    }
+
+    
+    public function meta_box_gallery_callback( $post ) {
+
+        
+        $this->base->load_admin_partial( 'metabox-gallery-type', array(
+            'post'      => $post,
+            'types'     => $this->get_envira_types( $post ),
+            'instance'  => $this,
+        ) );
+
+    }
+
+    
+    public function meta_box_callback( $post ) {
+
+        
+        wp_nonce_field( 'envira-gallery', 'envira-gallery' );
+
+        
+        $this->base->load_admin_partial( 'metabox-gallery-settings', array(
+            'post'  => $post,
+            'tabs'  => $this->get_envira_tab_nav(),
+        ) );
+
+    }
+
+    
+    public function meta_box_preview_callback( $post ) {
+
+        
+        $data = get_post_meta( $post->ID, '_eg_gallery_data', true );
+
+        
+        
+
+        $this->preview_display( $this->get_config( 'type', $this->get_config_default( 'type' ) ), $data );
+
+        
+
+    }
+
+    
+    public function meta_box_gallery_code_callback( $post ) {
+
+        
+        $this->base->load_admin_partial( 'metabox-gallery-code', array(
+            'post'          => $post,
+            'gallery_data'  => get_post_meta( $post->ID, '_eg_gallery_data', true ),
+        ) );
+
+    }
+
+    
+    public function get_envira_types( $post ) {
+
+        $types = array(
+            'default' => __( 'Default', 'envira-gallery-lite' )
+        );
+
+        return apply_filters( 'envira_gallery_types', $types, $post );
+
+    }
+
+    
+    public function get_envira_tab_nav() {
+
+        $tabs = array(
+            'images'     => __( 'Gallery', 'envira-gallery-lite' ),
+            'config'     => __( 'Config', 'envira-gallery-lite' ),
+            'lightbox'   => __( 'Lightbox', 'envira-gallery-lite' ),
+            'mobile'     => __( 'Mobile', 'envira-gallery-lite' ),
+        );
+
+        $tabs = apply_filters( 'envira_gallery_tab_nav', $tabs );
+
+        
+        $tabs['misc'] = __( 'Misc', 'envira-gallery-lite' );
+
+        return $tabs;
+
+    }
+
+    
+    public function images_tab( $post ) {
+
+        
+        
+
+        
+        
+
+        
+        $this->images_display( $this->get_config( 'type', $this->get_config_default( 'type' ) ), $post );
+
+        
+
+    }
+
+    
+    public function images_display( $type = 'default', $post ) {
+
+        
+        
+
+        
+        switch ( $type ) {
+            case 'default' :
+                $this->do_default_display( $post );
+                break;
+            default:
+                do_action( 'envira_gallery_display_' . $type, $post );
+                break;
+        }
+
+    }
+
+    
+    public function preview_display( $type = 'default', $data ) {
+
+        
+        switch ( $type ) {
+            case 'default' :
+                
+                break;
+            default:
+                do_action( 'envira_gallery_preview_' . $type, $data );
+                break;
+        }
+
+    }
+
+    
+    public function do_default_display( $post ) {
+
+        
+        $gallery_data = get_post_meta( $post->ID, '_eg_gallery_data', true );
+
+        
+        $layout = get_user_setting( 'envira_gallery_image_view', 'grid' );
+
+        $upgrade_link = Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( false, 'adminpage', 'readthedocumentation' );
+        ?>
+
+        <!-- Title and Help -->
+        <p class="envira-intro">
+            <?php _e( 'Currently in your Gallery', 'envira-gallery-lite' ); ?>
+            <small>
+                <?php _e( 'Need some help?', 'envira-gallery-lite' ); ?>
+                <a href="<?php  ?>" class="envira-doc" target="_blank">
+                    <?php _e( 'Read the Documentation', 'envira-gallery-lite' ); ?>
+                </a>
+                <?php _e( 'or', 'envira-gallery-lite' ); ?>
+                <a href="https:
+                    <?php _e( 'Watch a Video', 'envira-gallery-lite' ); ?>
+                </a>
+            </small>
+        </p>
+
+		<?php do_action( 'envira_gallery_do_default_display', $post ); ?>
+
+        <ul id="envira-gallery-output" class="envira-gallery-images-output <?php  ?>">
+            <?php
+            if ( ! empty( $gallery_data['gallery'] ) ) {
+                foreach ( $gallery_data['gallery'] as $id => $data ) {
+                    
+                }
+            }
+            ?>
+        </ul>
+
+
+
+        <?php
+        
+        Envira_Gallery_Notice_Admin::get_instance()->display_inline_notice(
+            'envira_gallery_images_tab',
+            __( 'Want to make your gallery workflow and presentation even better?', 'envira-gallery-lite' ),
+            __( '<p>By upgrading to Envira Pro, you can get access to numerous other features, including:</p><div class="two-column-list">
+            <ul>
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+            </ul>
+            <ul>
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li>Dedicated customer support and so much more!</li>
+            </ul>
+        </div><p class="no-margin-top"><strong>Bonus:</strong> Envira Lite users get a discount code for 20% off regular price.</p>', 'envira-gallery-lite' ),
+            'warning',
+            __( 'Click here to Upgrade', 'envira-gallery-lite' ),
+            Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( false, 'adminpagegallery', 'clickheretoupgradebutton' ),
+            false
+        );
+
+    }
+
+    
+    public function config_tab( $post ) {
+
+        $upgrade_link = Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( false, 'adminpageconfig', 'readthedocumentation' );
+
+        ?>
+        <div id="envira-config">
+            <!-- Title and Help -->
+            <p class="envira-intro">
+                <?php _e( 'Gallery Settings', 'envira-gallery-lite' ); ?>
+                <small>
+                    <?php _e( 'The settings below adjust the basic configuration options for the gallery.', 'envira-gallery-lite' ); ?><br />
+                    <?php _e( 'Need some help?', 'envira-gallery-lite' ); ?>
+                    <a href="<?php  ?>" class="envira-doc" target="_blank">
+                        <?php _e( 'Read the Documentation', 'envira-gallery-lite' ); ?>
+                    </a>
+                    or
+                    <a href="https:
+                        <?php _e( 'Watch a Video', 'envira-gallery-lite' ); ?>
+                    </a>
+                </small>
+            </p>
+            <table class="form-table" style="margin-bottom: 0;">
+                <tbody>
+                    <tr id="envira-config-columns-box">
+                        <th scope="row">
+                            <label for="envira-config-columns"><?php _e( 'Number of Gallery Columns', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <select id="envira-config-columns" name="_envira_gallery[columns]">
+                                <?php foreach ( (array) $this->get_columns() as $i => $data ) : ?>
+                                    <option value="<?php  ?>"<?php selected( $data['value'], $this->get_config( 'columns', $this->get_config_default( 'columns' ) ) ); ?>><?php  ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description"><?php _e( 'Determines the number of columns in the gallery. Automatic will attempt to fill each row as much as possible before moving on to the next row.', 'envira-gallery-lite' ); ?></p>
+                        </td>
+                    </tr>
+
+                    <?php
+
+                    if ( !isset( $post ) || $post->post_status == 'auto-draft' ) {
+                        
+
+                    ?>
+                    <tr id="envira-config-lazy-loading-box">
+                        <th scope="row">
+                            <label for="envira-config-lazy-loading"><?php _e( 'Enable Lazy Loading?', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <input id="envira-config-lazy-loading" type="checkbox" name="_envira_gallery[lazy_loading]" value="<?php  ?>" <?php checked( $this->get_config( 'lazy_loading', $this->get_config_default( 'lazy_loading' ) ), 1 ); ?> />
+                            <span class="description"><?php _e( 'Enables or disables lazy loading, which helps with performance by loading thumbnails only when they are visible. See our documentation for more information.', 'envira-gallery-lite' ); ?></span>
+                        </td>
+                    </tr>
+
+                    <?php } else { ?>
+
+                    <tr id="envira-config-lazy-loading-box">
+                        <th scope="row">
+                            <label for="envira-config-lazy-loading"><?php _e( 'Enable Lazy Loading?', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <input id="envira-config-lazy-loading" type="checkbox" name="_envira_gallery[lazy_loading]" value="<?php  ?>" <?php checked( $this->get_config( 'lazy_loading' ), 1 ); ?> />
+                            <span class="description"><?php _e( 'Enables or disables lazy loading, which helps with performance by loading thumbnails only when they are visible. See our documentation for more information.', 'envira-gallery-lite' ); ?></span>
+                        </td>
+                    </tr>
+
+                    <?php } ?>
+
+                    <tr id="envira-config-lazy-loading-delay">
+                        <th scope="row">
+                            <label for="envira-config-lazy-loading-delay"><?php _e( 'Lazy Loading Delay', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                            <td>
+                                <input id="envira-config-lazy-loading-delay" type="number" name="_envira_gallery[lazy_loading_delay]" value="<?php  ?>" /> <span class="envira-unit"><?php _e( 'milliseconds', 'envira-gallery-lite' ); ?></span>
+                                <p class="description"><?php _e( 'Set a delay when new images are loaded', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                    </tr>
+                </tbody>
+            </table>
+            <?php 
+            <div id="envira-config-justified-settings-box">
+                <table class="form-table" style="margin-bottom: 0;">
+                    <tbody>
+                        <tr id="envira-config-justified-row-height">
+                            <th scope="row">
+                                <label for="envira-config-justified-row-height"><?php _e( 'Automatic Layout: Row Height', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <input id="envira-config-justified-row-height" type="number" name="_envira_gallery[justified_row_height]" value="<?php  ?>" /> <span class="envira-unit"><?php _e( 'px', 'envira-gallery-lite' ); ?></span>
+                                <p class="description"><?php _e( 'Determines how high (in pixels) each row will be. 150px is default. ', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+						<tr id="envira-config-justified-margins">
+							<th scope="row">
+								<label for="envira-config-justified-margins"><?php _e( 'Automatic Layout: Margins', 'envira-gallery-lite' ); ?></label>
+							</th>
+							<td>
+								<input id="envira-config-justified-margins" type="number" name="_envira_gallery[justified_margins]" value="<?php  ?>" /> <span class="envira-unit"><?php _e( 'px', 'envira-gallery-lite' ); ?></span>
+								<p class="description"><?php _e( 'Sets the space between the images (defaults to 1)', 'envira-gallery-lite' ); ?></p>
+							</td>
+						</tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="envira-config-standard-settings-box">
+                <table class="form-table">
+                    <tbody>
+
+                        <tr id="envira-config-gallery-theme-box">
+                            <th scope="row">
+                                <label for="envira-config-gallery-theme"><?php _e( 'Gallery Theme', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <select id="envira-config-gallery-theme" name="_envira_gallery[gallery_theme]">
+                                    <?php foreach ( (array) $this->get_gallery_themes() as $i => $data ) : ?>
+                                        <option value="<?php  ?>"<?php selected( $data['value'], $this->get_config( 'gallery_theme', $this->get_config_default( 'gallery_theme' ) ) ); ?>><?php  ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="description"><?php _e( 'Sets the theme for the gallery display.', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+                        <tr id="envira-config-gutter-box">
+                            <th scope="row">
+                                <label for="envira-config-gutter"><?php _e( 'Column Gutter Width', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <input id="envira-config-gutter" type="number" name="_envira_gallery[gutter]" value="<?php  ?>" /> <span class="envira-unit"><?php _e( 'px', 'envira-gallery-lite' ); ?></span>
+                                <p class="description"><?php _e( 'Sets the space between the columns (defaults to 10).', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+                        <tr id="envira-config-margin-box">
+                            <th scope="row">
+                                <label for="envira-config-margin"><?php _e( 'Margin Below Each Image', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <input id="envira-config-margin" type="number" name="_envira_gallery[margin]" value="<?php  ?>" /> <span class="envira-unit"><?php _e( 'px', 'envira-gallery-lite' ); ?></span>
+                                <p class="description"><?php _e( 'Sets the space below each item in the gallery.', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+
+                        <?php do_action( 'envira_gallery_config_box', $post ); ?>
+                    </tbody>
+                </table>
+            </div>
+
+
+            <div id="envira-image-settings-box">
+                <table class="form-table">
+                    <tbody>
+	                    <!-- Dimensions -->
+                        <tr id="envira-config-image-size-box">
+                            <th scope="row">
+                                <label for="envira-config-image-size"><?php _e( 'Image Size', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <select id="envira-config-image-size" name="_envira_gallery[image_size]">
+                                    <?php
+                                    foreach ( (array) $this->get_image_sizes() as $i => $data ) {
+                                        ?>
+                                        <option value="<?php  ?>"<?php selected( $data['value'], $this->get_config( 'image_size', $this->get_config_default( 'image_size' ) ) ); ?>><?php  ?></option>
+                                        <?php
+                                    }
+                                    ?>
+                                </select>
+                                <p class="description"><?php _e( 'Define the maximum image size for the Gallery view. Default will use the below Image Dimensions; Random will allow you to choose one or more WordPress image sizes, which will be used for the gallery output.', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+                        <tr id="envira-config-crop-size-box">
+                            <th scope="row">
+                                <label for="envira-config-crop-width"><?php _e( 'Image Dimensions', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <input id="envira-config-crop-width" type="number" name="_envira_gallery[crop_width]" value="<?php  ?>" /> &
+                                <p class="description"><?php _e( 'You should adjust these dimensions based on the number of columns in your gallery. This does not affect the full size lightbox images.', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+                        <tr id="envira-config-crop-box">
+                            <th scope="row">
+                                <label for="envira-config-crop"><?php _e( 'Crop Images?', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <input id="envira-config-crop" type="checkbox" name="_envira_gallery[crop]" value="<?php  ?>" <?php checked( $this->get_config( 'crop', $this->get_config_default( 'crop' ) ), 1 ); ?> />
+                                <span class="description"><?php _e( 'If enabled, forces images to exactly match the sizes defined above for Image Dimensions and Mobile Dimensions.', 'envira-gallery-lite' ); ?></span>
+                                <span class="description"><?php _e( 'If disabled, images will be resized to maintain their aspect ratio.', 'envira-gallery-lite' ); ?></span>
+
+                            </td>
+                        </tr>
+                    </tbody>
+	            </table>
+
+        </div>
+        </div>
+        <?php 
+
+        
+        Envira_Gallery_Notice_Admin::get_instance()->display_inline_notice(
+            'envira_gallery_images_tab',
+            __( '' ),
+            __( '<h2 style="margin: -10px 0 0 0; font-weight: 600; font-size: 21px; padding: 0;">Improve Your Galleries With Our Premium Addons:</h2>
+            <div class="two-column-list">
+            <ul>
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+            </ul>
+            <ul>
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+            </ul>
+            </div>
+            <p class="no-margin-top">Join 2,500,000 + Professionals Who Are Using Envira Gallery to Create Beautiful Photo and Video Galleries.</p>', 'envira-gallery-lite' ),
+            'warning',
+            __( 'Click here to Upgrade Today', 'envira-gallery-lite' ),
+            Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( false, 'adminpageconfig', 'clickheretoupgradetodaybutton' ),
+            false
+        );
+
+    }
+
+    
+    public function lightbox_tab( $post ) {
+
+        $upgrade_link = Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( false, 'adminpagelightbox', 'readthedocumentation' );
+
+        ?>
+        <div id="envira-lightbox">
+            <p class="envira-intro">
+                <?php _e( 'Lightbox Settings', 'envira-gallery-lite' ); ?>
+                <small>
+                    <?php _e( 'The settings below adjust the lightbox output.', 'envira-gallery-lite' ); ?>
+                    <br />
+                    <?php _e( 'Need some help?', 'envira-gallery-lite' ); ?>
+                    <a href="<?php  ?>" class="envira-doc" target="_blank">
+                        <?php _e( 'Read the Documentation', 'envira-gallery-lite' ); ?>
+                    </a>
+                    or
+                    <a href="https:
+                        <?php _e( 'Watch a Video', 'envira-gallery-lite' ); ?>
+                    </a>
+                </small>
+            </p>
+
+            <table class="form-table no-margin">
+                <tbody>
+                    <tr id="envira-config-lightbox-enabled-box">
+                        <th scope="row">
+                            <label for="envira-config-lightbox-enabled"><?php _e( 'Enable Lightbox?', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <input id="envira-config-lightbox-enabled" type="checkbox" name="_envira_gallery[lightbox_enabled]" value="<?php  ?>" <?php checked( $this->get_config( 'lightbox_enabled', $this->get_config_default( 'lightbox_enabled' ) ), 1 ); ?> />
+                            <span class="description"><?php _e( 'Enables or disables the gallery lightbox.', 'envira-gallery-lite' ); ?></span>
+                        </td>
+                    </tr>
+					<tr id="envira-config-lightbox-enabled-link">
+						<th scope="row">
+							<label for="envira-config-lightbox-enable-links"><?php esc_html_e( 'Enable Links?', 'envira-gallery' ); ?></label>
+						</th>
+						<td>
+							<input id="envira-config-lightbox-enable-links" type="checkbox" name="_envira_gallery[gallery_link_enabled]" value="<?php  ?>" <?php checked( $this->get_config( 'gallery_link_enabled', $this->get_config_default( 'gallery_link_enabled' ) ), 1 ); ?> />
+							<span class="description"><?php esc_html_e( 'Enables or disables links only when the gallery lightbox is disabled.', 'envira-gallery' ); ?></span>
+						</td>
+					</tr>
+                </tbody>
+            </table>
+
+            <div id="envira-lightbox-settings">
+                <table class="form-table">
+                    <tbody>
+                        <tr id="envira-config-lightbox-theme-box">
+                            <th scope="row">
+                                <label for="envira-config-lightbox-theme"><?php _e( 'Gallery Lightbox Theme', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <select id="envira-config-lightbox-theme" name="_envira_gallery[lightbox_theme]">
+                                    <?php foreach ( (array) $this->get_lightbox_themes() as $i => $data ) : ?>
+                                        <option value="<?php  ?>"<?php selected( $data['value'], $this->get_config( 'lightbox_theme', $this->get_config_default( 'lightbox_theme' ) ) ); ?>><?php  ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="description"><?php _e( 'Sets the theme for the gallery lightbox display.', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+                        <tr id="envira-config-lightbox-image-size-box">
+                            <th scope="row">
+                                <label for="envira-config-lightbox-image-size"><?php _e( 'Image Size', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <select id="envira-config-lightbox-image-size" name="_envira_gallery[lightbox_image_size]">
+                                    <?php foreach ( (array) $this->get_image_sizes() as $i => $data ) : ?>
+                                        <option value="<?php  ?>" <?php selected( $data['value'], $this->get_config( 'lightbox_image_size', $this->get_config_default( 'lightbox_image_size' ) ) ); ?>><?php  ?></option>
+                                    <?php endforeach; ?>
+                                </select><br>
+                                <p class="description"><?php _e( 'Define the maximum image size for the Lightbox view. Default will display the original, full size image.', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+                        <tr id="envira-config-lightbox-title-display-box">
+                            <th scope="row">
+                                <label for="envira-config-lightbox-title-display"><?php _e( 'Caption Position', 'envira-gallery-lite' ); ?></label>
+                            </th>
+                            <td>
+                                <select id="envira-config-lightbox-title-display" name="_envira_gallery[title_display]">
+                                    <?php foreach ( (array) $this->get_title_displays() as $i => $data ) : ?>
+                                        <option value="<?php  ?>"<?php selected( $data['value'], $this->get_config( 'title_display', $this->get_config_default( 'title_display' ) ) ); ?>><?php  ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="description"><?php _e( 'Sets the display of the lightbox image\'s caption.', 'envira-gallery-lite' ); ?></p>
+                            </td>
+                        </tr>
+
+                        <?php do_action( 'envira_gallery_lightbox_box', $post ); ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php
+
+        
+        Envira_Gallery_Notice_Admin::get_instance()->display_inline_notice(
+            'envira_gallery_images_tab',
+            __( 'Want even more fine tuned control over your lightbox display?', 'envira-gallery-lite' ),
+            __( '<p>By upgrading to Envira Gallery Pro, you can get access to numerous other Lightbox features, including:</p><div class="two-column-list">
+            <ul>
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+            </ul>
+            <ul>
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+            </ul>
+        </div><p class="no-margin-top"><strong>Bonus:</strong> Envira Lite users get a discount code for 20% off regular price.</p>', 'envira-gallery-lite' ),
+            'warning',
+            __( 'Click here to Upgrade', 'envira-gallery-lite' ),
+            Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( false, 'adminpagelightbox', 'clickheretoupgradebutton' ),
+            false
+        );
+
+    }
+
+    
+    public function misc_tab( $post ) {
+
+        $upgrade_link = Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'http:
+
+        ?>
+        <div id="envira-misc">
+            <p class="envira-intro">
+                <?php _e( 'Miscellaneous Settings', 'envira-gallery-lite' ); ?>
+                <small>
+                    <?php _e( 'The settings below adjust miscellaneous options for the Gallery.', 'envira-gallery-lite' ); ?>
+                    <br />
+                    <?php _e( 'Need some help?', 'envira-gallery-lite' ); ?>
+                    <a href="<?php  ?>" class="envira-doc" target="_blank">
+                        <?php _e( 'Read the Documentation', 'envira-gallery-lite' ); ?>
+                    </a>
+                    or
+                    <a href="https:
+                        <?php _e( 'Watch a Video', 'envira-gallery-lite' ); ?>
+                    </a>
+                </small>
+            </p>
+            <table class="form-table">
+                <tbody>
+                    <tr id="envira-config-title-box">
+                        <th scope="row">
+                            <label for="envira-config-title"><?php _e( 'Gallery Title', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <input id="envira-config-title" type="text" name="_envira_gallery[title]" value="<?php  ?>" />
+                            <p class="description"><?php _e( 'Internal gallery title for identification in the admin.', 'envira-gallery-lite' ); ?></p>
+                        </td>
+                    </tr>
+                    <tr id="envira-config-slug-box">
+                        <th scope="row">
+                            <label for="envira-config-slug"><?php _e( 'Gallery Slug', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <input id="envira-config-slug" type="text" name="_envira_gallery[slug]" value="<?php  ?>" />
+                            <p class="description"><?php _e( '<strong>Unique</strong> internal gallery slug for identification and advanced gallery queries.', 'envira-gallery-lite' ); ?></p>
+                        </td>
+                    </tr>
+                    <tr id="envira-config-classes-box">
+                        <th scope="row">
+                            <label for="envira-config-classes"><?php _e( 'Custom Gallery Classes', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <textarea id="envira-config-classes" rows="5" cols="75" name="_envira_gallery[classes]" placeholder="<?php _e( 'Enter custom gallery CSS classes here, one per line.', 'envira-gallery-lite' ); ?>"><?php  ?></textarea>
+                            <p class="description"><?php _e( 'Adds custom CSS classes to this gallery. Enter one class per line.', 'envira-gallery-lite' ); ?></p>
+                        </td>
+                    </tr>
+                    <tr id="envira-config-rtl-box">
+                        <th scope="row">
+                            <label for="envira-config-rtl"><?php _e( 'Enable RTL Support?', 'envira-gallery-lite' ); ?></label>
+                        </th>
+                        <td>
+                            <input id="envira-config-rtl" type="checkbox" name="_envira_gallery[rtl]" value="<?php  ?>" <?php checked( $this->get_config( 'rtl', $this->get_config_default( 'rtl' ) ), 1 ); ?> />
+                            <span class="description"><?php _e( 'Enables or disables RTL support in Envira for right-to-left languages.', 'envira-gallery-lite' ); ?></span>
+                        </td>
+                    </tr>
+                    <?php do_action( 'envira_gallery_misc_box', $post ); ?>
+
+                </tbody>
+            </table>
+        </div>
+        <?php
+
+        
+        Envira_Gallery_Notice_Admin::get_instance()->display_inline_notice(
+            'envira_gallery_images_tab',
+            __( 'Want to take your galleries further?', 'envira-gallery-lite' ),
+            __( '<p>By upgrading to Envira Gallery Pro, you can get access to numerous other features, including:</p>
+            <div class="two-column-list">
+            <ul class="no-margin-top">
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+            </ul>
+            <ul class="no-margin-top">
+                <li><a target="_blank" href="' . Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( 'https:
+            </ul>
+        </div><p class="no-margin-top"><strong>Bonus:</strong> Envira Lite users get a discount code for 20% off regular price.</p>', 'envira-gallery-lite' ),
+            'warning',
+            __( 'Click here to Upgrade', 'envira-gallery-lite' ),
+            Envira_Gallery_Common_Admin::get_instance()->get_upgrade_link( false, 'adminpagemisc', 'clickheretoupgradebutton' ),
+            false
+        );
+
+
+
+    }
+
+    
+    public function lite_tabs( $tabs ) {
+
+        $tabs['mobile']     = __( 'Mobile', 'envira-gallery-lite' );
+        $tabs['videos']     = __( 'Videos', 'envira-gallery-lite' );
+        $tabs['social']     = __( 'Social', 'envira-gallery-lite' );
+        $tabs['tags']       = __( 'Tags', 'envira-gallery-lite' );
+        $tabs['pagination'] = __( 'Pagination', 'envira-gallery-lite' );
+        return $tabs;
+
+    }
+
+	
+	public function lite_mobile_tab( $post ) {
+
+		?>
+
+		<div class="upgrade-header">
+			<img src="https:
+			<h2>Customize A Unique Mobile Experience With Envira Pro!</h2>
+		</div>
+
+		<div class="upgrade-content">
+			<div class="hero-image-exterior">
+				<div class="interior">
+                <a href="<?php  ?>" target="_blank" class="button button-primary">Upgrade To Envira Pro</a>
+			</div>
+		</div>
+
+		<?php
+
+	}
+   
+    public function lite_videos_tab( $post ) { ?>
+
+		<div class="upgrade-header">
+			<img src="https:
+			<h2>Add Video To Your Galleries With Envira Pro!</h2>
+		</div>
+
+		<div class="upgrade-content">
+			<div class="hero-image-exterior">
+				<div class="interior">
+                    <a href="<?php  ?>" target="_blank" class="button button-primary">Upgrade To Envira Pro</a>
+			</div>
+		</div>
+
+		<?php
+				
+    }
+
+    
+    public function lite_social_tab( $post ) {
+
+		?>
+
+		<div class="upgrade-header">
+			<img src="https:
+			<h2>Have Users Share With Envira Pro!</h2>
+		</div>
+
+		<div class="upgrade-content">
+			<div class="hero-image-exterior">
+				<div class="interior">
+                <a href="<?php  ?>" target="_blank" class="button button-primary">Upgrade To Envira Pro</a>
+			</div>
+		</div>
+
+		<?php
+
+    }
+
+    
+    public function lite_tags_tab( $post ) {
+
+		?>
+
+		<div class="upgrade-header">
+			<img src="https:
+			<h2>Tag And Filter Images With Envira Pro!</h2>
+		</div>
+
+		<div class="upgrade-content">
+			<div class="hero-image-exterior">
+				<div class="interior">
+                <a href="<?php  ?>" target="_blank" class="button button-primary">Upgrade To Envira Pro</a>
+			</div>
+		</div>
+
+		<?php
+
+    }
+
+    
+    public function lite_pagination_tab( $post ) {
+
+		?>
+
+		<div class="upgrade-header">
+			<img src="https:
+			<h2>Improve Large Gallery Experiences With Envira Pro!</h2>
+		</div>
+
+		<div class="upgrade-content">
+			<div class="hero-image-exterior">
+				<div class="interior">
+                <a href="<?php  ?>" target="_blank" class="button button-primary">Upgrade To Envira Pro</a>
+			</div>
+		</div>
+
+		<?php
+
+
+
+    }
+
+    
+    public function save_meta_boxes( $post_id, $post ) {
+
+        
+        if ( ! isset( $_POST['envira-gallery'] ) || ! wp_verify_nonce( $_POST['envira-gallery'], 'envira-gallery' ) || ! isset( $_POST['_envira_gallery'] ) ) {
+            return;
+        }
+
+        
+        if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+            return;
+        }
+
+        if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) {
+	        
+	        if ( isset( $_POST['_inline_edit'] ) ) {
+
+		        
+
+		        
+		        $settings = get_post_meta( $post_id, '_eg_gallery_data', true );
+		        if ( empty( $settings ) ) {
+			        return;
+		        }
+
+				
+	          $settings['config']['columns']                 = preg_replace( '
+                $settings['config']['gallery_theme']           = preg_replace( '
+				$settings['config']['gutter']                  = absint( $_POST['_envira_gallery']['gutter'] );
+                $settings['config']['margin']                  = absint( $_POST['_envira_gallery']['margin'] );
+                $settings['config']['crop_width']              = absint( $_POST['_envira_gallery']['crop_width'] );
+                $settings['config']['crop_height']             = absint( $_POST['_envira_gallery']['crop_height'] );
+
+		        
+				$settings = apply_filters( 'envira_gallery_quick_edit_save_settings', $settings, $post_id, $post );
+
+				
+				update_post_meta( $post_id, '_eg_gallery_data', $settings );
+
+				
+                Envira_Gallery_Common::get_instance()->flush_gallery_caches( $post_id, $settings['config']['slug'] );
+
+	        }
+
+            return;
+        }
+
+        if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
+            return;
+        }
+
+        if ( wp_is_post_revision( $post_id ) ) {
+            return;
+        }
+
+        
+        if ( ! current_user_can( 'edit_post', $post_id ) ) {
+            return;
+        }
+
+        
+        if ( isset( $post->post_date ) && isset( $post->post_modified ) && $post->post_date === $post->post_modified ) {
+            update_post_meta( $post_id, '_eg_just_published', true );
+        }
+
+        
+        $settings = get_post_meta( $post_id, '_eg_gallery_data', true );
+        if ( empty( $settings ) ) {
+            $settings = array();
+        }
+
+        
+        
+        $settings['id'] = $post_id;
+
+        
+        $settings['config']['type']                = isset( $_POST['_envira_gallery']['type'] ) ? $_POST['_envira_gallery']['type'] : $this->get_config_default( 'type' );
+        $settings['config']['columns']             = preg_replace( '
+        $settings['config']['gallery_theme']       = preg_replace( '
+		$settings['config']['justified_margins']       = absint( $_POST['_envira_gallery']['justified_margins'] );
+		$settings['config']['gutter']              = absint( $_POST['_envira_gallery']['gutter'] );
+        $settings['config']['margin']              = absint( $_POST['_envira_gallery']['margin'] );
+        $settings['config']['image_size']          = sanitize_text_field( esc_attr ( $_POST['_envira_gallery']['image_size'] ) );
+        $settings['config']['crop_width']          = absint( $_POST['_envira_gallery']['crop_width'] ) > 0 ? absint( $_POST['_envira_gallery']['crop_width'] ) : $this->get_config_default( 'crop_width' );
+        $settings['config']['crop_height']         = absint( $_POST['_envira_gallery']['crop_height'] ) > 0 ? absint( $_POST['_envira_gallery']['crop_height'] ) : $this->get_config_default( 'crop_height' );
+        $settings['config']['crop']                = isset( $_POST['_envira_gallery']['crop'] ) ? 1 : 0;
+        $settings['config']['lazy_loading']        = isset( $_POST['_envira_gallery']['lazy_loading'] ) ? 1 : 0;
+        $settings['config']['lazy_loading_delay']  = absint( $_POST['_envira_gallery']['lazy_loading_delay'] );
+
+        
+        $settings['config']['justified_row_height'] = isset( $_POST['_envira_gallery']['justified_row_height'] ) ? absint($_POST['_envira_gallery']['justified_row_height'] ) : 150;
+
+        
+        $settings['config']['lightbox_enabled']     = isset( $_POST['_envira_gallery']['lightbox_enabled'] ) ? 1 : 0;
+        $settings['config']['gallery_link_enabled'] = isset( $_POST['_envira_gallery']['gallery_link_enabled'] ) ? 1 : 0;
+        $settings['config']['lightbox_theme']       = preg_replace( '
+        $settings['config']['lightbox_image_size']  = preg_replace( '
+        $settings['config']['title_display']        = preg_replace( '
+
+        
+        $settings['config']['classes']             = explode( "\n", $_POST['_envira_gallery']['classes'] );
+        $settings['config']['rtl']                 = isset( $_POST['_envira_gallery']['rtl'] ) ? 1 : 0;
+        $settings['config']['title']               = trim( strip_tags( $_POST['_envira_gallery']['title'] ) );
+        $settings['config']['slug']                = sanitize_text_field( esc_attr( $_POST['_envira_gallery']['slug'] ) );
+
+        
+        if ( isset( $post->post_type ) && 'envira' == $post->post_type ) {
+            if ( empty( $settings['config']['title'] ) ) {
+                $settings['config']['title'] = trim( strip_tags( $post->post_title ) );
+            }
+            if ( empty( $settings['config']['slug'] ) ) {
+                $settings['config']['slug']  = sanitize_text_field( $post->post_name );
+            }
+        }
+
+        
+        $settings = apply_filters( 'envira_gallery_save_settings', $settings, $post_id, $post );
+
+        
+        update_post_meta( $post_id, '_eg_gallery_data', $settings );
+
+        
+        $this->change_gallery_states( $post_id );
+
+        
+        if ( isset( $settings['config']['thumbnails'] ) && $settings['config']['thumbnails'] ) {
+            $args = array(
+                'position' => 'c',
+                'width'    => $this->get_config( 'thumbnails_width', $this->get_config_default( 'thumbnails_width' ) ),
+                'height'   => $this->get_config( 'thumbnails_height', $this->get_config_default( 'thumbnails_height' ) ),
+                'quality'  => 100,
+                'retina'   => false
+            );
+            $args = apply_filters( 'envira_gallery_crop_image_args', $args );
+            $this->crop_thumbnails( $args, $post_id );
+        }
+
+        
+        if ( isset( $settings['config']['crop'] ) && $settings['config']['crop'] ) {
+            $args = array(
+                'position' => 'c',
+                'width'    => $this->get_config( 'crop_width', $this->get_config_default( 'crop_width' ) ),
+                'height'   => $this->get_config( 'crop_height', $this->get_config_default( 'crop_height' ) ),
+                'quality'  => 100,
+                'retina'   => false
+            );
+            $args = apply_filters( 'envira_gallery_crop_image_args', $args );
+            $this->crop_images( $args, $post_id );
+        }
+
+        
+        if ( isset( $settings['config']['mobile'] ) && $settings['config']['mobile'] ) {
+            $args = array(
+                'position' => 'c',
+                'width'    => $this->get_config( 'mobile_width', $this->get_config_default( 'mobile_width' ) ),
+                'height'   => $this->get_config( 'mobile_height', $this->get_config_default( 'mobile_height' ) ),
+                'quality'  => 100,
+                'retina'   => false
+            );
+            $args = apply_filters( 'envira_gallery_crop_image_args', $args );
+            $this->crop_images( $args, $post_id );
+        }
+
+        
+        do_action( 'envira_gallery_saved_settings', $settings, $post_id, $post );
+
+        
+        Envira_Gallery_Common::get_instance()->flush_gallery_caches( $post_id, $settings['config']['slug'] );
+
+    }
+
+    
+    public function get_gallery_item( $id, $item, $post_id = 0 ) {
+
+        
+        $thumbnail = wp_get_attachment_image_src( $id, 'thumbnail' );
+
+        
+        $item['id'] = $id;
+
+        
+        $item = apply_filters( 'envira_gallery_get_gallery_item', $item, $id, $post_id );
+        $item['alt'] = str_replace( "&quot;", '\"', $item['alt'] );
+        $item['_thumbnail'] = $thumbnail[0]; 
+
+        
+        $json = version_compare( PHP_VERSION, '5.3.0' ) >= 0 ? json_encode( $item, JSON_HEX_APOS ) : json_encode( $item );
+
+        
+        ob_start();
+        ?>
+        <li id="<?php  ?>" class="envira-gallery-image envira-gallery-status-<?php  ?>" data-envira-gallery-image="<?php  ?>" data-envira-gallery-image-model='<?php  ?>'>
+            <img src="<?php  ?>" alt="<?php esc_attr_e( $item['alt'] ); ?>" />
+            <div class="meta">
+                <div class="title">
+                    <span>
+						<?php
+                        $allowed_tags = wp_kses_allowed_html( 'title' );
+                        $the_title = isset( $item['title'] ) ? wp_kses( $item['title'], $allowed_tags ) : '';
+                        
+                        
+
+                        
+                        
+                        ?>
+                    </span>
+                    <a class="hint <?php  ?>" title="<?php  ?>">...</a>
+                </div>
+                <div class="additional">
+                    <?php
+                    
+                    
+                    ?>
+                </div>
+            </div>
+
+            <a href="
+            <a href="
+            <a href="
+        </li>
+        <?php
+        return ob_get_clean();
+
+    }
+
+    
+    public function change_gallery_states( $post_id ) {
+
+        $gallery_data = get_post_meta( $post_id, '_eg_gallery_data', true );
+        if ( ! empty( $gallery_data['gallery'] ) ) {
+            foreach ( (array) $gallery_data['gallery'] as $id => $item ) {
+                $gallery_data['gallery'][ $id ]['status'] = 'active';
+            }
+        }
+
+        update_post_meta( $post_id, '_eg_gallery_data', $gallery_data );
+
+    }
+
+    
+    public function crop_thumbnails( $args, $post_id, $force_overwrite = false ) {
+
+        
+        $gallery_data = get_post_meta( $post_id, '_eg_gallery_data', true );
+        $images       = ! empty( $gallery_data['gallery'] ) ? $gallery_data['gallery'] : false;
+        $common       = Envira_Gallery_Common::get_instance();
+
+        
+        $php_version = explode('.', phpversion() );
+
+        if ( $php_version[0] <= 5 && $php_version[1] <= 3 ) {
+            $is_using_old_php = true;
+        } else {
+            $is_using_old_php = false;
+        }
+
+        
+        if ( $images ) {
+            
+            if ( ! $is_using_old_php ) {
+                set_time_limit( Envira_Gallery_Common::get_instance()->get_max_execution_time() );
+            } else if ( $is_using_old_php && ! ini_get( 'safe_mode' ) ) {
+                set_time_limit( Envira_Gallery_Common::get_instance()->get_max_execution_time() );
+            }
+            wp_suspend_cache_invalidation( true );
+
+            foreach ( $images as $id => $item ) {
+                
+                $image = wp_get_attachment_image_src( $id, 'full' );
+
+                if ( ! is_array( $image ) ) {
+                    continue;
+                }
+
+                
+                
+                if ( strpos( $image[0], get_bloginfo( 'url' ) ) === false ) {
+                    $image[0] = get_bloginfo( 'url' ) . '/' . $image[0];
+                }
+
+                
+                $cropped_image = $common->resize_image( $image[0], $args['width'], $args['height'], true, $args['position'], $args['quality'], $args['retina'], null, $force_overwrite );
+
+                
+                if ( is_wp_error( $cropped_image ) ) {
+                    
+                    if ( defined( 'WP_DEBUG' ) && WP_DEBUG && is_user_logged_in() ) {
+                        
+                        
+                        
+                        
+                        die();
+                    }
+                } else {
+                    $gallery_data['gallery'][ $id ]['thumb'] = $cropped_image;
+                }
+            }
+
+            
+            wp_suspend_cache_invalidation( false );
+            wp_cache_flush();
+
+            
+            update_post_meta( $post_id, '_eg_gallery_data', $gallery_data );
+        }
+
+    }
+
+    
+    public function crop_images( $args, $post_id, $force_overwrite = false ) {
+
+        
+        $gallery_data = get_post_meta( $post_id, '_eg_gallery_data', true );
+        $images       = ! empty( $gallery_data['gallery'] ) ? $gallery_data['gallery'] : false;
+        $common       = Envira_Gallery_Common::get_instance();
+
+        
+        $php_version = explode('.', phpversion() );
+
+        if ( $php_version[0] <= 5 && $php_version[1] <= 3 ) {
+            $is_using_old_php = true;
+        } else {
+            $is_using_old_php = false;
+        }
+
+        
+        if ( $images ) {
+            
+            if ( ! $is_using_old_php ) {
+                set_time_limit( Envira_Gallery_Common::get_instance()->get_max_execution_time() );
+            } else if ( $is_using_old_php && ! ini_get( 'safe_mode' ) ) {
+                set_time_limit( Envira_Gallery_Common::get_instance()->get_max_execution_time() );
+            }
+            wp_suspend_cache_invalidation( true );
+
+            foreach ( $images as $id => $item ) {
+                
+                $image = wp_get_attachment_image_src( $id, 'full' );
+                if ( ! is_array( $image ) ) {
+                    continue;
+                }
+
+                
+                
+                if ( ! filter_var( $image[0], FILTER_VALIDATE_URL ) ) {
+                    $image[0] = get_bloginfo( 'url' ) . '/' . $image[0];
+                }
+
+                
+                $cropped_image = $common->resize_image( $image[0], $args['width'], $args['height'], true, $args['position'], $args['quality'], $args['retina'], null, $force_overwrite );
+
+                
+                if ( is_wp_error( $cropped_image ) ) {
+                    
+                    if ( defined( 'ENVIRA_GALLERY_CROP_DEBUG' ) && ENVIRA_GALLERY_CROP_DEBUG ) {
+                        
+                    }
+                }
+            }
+
+            
+            wp_suspend_cache_invalidation( false );
+            wp_cache_flush();
+        }
+
+    }
+
+    
+    public function get_config( $key, $default = false ) {
+
+        global $id, $post;
+
+        
+        if ( defined( 'DOING_AJAX' ) && DOING_AJAX && array_key_exists( 'post_id', $_POST ) ) {
+            $post_id = absint( $_POST['post_id'] );
+        } else {
+            $post_id = isset( $post->ID ) ? $post->ID : (int) $id;
+        }
+
+        
+        $settings = get_post_meta( $post_id, '_eg_gallery_data', true );
+
+        
+        if ( isset( $settings['config'][ $key ] ) ) {
+            return $settings['config'][ $key ];
+        } else {
+            return $default ? $default : '';
+        }
+
+    }
+
+    
+    public function get_config_default( $key ) {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_config_default( $key );
+
+    }
+
+    
+    public function get_columns() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_columns();
+
+    }
+
+    
+    public function get_gallery_themes() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_gallery_themes();
+
+    }
+
+    
+    public function get_justified_gallery_themes() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_justified_gallery_themes();
+
+    }
+
+    
+    public function get_display_description_options() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_display_description_options();
+
+    }
+
+    
+    public function get_sorting_options() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_sorting_options();
+
+    }
+
+    
+    public function get_sorting_directions() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_sorting_directions();
+
+    }
+
+    
+    public function get_lightbox_themes() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_lightbox_themes();
+
+    }
+
+    
+    public function get_image_sizes( $wordpress_only = false ) {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_image_sizes( $wordpress_only );
+
+    }
+
+    
+    public function get_title_displays() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_title_displays();
+
+    }
+
+    
+    public function get_arrows_positions() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_arrows_positions();
+
+    }
+
+    
+    public function get_toolbar_positions() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_toolbar_positions();
+
+    }
+
+    
+    public function get_transition_effects() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_transition_effects();
+
+    }
+
+    
+    public function get_easing_transition_effects() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_easing_transition_effects();
+
+    }
+
+    
+    public function get_thumbnail_positions() {
+
+        $instance = Envira_Gallery_Common::get_instance();
+        return $instance->get_thumbnail_positions();
+
+    }
+
+    
+    public function get_skipped_posttypes() {
+
+        $skipped_posttypes = array( 'attachment', 'revision', 'nav_menu_item', 'soliloquy', 'soliloquyv2', 'envira_album' );
+        return apply_filters( 'envira_gallery_skipped_posttypes', $skipped_posttypes );
+
+    }
+
+    
+    public function has_gd_extension() {
+
+        return extension_loaded( 'gd' ) && function_exists( 'gd_info' );
+
+    }
+
+    
+    public function has_imagick_extension() {
+
+        return extension_loaded( 'imagick' );
+
+    }
+
+    
+    public static function get_instance() {
+
+        if ( ! isset( self::$instance ) && ! ( self::$instance instanceof Envira_Gallery_Metaboxes ) ) {
+            self::$instance = new Envira_Gallery_Metaboxes();
+        }
+
+        return self::$instance;
+
+    }
+
+}
+
+
+$envira_gallery_metaboxes = Envira_Gallery_Metaboxes::get_instance();

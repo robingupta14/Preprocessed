@@ -1,0 +1,166 @@
+<?php
+
+
+
+
+
+
+
+
+
+$var_0 = true;
+$var_1 = array(gettext("Diagnostics"), gettext("Ping"));
+
+define('MAX_COUNT', 10);
+define('DEFAULT_COUNT', 3);
+define('MAX_WAIT', 10);
+define('DEFAULT_WAIT', 1);
+$var_2 = false;
+$var_3 = '';
+$var_4 = var_5;
+$var_6 = var_7;
+
+if ($var_8 || $var_12['host']) {
+	unset($var_9);
+	unset($var_2);
+
+	
+	$var_10 = explode(" ", "host count");
+	$var_11 = array(gettext("Host"), gettext("Count"));
+	do_input_validation($var_12, $var_10, $var_11, $var_9);
+	if (($var_12['count'] < 1) || ($var_12['count'] > var_13) || (!is_numericint($var_12['wait']))) {
+		$var_9[] = sprintf(gettext("Count must be between 1 and %s"), var_13);
+	}	
+	if (($var_12['wait'] < 1) || ($var_12['wait'] > var_14) || (!is_numericint($var_12['wait']))) {
+		$var_9[] = sprintf(gettext("Wait must be between 1 and %s"), var_14);
+	}	
+	$var_3 = trim($var_12['host']);
+	$var_15 = $var_12['ipproto'];
+	if (($var_15 == "ipv4") && is_ipaddrv6($var_3)) {
+		$var_9[] = gettext("When using IPv4, the target host must be an IPv4 address or hostname.");
+	}
+	if (($var_15 == "ipv6") && is_ipaddrv4($var_3)) {
+		$var_9[] = gettext("When using IPv6, the target host must be an IPv6 address or hostname.");
+	}
+
+	if (!$var_9) {
+		if ($var_8) {
+			$var_2 = true;
+		}
+		if (isset($var_12['sourceip'])) {
+			$var_16 = $var_12['sourceip'];
+		}
+		$var_4 = (empty($var_12['count'])) ? var_7 : $var_12['count'];
+		$var_6 = (empty($var_12['wait'])) ? var_7 : $var_12['wait'];
+	}
+}
+
+if ($var_2) {
+?>
+	<script type="text/javascript">
+	
+	window.onload=function() {
+		document.getElementById("pingCaptured").wrap='off';
+	}
+	
+	</script>
+<?php
+	$var_17 = '';
+	$var_18 = "/sbin/ping";
+	if ($var_15 == "ipv6") {
+		$var_18 .= "6";
+		$var_19 = is_ipaddr($var_16) ? $var_16 : get_interface_ipv6($var_16);
+		if (is_linklocal($var_19)) {
+			$var_17 = get_ll_scope($var_19);
+		}
+	} else {
+		$var_19 = is_ipaddr($var_16) ? $var_16 : get_interface_ip($var_16);
+	}
+
+	if ($var_19 && (is_ipaddr($var_3) || is_hostname($var_3))) {
+		$var_20 = "-S" . escapeshellarg($var_19);
+		if (is_linklocal($var_3) && !strstr($var_3, "%") && !empty($var_17)) {
+			$var_3 .= "%{$var_17}";
+		}
+	}
+
+	$var_21 = "{$var_18} {$var_20} -c" . escapeshellarg($var_4) . " -i" . escapeshellarg($var_6) . " " . escapeshellarg($var_3);
+	
+	$var_22 = shell_exec($var_21);
+
+	if (empty($var_22)) {
+		$var_9[] = sprintf(gettext('Host "%s" did not respond or could not be resolved.'), $var_3);
+	}
+
+}
+
+
+if ($var_9) {
+	print_input_errors($var_9);
+}
+
+$var_23 = new class_0(false);
+
+$var_24 = new class_1('Ping');
+
+$var_24->addInput(new class_2(
+	'host',
+	'*Hostname',
+	'text',
+	$var_3,
+	['placeholder' => 'Hostname to ping']
+));
+
+$var_24->addInput(new class_3(
+	'ipproto',
+	'*IP Protocol',
+	$var_15,
+	['ipv4' => 'IPv4', 'ipv6' => 'IPv6']
+));
+
+$var_24->addInput(new class_3(
+	'sourceip',
+	'*Source address',
+	$var_16,
+	array('' => gettext('Automatically selected (default)')) + get_possible_traffic_source_addresses(true)
+))->setHelp('Select source address for the ping.');
+
+$var_24->addInput(new class_3(
+	'count',
+	'Maximum number of pings',
+	$var_4,
+	array_combine(range(1, var_13), range(1, var_13))
+))->setHelp('Select the maximum number of pings.');
+
+$var_24->addInput(new class_3(
+	'wait',
+	'Seconds between pings',
+	$var_6,
+	array_combine(range(1, var_14), range(1, var_14))
+))->setHelp('Select the number of seconds to wait between pings.');
+
+$var_23->add($var_24);
+
+$var_23->addGlobal(new class_4(
+	'Submit',
+	'Ping',
+	null,
+	'fa-rss'
+))->addClass('btn-primary');
+
+
+
+if ($var_2 && !empty($var_22) && !$var_9) {
+?>
+	<div class="panel panel-default">
+		<div class="panel-heading">
+			<h2 class="panel-title"><?=gettext('Results')?></h2>
+		</div>
+
+		<div class="panel-body">
+			<pre><?= $var_22 ?></pre>
+		</div>
+	</div>
+<?php
+}
+

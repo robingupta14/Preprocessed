@@ -1,0 +1,153 @@
+<?php
+
+
+
+
+class FrontendJavascript
+{
+	
+	private $filename;
+
+	
+	private $language;
+
+	
+	private $module;
+
+	public function __construct()
+	{
+		
+		if(!defined('NAMED_APPLICATION')) define('NAMED_APPLICATION', 'frontend');
+
+		
+		$this->setModule(SpoonFilter::getGetValue('module', null, ''));
+
+		
+		$this->setFile(SpoonFilter::getGetValue('file', null, ''));
+
+		
+		$this->setLanguage(SpoonFilter::getGetValue('language', FrontendLanguage::getActiveLanguages(), SITE_DEFAULT_LANGUAGE));
+
+		
+		$tpl = new FrontendTemplate();
+
+		
+		$tpl->setAddSlashes(true);
+
+		
+		SpoonHTTP::setHeaders('content-type: application/javascript');
+
+		
+		if($this->module == 'core') $file = FRONTEND_CORE_PATH . '/js/' . $this->getFile();
+		else $file = FRONTEND_MODULES_PATH . '/' . $this->getModule() . '/js/' . $this->getFile();
+
+		
+		$tpl->display(FrontendTheme::getPath($file), true);
+	}
+
+	
+	public function getFile()
+	{
+		return $this->filename;
+	}
+
+	
+	public function getLanguage()
+	{
+		return $this->language;
+	}
+
+	
+	public function getModule()
+	{
+		return $this->module;
+	}
+
+	
+	private function setFile($value)
+	{
+		
+		$this->filename = (string) $value;
+
+		
+		if(substr_count($this->filename, '../') > 0)
+		{
+			
+			SpoonHTTP::setHeadersByCode(400);
+
+			
+			if(SPOON_DEBUG) throw new FrontendException('Invalid file.');
+
+			
+			else exit(SPOON_DEBUG_MESSAGE);
+		}
+
+		
+		$valid = true;
+
+		
+		if($this->module == 'core')
+		{
+			
+			$path = realpath(FRONTEND_CORE_PATH . '/js/' . $this->filename);
+
+			
+			if(substr($path, 0, strlen(realpath(FRONTEND_CORE_PATH . '/js/'))) != realpath(FRONTEND_CORE_PATH . '/js/')) $valid = false;
+		}
+
+		
+		else
+		{
+			
+			$path = realpath(FRONTEND_MODULES_PATH . '/' . $this->getModule() . '/js/' . $this->filename);
+
+			
+			if(substr($path, 0, strlen(realpath(FRONTEND_MODULES_PATH . '/' . $this->getModule() . '/js/'))) != realpath(FRONTEND_MODULES_PATH . '/' . $this->getModule() . '/js/')) $valid = false;
+		}
+
+		
+		if(!$valid)
+		{
+			
+			SpoonHTTP::setHeadersByCode(400);
+
+			
+			if(SPOON_DEBUG) throw new FrontendException('Invalid file.');
+
+			
+			else exit(SPOON_DEBUG_MESSAGE);
+		}
+
+		
+		if(!SpoonFile::exists($path))
+		{
+			
+			SpoonHTTP::setHeadersByCode(404);
+
+			
+			if(SPOON_DEBUG) throw new FrontendException('File not present.');
+
+			
+			else exit(SPOON_DEBUG_MESSAGE);
+		}
+	}
+
+	
+	private function setLanguage($value)
+	{
+		
+		$this->language = (string) $value;
+
+		
+		define('FRONTEND_LANGUAGE', $this->language);
+
+		
+		FrontendLanguage::setLocale($this->language);
+	}
+
+	
+	private function setModule($value)
+	{
+		$this->module = (string) $value;
+	}
+}

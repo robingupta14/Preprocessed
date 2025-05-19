@@ -1,0 +1,492 @@
+<?php
+
+
+
+class GistPress {
+	
+	protected $logger = null;
+
+	
+	protected $delete_shortcode_transients = false;
+
+	
+	public function set_logger( $logger ) {
+		$this->logger = $logger;
+	}
+
+	
+	public function get_logger() {
+		return $this->logger;
+	}
+
+	
+	public function run() {
+		$oembed_pattern = '
+		wp_embed_register_handler( 'gist', $oembed_pattern, array( $this, 'wp_embed_handler' ) );
+		add_shortcode( 'gist', array( $this, 'shortcode' ) );
+
+		add_action( 'init', array( $this, 'style' ), 15 );
+		add_action( 'post_updated', array( $this, 'delete_gist_transients' ), 10, 3 );
+	}
+
+	
+	public function style() {
+		wp_register_style( 'gistpress', get_option( 'gistpress_stylesheet' ) );
+	}
+
+	
+	public function wp_embed_handler( array $matches ) {
+		$shortcode = '[gist';
+
+		if ( isset( $matches[1] ) && ! empty( $matches[1] ) ) {
+			$shortcode .= ' id="' . esc_attr( $matches[1] ) . '"';
+		}
+
+		
+		if ( isset( $matches[3] ) && ! empty( $matches[3] ) ) {
+			$real_file_name = $this->get_file_name( $matches[3], $matches[2], $matches[1] );
+			if ( $real_file_name ) {
+				$shortcode .= ' file="' . esc_attr( $real_file_name ) . '"';
+			}
+		}
+
+		
+		$shortcode .= ' oembed="1"]';
+
+		return $shortcode;
+	}
+
+	
+	public function shortcode( array $rawattr ) {
+		$shortcode = $this->rebuild_shortcode( $rawattr );
+
+		$attr = $this->standardize_attributes( $rawattr );
+
+		$shortcode_hash = $this->shortcode_hash( 'gist', $attr );
+
+		
+		
+		if ( $this->delete_shortcode_transients ) {
+			delete_transient( $this->transient_key( $shortcode_hash ) );
+			delete_transient( $this->gist_files_transient_key( $attr['id'] ) );
+
+			return '';
+		}
+
+		
+		$this->debug_log( '<h2>' . $shortcode . '</h2>', $shortcode_hash );
+
+		
+		if ( empty( $attr['id'] ) ) {
+			$this->debug_log( __( 'Shortcode did not have a required id attribute.', 'gistpress' ), $shortcode_hash );
+			return '';
+		}
+
+		$url = 'https:
+		$json_url = $url . '.json';
+
+		if ( is_feed() ) {
+			$html = sprintf( '<a href="%s" target="_blank"><em>%s</em></a>', esc_url( $url ), __( 'View this code snippet on GitHub.', 'gistpress' ) );
+
+			
+			return apply_filters( 'gistpress_feed_html', $html );
+		}
+
+		$html = $this->get_gist_html( $json_url, $attr );
+
+		if ( $this->unknown() === $html ) {
+			return make_clickable( $url );
+		}
+
+		
+		if ( $html ) {
+			if ( $attr['embed_stylesheet'] ) {
+				wp_enqueue_style( 'gistpress' );
+			}
+
+			
+			$html = apply_filters( 'gistpress_html', $html, $url, $attr, get_the_ID() );
+
+			foreach ( $attr as $key => $value ) {
+				$message  = '<strong>' . $key . __( ' (shortcode attribute)', 'gistpress' ) . ':</strong> ';
+				$message .= is_scalar( $value ) ? $value : print_r( $value, true );
+				$this->debug_log( $message, $shortcode_hash );
+			}
+			$this->debug_log( '<strong>Gist:</strong><br />' . $html, $shortcode_hash );
+
+			return $html;
+		}
+
+		return '';
+	}
+
+	
+	public function shortcode_bool( $var ) {
+		$falsey = array( 'false', '0', 'no', 'n' );
+
+		return ( ! $var || in_array( strtolower( $var ), $falsey, true ) ) ? false : true;
+	}
+
+	
+	public function parse_highlight_arg( $line_numbers ) {
+		if ( empty( $line_numbers ) ) {
+			return null;
+		}
+
+		
+		$highlight = array_map( 'trim', explode( ',', $line_numbers ) );
+
+		
+		foreach ( $highlight as $index => $num ) {
+			if ( false !== strpos( $num, '-' ) ) {
+				unset( $highlight[ $index ] );
+
+				$range = array_map( 'trim', explode( '-', $num ) );
+				foreach ( range( $range[0], $range[1] ) as $line ) {
+					array_push( $highlight, $line );
+				}
+			}
+		}
+		return array_unique( $highlight );
+	}
+
+	
+	public function parse_line_number_arg( $line_numbers ) {
+		if ( empty( $line_numbers ) ) {
+			return array( 'min' => 0, 'max' => 0 );
+		}
+
+		if ( false === strpos( $line_numbers, '-' ) ) {
+			$range = array_fill_keys( array( 'min', 'max' ), absint( trim( $line_numbers ) ) );
+		} else {
+			$numbers = array_map( 'absint', array_map( 'trim', explode( '-', $line_numbers ) ) );
+
+			$range = array(
+				'min' => $numbers[0],
+				'max' => $numbers[1],
+			);
+		}
+
+		return $range;
+	}
+
+	
+	public function get_gist_html( $url, array $args ) {
+		
+		if ( ! empty( $args['file'] ) ) {
+			$url = add_query_arg( 'file', urlencode( $args['file'] ), $url );
+		}
+
+		$shortcode_hash = $this->shortcode_hash( 'gist', $args );
+		$raw_key = '_gist_raw_' . md5( $url );
+		$transient_key = $this->transient_key( $shortcode_hash );
+
+		$html = get_transient( $transient_key );
+
+		if ( empty( $html ) ) {
+			$html = get_transient( $raw_key );
+			$transient_expire = DAY_IN_SECONDS;
+
+			if ( $html && $this->unknown() !== $html ) {
+				$html = $this->process_gist_html( $html, $args );
+				$this->debug_log( __( '<strong>Raw Source:</strong> Transient Cache', 'gistpress' ), $shortcode_hash );
+			} else {
+				
+				$json = $this->fetch_gist( $url );
+
+				if ( ! empty( $json->div ) ) {
+					set_transient( $raw_key, $json->div, $transient_expire );
+
+					
+					update_post_meta( get_the_ID(), $raw_key, addslashes( $json->div ) );
+
+					$html = $this->process_gist_html( $json->div, $args );
+
+					$this->debug_log( __( '<strong>Raw Source:</strong> Remote JSON Endpoint - ', 'gistpress' ) . $url, $shortcode_hash );
+					$this->debug_log( __( '<strong>Output Source:</strong> Processed the raw source.', 'gistpress' ), $shortcode_hash );
+				}
+
+				
+				if ( ! empty( $json->stylesheet ) ) {
+					update_option( 'gistpress_stylesheet', $json->stylesheet );
+				}
+			}
+
+			
+			$html = ( $html ) ? $html : $this->unknown();
+
+			if ( $this->unknown() === $html && ( $fallback = get_post_meta( get_the_ID(), $raw_key, true ) ) ) {
+				
+				$html = $this->process_gist_html( $fallback, $args );
+
+				
+				$transient_expire = HOUR_IN_SECONDS;
+
+				$this->debug_log( __( '<strong>Raw Source:</strong> Post Meta Fallback', 'gistpress' ), $shortcode_hash );
+				$this->debug_log( __( '<strong>Output Source:</strong> Processed Raw Source', 'gistpress' ), $shortcode_hash );
+			} elseif ( $this->unknown() === $html ) {
+				$this->debug_log( '<strong style="color: 
+			}
+
+			
+			set_transient( $transient_key, $html, $transient_expire );
+		} else {
+			$this->debug_log( __( '<strong>Output Source:</strong> Transient Cache', 'gistpress' ), $shortcode_hash );
+		}
+
+		$this->debug_log( '<strong>' . __( 'JSON Endpoint:', 'gistpress' ) . '</strong> ' . $url, $shortcode_hash );
+		$this->debug_log( '<strong>' . __( 'Raw Key (Transient & Post Meta):', 'gistpress' ) . '</strong> ' . $raw_key, $shortcode_hash );
+		$this->debug_log( '<strong>' . __( 'Processed Output Key (Transient):', 'gistpress' ) . '</strong> ' . $transient_key, $shortcode_hash );
+
+		
+		$html = preg_replace( '/^<!DOCTYPE.+?>/i', '', str_ireplace( array( '<html>', '</html>', '<body>', '</body>' ), '', $html ) );
+
+		return $html;
+	}
+
+	
+	public function fetch_gist( $url ) {
+		$response = wp_remote_get( $url, array( 'sslverify' => false ) );
+
+		if ( 200 === wp_remote_retrieve_response_code( $response ) ) {
+			return json_decode( wp_remote_retrieve_body( $response ) );
+		}
+
+		return false;
+	}
+
+	
+	public function process_gist_html( $html, array $args ) {
+		
+		if ( ! $args['show_line_numbers'] ) {
+			$html = preg_replace( '
+		}
+
+		
+		if ( ! $args['show_meta'] ) {
+			$html = preg_replace( '
+		}
+
+		if ( ! class_exists( 'DOMDocument' ) ) {
+			return $html;
+		}
+
+		$dom = new DOMDocument();
+		$dom->loadHTML( $html );
+
+		$lines = $dom->getElementsByTagName( 'tr' );
+
+		if ( ! empty( $args['highlight'] ) ) {
+			
+			$highlight = array_flip( $args['highlight'] );
+		}
+
+		$lines_to_remove = array();
+		foreach ( $lines as $key => $line ) {
+			
+			if (
+				( $args['lines']['min'] && $key < $args['lines']['min'] - 1 ) ||
+				( $args['lines']['max'] && $key > $args['lines']['max'] - 1 )
+			) {
+				$lines_to_remove[] = $line;
+				continue;
+			}
+
+			
+			$classes = array( 'line' );
+
+			if ( isset( $highlight[ $key + 1 ] ) ) {
+				$classes[] = 'line-highlight';
+
+				if ( ! empty( $args['highlight_color'] ) ) {
+					$style = 'background-color: ' . $args['highlight_color'] . ' !important';
+
+					foreach ( $line->getElementsByTagName( 'td' ) as $cell ) {
+						$value = $cell->getAttribute( 'style' );
+						$value = empty( $value ) ? $style : $value . ';' . $style;
+						$cell->setAttribute( 'style', $value );
+					}
+				}
+			}
+
+			
+			$classes = apply_filters( 'gistpress_line_classes', $classes );
+			$class = ( ! empty( $classes ) && is_array( $classes ) ) ? implode( ' ', $classes ) : '';
+
+			$value = $line->getAttribute( 'class' );
+			$value = empty( $value ) ? $class : $value . ' ' . $class;
+			$line->setAttribute( 'class', $value );
+		}
+
+		foreach ( $lines_to_remove as $line ) {
+			$line->parentNode->removeChild( $line );
+		}
+
+		$html = $dom->saveHTML();
+
+		
+		if (
+			$args['show_line_numbers'] &&
+			( ( $args['lines']['min'] && $args['lines']['max'] ) || ! empty( $args['lines_start'] ) )
+		) {
+			$html = $this->process_gist_line_numbers( $html, $args['lines'], $args['lines_start'] );
+		}
+
+		return $html;
+	}
+
+	
+	public function process_gist_line_numbers( $html, array $range, $start = null ) {
+		$start = empty( $start ) ? absint( $range['min'] ) : absint( $start );
+
+		$dom = new DOMDocument();
+		$dom->loadHTML( $html );
+		$lines = $dom->getElementsByTagName( 'tr' );
+
+		foreach ( $lines as $i => $line ) {
+			$line
+				->getElementsByTagName( 'td' )
+				->item( 0 )
+				->setAttribute( 'data-line-number', $start + $i );
+		}
+
+		return $dom->saveHTML();
+	}
+
+	
+	public function delete_gist_transients( $post_id, WP_Post $post_after, WP_Post $post_before ) {
+		$this->delete_shortcode_transients = true;
+
+		
+		do_shortcode( $GLOBALS['wp_embed']->autoembed( $post_after->post_content ) );
+		do_shortcode( $GLOBALS['wp_embed']->autoembed( $post_before->post_content ) );
+
+		
+		$keys = get_post_custom_keys( $post_id );
+
+		if ( $keys ) {
+			foreach ( $keys as $key ) {
+				if ( 0 === strpos( $key, '_gist_raw_' ) ) {
+					delete_transient( $key );
+				}
+			}
+		}
+	}
+
+	
+	protected function rebuild_shortcode( array $rawattr ) {
+		$attrs = array();
+		foreach ( $rawattr as $key => $value ) {
+			if ( 'oembed' !== $key ) {
+				$attrs[] = $key . '="' . $value . '"';
+			}
+		}
+		return '[gist ' . implode( ' ', $attrs ) . ']';
+	}
+
+	
+	protected function standardize_attributes( array $rawattr ) {
+		
+		$defaults = apply_filters(
+			'gistpress_shortcode_defaults',
+			array(
+
+				
+				'embed_stylesheet'  => apply_filters( 'gistpress_stylesheet_default', true ),
+				'file'              => '',
+				'highlight'         => array(),
+
+				
+				'highlight_color'   => apply_filters( 'gistpress_highlight_color', '
+				'id'                => '',
+				'lines'             => '',
+				'lines_start'       => '',
+				'show_line_numbers' => true,
+				'show_meta'         => true,
+				'oembed'            => 0, 
+			)
+		);
+
+		
+		$attr = shortcode_atts( $defaults, $rawattr );
+		$attr['id']                = preg_replace( '/[^a-z0-9]+/i', '', $attr['id'] );
+		$attr['embed_stylesheet']  = $this->shortcode_bool( $attr['embed_stylesheet'] );
+		$attr['show_line_numbers'] = $this->shortcode_bool( $attr['show_line_numbers'] );
+		$attr['show_meta']         = $this->shortcode_bool( $attr['show_meta'] );
+		$attr['highlight']         = $this->parse_highlight_arg( $attr['highlight'] );
+		$attr['lines']             = $this->parse_line_number_arg( $attr['lines'] );
+
+		return $attr;
+	}
+
+	
+	protected function get_file_name( $sanitized_filename, $delimiter, $id ) {
+		
+		if ( '_' === $delimiter ) {
+			return $sanitized_filename;
+		}
+
+		
+		
+		$transient_key = $this->gist_files_transient_key( $id );
+		$gist_files = get_transient( $transient_key );
+
+		if ( ! $gist_files ) {
+			$url = 'https:
+			$json = $this->fetch_gist( $url );
+
+			if ( $json && ! empty( $json->files ) ) {
+				$gist_files = $json->files;
+				set_transient( $transient_key, $gist_files, WEEK_IN_SECONDS );
+			} else {
+				set_transient( $transient_key, array(), MINUTE_IN_SECONDS * 15 );
+			}
+		}
+
+		
+		
+		
+		if ( ! empty( $gist_files ) ) {
+			foreach ( $gist_files as $file ) {
+				if ( str_replace( '.', '-', $file ) === $sanitized_filename ) {
+					return $file;
+				}
+			}
+		}
+
+		return '';
+	}
+
+	
+	protected function debug_log( $message, $id = null ) {
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG && isset( $this->logger ) ) {
+			$this->logger->debug( $message, array( 'key' => $id ) );
+		}
+	}
+
+	
+	protected function shortcode_hash( $tag, array $args ) {
+		ksort( $args );
+		return md5( $tag . '_' . serialize( $args ) );
+	}
+
+	
+	protected function transient_key( $identifier ) {
+		return 'gist_html_' . $identifier;
+	}
+
+	
+	protected function gist_files_transient_key( $gist_id ) {
+		return 'gist_files_' . md5( $gist_id );
+	}
+
+	
+	protected function unknown() {
+		return '{{unknown}}';
+	}
+
+	
+	public function preg_replace_quote( $str ) {
+		return preg_replace( '/(\$|\\\\)(?=\d)/', '\\\\$1', $str );
+	}
+}

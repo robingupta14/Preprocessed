@@ -1,0 +1,1141 @@
+<?php
+
+
+
+
+class postParser
+{
+	
+	public $mycode_cache = 0;
+
+	
+	public $smilies_cache = 0;
+
+	
+	public $badwords_cache = 0;
+
+	
+	public $base_url;
+	
+	
+	public $highlight_cache = array();
+	
+	
+	public $options;
+
+	
+	function parse_message($message, $options=array())
+	{
+		global $plugins, $mybb;
+
+		
+		$this->base_url = $mybb->settings['bburl'];
+
+		if($this->base_url != "")
+		{
+			if(my_substr($this->base_url, my_strlen($this->base_url) -1) != "/")
+			{
+				$this->base_url = $this->base_url."/";
+			}
+		}
+		
+		
+		$this->options = $options;
+
+		$message = $plugins->run_hooks("parse_message_start", $message);
+
+		
+		$message = str_replace("\r", "", $message);
+		
+		
+		if($this->options['filter_badwords'])
+		{
+			$message = $this->parse_badwords($message);
+		}
+
+		if($this->options['allow_html'] != 1)
+		{
+			$message = $this->parse_html($message);
+		}
+		else
+		{		
+			while(preg_match("
+			{
+				$message = preg_replace("
+			}
+
+			$find = array('<?php', '<!--', '-->', '?>', "<br />\n", "<br>\n");
+			$replace = array('&lt;?php', '&lt;!--', '--&gt;', '?&gt;', "\n", "\n");
+			$message = str_replace($find, $replace, $message);
+		}
+		
+		
+		if($this->options['allow_mycode'])
+		{
+			preg_match_all("
+			$message = preg_replace("
+		}
+
+		
+		$message = $this->fix_javascript($message);
+		
+		
+		if($this->options['me_username'])
+		{
+			global $lang;
+			
+			$message = preg_replace('
+			$message = preg_replace('
+		}
+		
+		
+		if($this->options['allow_smilies'])
+		{
+			$message = $this->parse_smilies($message, $this->options['allow_html']);
+		}
+
+		
+		if($this->options['allow_mycode'])
+		{
+			$message = $this->parse_mycode($message, $this->options);
+		}
+		
+		
+		if(!empty($this->options['highlight']))
+		{
+			$message = $this->highlight_message($message, $this->options['highlight']);
+		}
+
+		
+		$message = $plugins->run_hooks("parse_message", $message);
+		
+		if($this->options['allow_mycode'])
+		{
+			
+			if(count($code_matches) > 0)
+			{
+				foreach($code_matches as $text)
+				{
+					
+					if($options['allow_html'] != 0)
+					{
+						$text[2] = $this->parse_html($text[2]);
+					}
+
+					if(my_strtolower($text[1]) == "code")
+					{
+						$code = $this->mycode_parse_code($text[2]);
+					}
+					elseif(my_strtolower($text[1]) == "php")
+					{
+						$code = $this->mycode_parse_php($text[2]);
+					}
+					$message = preg_replace("
+				}
+			}
+		}
+
+		
+		if($this->options['allow_html'])
+		{
+			$message = preg_replace_callback("
+				'$matches',
+				'return htmlspecialchars_uni($matches[0]);'
+			), $message);
+		}
+
+		if(!isset($options['nl2br']) || $options['nl2br'] != 0)
+		{
+			$message = nl2br($message);
+			
+			$message = preg_replace("
+			$message = preg_replace("
+		}
+
+		$message = my_wordwrap($message);
+	
+		$message = $plugins->run_hooks("parse_message_end", $message);
+				
+		return $message;
+	}
+
+	
+	function parse_html($message)
+	{
+		$message = preg_replace("
+		$message = str_replace("<","&lt;",$message);
+		$message = str_replace(">","&gt;",$message);
+		return $message;
+	}
+
+	
+	private function cache_mycode()
+	{
+		global $cache, $lang;
+		$this->mycode_cache = array();
+
+		$standard_mycode = $callback_mycode = array();
+
+		$standard_mycode['b']['regex'] = "
+        $standard_mycode['b']['replacement'] = "<span style=\"font-weight: bold;\">$1</span>";
+
+        $standard_mycode['u']['regex'] = "
+        $standard_mycode['u']['replacement'] = "<span style=\"text-decoration: underline;\">$1</span>";
+
+        $standard_mycode['i']['regex'] = "
+        $standard_mycode['i']['replacement'] = "<span style=\"font-style: italic;\">$1</span>";
+
+		$standard_mycode['s']['regex'] = "
+		$standard_mycode['s']['replacement'] = "<del>$1</del>";
+
+		$standard_mycode['copy']['regex'] = "
+		$standard_mycode['copy']['replacement'] = "&copy;";
+
+		$standard_mycode['tm']['regex'] = "
+		$standard_mycode['tm']['replacement'] = "&
+
+		$standard_mycode['reg']['regex'] = "
+		$standard_mycode['reg']['replacement'] = "&reg;";
+
+		$callback_mycode['url_simple']['regex'] = "
+		$callback_mycode['url_simple']['replacement'] = array($this, 'mycode_parse_url_callback1');
+
+		$callback_mycode['url_simple2']['regex'] = "
+		$callback_mycode['url_simple2']['replacement'] = array($this, 'mycode_parse_url_callback2');
+
+		$callback_mycode['url_complex']['regex'] = "
+		$callback_mycode['url_complex']['replacement'] = array($this, 'mycode_parse_url_callback1');
+
+		$callback_mycode['url_complex2']['regex'] = "
+		$callback_mycode['url_complex2']['replacement'] = array($this, 'mycode_parse_url_callback2');
+
+		$callback_mycode['email_simple']['regex'] = "
+		$callback_mycode['email_simple']['replacement'] = array($this, 'mycode_parse_email_callback');
+
+		$callback_mycode['email_complex']['regex'] = "
+		$callback_mycode['email_complex']['replacement'] = array($this, 'mycode_parse_email_callback');
+		
+		$standard_mycode['hr']['regex'] = "
+		$standard_mycode['hr']['replacement'] = "<hr />";
+
+		$nestable_mycode['color']['regex'] = "
+		$nestable_mycode['color']['replacement'] = "<span style=\"color: $1;\">$2</span>";
+
+		$nestable_mycode['size']['regex'] = "
+        $nestable_mycode['size']['replacement'] = "<span style=\"font-size: $1;\">$2</span>";
+
+        $callback_mycode['size_int']['regex'] = "
+        $callback_mycode['size_int']['replacement'] = array($this, 'mycode_handle_size_callback');
+
+        $nestable_mycode['font']['regex'] = "
+        $nestable_mycode['font']['replacement'] = "<span style=\"font-family: $1;\">$2</span>";
+
+        $nestable_mycode['align']['regex'] = "
+        $nestable_mycode['align']['replacement'] = "<div style=\"text-align: $1;\">$2</div>";
+
+		$custom_mycode = $cache->read("mycode");
+
+		
+		if(is_array($custom_mycode))
+		{
+			foreach($custom_mycode as $key => $mycode)
+			{
+				$mycode['regex'] = str_replace("\x0", "", $mycode['regex']);
+				$custom_mycode[$key]['regex'] = "
+			}
+			$mycode = array_merge($standard_mycode, $custom_mycode);
+		}
+		else
+		{
+			$mycode = $standard_mycode;
+		}
+
+		
+		foreach($mycode as $code)
+		{
+			$this->mycode_cache['standard']['find'][] = $code['regex'];
+			$this->mycode_cache['standard']['replacement'][] = $code['replacement'];
+		}
+		
+		
+		foreach($nestable_mycode as $code)
+		{
+			$this->mycode_cache['nestable'][] = array('find' => $code['regex'], 'replacement' => $code['replacement']);
+		}
+
+		
+		foreach($callback_mycode as $code)
+		{
+			$this->mycode_cache['callback'][] = array('find' => $code['regex'], 'replacement' => $code['replacement']);
+		}
+	}
+
+	
+	function parse_mycode($message, $options=array())
+	{
+		global $lang;
+
+		
+		if($this->mycode_cache == 0)
+		{
+			$this->cache_mycode();
+		}
+		
+		
+		$message = $this->mycode_parse_quotes($message);
+		
+		$message = $this->mycode_auto_url($message);
+
+		$message = str_replace('$', '&
+		
+		
+		$message = preg_replace($this->mycode_cache['standard']['find'], $this->mycode_cache['standard']['replacement'], $message);
+		foreach($this->mycode_cache['callback'] as $replace)
+		{
+			$message = preg_replace_callback($replace['find'], $replace['replacement'], $message);
+		}
+		
+		
+		foreach($this->mycode_cache['nestable'] as $mycode)
+		{
+			while(preg_match($mycode['find'], $message))
+			{
+				$message = preg_replace($mycode['find'], $mycode['replacement'], $message);
+			}
+		}
+
+		
+		while(preg_match("
+		{
+			$message = preg_replace_callback("
+		}
+
+		
+		while(preg_match("
+		{
+			$message = preg_replace_callback("
+		}
+
+		
+		if($options['allow_imgcode'] != 0)
+		{
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+			$message = preg_replace_callback("
+		}
+		
+		
+		if($options['allow_videocode'] != 0)
+		{
+			$message = preg_replace_callback("
+		}
+
+		return $message;
+	}
+
+	
+	private function cache_smilies()
+	{
+		global $cache, $mybb;
+		$this->smilies_cache = array();
+
+		$smilies = $cache->read("smilies");
+		if(is_array($smilies))
+		{
+			foreach($smilies as $sid => $smilie)
+			{
+				if(defined("IN_ARCHIVE") && substr($smilie['image'], 0, 4) != "http")
+				{
+					
+					$smilie['image'] = $mybb->settings['bburl']."/".$smilie['image'];
+				}
+
+				$this->smilies_cache[$smilie['find']] = "<img src=\"{$smilie['image']}\" style=\"vertical-align: middle;\" border=\"0\" alt=\"{$smilie['name']}\" title=\"{$smilie['name']}\" />";
+			}
+		}
+	}
+
+	
+	function parse_smilies($message, $allow_html=0)
+	{
+		if($this->smilies_cache == 0)
+		{
+			$this->cache_smilies();
+		}
+		
+		$message = ' ' . $message . ' ';
+		
+		
+		preg_match_all("
+		$message = preg_replace("
+		
+		
+		$remaining = 500;
+
+		if(is_array($this->smilies_cache))
+		{
+			foreach($this->smilies_cache as $find => $replace)
+			{
+				$orig_message = $message;
+				$find = $this->parse_html($find);
+				$find = preg_quote($find, "
+
+				$replace = strip_tags($replace, "<img>");
+				
+				
+				$orig_find = $find;
+				if(substr($find, 0, 1) == ";")
+				{
+					$find = "(?<!&gt|&lt|&amp)".$find;
+				}
+				
+				$message = @preg_replace("
+				
+				if($message == null)
+				{
+					$message = preg_replace("
+				}
+				
+				$remaining -= $replacements;
+				if($remaining <= 0)
+				{
+					break; 
+				}
+			}
+			unset($orig_message, $orig_find);
+		}
+
+		
+		if(count($bad_matches[0]) > 0)
+		{
+			foreach($bad_matches[0] as $match)
+			{
+				$match = str_replace('$', '\$', $match);
+				$message = preg_replace("
+			}
+		}
+
+		return trim($message);
+	}
+
+	
+	private function cache_badwords()
+	{
+		global $cache;
+		$this->badwords_cache = array();
+		$this->badwords_cache = $cache->read("badwords");
+	}
+
+	
+	function parse_badwords($message, $options=array())
+	{
+		if($this->badwords_cache == 0)
+		{
+			$this->cache_badwords();
+		}
+		if(is_array($this->badwords_cache))
+		{
+			reset($this->badwords_cache);
+			foreach($this->badwords_cache as $bid => $badword)
+			{
+				if(!$badword['replacement'])
+				{
+					$badword['replacement'] = "*****";
+				}
+				
+				
+				$index = substr_count($badword['badword'], '*')+2;
+				$badword['badword'] = str_replace('\*', '([a-zA-Z0-9_]{1})', preg_quote($badword['badword'], "
+				
+				
+				$count = preg_match_all("
+				for($i=0; $i < $count; ++$i)
+				{
+					$message = preg_replace("
+				}
+			}
+		}
+		if(isset($options['strip_tags']) && $options['strip_tags'] == 1)
+		{
+			$message = strip_tags($message);
+		}
+		return $message;
+	}
+
+	
+	function fix_javascript($message)
+	{
+		$js_array = array(
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+			"
+		);
+		
+		$message = preg_replace($js_array, "$1<strong></strong>$2$4", $message);
+
+		return $message;
+	}
+	
+	
+	function mycode_handle_size($size, $text)
+	{
+		$size = intval($size)+10;
+
+		if($size > 50)
+		{
+			$size = 50;
+		}
+
+		$text = "<span style=\"font-size: {$size}pt;\">".str_replace("\'", "'", $text)."</span>";
+
+		return $text;
+	}
+
+	
+	function mycode_handle_size_callback($matches)
+	{
+		return $this->mycode_handle_size($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_parse_quotes($message, $text_only=false)
+	{
+		global $lang, $templates, $theme, $mybb;
+
+		
+		$pattern = "
+		$pattern_callback = "
+
+		if($text_only == false)
+		{
+			$replace = "<blockquote><cite>$lang->quote</cite>$1</blockquote>\n";
+			$replace_callback = array($this, 'mycode_parse_post_quotes_callback1');
+		}
+		else
+		{
+			$replace = "\n{$lang->quote}\n--\n$1\n--\n";
+			$replace_callback = array($this, 'mycode_parse_post_quotes_callback2');
+		}
+
+		do
+		{
+			
+			$previous_message = $message;
+			$message = preg_replace($pattern, $replace, $message, -1, $count);
+			$message = preg_replace_callback($pattern_callback, $replace_callback, $message, -1, $count_callback);
+			if(!$message)
+			{
+				$message = $previous_message;
+				break;
+			}
+		} while($count || $count_callback);
+
+		if($text_only == false)
+		{
+			$find = array(
+				"
+				"
+			);
+
+			$replace = array(
+				"</cite><br />",
+				"</blockquote>"
+			);
+			$message = preg_replace($find, $replace, $message);
+		}
+		return $message;
+	}
+	
+	
+	function mycode_parse_post_quotes($message, $username, $text_only=false)
+	{
+		global $lang, $templates, $theme, $mybb;
+
+		$linkback = $date = "";
+
+		$message = trim($message);
+		$message = preg_replace("
+
+		if(!$message) return '';
+
+		$message = str_replace('\"', '"', $message);
+		$username = str_replace('\"', '"', $username)."'";
+		$delete_quote = true;
+
+		preg_match("
+		if(intval($match[1]))
+		{
+			$pid = intval($match[1]);
+			$url = $mybb->settings['bburl']."/".get_post_link($pid)."
+			if(defined("IN_ARCHIVE"))
+			{
+				$linkback = " <a href=\"{$url}\">[ -> ]</a>";
+			}
+			else
+			{
+				eval("\$linkback = \" ".$templates->get("postbit_gotopost", 1, 0)."\";");
+			}
+			
+			$username = preg_replace("
+			$delete_quote = false;
+		}
+
+		unset($match);
+		preg_match("
+		if(intval($match[1]))
+		{
+			if($match[1] < TIME_NOW)
+			{
+				$postdate = my_date($mybb->settings['dateformat'], intval($match[1]));
+				$posttime = my_date($mybb->settings['timeformat'], intval($match[1]));
+				$date = " ({$postdate} {$posttime})";
+			}
+			$username = preg_replace("
+			$delete_quote = false;
+		}
+
+		if($delete_quote)
+		{
+			$username = my_substr($username, 0, my_strlen($username)-1);
+		}
+
+		if($text_only)
+		{
+			return "\n".htmlspecialchars_uni($username)." $lang->wrote{$date}\n--\n{$message}\n--\n";
+		}
+		else
+		{
+			$span = "";
+			if(!$delete_quote)
+			{
+				$span = "<span>{$date}</span>";
+			}
+			
+			return "<blockquote><cite>{$span}".htmlspecialchars_uni($username)." $lang->wrote{$linkback}</cite>{$message}</blockquote>\n";
+		}
+	}
+
+	
+	function mycode_parse_post_quotes_callback1($matches)
+	{
+		return $this->mycode_parse_post_quotes($matches[4],$matches[2].$matches[3]);
+	}
+
+	
+	function mycode_parse_post_quotes_callback2($matches)
+	{
+		return $this->mycode_parse_post_quotes($matches[4],$matches[2].$matches[3], true);
+	}
+
+	
+	function mycode_parse_code($code, $text_only=false)
+	{
+		global $lang;
+
+		if($text_only == true)
+		{
+			return "\n{$lang->code}\n--\n{$code}\n--\n";
+		}
+
+		
+		$code = preg_replace('
+		$code = rtrim($code);
+		$original = preg_replace('
+
+		if(empty($original))
+		{
+			return;
+		}
+
+		$code = str_replace('$', '&
+		$code = preg_replace('
+		$code = str_replace('\\', '&
+		$code = str_replace("\t", '&nbsp;&nbsp;&nbsp;&nbsp;', $code);
+		$code = str_replace("  ", '&nbsp;&nbsp;', $code);
+
+		return "<div class=\"codeblock\">\n<div class=\"title\">".$lang->code."\n</div><div class=\"body\" dir=\"ltr\"><code>".$code."</code></div></div>\n";
+	}
+
+	
+	function mycode_parse_code_callback($matches)
+	{
+		return $this->mycode_parse_code($matches[1], true);
+	}
+
+	
+	function mycode_parse_php($str, $bare_return = false, $text_only = false)
+	{
+		global $lang;
+
+		if($text_only == true)
+		{
+			return "\n{$lang->php_code}\n--\n$str\n--\n";
+		}
+
+		
+		$str = preg_replace('
+		$str = rtrim($str);
+
+		$original = preg_replace('
+
+		if(empty($original))
+		{
+			return;
+		}
+
+		$str = str_replace('&amp;', '&', $str);
+		$str = str_replace('&lt;', '<', $str);
+		$str = str_replace('&gt;', '>', $str);
+
+		
+		$added_open_tag = false;
+		if(!preg_match("
+		{
+			$added_open_tag = true;
+			$str = "<?php \n".$str;
+		}
+
+		$added_end_tag = false;
+		if(!preg_match("
+		{
+			$added_end_tag = true;
+			$str = $str." \n?>";
+		}
+
+		$code = @highlight_string($str, true);
+
+		
+		$code = preg_replace('
+		$code = preg_replace("
+		$code = preg_replace("
+		$code = str_replace("\\", '&
+		$code = str_replace('$', '&
+		$code = preg_replace("
+
+		if($added_open_tag)
+		{
+			$code = preg_replace("
+		}
+
+		if($added_end_tag)
+		{
+			$code = str_replace("?&gt;</span></code>", "</span></code>", $code);
+			
+			$code = str_replace("?&gt;</code>", "</code>", $code);
+		}
+
+		$code = preg_replace("
+		$code = str_replace("<code>", "<div dir=\"ltr\"><code>", $code);
+		$code = str_replace("</code>", "</code></div>", $code);
+		$code = preg_replace("
+
+		if($bare_return)
+		{
+			return $code;
+		}
+
+		
+		return "<div class=\"codeblock phpcodeblock\"><div class=\"title\">$lang->php_code\n</div><div class=\"body\">".$code."</div></div>\n";
+	}
+
+	
+	function mycode_parse_php_callback($matches)
+	{
+		return $this->mycode_parse_php($matches[1], false, true);
+	}
+
+	
+	function mycode_parse_url($url, $name="")
+	{
+		if(!preg_match("
+		{
+			$url = "http:
+		}
+		$fullurl = $url;
+
+		$url = str_replace('&amp;', '&', $url);
+		$name = str_replace('&amp;', '&', $name);
+		
+		if(!$name)
+		{
+			$name = $url;
+		}
+		
+		$name = str_replace("\'", "'", $name);
+		$url = str_replace("\'", "'", $url);
+		$fullurl = str_replace("\'", "'", $fullurl);
+		
+		if($name == $url && (!isset($this->options['shorten_urls']) || $this->options['shorten_urls'] != 0))
+		{
+			if(my_strlen($url) > 55)
+			{
+				$name = my_substr($url, 0, 40)."...".my_substr($url, -10);
+			}
+		}
+
+		$nofollow = '';
+		if(isset($this->options['nofollow_on']))
+		{
+			$nofollow = " rel=\"nofollow\"";
+		}
+
+		
+		$entities = array('$' => '%24', '&
+		$fullurl = str_replace(array_keys($entities), array_values($entities), $fullurl);
+
+		$name = preg_replace("
+		$link = "<a href=\"$fullurl\" target=\"_blank\"{$nofollow}>$name</a>";
+		return $link;
+	}
+
+	
+	function mycode_parse_url_callback1($matches)
+	{
+		if(!isset($matches[3]))
+		{
+			$matches[3] = '';
+		}
+		return $this->mycode_parse_url($matches[1].$matches[2], $matches[3]);
+	}
+
+	
+	function mycode_parse_url_callback2($matches)
+	{
+		if(!isset($matches[2]))
+		{
+			$matches[2] = '';
+		}
+		return $this->mycode_parse_url($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_parse_img($url, $dimensions=array(), $align='')
+	{
+		global $lang;
+		$url = trim($url);
+		$url = str_replace("\n", "", $url);
+		$url = str_replace("\r", "", $url);
+		if($align == "right")
+		{
+			$css_align = " style=\"float: right;\"";
+		}
+		else if($align == "left")
+		{
+			$css_align = " style=\"float: left;\"";
+		}
+		$alt = htmlspecialchars_uni(basename($url));
+		if(my_strlen($alt) > 55)
+		{
+			$alt = my_substr($alt, 0, 40)."...".my_substr($alt, -10);
+		}
+		$alt = $lang->sprintf($lang->posted_image, $alt);
+		if($dimensions[0] > 0 && $dimensions[1] > 0)
+		{
+			return "<img src=\"{$url}\" width=\"{$dimensions[0]}\" height=\"{$dimensions[1]}\" border=\"0\" alt=\"{$alt}\"{$css_align} />";
+		}
+		else
+		{
+			return "<img src=\"{$url}\" border=\"0\" alt=\"{$alt}\"{$css_align} />";			
+		}
+	}
+
+	
+	function mycode_parse_img_callback1($matches)
+	{
+		return $this->mycode_parse_img($matches[2]);
+	}
+
+	
+	function mycode_parse_img_callback2($matches)
+	{
+		return $this->mycode_parse_img($matches[4], array($matches[1], $matches[2]));
+	}
+
+	
+	function mycode_parse_img_callback3($matches)
+	{
+		return $this->mycode_parse_img($matches[3], array(), $matches[1]);
+	}
+
+	
+	function mycode_parse_img_callback4($matches)
+	{
+		return $this->mycode_parse_img($matches[5], array($matches[1], $matches[2]), $matches[3]);
+	}
+
+	
+	function mycode_parse_email($email, $name="")
+	{
+		$name = str_replace("\\'", "'", $name);
+		$email = str_replace("\\'", "'", $email);
+		if(!$name)
+		{
+			$name = $email;
+		}
+		if(preg_match("/^([a-zA-Z0-9-_\+\.]+?)@[a-zA-Z0-9-]+\.[a-zA-Z0-9\.-]+$/si", $email))
+		{
+			return "<a href=\"mailto:$email\">".$name."</a>";
+		}
+		else
+		{
+			return $email;
+		}
+	}
+
+	
+	function mycode_parse_email_callback($matches)
+	{
+		if(!isset($matches[2]))
+		{
+			$matches[2] = '';
+		}
+		return $this->mycode_parse_email($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_parse_video($video, $url)
+	{
+		global $templates;
+		
+		if(empty($video) || empty($url))
+		{
+			return "[video={$video}]{$url}[/video]";
+		}
+		
+		$parsed_url = @parse_url(urldecode($url));
+		if($parsed_url == false)
+		{
+			return "[video={$video}]{$url}[/video]";
+		}
+		
+		$fragments = array();
+		if($parsed_url['fragment'])
+		{
+			$fragments = explode("&", $parsed_url['fragment']);
+		}
+		
+		$queries = explode("&", $parsed_url['query']);
+		
+		$input = array();
+		foreach($queries as $query)
+		{
+			list($key, $value) = explode("=", $query);
+			$key = str_replace("amp;", "", $key);
+			$input[$key] = $value;
+		}
+		
+		$path = explode('/', $parsed_url['path']);
+		
+		switch($video)
+		{
+			case "dailymotion":
+				list($id, ) = split("_", $path[2], 1); 
+				break;
+			case "metacafe":
+				$id = $path[2]; 
+				$title = htmlspecialchars_uni($path[3]);
+				break;
+			case "myspacetv":
+				$id = $path[4]; 
+				break;
+			case "yahoo":
+				$id = $path[1]; 
+				
+				$domain = explode('.', $parsed_url['host']);
+				if($domain[0] != 'screen')
+				{
+					$local = htmlspecialchars_uni($domain[0]).'.';
+				}
+				else
+				{
+					$local = '';
+				}
+				break;
+			case "vimeo":
+				$id = $path[1]; 
+				break;
+			case "youtube":
+				if($fragments[0])
+				{
+					$id = str_replace('!v=', '', $fragments[0]); 
+				}
+				elseif($input['v'])
+				{
+					$id = $input['v']; 
+				}
+				else
+				{
+					$id = $path[1]; 
+				}
+				break;
+			default:
+				return "[video={$video}]{$url}[/video]";
+		}
+
+		if(empty($id))
+		{
+			return "[video={$video}]{$url}[/video]";
+		}
+		
+		$id = htmlspecialchars_uni($id);
+		
+		eval("\$video_code = \"".$templates->get("video_{$video}_embed")."\";");
+		
+		return $video_code;
+	}
+
+	
+	function mycode_parse_video_callback($matches)
+	{
+		return $this->mycode_parse_video($matches[1], $matches[2]);
+	}
+
+	
+	function mycode_auto_url($message)
+	{	
+		$message = " ".$message;
+		$message = preg_replace("
+		$message = preg_replace("
+		$message = my_substr($message, 1);
+		
+		return $message;
+	}
+
+	
+	function mycode_parse_list($message, $type="")
+	{
+		$message = str_replace('\"', '"', $message);
+		$message = preg_replace("
+		$message .= "</li>";
+
+		if($type)
+		{
+			$list = "\n<ol type=\"$type\">$message</ol>\n";
+		}
+		else
+		{
+			$list = "<ul>$message</ul>\n";
+		}
+		$list = preg_replace("
+		return $list;
+	}
+
+	
+	function mycode_parse_list_callback($matches)
+	{
+		return $this->mycode_parse_list($matches[1]);
+	}
+
+	
+	function mycode_parse_list_callback_type($matches)
+	{
+		return $this->mycode_parse_list($matches[2], $matches[1]);
+	}
+
+	
+	function strip_smilies($message)
+	{
+		if($this->smilies_cache == 0)
+		{
+			$this->cache_smilies();
+		}
+		if(is_array($this->smilies_cache))
+		{
+			$message = str_replace($this->smilies_cache, array_keys($this->smilies_cache), $message);
+		}
+		return $message;
+	}
+	
+	
+	function highlight_message($message, $highlight)
+	{
+		if(empty($this->highlight_cache))
+		{
+			$this->highlight_cache = build_highlight_array($highlight);
+		}
+		
+		if(is_array($this->highlight_cache) && !empty($this->highlight_cache))
+		{
+			$message = preg_replace(array_keys($this->highlight_cache), $this->highlight_cache, $message);
+		}
+		
+		return $message;
+	}
+
+	
+	function text_parse_message($message, $options=array())
+	{
+		global $plugins;
+		
+		
+		if($options['filter_badwords'] != 0)
+		{
+			$message = $this->parse_badwords($message);
+		}
+
+		
+		$message = $this->mycode_parse_quotes($message, true);
+
+		$message = preg_replace_callback("
+		$message = preg_replace_callback("
+
+		$find = array(
+			"
+			"
+			"
+			"
+		);
+		
+		$replace = array(
+			"$2",
+			"$4",
+			"$3 ($1$2)",
+			"$2 ($1)",
+		);
+		$message = preg_replace($find, $replace, $message);
+		
+		
+		if($options['me_username'])
+		{
+			global $lang;
+			
+			$message = preg_replace('
+			$message = preg_replace('
+		}
+
+		
+		while(preg_match("
+		{
+			$message = preg_replace_callback("
+		}
+
+		
+		while(preg_match("
+		{
+			$message = preg_replace_callback("
+		}
+
+		
+		$message = $plugins->run_hooks("text_parse_message", $message);
+		
+		return $message;
+	}
+}
+?>

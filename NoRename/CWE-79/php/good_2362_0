@@ -1,0 +1,192 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
+	$g_bypass_headers = true; 
+	define( 'COMPRESSION_DISABLED', true );
+	 
+
+
+	auth_ensure_user_authenticated();
+
+	$f_show_inline = gpc_get_bool( 'show_inline', false );
+
+	
+	
+	
+	
+	
+	
+	if ( $f_show_inline ) {
+		
+		
+		
+		
+		if ( !@form_security_validate( 'file_show_inline' ) ) {
+			http_all_headers();
+			trigger_error( ERROR_FORM_TOKEN_INVALID, ERROR );
+		}
+	}
+
+	$f_file_id = gpc_get_int( 'file_id' );
+	$f_type = gpc_get_string( 'type' );
+
+	$c_file_id = (integer)$f_file_id;
+
+	
+	
+	$query = '';
+	switch ( $f_type ) {
+		case 'bug':
+			$t_bug_file_table = db_get_table( 'mantis_bug_file_table' );
+			$query = "SELECT *
+				FROM $t_bug_file_table
+				WHERE id=" . db_param();
+			break;
+		case 'doc':
+			$t_project_file_table = db_get_table( 'mantis_project_file_table' );
+			$query = "SELECT *
+				FROM $t_project_file_table
+				WHERE id=" . db_param();
+			break;
+		default:
+			access_denied();
+	}
+	$result = db_query_bound( $query, Array( $c_file_id ) );
+	$row = db_fetch_array( $result );
+	extract( $row, EXTR_PREFIX_ALL, 'v' );
+
+	if ( $f_type == 'bug' ) {
+		$t_project_id = bug_get_field( $v_bug_id, 'project_id' );
+	} else {
+		$t_project_id = $v_project_id;
+	}
+
+	
+	switch ( $f_type ) {
+		case 'bug':
+			if ( !file_can_download_bug_attachments( $v_bug_id, (int)$v_user_id ) ) {
+				access_denied();
+			}
+			break;
+		case 'doc':
+			
+			if ( OFF == config_get( 'enable_project_documentation' ) ) {
+				access_denied();
+			}
+
+			access_ensure_project_level( config_get( 'view_proj_doc_threshold' ), $v_project_id );
+			break;
+	}
+
+	
+	while ( @ob_end_clean() );
+
+	if ( ini_get( 'zlib.output_compression' ) && function_exists( 'ini_set' ) ) {
+		ini_set( 'zlib.output_compression', false );
+	}
+
+	http_security_headers();
+
+	
+	header( 'Pragma: public' );
+
+	
+	
+	
+	global $g_allow_file_cache;
+	if ( http_is_protocol_https() && is_browser_internet_explorer() ) {
+		
+	} else {
+		if ( !isset( $g_allow_file_cache ) ) {
+		    header( 'Pragma: no-cache' );
+		}
+	}
+	header( 'Expires: ' . gmdate( 'D, d M Y H:i:s \G\M\T', time() ) );
+
+	header( 'Last-Modified: ' . gmdate( 'D, d M Y H:i:s \G\M\T', $v_date_added ) );
+
+	$t_upload_method = config_get( 'file_upload_method' );
+	$t_filename = file_get_display_name( $v_filename );
+
+	
+
+	
+	$finfo = finfo_get_if_available();
+
+	$t_content_type = $v_file_type;
+
+	$t_content_type_override = file_get_content_type_override ( $t_filename );
+	$t_file_info_type = false;
+
+	switch( $t_upload_method ) {
+		case DISK:
+			$t_local_disk_file = file_normalize_attachment_path( $v_diskfile, $t_project_id );
+			if( file_exists( $t_local_disk_file ) && $finfo ) {
+				$t_file_info_type = $finfo->file( $t_local_disk_file );
+			}
+			break;
+		case FTP:
+			$t_local_disk_file = file_normalize_attachment_path( $v_diskfile, $t_project_id );
+
+			if ( !file_exists( $t_local_disk_file ) ) {
+				$ftp = file_ftp_connect();
+				file_ftp_get ( $ftp, $t_local_disk_file, $v_diskfile );
+				file_ftp_disconnect( $ftp );
+			}
+
+			if ( $finfo ) {
+				$t_file_info_type = $finfo->file( $t_local_disk_file );
+			}
+			break;
+		case DATABASE:
+			if ( $finfo ) {
+				$t_file_info_type = $finfo->buffer( $v_content );
+			}
+	}
+
+	if( $t_file_info_type !== false ) {
+		$t_content_type = $t_file_info_type;
+	}
+
+	if( $t_content_type_override ) {
+		$t_content_type = $t_content_type_override;
+	}
+
+	
+	if( false !== strpos( $t_content_type, 'application/x-shockwave-flash' ) ) {
+		http_content_disposition_header( $t_filename );
+	} else {
+		http_content_disposition_header( $t_filename, $f_show_inline );
+	}
+
+	header( 'Content-Type: ' . $t_content_type );
+	header( 'Content-Length: ' . $v_filesize );
+
+	
+	
+	header( 'X-Content-Type-Options: nosniff' );
+
+	
+	switch( $t_upload_method ) {
+		case DISK:
+		case FTP:
+			readfile( $t_local_disk_file );
+			break;
+		case DATABASE:
+			
+	}

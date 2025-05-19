@@ -1,0 +1,234 @@
+<?php
+
+
+
+
+
+
+
+
+
+
+$clientId      = MAX_getValue('clientid');
+$campaignId    = MAX_getValue('campaignid');
+$bannerId      = MAX_getValue('bannerid');
+$affiliateId   = MAX_getValue('affiliteid');
+$zoneId        = MAX_getValue('zoneid');
+$period_preset = MAX_getValue('period_preset');
+$period_start  = MAX_getValue('period_start');
+$period_end    = MAX_getValue('period_end');
+$day           = MAX_getValue('day');
+$howLong       = MAX_getValue('howLong');
+$hour          = MAX_getValue('hour');
+$returnurl     = MAX_getValue('returnurl');
+$statusIds     = MAX_getValue('statusIds');
+$pageID        = MAX_getValue('pageID');
+$setPerPage    = MAX_getValue('setPerPage');
+
+$aParams = array();
+
+$aParams['clientid']   = $clientId;
+$aParams['campaignid'] = $campaignId;
+$aParams['bannerid']   = $bannerId;
+
+
+OA_Permission::enforceAccount(OA_ACCOUNT_MANAGER);
+
+
+OA_Permission::checkSessionToken();
+
+if (!empty($day)) {
+    
+    $period_preset = '';
+    
+    $howLong = MAX_getValue('howLong', 'd');
+    $hour    = MAX_getValue('hour');
+} else {
+    $period_preset  = MAX_getStoredValue('period_preset', 'today');
+    $period_start   = MAX_getStoredValue('period_start', date('Y-m-d'));
+    $period_end     = MAX_getStoredValue('period_end', date('Y-m-d'));
+}
+
+if(!empty($period_preset)) {
+    $aDates = MAX_getDatesByPeriod($period_preset, $period_start, $period_end);
+} else {
+    $aDates = array();
+    $oDayDate = new Date();
+    $oDayDate->setDate($day, DATE_FORMAT_TIMESTAMP);
+    if(!empty($hour)) {
+        
+        $aDates['day_hour'] = $oDayDate->format('%Y-%m-%d').' '.$hour;
+    } else {
+        
+        switch($howLong) {
+            case 'm':
+                $aDates['month'] = $oDayDate->format('%Y-%m');
+                break;
+            case 'w':
+                $aDates['day_begin'] = $oDayDate->format('%Y-%m-%d');
+                $oDayDate->addSeconds(604800); 
+                $aDates['day_end'] = $oDayDate->format('%Y-%m-%d');
+                break;
+            case 'd':
+            default:
+                $aDates['day'] = $oDayDate->format('%Y-%m-%d');
+                break;
+        }
+    }
+}
+
+
+$aParams['agency_id'] = OA_Permission::getAgencyId();
+
+
+
+
+
+
+$aConversions = Admin_DA::getConversions($aParams + $aDates);
+if (!empty($aConversions))
+{
+    $conf = $GLOBALS['_MAX']['CONF'];
+
+    $modified = false;
+
+    
+    foreach($statusIds as $conversionId => $statusId) {
+        if(isset($aConversions[$conversionId]) && $aConversions[$conversionId]['connection_status'] != $statusId) {
+
+            $modified = true;
+            
+            $doData_intermediate_ad_connection = OA_Dal::factoryDO('data_intermediate_ad_connection');
+            $doData_intermediate_ad_connection->get($conversionId);
+            $doData_intermediate_ad_connection->connection_status = $statusId;
+            $doData_intermediate_ad_connection->update();
+
+            if($aConversions[$conversionId]['connection_status'] == MAX_CONNECTION_STATUS_APPROVED || $statusId == MAX_CONNECTION_STATUS_APPROVED) {
+                
+                $aConVariables = Admin_DA::fromCache('getConnectionVariables', $conversionId);
+                
+                $basketValue = 0;
+                $numItems    = 0;
+                foreach($aConVariables as $conVariable) {
+                    if($conVariable['purpose'] == 'basket_value') {
+                        $basketValue += $conVariable['value'];
+                    } elseif ($conVariable['purpose'] == 'num_items') {
+                        $numItems    += $conVariable['value'];
+                    }
+                }
+
+                
+                $dateTime = $aConversions[$conversionId]['date_time'];
+                $oConnectionDate = new Date($dateTime);
+                $oConnectionDate->toUTC();
+
+                $optIntID = OX_OperationInterval::convertDateToOperationIntervalID($oConnectionDate);
+                $opDay = $oConnectionDate->format('%Y-%m-%d');
+                $opHour = $oConnectionDate->format('%H');
+
+                
+                $ad_id = $aConversions[$conversionId]['ad_id'];
+                $creative_id = $aConversions[$conversionId]['creative_id'];
+                $zone_id = $aConversions[$conversionId]['zone_id'];
+
+                $operation = null;
+                
+                if($aConversions[$conversionId]['connection_status'] == MAX_CONNECTION_STATUS_APPROVED) {
+                    
+                    
+                    $operation = '-';
+                }
+
+                
+                if($statusId == MAX_CONNECTION_STATUS_APPROVED) {
+                    
+                    
+                    $operation = '+';
+                }
+
+                
+                if ($aConversions[$conversionId]['connection_action'] == MAX_CONNECTION_AD_ARRIVAL) {
+                    $data_summary_table = 'data_summary_ad_arrival_hourly';
+
+                    
+                    $plugins = &MAX_Plugin::getPlugins('Maintenance');
+                    foreach($plugins as $plugin) {
+                        if ($plugin->getHook() == MSE_PLUGIN_HOOK_AdServer_saveSummary) {
+                            $plugin->serviceLocatorRegister();
+
+                            
+                            if ($oServiceLocator->get('financeSummaryTable') == $data_summary_table) {
+                                break;
+                            } else {
+                                $plugin->serviceLocatorRemove();
+                            }
+                        }
+                    }
+
+                } else {
+                    $plugin = null;
+                    $data_summary_table = 'data_summary_ad_hourly';
+                }
+
+                
+                $dalData_intermediate_ad = OA_Dal::factoryDAL('data_intermediate_ad');
+                $dalData_intermediate_ad->addConversion($operation,
+                    $basketValue, $numItems, $ad_id,
+                    $creative_id, $zone_id, $opDay, $opHour);
+
+                
+                $dalData_intermediate_ad->addConversion($operation,
+                    $basketValue, $numItems, $ad_id,
+                    $creative_id, $zone_id, $opDay, $opHour, $data_summary_table);
+
+                
+                $oServiceLocator =& OA_ServiceLocator::instance();
+                $oDal = &$oServiceLocator->get('OX_Dal_Maintenance_Statistics');
+                if (!$oDal) {
+                    $oFactory = new OX_Dal_Maintenance_Statistics_Factory();
+                    $oDal = $oFactory->factory();
+                }
+                $oStartDate = new Date($oConnectionDate->format('%Y-%m-%d %H:00:00'));
+                $oEndDate   = new Date($oConnectionDate->format('%Y-%m-%d %H:00:00'));
+                $oDal->_saveSummaryUpdateWithFinanceInfo($oStartDate, $oEndDate, $data_summary_table);
+
+                if (!is_null($plugin)) {
+                    $plugin->serviceLocatorRemove();
+                }
+            }
+        }
+    }
+    if($modified) {
+        
+        $options = array(
+                'cacheDir' => MAX_CACHE,
+        );
+        $cache = new Cache_Lite($options);
+        $cache->clean(OX_getHostName().'stats');
+    }
+}
+
+$addUrl = "entity=conversions&clientid=$clientId&campaignid=$campaignId&bannerid=$bannerId&affiliateid=$affiliateId&zoneid=$zoneId";
+
+if (!empty($period_preset)) {
+    $addUrl .= "&period_preset={$period_preset}&period_start={$period_start}&period_end={$period_end}";
+}
+if (!empty($day)) {
+    $addUrl .= "&day={$day}";
+}
+if (!empty($howLong)) {
+    $addUrl .= "&howLong={$howLong}";
+}
+if (!empty($hour)) {
+    $addUrl .= "&hour={$hour}";
+}
+if (!empty($pageID)) {
+    $addUrl .= "&pageID={$pageID}";
+}
+if (!empty($setPerPage)) {
+    $addUrl .= "&setPerPage={$setPerPage}";
+}
+
+Header ("Location: ".$returnurl."?".$addUrl);
+
+?>

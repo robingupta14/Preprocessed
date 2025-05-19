@@ -1,0 +1,888 @@
+
+
+
+
+
+
+
+
+static CURLcode fn_50(struct struct_52 *conn);
+static CURLcode fn_51(struct struct_52 *conn, bool *done);
+static CURLcode fn_47(struct struct_52 *conn, bool *done);
+static CURLcode fn_44(struct struct_52 *conn,
+                          CURLcode, bool var_45);
+static CURLcode fn_43(struct struct_52 *conn, bool *done);
+static CURLcode fn_49(struct struct_52 *conn, bool var_8);
+static CURLcode fn_41(struct struct_52 *conn, bool *done);
+static int fn_27(struct struct_52 *conn,
+                        curl_socket_t *socks,
+                        int var_27);
+static CURLcode fn_51(struct struct_52 *conn,
+                           bool *dophase_done);
+static CURLcode fn_51(struct struct_52 * conn);
+
+
+
+
+
+const struct struct_16 var_51 = {
+  "POP3",
+  pop3_setup_connection,
+  pop3_do,
+  pop3_done,
+  ZERO_NULL,
+  pop3_connect,
+  pop3_multi_statemach,
+  pop3_doing,
+  pop3_getsock,
+  pop3_getsock,
+  ZERO_NULL,
+  ZERO_NULL,
+  pop3_disconnect,
+  ZERO_NULL,
+  PORT_POP3,
+  CURLPROTO_POP3,
+  PROTOPT_CLOSEACTION | PROTOPT_NOURLQUERY
+};
+
+static const struct struct_16 var_51 = {
+  "POP3",
+  ZERO_NULL,
+  Curl_http,
+  Curl_http_done,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  ZERO_NULL,
+  PORT_POP3,
+  CURLPROTO_HTTP,
+  PROTOPT_NONE
+};
+
+static int fn_17(struct struct_43 *pp,
+                          int *resp)
+{
+  char *line = pp->linestart_resp;
+  size_t var_20 = pp->nread_resp;
+
+  if(((var_20 >= 3) && !memcmp("+OK", line, 3)) ||
+     ((var_20 >= 4) && !memcmp("-ERR", line, 4))) {
+    *resp=line[1];
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+
+static void fn_20(struct struct_52 *conn,
+                  pop3state var_23)
+{
+
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+
+
+
+
+
+  pop3c->state = var_23;
+}
+
+static CURLcode fn_23(struct struct_52 *conn)
+{
+  CURLcode var_56;
+  struct struct_51 *pop3 = conn->data->state.proto.pop3;
+
+
+  var_56 = Curl_pp_sendf(&conn->proto.pop3c.pp, "USER %s",
+                         pop3->user?pop3->user:"");
+  if(var_56)
+    return var_56;
+
+  state(conn, POP3_USER);
+
+  return var_56;
+}
+
+
+static int fn_27(struct struct_52 *conn,
+                        curl_socket_t *socks,
+                        int var_27)
+{
+  return Curl_pp_getsock(&conn->proto.pop3c.pp, socks, var_27);
+}
+
+static CURLcode fn_27(struct struct_52 *conn,
+                                         int var_41,
+                                         pop3state var_36)
+{
+  CURLcode var_56 = var_56;
+  struct struct_52 *data = conn->data;
+  (void)var_36;
+
+  if(var_41 != 'O') {
+    if(data->set.use_ssl != CURLUSESSL_TRY) {
+      failf(data, "STARTTLS denied. %c", var_41);
+      var_56 = CURLE_USE_SSL_FAILED;
+      state(conn, POP3_STOP);
+    }
+    else
+      var_56 = pop3_state_user(conn);
+  }
+  else {
+
+    var_56 = Curl_ssl_connect(conn, FIRSTSOCKET);
+    if(var_56 == var_56) {
+      Curl_nop_stmt;
+      var_56 = pop3_state_user(conn);
+    }
+    else {
+      state(conn, POP3_STOP);
+    }
+  }
+  return var_56;
+}
+
+
+static CURLcode fn_31(struct struct_52 *conn,
+                                     int var_41,
+                                     pop3state var_36)
+{
+  CURLcode var_56 = var_56;
+  struct struct_52 *data = conn->data;
+  struct struct_51 *pop3 = data->state.proto.pop3;
+
+  (void)var_36;
+
+  if(var_41 != 'O') {
+    failf(data, "Access denied. %c", var_41);
+    var_56 = CURLE_LOGIN_DENIED;
+  }
+  else
+
+    var_56 = Curl_pp_sendf(&conn->proto.pop3c.pp, "PASS %s",
+                           pop3->passwd?pop3->passwd:"");
+  if(var_56)
+    return var_56;
+
+  state(conn, POP3_PASS);
+  return var_56;
+}
+
+
+static CURLcode fn_32(struct struct_52 *conn,
+                                     int var_41,
+                                     pop3state var_36)
+{
+  CURLcode var_56 = var_56;
+  struct struct_52 *data = conn->data;
+  (void)var_36;
+
+  if(var_41 != 'O') {
+    failf(data, "Access denied. %c", var_41);
+    var_56 = CURLE_LOGIN_DENIED;
+  }
+
+  state(conn, POP3_STOP);
+  return var_56;
+}
+
+
+static CURLcode fn_33(struct struct_52 *conn,
+                                     int var_41,
+                                     pop3state var_36)
+{
+  CURLcode var_56 = var_56;
+  struct struct_52 *data = conn->data;
+  struct struct_51 *pop3 = data->state.proto.pop3;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  struct struct_43 *pp = &pop3c->pp;
+
+  (void)var_36;
+
+  if('O' != var_41) {
+    state(conn, POP3_STOP);
+    return CURLE_RECV_ERROR;
+  }
+
+
+  Curl_setup_transfer(conn, FIRSTSOCKET, -1, FALSE,
+                      pop3->bytecountp, -1, NULL);
+
+  if(pp->cache) {
+
+
+
+
+
+    var_56 = Curl_pop3_write(conn, pp->cache, pp->cache_size);
+    if(var_56)
+      return var_56;
+
+
+    free(pp->cache);
+    pp->cache = NULL;
+    pp->cache_size = 0;
+  }
+
+  state(conn, POP3_STOP);
+  return var_56;
+}
+
+
+
+static CURLcode fn_34(struct struct_52 *conn,
+                                     int var_41,
+                                     pop3state var_36)
+{
+  CURLcode var_56 = var_56;
+  struct struct_52 *data = conn->data;
+  struct struct_51 *pop3 = data->state.proto.pop3;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  struct struct_43 *pp = &pop3c->pp;
+
+  (void)var_36;
+
+  if('O' != var_41) {
+    state(conn, POP3_STOP);
+    return CURLE_RECV_ERROR;
+  }
+
+
+
+
+
+  pop3c->eob = 2;
+
+
+
+  pop3c->strip = 2;
+
+
+  Curl_setup_transfer(conn, FIRSTSOCKET, -1, FALSE, pop3->bytecountp,
+                      -1, NULL);
+
+  if(pp->cache) {
+
+
+
+    var_56 = Curl_pop3_write(conn, pp->cache, pp->cache_size);
+    if(var_56)
+      return var_56;
+
+
+    free(pp->cache);
+    pp->cache = NULL;
+    pp->cache_size = 0;
+  }
+
+  state(conn, POP3_STOP);
+  return var_56;
+}
+
+
+static CURLcode fn_35(struct struct_52 *conn,
+                                     int var_41,
+                                     pop3state var_36)
+{
+  CURLcode var_56 = var_56;
+  struct struct_52 *data = conn->data;
+  (void)var_36;
+
+  if(var_41 != 'O') {
+    failf(data, "Invalid message. %c", var_41);
+    var_56 = CURLE_REMOTE_FILE_NOT_FOUND;
+  }
+
+  state(conn, POP3_STOP);
+  return var_56;
+}
+
+
+static CURLcode fn_36(struct struct_52 *conn)
+{
+  CURLcode var_56 = var_56;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+
+  var_56 = Curl_pp_sendf(&conn->proto.pop3c.pp, "RETR %s", pop3c->mailbox);
+  if(var_56)
+    return var_56;
+
+  state(conn, POP3_RETR);
+  return var_56;
+}
+
+
+static CURLcode fn_37(struct struct_52 *conn)
+{
+  CURLcode var_56 = var_56;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+
+  if(pop3c->mailbox[0] != '\0')
+    var_56 = Curl_pp_sendf(&conn->proto.pop3c.pp, "LIST %s", pop3c->mailbox);
+  else
+    var_56 = Curl_pp_sendf(&conn->proto.pop3c.pp, "LIST");
+  if(var_56)
+    return var_56;
+
+  if(pop3c->mailbox[0] != '\0')
+    state(conn, POP3_LIST_SINGLE);
+  else
+    state(conn, POP3_LIST);
+  return var_56;
+}
+
+static CURLcode fn_38(struct struct_52 *conn)
+{
+  CURLcode var_56;
+  curl_socket_t var_41 = conn->sock[FIRSTSOCKET];
+  struct struct_52 *data=conn->data;
+  int var_41;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  struct struct_43 *pp = &pop3c->pp;
+  size_t var_56 = 0;
+
+  if(pp->sendleft)
+    return Curl_pp_flushsend(pp);
+
+
+  var_56 = Curl_pp_readresp(var_41, pp, &var_41, &var_56);
+  if(var_56)
+    return var_56;
+
+  if(var_41) {
+
+    switch(pop3c->state) {
+    case POP3_SERVERGREET:
+      if(var_41 != 'O') {
+        failf(data, "Got unexpected pop3-server response");
+        return CURLE_FTP_WEIRD_SERVER_REPLY;
+      }
+
+      if(data->set.use_ssl && !conn->ssl[FIRSTSOCKET].use) {
+
+
+        var_56 = Curl_pp_sendf(&pop3c->pp, "STLS");
+        state(conn, POP3_STARTTLS);
+      }
+      else
+        var_56 = pop3_state_user(conn);
+      if(var_56)
+        return var_56;
+      break;
+
+    case POP3_USER:
+      var_56 = pop3_state_user_resp(conn, var_41, pop3c->state);
+      break;
+
+    case POP3_PASS:
+      var_56 = pop3_state_pass_resp(conn, var_41, pop3c->state);
+      break;
+
+    case POP3_STARTTLS:
+      var_56 = pop3_state_starttls_resp(conn, var_41, pop3c->state);
+      break;
+
+    case POP3_RETR:
+      var_56 = pop3_state_retr_resp(conn, var_41, pop3c->state);
+      break;
+
+    case POP3_LIST:
+      var_56 = pop3_state_list_resp(conn, var_41, pop3c->state);
+      break;
+
+    case POP3_LIST_SINGLE:
+      var_56 = pop3_state_list_single_resp(conn, var_41, pop3c->state);
+      break;
+
+    case POP3_QUIT:
+
+    default:
+
+      state(conn, POP3_STOP);
+      break;
+    }
+  }
+  return var_56;
+}
+
+
+static CURLcode fn_41(struct struct_52 *conn, bool *done)
+{
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  CURLcode var_56 = Curl_pp_multi_statemach(&pop3c->pp);
+
+  *done = (pop3c->state == POP3_STOP) ? TRUE : FALSE;
+
+  return var_56;
+}
+
+static CURLcode fn_41(struct struct_52 *conn)
+{
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  struct struct_43 *pp = &pop3c->pp;
+  CURLcode var_56 = var_56;
+
+  while(pop3c->state != POP3_STOP) {
+    var_56 = Curl_pp_easy_statemach(pp);
+    if(var_56)
+      break;
+  }
+
+  return var_56;
+}
+
+
+
+
+
+static CURLcode fn_42(struct struct_52 *conn)
+{
+  struct struct_52 *data = conn->data;
+  struct struct_51 *pop3 = data->state.proto.pop3;
+  if(!pop3) {
+    pop3 = data->state.proto.pop3 = calloc(sizeof(struct struct_51), 1);
+    if(!pop3)
+      return CURLE_OUT_OF_MEMORY;
+  }
+
+
+  pop3->bytecountp = &data->req.bytecount;
+
+
+
+
+
+  pop3->user = conn->user;
+  pop3->passwd = conn->passwd;
+
+  return var_56;
+}
+
+static CURLcode fn_43(struct struct_52 *conn,
+                                 bool *done)
+{
+  CURLcode var_56;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  struct struct_52 *data=conn->data;
+  struct struct_43 *pp = &pop3c->pp;
+
+  *done = FALSE;
+
+
+
+  Curl_reset_reqproto(conn);
+
+  var_56 = pop3_init(conn);
+  if(var_56 != var_56)
+    return var_56;
+
+
+  conn->bits.close = FALSE;
+
+  pp->response_time = RESP_TIMEOUT;
+  pp->statemach_act = pop3_statemach_act;
+  pp->endofresp = pop3_endofresp;
+  pp->conn = conn;
+
+  if(conn->bits.tunnel_proxy && conn->bits.httpproxy) {
+
+    struct struct_43 http_proxy;
+    struct struct_51 *pop3_save;
+
+    pop3_save = data->state.proto.pop3;
+    memset(&http_proxy, 0, sizeof(http_proxy));
+    data->state.proto.http = &http_proxy;
+
+    var_56 = Curl_proxyCONNECT(conn, FIRSTSOCKET,
+                               conn->host.name, conn->remote_port);
+
+    data->state.proto.pop3 = pop3_save;
+
+    if(var_56 != var_56)
+      return var_56;
+  }
+
+  if(conn->handler->flags & PROTOPT_SSL) {
+
+    var_56 = Curl_ssl_connect(conn, FIRSTSOCKET);
+    if(var_56)
+      return var_56;
+  }
+
+  Curl_pp_init(pp);
+
+
+
+  state(conn, POP3_SERVERGREET);
+
+  if(data->state.used_interface == Curl_if_multi)
+    var_56 = pop3_multi_statemach(conn, done);
+  else {
+    var_56 = pop3_easy_statemach(conn);
+    if(!var_56)
+      *done = TRUE;
+  }
+
+  return var_56;
+}
+
+static CURLcode fn_44(struct struct_52 *conn, CURLcode var_45,
+                          bool var_45)
+{
+  struct struct_52 *data = conn->data;
+  struct struct_51 *pop3 = data->state.proto.pop3;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  CURLcode var_56=var_56;
+  (void)var_45;
+
+  if(!pop3)
+
+
+
+
+
+    return var_56;
+
+  if(var_45) {
+    conn->bits.close = TRUE;
+    var_56 = var_45;
+  }
+
+  Curl_safefree(pop3c->mailbox);
+  pop3c->mailbox = NULL;
+
+
+  pop3->transfer = FTPTRANSFER_BODY;
+
+  return var_56;
+}
+
+static
+CURLcode fn_45(struct struct_52 *conn,
+                     bool *var_51,
+                     bool *dophase_done)
+{
+
+  CURLcode var_56=var_56;
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+
+  DEBUGF(infof(conn->data, "DO phase starts\n"));
+
+  if(conn->data->set.opt_no_body) {
+
+    struct struct_51 *pop3 = conn->data->state.proto.pop3;
+    pop3->transfer = FTPTRANSFER_INFO;
+  }
+
+  *dophase_done = FALSE;
+
+
+
+
+
+  if(strlen(pop3c->mailbox) && !conn->data->set.ftp_list_only)
+    var_56 = pop3_retr(conn);
+  else
+    var_56 = pop3_list(conn);
+  if(var_56)
+    return var_56;
+
+
+  if(conn->data->state.used_interface == Curl_if_multi)
+    var_56 = pop3_multi_statemach(conn, dophase_done);
+  else {
+    var_56 = pop3_easy_statemach(conn);
+    *dophase_done = TRUE;
+  }
+  *var_51 = conn->bits.tcpconnect[FIRSTSOCKET];
+
+  if(*dophase_done)
+    DEBUGF(infof(conn->data, "DO phase is complete\n"));
+
+  return var_56;
+}
+
+static CURLcode fn_47(struct struct_52 *conn, bool *done)
+{
+  CURLcode var_48 = var_56;
+
+  *done = FALSE;
+
+
+
+
+
+
+
+  Curl_reset_reqproto(conn);
+  var_48 = pop3_init(conn);
+  if(var_48)
+    return var_48;
+
+  var_48 = pop3_parse_url_path(conn);
+  if(var_48)
+    return var_48;
+
+  var_48 = pop3_regular_transfer(conn, done);
+
+  return var_48;
+}
+
+static CURLcode fn_48(struct struct_52 *conn)
+{
+  CURLcode var_56 = var_56;
+
+  var_56 = Curl_pp_sendf(&conn->proto.pop3c.pp, "QUIT", NULL);
+  if(var_56)
+    return var_56;
+  state(conn, POP3_QUIT);
+
+  var_56 = pop3_easy_statemach(conn);
+
+  return var_56;
+}
+
+static CURLcode fn_49(struct struct_52 *conn, bool var_50)
+{
+  struct struct_53 *pop3c= &conn->proto.pop3c;
+
+  if(!var_50 && pop3c->pp.conn)
+    (void)pop3_quit(conn);
+
+
+  Curl_pp_disconnect(&pop3c->pp);
+
+  return var_56;
+}
+
+static CURLcode fn_50(struct struct_52 *conn)
+{
+
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  struct struct_52 *data = conn->data;
+  const char *path = data->state.path;
+
+
+  return Curl_urldecode(data, path, 0, &pop3c->mailbox, NULL, TRUE);
+}
+
+
+static CURLcode fn_50(struct struct_52 *conn,
+                                  bool var_51)
+{
+  struct struct_51 *pop3 = conn->data->state.proto.pop3;
+  (void)var_51;
+
+  if(pop3->transfer != FTPTRANSFER_BODY)
+
+    Curl_setup_transfer(conn, -1, -1, FALSE, NULL, -1, NULL);
+
+  return var_56;
+}
+
+
+static CURLcode fn_51(struct struct_52 *conn,
+                               bool *dophase_done)
+{
+  CURLcode var_56;
+  var_56 = pop3_multi_statemach(conn, dophase_done);
+
+  if(*dophase_done) {
+    var_56 = pop3_dophase_done(conn, FALSE );
+
+    DEBUGF(infof(conn->data, "DO phase is complete\n"));
+  }
+  return var_56;
+}
+
+static
+CURLcode fn_51(struct struct_52 *conn,
+                              bool *dophase_done)
+{
+  CURLcode var_56=var_56;
+  bool var_51=FALSE;
+  struct struct_52 *data = conn->data;
+  data->req.size = -1;
+
+  Curl_pgrsSetUploadCounter(data, 0);
+  Curl_pgrsSetDownloadCounter(data, 0);
+  Curl_pgrsSetUploadSize(data, 0);
+  Curl_pgrsSetDownloadSize(data, 0);
+
+  var_56 = pop3_perform(conn,
+                        &var_51,
+                        dophase_done);
+
+  if(var_56 == var_56) {
+
+    if(!*dophase_done)
+
+      return var_56;
+
+    var_56 = pop3_dophase_done(conn, var_51);
+    if(var_56)
+      return var_56;
+  }
+
+  return var_56;
+}
+
+static CURLcode fn_51(struct struct_52 * conn)
+{
+  struct struct_52 *data = conn->data;
+
+  if(conn->bits.httpproxy && !data->set.tunnel_thru_httpproxy) {
+
+
+
+    if(conn->handler == &var_51)
+      conn->handler = &var_51;
+    else {
+
+
+
+      failf(data, "POP3S not supported!");
+      return CURLE_UNSUPPORTED_PROTOCOL;
+
+    }
+
+
+
+
+
+    conn->bits.close = FALSE;
+
+
+
+
+  }
+
+  data->state.path++;
+
+  return var_56;
+}
+
+CURLcode fn_51(struct struct_52 *conn,
+                         char *str,
+                         size_t var_56)
+{
+
+  CURLcode var_56 = var_56;
+  struct struct_52 *data = conn->data;
+  struct struct_52 *k = &data->req;
+
+  struct struct_53 *pop3c = &conn->proto.pop3c;
+  bool var_56 = FALSE;
+  size_t var_56 = 0;
+  size_t i;
+
+
+
+
+
+
+  for(i = 0; i < var_56; i++) {
+    size_t var_56 = pop3c->eob;
+
+    switch(str[i]) {
+    case 0x0d:
+      if(pop3c->eob == 0) {
+        pop3c->eob++;
+
+        if(i) {
+
+          var_56 = Curl_client_write(conn, CLIENTWRITE_BODY, &str[var_56],
+                                     i - var_56);
+
+          if(var_56)
+            return var_56;
+
+          var_56 = i;
+        }
+      }
+      else if(pop3c->eob == 3)
+        pop3c->eob++;
+      else
+
+
+        pop3c->eob = 1;
+      break;
+
+    case 0x0a:
+      if(pop3c->eob == 1 || pop3c->eob == 4)
+        pop3c->eob++;
+      else
+
+
+        pop3c->eob = 0;
+      break;
+
+    case 0x2e:
+      if(pop3c->eob == 2)
+        pop3c->eob++;
+      else if(pop3c->eob == 3) {
+
+        var_56 = TRUE;
+        pop3c->eob = 0;
+      }
+      else
+
+
+        pop3c->eob = 0;
+      break;
+
+    default:
+      pop3c->eob = 0;
+      break;
+    }
+
+
+    if(var_56 && var_56 >= pop3c->eob) {
+
+
+
+      while(var_56 && pop3c->strip) {
+        var_56--;
+        pop3c->strip--;
+      }
+
+      if(var_56) {
+
+
+        var_56 = Curl_client_write(conn, CLIENTWRITE_BODY, (char*)"\x0d\x0a\x2e\x0d\x0a",
+                                   var_56 ? var_56 - 1 : var_56);
+
+        if(var_56)
+          return var_56;
+
+        var_56 = i;
+        var_56 = FALSE;
+      }
+    }
+  }
+
+  if(pop3c->eob == 5) {
+
+    k->keepon &= ~KEEP_RECV;
+    pop3c->eob = 0;
+    return var_56;
+  }
+
+  if(pop3c->eob)
+
+    return var_56;
+
+  if(var_56 - var_56) {
+    var_56 = Curl_client_write(conn, CLIENTWRITE_BODY, &str[var_56],
+                               var_56 - var_56);
+  }
+
+  return var_56;
+}

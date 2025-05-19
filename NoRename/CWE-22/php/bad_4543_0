@@ -1,0 +1,41 @@
+<?php
+
+
+
+class DropzoneController extends AbstractChunkedController
+{
+    public function upload()
+    {
+        $request = $this->getRequest();
+        $response = new EmptyResponse();
+        $files = $this->getFiles($request->files);
+        $statusCode = 200;
+
+        $chunked = null !== $request->request->get('dzchunkindex');
+
+        foreach ($files as $file) {
+            try {
+                $chunked ?
+                    $this->handleChunkedUpload($file, $response, $request) :
+                    $this->handleUpload($file, $response, $request)
+                ;
+            } catch (UploadException $e) {}
+        }
+
+        return $this->createSupportedJsonResponse($response->assemble(), $statusCode);
+    }
+
+    protected function parseChunkedRequest(Request $request)
+    {
+        $totalChunkCount = $request->get('dztotalchunkcount');
+        $index = $request->get('dzchunkindex');
+        $last = ((int) $index + 1) === (int) $totalChunkCount;
+        $uuid = $request->get('dzuuid');
+
+        
+        $file = $request->files->get('file')->getClientOriginalName();
+        $orig = $file;
+
+        return [$last, $uuid, $index, $orig];
+    }
+}

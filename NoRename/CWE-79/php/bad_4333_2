@@ -1,0 +1,159 @@
+<?php
+
+
+
+
+
+abstract class AbstractConditionViewHelper extends AbstractViewHelper
+{
+
+    
+    protected $escapeOutput = false;
+
+    
+    public function initializeArguments()
+    {
+        $this->registerArgument('then', 'mixed', 'Value to be returned if the condition if met.', false);
+        $this->registerArgument('else', 'mixed', 'Value to be returned if the condition if not met.', false);
+    }
+
+    
+    public function render()
+    {
+        if (static::verdict($this->arguments, $this->renderingContext)) {
+            return $this->renderThenChild();
+        }
+        return $this->renderElseChild();
+    }
+
+    
+    public static function renderStatic(array $arguments, \Closure $renderChildrenClosure, RenderingContextInterface $renderingContext)
+    {
+        if (static::verdict($arguments, $renderingContext)) {
+            if (isset($arguments['then'])) {
+                return $arguments['then'];
+            }
+            if (isset($arguments['__thenClosure'])) {
+                return $arguments['__thenClosure']();
+            }
+        } elseif (!empty($arguments['__elseClosures'])) {
+            $elseIfClosures = isset($arguments['__elseifClosures']) ? $arguments['__elseifClosures'] : [];
+            return static::evaluateElseClosures($arguments['__elseClosures'], $elseIfClosures, $renderingContext);
+        } elseif (array_key_exists('else', $arguments)) {
+            return $arguments['else'];
+        }
+        return '';
+    }
+
+    
+    public static function verdict(array $arguments, RenderingContextInterface $renderingContext)
+    {
+        return static::evaluateCondition($arguments);
+    }
+
+    
+    protected static function evaluateCondition($arguments = null)
+    {
+        return isset($arguments['condition']) && (bool)($arguments['condition']);
+    }
+
+    
+    private static function evaluateElseClosures(array $closures, array $conditionClosures, RenderingContextInterface $renderingContext)
+    {
+        foreach ($closures as $elseNodeIndex => $elseNodeClosure) {
+            if (!isset($conditionClosures[$elseNodeIndex])) {
+                return $elseNodeClosure();
+            } else {
+                if ($conditionClosures[$elseNodeIndex]()) {
+                    return $elseNodeClosure();
+                }
+            }
+        }
+        return '';
+    }
+
+    
+    protected function renderThenChild()
+    {
+        if ($this->hasArgument('then')) {
+            return $this->arguments['then'];
+        }
+
+        $elseViewHelperEncountered = false;
+        foreach ($this->viewHelperNode->getChildNodes() as $childNode) {
+            if ($childNode instanceof ViewHelperNode
+                && substr($childNode->getViewHelperClassName(), -14) === 'ThenViewHelper') {
+                $data = $childNode->evaluate($this->renderingContext);
+                return $data;
+            }
+            if ($childNode instanceof ViewHelperNode
+                && substr($childNode->getViewHelperClassName(), -14) === 'ElseViewHelper') {
+                $elseViewHelperEncountered = true;
+            }
+        }
+
+        if ($elseViewHelperEncountered) {
+            return '';
+        } else {
+            return $this->renderChildren();
+        }
+    }
+
+    
+    protected function renderElseChild()
+    {
+
+        if ($this->hasArgument('else')) {
+            return $this->arguments['else'];
+        }
+
+        
+        $elseNode = null;
+        foreach ($this->viewHelperNode->getChildNodes() as $childNode) {
+            if ($childNode instanceof ViewHelperNode
+                && substr($childNode->getViewHelperClassName(), -14) === 'ElseViewHelper') {
+                $arguments = $childNode->getArguments();
+                if (isset($arguments['if'])) {
+                    if ($arguments['if']->evaluate($this->renderingContext)) {
+                        return $childNode->evaluate($this->renderingContext);
+                    }
+                } else {
+                    $elseNode = $childNode;
+                }
+            }
+        }
+
+        return $elseNode instanceof ViewHelperNode ? $elseNode->evaluate($this->renderingContext) : '';
+    }
+
+    
+    public function compile($argumentsName, $closureName, &$initializationPhpCode, ViewHelperNode $node, TemplateCompiler $compiler)
+    {
+        $thenViewHelperEncountered = $elseViewHelperEncountered = false;
+        foreach ($node->getChildNodes() as $childNode) {
+            if ($childNode instanceof ViewHelperNode) {
+                $viewHelperClassName = $childNode->getViewHelperClassName();
+                if (substr($viewHelperClassName, -14) === 'ThenViewHelper') {
+                    $thenViewHelperEncountered = true;
+                    $childNodesAsClosure = $compiler->wrapChildNodesInClosure($childNode);
+                    $initializationPhpCode .= sprintf('%s[\'__thenClosure\'] = %s;', $argumentsName, $childNodesAsClosure) . chr(10);
+                } elseif (substr($viewHelperClassName, -14) === 'ElseViewHelper') {
+                    $elseViewHelperEncountered = true;
+                    $childNodesAsClosure = $compiler->wrapChildNodesInClosure($childNode);
+                    $initializationPhpCode .= sprintf('%s[\'__elseClosures\'][] = %s;', $argumentsName, $childNodesAsClosure) . chr(10);
+                    $arguments = $childNode->getArguments();
+                    if (isset($arguments['if'])) {
+                        
+                        
+                        $elseIfConditionAsClosure = $compiler->wrapViewHelperNodeArgumentEvaluationInClosure($childNode, 'if');
+                        $initializationPhpCode .= sprintf('%s[\'__elseifClosures\'][] = %s;', $argumentsName, $elseIfConditionAsClosure) . chr(10);
+                    }
+                }
+            }
+        }
+        if (!$thenViewHelperEncountered && !$elseViewHelperEncountered && !isset($node->getArguments()['then'])) {
+            $initializationPhpCode .= sprintf('%s[\'__thenClosure\'] = %s;', $argumentsName, $closureName) . chr(10);
+        }
+        return parent::compile($argumentsName, $closureName, $initializationPhpCode, $node, $compiler);
+    }
+}
